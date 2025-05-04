@@ -18,13 +18,8 @@ type CloseRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	FID types.USHORT
+	FID              types.USHORT
 	LastTimeModified types.FILETIME
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewCloseRequest creates a new CloseRequest structure
@@ -34,21 +29,14 @@ type CloseRequest struct {
 func NewCloseRequest() *CloseRequest {
 	c := &CloseRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		FID: types.USHORT(0),
+		FID:              types.USHORT(0),
 		LastTimeModified: types.FILETIME{},
-
-		// Data
-		ByteCount: types.USHORT(0),
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_CLOSE)
 
 	return c
 }
-
-
 
 // Marshal marshals the CloseRequest structure into a byte array
 //
@@ -83,30 +71,22 @@ func (c *CloseRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter LastTimeModified
 	bytesStream, err := c.LastTimeModified.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -114,7 +94,7 @@ func (c *CloseRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -146,44 +126,32 @@ func (c *CloseRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter LastTimeModified
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastTimeModified")
+		return offset, fmt.Errorf("rawParametersContent too short for LastTimeModified")
 	}
-	bytesRead, err := c.LastTimeModified.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.LastTimeModified.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+
+	// No data to unmarshal
 
 	return offset, nil
 }
