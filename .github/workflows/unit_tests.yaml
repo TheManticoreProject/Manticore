@@ -1,0 +1,46 @@
+name: Run Unit Tests
+
+on:
+  push:
+    branches:
+      - '*'  # Run tests on every branch for every commit
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+
+    strategy:
+      matrix:
+        os: [linux, windows]
+        arch: [amd64, arm64, 386]
+        exclude:
+          - os: windows
+            arch: arm64
+
+    env:
+      GO111MODULE: 'on'
+      CGO_ENABLED: '0'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU for ARM64 emulation
+        if: matrix.arch == 'arm64' && matrix.os != 'windows'
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.1'
+
+      - name: Run Unit Tests
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          echo "$GOOS, $GOARCH"
+          go test -count=1 ./...
