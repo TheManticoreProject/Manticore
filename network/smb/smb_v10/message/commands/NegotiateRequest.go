@@ -21,6 +21,11 @@ type NegotiateRequest struct {
 	WordCount types.UCHAR
 
 	// Data
+
+	// Dialects (variable): This is a variable length list of dialect identifiers in order of preference from least to most
+	// preferred. The client MUST list only dialects that it supports. The structure of the list entries is as follows:
+	// BufferFormat (1 byte): This field MUST be 0x02. This is a buffer format indicator that identifies the next field as a null-terminated array of characters.
+	// DialectString (variable): A null-terminated string identifying an SMB dialect. A list of common dialects is presented in section 1.7.
 	Dialects dialects.Dialects
 }
 
