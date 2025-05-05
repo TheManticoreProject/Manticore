@@ -17,10 +17,16 @@ type CreateTemporaryRequest struct {
 	command_interface.Command
 
 	// Parameters
+
+	// This field SHOULD be ignored by the server.
 	FileAttributes types.SMB_FILE_ATTRIBUTES
-	CreationTime   types.FILETIME
+
+	// The time that the file was created, represented as the number of seconds since Jan 1, 1970, 00:00:00.0.
+	CreationTime types.FILETIME
 
 	// Data
+
+	// A null-terminated string that represents the fully qualified name of the directory relative to the supplied TID in which to create the temporary file.
 	DirectoryName types.SMB_STRING
 }
 
@@ -78,6 +84,7 @@ func (c *CreateTemporaryRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data DirectoryName
+	c.DirectoryName.SetBufferFormat(0x04)
 	bytesStream, err := c.DirectoryName.Marshal()
 	if err != nil {
 		return nil, err
@@ -88,7 +95,11 @@ func (c *CreateTemporaryRequest) Marshal() ([]byte, error) {
 	rawParametersContent := []byte{}
 
 	// Marshalling parameter FileAttributes
-	// TODO: Implement
+	bytesStream, err = c.FileAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
 
 	// Marshalling parameter CreationTime
 	bytesStream, err = c.CreationTime.Marshal()
@@ -142,7 +153,11 @@ func (c *CreateTemporaryRequest) Unmarshal(data []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling parameter FileAttributes
-	// TODO: Implement
+	bytesRead, err = c.FileAttributes.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	// Unmarshalling parameter CreationTime
 	if len(rawParametersContent) < offset+8 {
