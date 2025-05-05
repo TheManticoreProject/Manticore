@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
@@ -18,14 +17,11 @@ type CreateRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
 	FileAttributes types.SMB_FILE_ATTRIBUTES
-	CreationTime types.FILETIME
+	CreationTime   types.FILETIME
 
 	// Data
-	BufferFormat types.UCHAR
 	FileName types.SMB_STRING
-
 }
 
 // NewCreateRequest creates a new CreateRequest structure
@@ -35,22 +31,17 @@ type CreateRequest struct {
 func NewCreateRequest() *CreateRequest {
 	c := &CreateRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-		CreationTime: types.FILETIME{},
+		CreationTime:   types.FILETIME{},
 
 		// Data
-		BufferFormat: types.UCHAR(0),
 		FileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_CREATE)
 
 	return c
 }
-
-
 
 // Marshal marshals the CreateRequest structure into a byte array
 //
@@ -85,32 +76,27 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
+
 	// Marshalling data FileName
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FileAttributes
-	
+	// TODO: Implement
+
 	// Marshalling parameter CreationTime
-	bytesStream, err := c.CreationTime.Marshal()
+	bytesStream, err = c.CreationTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -118,7 +104,7 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -154,40 +140,27 @@ func (c *CreateRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FileAttributes
-	
+	// TODO: Implement
+
 	// Unmarshalling parameter CreationTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
+		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
 	}
-	bytesRead, err := c.CreationTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.CreationTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
-	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
 
