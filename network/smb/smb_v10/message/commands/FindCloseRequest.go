@@ -18,17 +18,12 @@ type FindCloseRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	MaxCount types.USHORT
+	MaxCount         types.USHORT
 	SearchAttributes types.USHORT
 
 	// Data
-	BufferFormat1 types.UCHAR
-	FileName types.SMB_STRING
-	BufferFormat2 types.UCHAR
-	ResumeKeyLength types.USHORT
-	ResumeKey types.SMB_Resume_Key
-
+	FileName  types.SMB_STRING
+	ResumeKey types.SMB_STRING
 }
 
 // NewFindCloseRequest creates a new FindCloseRequest structure
@@ -38,25 +33,18 @@ type FindCloseRequest struct {
 func NewFindCloseRequest() *FindCloseRequest {
 	c := &FindCloseRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		MaxCount: types.USHORT(0),
+		MaxCount:         types.USHORT(0),
 		SearchAttributes: types.USHORT(0),
 
 		// Data
-		BufferFormat1: types.UCHAR(0),
-		FileName: types.SMB_STRING{},
-		BufferFormat2: types.UCHAR(0),
-		ResumeKeyLength: types.USHORT(0),
-		ResumeKey: types.SMB_Resume_Key{},
-
+		FileName:  types.SMB_STRING{},
+		ResumeKey: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_FIND_CLOSE)
 
 	return c
 }
-
-
 
 // Marshal marshals the FindCloseRequest structure into a byte array
 //
@@ -91,43 +79,34 @@ func (c *FindCloseRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat1))
-	
+
 	// Marshalling data FileName
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
-	// Marshalling data BufferFormat2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat2))
-	
-	// Marshalling data ResumeKeyLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ResumeKeyLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Marshalling data ResumeKey
-	
+	bytesStream, err = c.ResumeKey.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter MaxCount
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.MaxCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter SearchAttributes
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.SearchAttributes))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -135,7 +114,7 @@ func (c *FindCloseRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -171,60 +150,37 @@ func (c *FindCloseRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter MaxCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
+		return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
 	}
-	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter SearchAttributes
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
+		return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
 	}
-	c.SearchAttributes = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.SearchAttributes = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat1")
-	}
-	c.BufferFormat1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
-	// Unmarshalling data BufferFormat2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat2")
-	}
-	c.BufferFormat2 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data ResumeKeyLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ResumeKeyLength")
-	}
-	c.ResumeKeyLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling data ResumeKey
+	bytesRead, err = c.ResumeKey.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	return offset, nil
 }
