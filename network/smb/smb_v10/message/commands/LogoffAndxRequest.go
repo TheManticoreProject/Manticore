@@ -111,9 +111,10 @@ func (c *LogoffAndxRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
+	// No parameters are sent by this message.
 
 	// Then unmarshal the data
 	offset = 0
-
+	// No data is sent by this message.
 	return offset, nil
 }
