@@ -18,7 +18,14 @@ type EchoResponse struct {
 	command_interface.Command
 
 	// Parameters
+
+	// The sequence number of this echo response message.
 	SequenceNumber types.USHORT
+
+	// Data
+
+	// The data echoed by the server.
+	Data []types.UCHAR
 }
 
 // NewEchoResponse creates a new EchoResponse structure
@@ -29,6 +36,9 @@ func NewEchoResponse() *EchoResponse {
 	c := &EchoResponse{
 		// Parameters
 		SequenceNumber: types.USHORT(0),
+
+		// Data
+		Data: []types.UCHAR{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_ECHO)
@@ -69,6 +79,9 @@ func (c *EchoResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
+
+	// Marshalling data Data
+	rawDataContent = append(rawDataContent, c.Data...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -117,7 +130,7 @@ func (c *EchoResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	_ = c.GetData().GetBytes()
+	rawDataContent := c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
@@ -131,6 +144,10 @@ func (c *EchoResponse) Unmarshal(data []byte) (int, error) {
 
 	// Then unmarshal the data
 	offset = 0
+
+	// Unmarshalling data Data
+	c.Data = rawDataContent[offset:]
+	offset += len(c.Data)
 
 	return offset, nil
 }
