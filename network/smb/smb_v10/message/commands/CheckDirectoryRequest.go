@@ -70,6 +70,7 @@ func (c *CheckDirectoryRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data DirectoryName
+	c.DirectoryName.SetBufferFormat(0x04)
 	bytesStream, err := c.DirectoryName.Marshal()
 	if err != nil {
 		return nil, err
