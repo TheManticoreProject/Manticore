@@ -17,10 +17,16 @@ type CreateRequest struct {
 	command_interface.Command
 
 	// Parameters
+
+	// A 16-bit field of 1-bit flags that represent the file attributes to assign to the file if it is created successfully.
 	FileAttributes types.SMB_FILE_ATTRIBUTES
-	CreationTime   types.FILETIME
+
+	// The time that the file was created on the client, represented as the number of seconds since Jan 1, 1970, 00:00:00.0.
+	CreationTime types.FILETIME
 
 	// Data
+
+	// A null-terminated string that represents the fully qualified name of the file relative to the supplied TID to create or truncate on the server.
 	FileName types.SMB_STRING
 }
 
@@ -78,6 +84,7 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
+	c.FileName.SetBufferFormat(0x04)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
@@ -88,7 +95,11 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 	rawParametersContent := []byte{}
 
 	// Marshalling parameter FileAttributes
-	// TODO: Implement
+	bytesStream, err = c.FileAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
 
 	// Marshalling parameter CreationTime
 	bytesStream, err = c.CreationTime.Marshal()
@@ -142,7 +153,11 @@ func (c *CreateRequest) Unmarshal(data []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling parameter FileAttributes
-	// TODO: Implement
+	bytesRead, err = c.FileAttributes.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	// Unmarshalling parameter CreationTime
 	if len(rawParametersContent) < offset+8 {
