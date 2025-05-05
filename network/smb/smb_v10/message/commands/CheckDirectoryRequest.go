@@ -15,6 +15,8 @@ type CheckDirectoryRequest struct {
 	command_interface.Command
 
 	// Data
+
+	// A null-terminated character string giving the pathname to be tested.
 	DirectoryName types.SMB_STRING
 }
 
