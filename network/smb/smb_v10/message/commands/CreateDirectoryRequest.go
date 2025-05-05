@@ -15,6 +15,8 @@ type CreateDirectoryRequest struct {
 	command_interface.Command
 
 	// Data
+
+	// A null-terminated string giving the full pathname, relative to the supplied TID, of the directory to be created.
 	DirectoryName types.SMB_STRING
 }
 
