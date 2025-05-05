@@ -15,9 +15,16 @@ type DeleteRequest struct {
 	command_interface.Command
 
 	// Parameters
+
+	// The file attributes of the file(s) to be deleted. If the value of this field is 0x0000, then only normal files
+	// MUST be matched for deletion. If the System or Hidden attributes MUST be specified, then entries with those attributes
+	// are matched in addition to the normal files.  Read-only files MUST NOT be deleted.  The read-only attribute of the
+	// file MUST be cleared before the file can be deleted.
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
 
 	// Data
+
+	// The pathname of the file(s) to be deleted, relative to the supplied TID. Wildcards MAY be used in the filename component of the path.
 	FileName types.SMB_STRING
 }
 
@@ -74,6 +81,7 @@ func (c *DeleteRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
@@ -84,6 +92,11 @@ func (c *DeleteRequest) Marshal() ([]byte, error) {
 	rawParametersContent := []byte{}
 
 	// Marshalling parameter SearchAttributes
+	bytesStream, err = c.SearchAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -119,7 +132,7 @@ func (c *DeleteRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	_ = c.GetParameters().GetBytes()
+	rawParametersContent := c.GetParameters().GetBytes()
 	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
@@ -130,7 +143,11 @@ func (c *DeleteRequest) Unmarshal(data []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling parameter SearchAttributes
-	// TODO: Implement
+	bytesRead, err = c.SearchAttributes.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	// Then unmarshal the data
 	offset = 0
