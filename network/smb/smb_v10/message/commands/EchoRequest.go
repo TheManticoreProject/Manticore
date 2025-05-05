@@ -18,7 +18,14 @@ type EchoRequest struct {
 	command_interface.Command
 
 	// Parameters
+
+	// The number of times that the server SHOULD echo the contents of the SMB_Data.Data field.
 	EchoCount types.USHORT
+
+	// Data
+
+	// Data to echo.
+	Data []types.UCHAR
 }
 
 // NewEchoRequest creates a new EchoRequest structure
@@ -29,6 +36,9 @@ func NewEchoRequest() *EchoRequest {
 	c := &EchoRequest{
 		// Parameters
 		EchoCount: types.USHORT(0),
+
+		// Data
+		Data: []types.UCHAR{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_ECHO)
@@ -69,6 +79,9 @@ func (c *EchoRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
+
+	// Marshalling data Data
+	rawDataContent = append(rawDataContent, c.Data...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -131,6 +144,10 @@ func (c *EchoRequest) Unmarshal(data []byte) (int, error) {
 
 	// Then unmarshal the data
 	offset = 0
+
+	// Unmarshalling data Data
+	c.Data = data[offset:]
+	offset += len(c.Data)
 
 	return offset, nil
 }
