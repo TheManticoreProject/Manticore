@@ -130,7 +130,7 @@ func (c *EchoRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	_ = c.GetData().GetBytes()
+	rawDataContent := c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
@@ -146,7 +146,7 @@ func (c *EchoRequest) Unmarshal(data []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data Data
-	c.Data = data[offset:]
+	c.Data = rawDataContent[offset:]
 	offset += len(c.Data)
 
 	return offset, nil
