@@ -15,6 +15,8 @@ type DeleteDirectoryRequest struct {
 	command_interface.Command
 
 	// Data
+
+	// A null-terminated string that contains the full pathname, relative to the supplied TID, of the directory to be deleted.
 	DirectoryName types.SMB_STRING
 }
 
@@ -68,6 +70,7 @@ func (c *DeleteDirectoryRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data DirectoryName
+	c.DirectoryName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.DirectoryName.Marshal()
 	if err != nil {
 		return nil, err
