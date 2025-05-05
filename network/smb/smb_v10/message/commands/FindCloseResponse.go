@@ -18,13 +18,10 @@ type FindCloseResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
 	Count types.USHORT
 
 	// Data
-	BufferFormat types.UCHAR
-	DataLength types.USHORT
-
+	DirectoryInformationData types.SMB_STRING
 }
 
 // NewFindCloseResponse creates a new FindCloseResponse structure
@@ -34,21 +31,16 @@ type FindCloseResponse struct {
 func NewFindCloseResponse() *FindCloseResponse {
 	c := &FindCloseResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		Count: types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
-		DataLength: types.USHORT(0),
-
+		DirectoryInformationData: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_FIND_CLOSE)
 
 	return c
 }
-
-
 
 // Marshal marshals the FindCloseResponse structure into a byte array
 //
@@ -83,26 +75,23 @@ func (c *FindCloseResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
-	// Marshalling data DataLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data DirectoryInformationData
+	c.DirectoryInformationData.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK)
+	bytesStream, err := c.DirectoryInformationData.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter Count
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -110,7 +99,7 @@ func (c *FindCloseResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -146,37 +135,23 @@ func (c *FindCloseResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter Count
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Count")
+		return offset, fmt.Errorf("rawParametersContent too short for Count")
 	}
-	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
+
+	// Unmarshalling data DirectoryInformationData
+	bytesRead, err = c.DirectoryInformationData.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
 	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data DataLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataLength")
-	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
