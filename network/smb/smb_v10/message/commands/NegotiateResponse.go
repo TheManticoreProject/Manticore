@@ -20,19 +20,24 @@ type NegotiateResponse struct {
 	command_interface.Command
 
 	// Parameters
+
 	// The index of the dialect selected by the server from the list presented in the request. Dialect entries are numbered
 	// starting with 0x0000, so a DialectIndex value of 0x0000 indicates the first entry in the list. If the server does not
 	// support any of the listed dialects, it MUST return a DialectIndex of 0xFFFF.
 	DialectIndex types.USHORT
+
 	// An 8-bit field indicating the security modes supported or required by the server, as follows:
 	SecurityMode types.UCHAR
+
 	// The maximum number of outstanding SMB operations that the server supports. This value includes existing OpLocks,
 	// the NT_TRANSACT_NOTIFY_CHANGE subcommand, and any other commands that are pending on the server. If the negotiated
 	// MaxMpxCount is 0x0001, then OpLock support MUST be disabled for this session. The MaxMpxCount MUST be greater than 0x0000.
 	// This parameter has no specific relationship to the SMB_COM_READ_MPX and SMB_COM_WRITE_MPX commands.
 	MaxMpxCount types.USHORT
+
 	// The maximum number of virtual circuits that can be established between the client and the server as part of the same SMB session.
 	MaxNumberVcs types.USHORT
+
 	// The maximum size, in bytes, of the largest SMB message that the server can receive. This is the size of the largest SMB message
 	// that the client can send to the server. SMB message size includes the size of the SMB header, parameter, and data blocks. This size
 	// does not include any transport-layer framing or other transport-layer data. The server SHOULD<81> provide a MaxBufferSize of 4356 bytes,
@@ -40,31 +45,40 @@ type NegotiateResponse struct {
 	// Otherwise, SMB messages sent to the server MUST have a total size less than or equal to the MaxBufferSize value. This includes AndX
 	// chained messages.
 	MaxBufferSize types.ULONG
+
 	// This value specifies the maximum message size when the client sends an SMB_COM_WRITE_RAW Request (section 2.2.4.25.1), and the maximum
 	// message size that the server MUST NOT exceed when sending an SMB_COM_READ_RAW Response (section 2.2.4.22.2). This value is significant only
 	// if CAP_RAW_MODE is negotiated.
 	MaxRawSize types.ULONG
+
 	// The server SHOULD set the value to a token generated for the connection, as specified in SessionKey Generation (section 2.2.1.6.6).
 	SessionKey types.ULONG
+
 	// A 32-bit field providing a set of server capability indicators. This bit field is used to indicate to the client which features are supported
 	// by the server. Any value not listed in the following table is unused. The server MUST set the unused bits to 0 in a response, and the client MUST
 	// ignore these bits.
 	Capabilities types.ULONG
+
 	// The number of 100-nanosecond intervals that have elapsed since January 1, 1601, in Coordinated Universal Time (UTC) format.
 	SystemTime types.FILETIME
+
 	// A signed 16-bit signed integer that represents the server's time zone, in minutes, from UTC. The time zone of the server MUST be expressed
 	// in minutes, plus or minus, from UTC.
 	ServerTimeZone types.SHORT
+
 	// This field MUST be 0x00 or 0x08. The length of the random challenge used in challenge/response authentication. If the server does not support
 	// challenge/response authentication, this field MUST be 0x00. This field is often referred to in older documentation as EncryptionKeyLength.
 	ChallengeLength types.UCHAR
 
 	// Data
+
 	// An array of unsigned bytes that MUST be ChallengeLength bytes long and MUST represent the server challenge.
 	// This array MUST NOT be null-terminated. This field is often referred to in older documentation as EncryptionKey.
 	Challenge []types.UCHAR
+
 	// The null-terminated name of the NT domain or workgroup to which the server belongs.
 	DomainName []types.UCHAR
+
 	// The null-terminated name of the server.
 	ServerName []types.UCHAR
 }
