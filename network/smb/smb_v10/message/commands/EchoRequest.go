@@ -18,11 +18,7 @@ type EchoRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
 	EchoCount types.USHORT
-
-	// Data
-
 }
 
 // NewEchoRequest creates a new EchoRequest structure
@@ -32,19 +28,13 @@ type EchoRequest struct {
 func NewEchoRequest() *EchoRequest {
 	c := &EchoRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		EchoCount: types.USHORT(0),
-
-		// Data
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_ECHO)
 
 	return c
 }
-
-
 
 // Marshal marshals the EchoRequest structure into a byte array
 //
@@ -79,18 +69,15 @@ func (c *EchoRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter EchoCount
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.EchoCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -98,7 +85,7 @@ func (c *EchoRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -130,25 +117,18 @@ func (c *EchoRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter EchoCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for EchoCount")
+		return offset, fmt.Errorf("rawParametersContent too short for EchoCount")
 	}
-	c.EchoCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.EchoCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
 
