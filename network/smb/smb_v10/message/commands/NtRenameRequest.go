@@ -18,17 +18,26 @@ type NtRenameRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// SearchAttributes (2 bytes): This field indicates the attributes that the target file(s) MUST have. If the attribute is 0x0000,
+	// then only normal files are renamed or linked. If the system file or hidden attributes are specified, then the rename is inclusive of both special types.
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
+
+	// InformationLevel (2 bytes): This field MUST be one of the three values shown in the following table.
 	InformationLevel types.USHORT
+
+	// Reserved (4 bytes): This field SHOULD be set to 0x00000000 by the client and MUST be ignored by the server.
 	Reserved types.ULONG
 
 	// Data
-	BufferFormat1 types.UCHAR
-	OldFileName types.SMB_STRING
-	BufferFormat2 types.UCHAR
-	NewFileName types.SMB_STRING
 
+	// OldFileName (variable): A null-terminated string containing the full path name of the file to be manipulated.
+	// Wildcards are not supported.
+	OldFileName types.SMB_STRING
+
+	// NewFileName (variable): A null-terminated string containing the new full path name to be assigned to the file
+	// provided in OldFileName or the full path into which the file is to be moved.
+	NewFileName types.SMB_STRING
 }
 
 // NewNtRenameRequest creates a new NtRenameRequest structure
@@ -38,25 +47,19 @@ type NtRenameRequest struct {
 func NewNtRenameRequest() *NtRenameRequest {
 	c := &NtRenameRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		SearchAttributes: types.SMB_FILE_ATTRIBUTES{},
 		InformationLevel: types.USHORT(0),
-		Reserved: types.ULONG(0),
+		Reserved:         types.ULONG(0),
 
 		// Data
-		BufferFormat1: types.UCHAR(0),
 		OldFileName: types.SMB_STRING{},
-		BufferFormat2: types.UCHAR(0),
 		NewFileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_NT_RENAME)
 
 	return c
 }
-
-
 
 // Marshal marshals the NtRenameRequest structure into a byte array
 //
@@ -91,45 +94,43 @@ func (c *NtRenameRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat1))
-	
+
 	// Marshalling data OldFileName
+	c.OldFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.OldFileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
-	// Marshalling data BufferFormat2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat2))
-	
+
 	// Marshalling data NewFileName
-	bytesStream, err := c.NewFileName.Marshal()
+	c.NewFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
+	bytesStream, err = c.NewFileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter SearchAttributes
-	
+	bytesStream, err = c.SearchAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
+
 	// Marshalling parameter InformationLevel
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.InformationLevel))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Reserved
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.Reserved))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -137,7 +138,7 @@ func (c *NtRenameRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -173,58 +174,45 @@ func (c *NtRenameRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter SearchAttributes
-	
-	// Unmarshalling parameter InformationLevel
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for InformationLevel")
+		return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
 	}
-	c.InformationLevel = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
-	// Unmarshalling parameter Reserved
-	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Reserved")
-	}
-	c.Reserved = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
-	offset += 4
-	
-	// Then unmarshal the data
-	offset = 0
-	
-	// Unmarshalling data BufferFormat1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat1")
-	}
-	c.BufferFormat1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data OldFileName
-	bytesRead, err := c.OldFileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.SearchAttributes.Unmarshal(rawParametersContent[offset : offset+2])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
-	// Unmarshalling data BufferFormat2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat2")
+
+	// Unmarshalling parameter InformationLevel
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for InformationLevel")
 	}
-	c.BufferFormat2 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data NewFileName
-	bytesRead, err := c.NewFileName.Unmarshal(rawDataContent[offset:])
+	c.InformationLevel = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	offset += 2
+
+	// Unmarshalling parameter Reserved
+	if len(rawParametersContent) < offset+4 {
+		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
+	}
+	c.Reserved = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
+
+	// Then unmarshal the data
+	offset = 0
+
+	// Unmarshalling data OldFileName
+	bytesRead, err = c.OldFileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
+	}
+	offset += bytesRead
+
+	// Unmarshalling data NewFileName
+	bytesRead, err = c.NewFileName.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
 	offset += bytesRead
 
