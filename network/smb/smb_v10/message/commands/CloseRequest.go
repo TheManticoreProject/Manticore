@@ -18,7 +18,13 @@ type CloseRequest struct {
 	command_interface.Command
 
 	// Parameters
-	FID              types.USHORT
+
+	// The FID of the object to be closed.
+	FID types.USHORT
+
+	// A time value encoded as the number of seconds since January 1, 1970 00:00:00.0. The client can request that the last
+	// modification time for the file be updated to this time value. A value of 0x00000000 or 0xFFFFFFFF results in the server
+	// not updating the last modification time.
 	LastTimeModified types.FILETIME
 }
 
