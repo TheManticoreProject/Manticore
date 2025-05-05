@@ -18,11 +18,19 @@ type FindCloseRequest struct {
 	command_interface.Command
 
 	// Parameters
-	MaxCount         types.USHORT
+
+	// This field has no meaning in this context. It SHOULD<111> be set to 0x0000 by the client and MUST be ignored by the server.
+	MaxCount types.USHORT
+
+	// This field has no meaning in this context. It SHOULD be set to 0x0000 by the client and MUST be ignored by the server.
 	SearchAttributes types.USHORT
 
 	// Data
-	FileName  types.SMB_STRING
+
+	// A null-terminated SMB_STRING. This MUST be the empty string.
+	FileName types.SMB_STRING
+
+	// This MUST be the last ResumeKey returned by the server in the search being closed. See SMB_COM_FIND for a description of the SMB_Resume_Key data structure.
 	ResumeKey types.SMB_STRING
 }
 
@@ -81,6 +89,7 @@ func (c *FindCloseRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
@@ -88,6 +97,7 @@ func (c *FindCloseRequest) Marshal() ([]byte, error) {
 	rawDataContent = append(rawDataContent, bytesStream...)
 
 	// Marshalling data ResumeKey
+	c.ResumeKey.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK)
 	bytesStream, err = c.ResumeKey.Marshal()
 	if err != nil {
 		return nil, err
