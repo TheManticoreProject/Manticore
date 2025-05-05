@@ -18,27 +18,53 @@ type NtCreateAndxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	AndXCommand types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset types.USHORT
+
+	// OpLockLevel (1 byte): The OpLock level granted to the client process.
 	OpLockLevel types.UCHAR
+
+	// FID (2 bytes): A FID representing the file or directory that was created or opened.
 	FID types.USHORT
+
+	// CreateDisposition (4 bytes): A 32-bit value that represents the action to take if the file already exists or if
+	// the file is a new file and does not already exist.
 	CreateDisposition types.ULONG
+
+	// CreateTime (8 bytes): A 64-bit integer value representing the time that the file was created. The time value is
+	// a signed 64-bit integer representing either an absolute time or a time interval. Times are specified in units of 100ns.
+	// A positive value expresses an absolute time, where the base time (the 64- bit integer with value 0x0000000000000000) is
+	// the beginning of the year 1601 AD in the Gregorian calendar. A negative value expresses a time interval relative to some
+	// base time, usually the current time.
 	CreateTime types.FILETIME
+
+	// LastAccessTime (8 bytes): The time that the file was last accessed encoded in the same format as CreateTime.
 	LastAccessTime types.FILETIME
+
+	// LastWriteTime (8 bytes): The time that the file was last written, encoded in the same format as CreateTime.
 	LastWriteTime types.FILETIME
+
+	// LastChangeTime (8 bytes): The time that the file was last changed, encoded in the same format as CreateTime.
 	LastChangeTime types.FILETIME
+
+	// ExtFileAttributes (4 bytes): This field contains the extended file attributes that the server assigned to the file or
+	// directory as a result of the command, encoded as an SMB_EXT_FILE_ATTR (section 2.2.1.2.3) data type.
 	ExtFileAttributes types.SMB_EXT_FILE_ATTR
+
+	// AllocationSize (8 bytes): The number of bytes allocated to the file by the server.
 	AllocationSize types.LARGE_INTEGER
+
+	// EndOfFile (8 bytes): The end of file offset value.
 	EndOfFile types.LARGE_INTEGER
+
+	// ResourceType (2 bytes): The file type. This field MUST be interpreted as follows.
 	ResourceType types.USHORT
+
+	// NMPipeStatus (2 bytes): A 16-bit field that shows the status of the named pipe if the resource type opened is a named pipe.
+	// This field is formatted as an SMB_NMPIPE_STATUS (section 2.2.1.3).
 	NMPipeStatus types.SMB_NMPIPE_STATUS
+
+	// Directory (1 byte): If the returned FID represents a directory, the server MUST set this value to a nonzero value (0x01 is commonly used).
+	// If the FID is not a directory, the server MUST set this value to 0x00 (FALSE).
 	Directory types.UCHAR
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewNtCreateAndxResponse creates a new NtCreateAndxResponse structure
@@ -48,27 +74,19 @@ type NtCreateAndxResponse struct {
 func NewNtCreateAndxResponse() *NtCreateAndxResponse {
 	c := &NtCreateAndxResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AndXCommand: types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset: types.USHORT(0),
-		OpLockLevel: types.UCHAR(0),
-		FID: types.USHORT(0),
+		OpLockLevel:       types.UCHAR(0),
+		FID:               types.USHORT(0),
 		CreateDisposition: types.ULONG(0),
-		CreateTime: types.FILETIME{},
-		LastAccessTime: types.FILETIME{},
-		LastWriteTime: types.FILETIME{},
-		LastChangeTime: types.FILETIME{},
-		ExtFileAttributes: types.SMB_EXT_FILE_ATTR{},
-		AllocationSize: types.LARGE_INTEGER{},
-		EndOfFile: types.LARGE_INTEGER{},
-		ResourceType: types.USHORT(0),
-		NMPipeStatus: types.SMB_NMPIPE_STATUS{},
-		Directory: types.UCHAR(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
+		CreateTime:        types.FILETIME{},
+		LastAccessTime:    types.FILETIME{},
+		LastWriteTime:     types.FILETIME{},
+		LastChangeTime:    types.FILETIME{},
+		ExtFileAttributes: types.SMB_EXT_FILE_ATTR(0),
+		AllocationSize:    types.LARGE_INTEGER{},
+		EndOfFile:         types.LARGE_INTEGER{},
+		ResourceType:      types.USHORT(0),
+		NMPipeStatus:      types.SMB_NMPIPE_STATUS{},
+		Directory:         types.UCHAR(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_NT_CREATE_ANDX)
@@ -76,13 +94,10 @@ func NewNtCreateAndxResponse() *NtCreateAndxResponse {
 	return c
 }
 
-
 // IsAndX returns true if the command is an AndX
 func (c *NtCreateAndxResponse) IsAndX() bool {
 	return true
 }
-
-
 
 // Marshal marshals the NtCreateAndxResponse structure into a byte array
 //
@@ -117,86 +132,81 @@ func (c *NtCreateAndxResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-	
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-	
-	// Marshalling parameter AndXOffset
-	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter OpLockLevel
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.OpLockLevel))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter CreateDisposition
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.CreateDisposition))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter CreateTime
 	bytesStream, err := c.CreateTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameter LastAccessTime
-	bytesStream, err := c.LastAccessTime.Marshal()
+	bytesStream, err = c.LastAccessTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameter LastWriteTime
-	bytesStream, err := c.LastWriteTime.Marshal()
+	bytesStream, err = c.LastWriteTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameter LastChangeTime
-	bytesStream, err := c.LastChangeTime.Marshal()
+	bytesStream, err = c.LastChangeTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
 	// Marshalling parameter ExtFileAttributes
-	
+	buf4 = make([]byte, 4)
+	binary.BigEndian.PutUint32(buf4, uint32(c.ExtFileAttributes))
+	rawParametersContent = append(rawParametersContent, buf4...)
+
 	// Marshalling parameter AllocationSize
-	
+	buf8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf8, uint64(c.AllocationSize.QuadPart))
+	rawParametersContent = append(rawParametersContent, buf8...)
+
 	// Marshalling parameter EndOfFile
-	
+	buf8 = make([]byte, 8)
+	binary.BigEndian.PutUint64(buf8, uint64(c.EndOfFile.QuadPart))
+	rawParametersContent = append(rawParametersContent, buf8...)
+
 	// Marshalling parameter ResourceType
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.ResourceType))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter NMPipeStatus
-	
+	bytesStream, err = c.NMPipeStatus.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
+
 	// Marshalling parameter Directory
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.Directory))
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -204,7 +214,7 @@ func (c *NtCreateAndxResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -236,131 +246,120 @@ func (c *NtCreateAndxResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling parameter OpLockLevel
 	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for OpLockLevel")
+		return offset, fmt.Errorf("data too short for OpLockLevel")
 	}
 	c.OpLockLevel = types.UCHAR(rawParametersContent[offset])
 	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter CreateDisposition
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CreateDisposition")
+		return offset, fmt.Errorf("rawParametersContent too short for CreateDisposition")
 	}
-	c.CreateDisposition = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.CreateDisposition = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter CreateTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CreateTime")
+		return offset, fmt.Errorf("rawParametersContent too short for CreateTime")
 	}
-	bytesRead, err := c.CreateTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.CreateTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling parameter LastAccessTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastAccessTime")
+		return offset, fmt.Errorf("rawParametersContent too short for LastAccessTime")
 	}
-	bytesRead, err := c.LastAccessTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.LastAccessTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling parameter LastWriteTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err := c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling parameter LastChangeTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastChangeTime")
+		return offset, fmt.Errorf("rawParametersContent too short for LastChangeTime")
 	}
-	bytesRead, err := c.LastChangeTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.LastChangeTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling parameter ExtFileAttributes
-	
+	if len(rawParametersContent) < offset+4 {
+		return offset, fmt.Errorf("rawParametersContent too short for ExtFileAttributes")
+	}
+	c.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
+
 	// Unmarshalling parameter AllocationSize
-	
+	if len(rawParametersContent) < offset+8 {
+		return offset, fmt.Errorf("rawParametersContent too short for AllocationSize")
+	}
+	c.AllocationSize.QuadPart = uint64(binary.BigEndian.Uint64(rawParametersContent[offset : offset+8]))
+	offset += 8
+
 	// Unmarshalling parameter EndOfFile
-	
+	if len(rawParametersContent) < offset+8 {
+		return offset, fmt.Errorf("rawParametersContent too short for EndOfFile")
+	}
+	c.EndOfFile.QuadPart = uint64(binary.BigEndian.Uint64(rawParametersContent[offset : offset+8]))
+	offset += 8
+
 	// Unmarshalling parameter ResourceType
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ResourceType")
+		return offset, fmt.Errorf("rawParametersContent too short for ResourceType")
 	}
-	c.ResourceType = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.ResourceType = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter NMPipeStatus
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for NMPipeStatus")
+	}
+	bytesRead, err = c.NMPipeStatus.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter Directory
 	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for Directory")
+		return offset, fmt.Errorf("data too short for Directory")
 	}
 	c.Directory = types.UCHAR(rawParametersContent[offset])
 	offset++
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent by this message.
 
 	return offset, nil
 }
