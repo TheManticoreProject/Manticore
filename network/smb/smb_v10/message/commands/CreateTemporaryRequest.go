@@ -84,7 +84,7 @@ func (c *CreateTemporaryRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data DirectoryName
-	c.DirectoryName.SetBufferFormat(0x04)
+	c.DirectoryName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.DirectoryName.Marshal()
 	if err != nil {
 		return nil, err
