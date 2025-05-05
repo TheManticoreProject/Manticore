@@ -84,7 +84,7 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
-	c.FileName.SetBufferFormat(0x04)
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
