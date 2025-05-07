@@ -140,7 +140,7 @@ func (c *SearchResponse) Unmarshal(data []byte) (int, error) {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
