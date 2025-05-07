@@ -18,14 +18,21 @@ type OpenRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// AccessMode (2 bytes): A 16-bit field for encoding the requested access mode. See
+	// section 3.2.4.5.1 for a discussion on sharing modes.
 	AccessMode types.USHORT
+
+	// SearchAttributes (2 bytes): Specifies the type of file. This field is used as a
+	// search mask. Both the FileName and the SearchAttributes of a file MUST match in
+	// order for the file to be opened.<28>
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
 
 	// Data
-	BufferFormat types.UCHAR
-	FileName types.SMB_STRING
 
+	// FileName (variable): A null-terminated string containing the file name of the
+	// file to be opened.
+	FileName types.SMB_STRING
 }
 
 // NewOpenRequest creates a new OpenRequest structure
@@ -35,22 +42,18 @@ type OpenRequest struct {
 func NewOpenRequest() *OpenRequest {
 	c := &OpenRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AccessMode: types.USHORT(0),
+
+		AccessMode:       types.USHORT(0),
 		SearchAttributes: types.SMB_FILE_ATTRIBUTES{},
 
 		// Data
-		BufferFormat: types.UCHAR(0),
 		FileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_OPEN)
 
 	return c
 }
-
-
 
 // Marshal marshals the OpenRequest structure into a byte array
 //
@@ -85,30 +88,29 @@ func (c *OpenRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
+
 	// Marshalling data FileName
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter AccessMode
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.AccessMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter SearchAttributes
-	
+	byteStream, err := c.SearchAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -116,7 +118,7 @@ func (c *OpenRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -152,37 +154,31 @@ func (c *OpenRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter AccessMode
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
+		return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
 	}
-	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter SearchAttributes
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
+	}
+	bytesRead, err = c.SearchAttributes.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
-	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return 0, err
 	}
 	offset += bytesRead
 
