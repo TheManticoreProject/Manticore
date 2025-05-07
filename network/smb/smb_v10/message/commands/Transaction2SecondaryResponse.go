@@ -9,6 +9,7 @@ import (
 )
 
 // Transaction2SecondaryResponse
+// There is no response message defined for the SMB_COM_TRANSACTION2_SECONDARY request.
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/b0028be1-5325-4fef-8659-341524362431
 type Transaction2SecondaryResponse struct {
 	command_interface.Command
