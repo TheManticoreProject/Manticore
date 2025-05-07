@@ -22,68 +22,81 @@ type IoctlRequest struct {
 	// FID (2 bytes): The FID of the device or file to which the IOCTL is to be sent.
 	FID types.USHORT
 
-	// Category (2 bytes): The implementation-dependent device category for the request.
+	// Category (2 bytes): The implementation-dependent device category for the
+	// request.
 	Category types.USHORT
 
-	// Function (2 bytes): The implementation-dependent device function for the request.
+	// Function (2 bytes): The implementation-dependent device function for the
+	// request.
 	Function types.USHORT
 
-	// TotalParameterCount (2 bytes): The total number of IOCTL parameter bytes that the client sends to the server in this request.
-	// Parameter bytes for an IOCTL are carried within the SMB_Data.Parameters field of the SMB_COM_IOCTL request. This value MUST be
-	// the same as ParameterCount.
+	// TotalParameterCount (2 bytes): The total number of IOCTL parameter bytes that
+	// the client sends to the server in this request. Parameter bytes for an IOCTL are
+	// carried within the SMB_Data.Parameters field of the SMB_COM_IOCTL request. This
+	// value MUST be the same as ParameterCount.
 	TotalParameterCount types.USHORT
 
-	// TotalDataCount (2 bytes): The total number of IOCTL data bytes that the client sends to the server in this request. Data bytes
-	// for an IOCTL are carried within the SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the same as DataCount.
+	// TotalDataCount (2 bytes): The total number of IOCTL data bytes that the client
+	// sends to the server in this request. Data bytes for an IOCTL are carried within
+	// the SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the
+	// same as DataCount.
 	TotalDataCount types.USHORT
 
-	// MaxParameterCount (2 bytes): The maximum number of SMB_Data.Parameters bytes that the client accepts in the IOCTL response.
-	// The server MUST NOT return more than this number of bytes in the SMB_Data.Parameters field of the response.
+	// MaxParameterCount (2 bytes): The maximum number of SMB_Data.Parameters bytes
+	// that the client accepts in the IOCTL response. The server MUST NOT return more
+	// than this number of bytes in the SMB_Data.Parameters field of the response.
 	MaxParameterCount types.USHORT
 
-	// MaxDataCount (2 bytes): The maximum number of SMB_Data.Data bytes that the client accepts in the IOCTL response. The server
-	// MUST NOT return more than this number of bytes in the SMB_Data.Data field.
+	// MaxDataCount (2 bytes): The maximum number of SMB_Data.Data bytes that the
+	// client accepts in the IOCTL response. The server MUST NOT return more than this
+	// number of bytes in the SMB_Data.Data field.
 	MaxDataCount types.USHORT
 
-	// Timeout (4 bytes): The value of this field MUST be the maximum number of milliseconds that the server SHOULD wait for completion
-	// of the transaction before generating a time-out and returning a response to the client. The client SHOULD set this to 0x00000000
-	// to indicate that no time-out is expected. A value of 0x00000000 indicates that the server returns an error if the resource is not
-	// immediately available. If the operation does not complete within the specified time, the server aborts the request and sends a
-	// failure response.
+	// Timeout (4 bytes): The value of this field MUST be the maximum number of
+	// milliseconds that the server SHOULD wait for completion of the transaction
+	// before generating a time-out and returning a response to the client. The client
+	// SHOULD set this to 0x00000000 to indicate that no time-out is expected. A value
+	// of 0x00000000 indicates that the server returns an error if the resource is not
+	// immediately available. If the operation does not complete within the specified
+	// time, the server aborts the request and sends a failure response.
 	Timeout types.ULONG
 
-	// Reserved2 (2 bytes): Reserved. This field MUST be 0x0000 in the client request. The server MUST ignore the contents of this
-	// field.
 	Reserved types.USHORT
 
-	// ParameterCount (2 bytes): The number of IOCTL parameter bytes that the client sends to the server in this request. Parameter
-	// bytes for an IOCTL are carried within the SMB_Data.Parameters field of the SMB_COM_IOCTL request. This value MUST be the same
-	// as TotalParameterCount.
+	// ParameterCount (2 bytes): The number of IOCTL parameter bytes that the client
+	// sends to the server in this request. Parameter bytes for an IOCTL are carried
+	// within the SMB_Data.Parameters field of the SMB_COM_IOCTL request. This value
+	// MUST be the same as TotalParameterCount.
 	ParameterCount types.USHORT
 
-	// ParameterOffset (2 bytes): The client SHOULD set the value of this field to 0x0000. The server MUST ignore the value of this
-	// field.
+	// ParameterOffset (2 bytes): The client SHOULD set the value of this field to
+	// 0x0000. The server MUST ignore the value of this field.
 	ParameterOffset types.USHORT
 
-	// DataCount (2 bytes): The total number of IOCTL data bytes that the client sends to the server in this request. Data bytes for
-	// an IOCTL are carried within the SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the same as TotalDataCount.
+	// DataCount (2 bytes): The total number of IOCTL data bytes that the client sends
+	// to the server in this request. Data bytes for an IOCTL are carried within the
+	// SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the same as
+	// TotalDataCount.
 	DataCount types.USHORT
 
-	// DataOffset (2 bytes): The client SHOULD set the value of this field to 0x0000. The server MUST ignore the value of this field.
+	// DataOffset (2 bytes): The client SHOULD set the value of this field to 0x0000.
+	// The server MUST ignore the value of this field.
 	DataOffset types.USHORT
 
 	// Data
 
-	// Pad1 (variable): An array of padding bytes used to align the next field to a 2-byte or 4-byte boundary.
+	// Pad1 (variable): An array of padding bytes used to align the next field to a
+	// 2-byte or 4-byte boundary.
 	Pad1 []types.UCHAR
 
-	// Parameters (variable): IOCTL parameter bytes. The contents are implementation-dependent.
+	// Parameters (variable): The IOCTL parameters.
 	Parameters []types.UCHAR
 
-	// Pad2 (variable): An array of padding bytes, used to align the next field to a 2-byte or 4-byte boundary.
+	// Pad2 (variable): An array of padding bytes, used to align the next field to a
+	// 2-byte or 4-byte boundary.
 	Pad2 []types.UCHAR
 
-	// Data (variable): Transaction data bytes. The contents are implementation-dependent.
+	// Data (variable): The IOCTL data.
 	Data []types.UCHAR
 }
 
