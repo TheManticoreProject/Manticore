@@ -13,6 +13,8 @@ type CHAR = data_types.CHAR
 type SHORT = data_types.SHORT
 type LONG = data_types.LONG
 
+type DWORD = data_types.DWORD
+
 type LARGE_INTEGER = data_structures.LARGE_INTEGER
 
 type FILETIME = data_structures.FILETIME
