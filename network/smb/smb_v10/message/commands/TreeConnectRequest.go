@@ -94,22 +94,25 @@ func (c *TreeConnectRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data Path
-	rawDataContent, err := c.Path.Marshal()
+	byteStream, err := c.Path.Marshal()
 	if err != nil {
 		return nil, err
 	}
+	rawDataContent = append(rawDataContent, byteStream...)
 
 	// Marshalling data Password
-	rawDataContent, err = c.Password.Marshal()
+	byteStream, err = c.Password.Marshal()
 	if err != nil {
 		return nil, err
 	}
+	rawDataContent = append(rawDataContent, byteStream...)
 
 	// Marshalling data Service
-	rawDataContent, err = c.Service.Marshal()
+	byteStream, err = c.Service.Marshal()
 	if err != nil {
 		return nil, err
 	}
+	rawDataContent = append(rawDataContent, byteStream...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -149,7 +152,7 @@ func (c *TreeConnectRequest) Unmarshal(data []byte) (int, error) {
 		return 0, err
 	}
 	_ = c.GetParameters().GetBytes()
-	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
