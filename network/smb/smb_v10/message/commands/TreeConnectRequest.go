@@ -1,9 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
@@ -17,17 +14,31 @@ import (
 type TreeConnectRequest struct {
 	command_interface.Command
 
-	// Parameters
-	WordCount types.UCHAR
-
 	// Data
-	BufferFormat1 types.UCHAR
-	Path types.OEM_STRING
-	BufferFormat2 types.UCHAR
-	Password types.OEM_STRING
-	BufferFormat3 types.UCHAR
-	Service types.OEM_STRING
 
+	// BufferFormat1 (1 byte): A buffer format identifier. The value of this field MUST
+	// be 0x04.
+	// Path (variable): A null-terminated string that represents the server and share
+	// name of the resource to which the client is attempting to connect. This field
+	// MUST be encoded using Universal Naming Convention (UNC) syntax. The string MUST
+	// be a null-terminated array of OEM characters, even if the client and server have
+	// negotiated to use Unicode strings.
+	Path types.OEM_STRING
+
+	// BufferFormat2 (1 byte): A buffer format identifier. The value of this field MUST
+	// be 0x04.
+	// Password (variable): A null-terminated string that represents a share password
+	// in plaintext form. The string MUST be a null-terminated array of OEM characters,
+	// even if the client and server have negotiated to use Unicode strings.
+	Password types.OEM_STRING
+
+	// BufferFormat3 (1 byte): A buffer format identifier. The value of this field MUST
+	// be 0x04.
+	// Service (variable): A null-terminated string representing the type of resource
+	// that the client intends to access. This field MUST be a null-terminated array of
+	// OEM characters, even if the client and server have negotiated to use Unicode
+	// strings. The valid values for this field are as follows:
+	Service types.OEM_STRING
 }
 
 // NewTreeConnectRequest creates a new TreeConnectRequest structure
@@ -36,25 +47,17 @@ type TreeConnectRequest struct {
 // - A pointer to the new TreeConnectRequest structure
 func NewTreeConnectRequest() *TreeConnectRequest {
 	c := &TreeConnectRequest{
-		// Parameters
-		WordCount: types.UCHAR(0),
 
 		// Data
-		BufferFormat1: types.UCHAR(0),
-		Path: types.OEM_STRING{},
-		BufferFormat2: types.UCHAR(0),
+		Path:     types.OEM_STRING{},
 		Password: types.OEM_STRING{},
-		BufferFormat3: types.UCHAR(0),
-		Service: types.OEM_STRING{},
-
+		Service:  types.OEM_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TREE_CONNECT)
 
 	return c
 }
-
-
 
 // Marshal marshals the TreeConnectRequest structure into a byte array
 //
@@ -89,28 +92,28 @@ func (c *TreeConnectRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat1))
-	
+
 	// Marshalling data Path
-	
-	// Marshalling data BufferFormat2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat2))
-	
+	rawDataContent, err := c.Path.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
 	// Marshalling data Password
-	
-	// Marshalling data BufferFormat3
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat3))
-	
+	rawDataContent, err = c.Password.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
 	// Marshalling data Service
-	
+	rawDataContent, err = c.Service.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -118,7 +121,7 @@ func (c *TreeConnectRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -145,7 +148,7 @@ func (c *TreeConnectRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawParametersContent := c.GetParameters().GetBytes()
+	_ = c.GetParameters().GetBytes()
 	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
@@ -154,43 +157,31 @@ func (c *TreeConnectRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+	// No parameters are sent in this message
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat1")
-	}
-	c.BufferFormat1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data Path
-	
-	// Unmarshalling data BufferFormat2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat2")
+	bytesRead, err = c.Path.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
 	}
-	c.BufferFormat2 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+	offset += bytesRead
+
 	// Unmarshalling data Password
-	
-	// Unmarshalling data BufferFormat3
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat3")
+	bytesRead, err = c.Password.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
 	}
-	c.BufferFormat3 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+	offset += bytesRead
+
 	// Unmarshalling data Service
+	bytesRead, err = c.Service.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
 
 	return offset, nil
 }
