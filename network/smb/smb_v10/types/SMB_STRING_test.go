@@ -143,7 +143,7 @@ func TestSMB_STRING_Unmarshal(t *testing.T) {
 		},
 		{
 			name:           "Format 0x05 null-terminated dialect string",
-			input:          []byte{0x05, 'P', 'C', ' ', 'N', 'E', 'T', 'W', 'O', 'R', 'K', ' ', 'P', 'R', 'O', 'G', 'R', 'A', 'M', 0x00},
+			input:          []byte{0x05, 0x12, 0x00, 'P', 'C', ' ', 'N', 'E', 'T', 'W', 'O', 'R', 'K', ' ', 'P', 'R', 'O', 'G', 'R', 'A', 'M', 0x00},
 			expectedFormat: 0x05,
 			expectedLength: 18,
 			expectedBuffer: []UCHAR("PC NETWORK PROGRAM"),

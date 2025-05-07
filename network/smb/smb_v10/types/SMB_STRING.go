@@ -5,6 +5,14 @@ import (
 	"fmt"
 )
 
+const (
+	SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT             = 0x01
+	SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING       = 0x02
+	SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT = 0x03
+	SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING     = 0x04
+	SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK                   = 0x05
+)
+
 // SMB_STRING
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/9189a82f-c1c0-4af9-818c-85050f7e5e66
 type SMB_STRING struct {
@@ -77,7 +85,6 @@ func (s *SMB_STRING) Marshal() ([]byte, error) {
 
 	case 0x03:
 		// A null-terminated OEM_STRING.
-		// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
 		buffer = append(buffer, s.BufferFormat)
 
 		buf2 := make([]byte, 2)
@@ -88,7 +95,7 @@ func (s *SMB_STRING) Marshal() ([]byte, error) {
 		buffer = append(buffer, 0x00)
 
 	case 0x04:
-		// A null-terminated string.
+		// This field MUST be 0x04, which indicates that a null-terminated ASCII string follows.
 		// In the NT LAN Manager dialect, the string is of type SMB_STRING unless otherwise specified.
 		buffer = append(buffer, s.BufferFormat)
 
@@ -96,8 +103,7 @@ func (s *SMB_STRING) Marshal() ([]byte, error) {
 		buffer = append(buffer, 0x00)
 
 	case 0x05:
-		// A null-terminated OEM_STRING.
-		// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
+		// This field MUST be 0x05, which indicates that a variable block follows.
 		buffer = append(buffer, s.BufferFormat)
 
 		buf2 := make([]byte, 2)
@@ -132,7 +138,7 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 
 	// Handle different buffer formats
 	switch s.BufferFormat {
-	case 0x01, 0x03:
+	case 0x01:
 		// Variable block with 16-bit length
 		if len(buffer) < 3 {
 			return 0, fmt.Errorf("buffer too short for format 0x%02x", s.BufferFormat)
@@ -148,7 +154,7 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 
 		return int(s.Length) + 3, nil
 
-	case 0x02, 0x05:
+	case 0x02:
 		// Null-terminated string for dialect negotiation
 		// Find the null terminator
 		nullPos := -1
@@ -169,8 +175,24 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 
 		return nullPos + 1, nil
 
+	case 0x03:
+		// Variable block with 16-bit length
+		if len(buffer) < 3 {
+			return 0, fmt.Errorf("buffer too short for format 0x%02x", s.BufferFormat)
+		}
+
+		s.Length = USHORT(binary.LittleEndian.Uint16(buffer[1:3]))
+		if len(buffer) < int(s.Length)+3 {
+			return 0, fmt.Errorf("buffer too short for specified length")
+		}
+
+		s.Buffer = make([]UCHAR, s.Length)
+		copy(s.Buffer, buffer[3:3+s.Length])
+
+		return int(s.Length) + 3, nil
+
 	case 0x04:
-		// Null-terminated string
+		// This field MUST be 0x04, which indicates that a null-terminated ASCII string follows.
 		nullPos := -1
 		for i := 1; i < len(buffer); i++ {
 			if buffer[i] == 0x00 {
@@ -188,6 +210,15 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 		s.Length = USHORT(len(s.Buffer))
 
 		return nullPos + 1, nil
+
+	case 0x05:
+		// This field MUST be 0x05, which indicates that a variable block follows.
+		s.Length = USHORT(binary.LittleEndian.Uint16(buffer[1:3]))
+
+		s.Buffer = make([]UCHAR, s.Length)
+		copy(s.Buffer, buffer[3:3+s.Length])
+
+		return int(s.Length) + 3, nil
 
 	default:
 		return 0, fmt.Errorf("invalid buffer format: 0x%02x", s.BufferFormat)
