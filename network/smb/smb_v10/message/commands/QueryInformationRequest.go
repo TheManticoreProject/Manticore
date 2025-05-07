@@ -1,9 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
@@ -17,13 +14,12 @@ import (
 type QueryInformationRequest struct {
 	command_interface.Command
 
-	// Parameters
-	WordCount types.UCHAR
-
 	// Data
-	BufferFormat types.UCHAR
-	FileName types.SMB_STRING
 
+	// FileName (variable): A null-terminated string that represents the fully
+	// qualified name of the file relative to the supplied TID. This is the file for
+	// which attributes are queried and returned.
+	FileName types.SMB_STRING
 }
 
 // NewQueryInformationRequest creates a new QueryInformationRequest structure
@@ -32,21 +28,15 @@ type QueryInformationRequest struct {
 // - A pointer to the new QueryInformationRequest structure
 func NewQueryInformationRequest() *QueryInformationRequest {
 	c := &QueryInformationRequest{
-		// Parameters
-		WordCount: types.UCHAR(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
 		FileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_QUERY_INFORMATION)
 
 	return c
 }
-
-
 
 // Marshal marshals the QueryInformationRequest structure into a byte array
 //
@@ -81,23 +71,17 @@ func (c *QueryInformationRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
+
 	// Marshalling data FileName
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -105,7 +89,7 @@ func (c *QueryInformationRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -132,7 +116,7 @@ func (c *QueryInformationRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawParametersContent := c.GetParameters().GetBytes()
+	_ = c.GetParameters().GetBytes()
 	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
@@ -141,28 +125,15 @@ func (c *QueryInformationRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+	// No parameters are sent in this message
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
-	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return 0, err
 	}
 	offset += bytesRead
 
