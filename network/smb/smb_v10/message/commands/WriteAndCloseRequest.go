@@ -122,6 +122,7 @@ func (c *WriteAndCloseRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data Data
 	rawDataContent = append(rawDataContent, c.Data...)
+	c.CountOfBytesToWrite = types.USHORT(len(c.Data))
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -256,7 +257,7 @@ func (c *WriteAndCloseRequest) Unmarshal(data []byte) (int, error) {
 	offset++
 
 	// Unmarshalling data Data
-	c.Data = rawDataContent[offset:]
+	c.Data = rawDataContent[offset : offset+int(c.CountOfBytesToWrite)]
 
 	return offset, nil
 }
