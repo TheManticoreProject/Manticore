@@ -18,14 +18,23 @@ type OpenPrintFileRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// SetupLength (2 bytes): Length, in bytes, of the printer-specific control data
+	// that is to be included as the first part of the spool file. The server MUST pass
+	// this initial portion of the spool file to the printer unmodified.
 	SetupLength types.USHORT
+
+	// Mode (2 bytes): A 16-bit field that contains a flag that specifies the print
+	// file mode.
 	Mode types.USHORT
 
 	// Data
-	BufferFormat types.UCHAR
-	Identifier types.SMB_STRING
 
+	// BufferFormat (1 byte): This field MUST be 0x04, representing an ASCII string.
+	// Identifier (variable): A null-terminated string containing a suggested name for
+	// the spool file. The server can ignore, modify, or use this information to
+	// identify the print job.<126>
+	Identifier types.SMB_STRING
 }
 
 // NewOpenPrintFileRequest creates a new OpenPrintFileRequest structure
@@ -35,22 +44,17 @@ type OpenPrintFileRequest struct {
 func NewOpenPrintFileRequest() *OpenPrintFileRequest {
 	c := &OpenPrintFileRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		SetupLength: types.USHORT(0),
-		Mode: types.USHORT(0),
+		Mode:        types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
 		Identifier: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_OPEN_PRINT_FILE)
 
 	return c
 }
-
-
 
 // Marshal marshals the OpenPrintFileRequest structure into a byte array
 //
@@ -85,33 +89,28 @@ func (c *OpenPrintFileRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
+
 	// Marshalling data Identifier
+	c.Identifier.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.Identifier.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter SetupLength
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.SetupLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Mode
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Mode))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -119,7 +118,7 @@ func (c *OpenPrintFileRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -155,42 +154,28 @@ func (c *OpenPrintFileRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter SetupLength
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for SetupLength")
+		return offset, fmt.Errorf("rawParametersContent too short for SetupLength")
 	}
-	c.SetupLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.SetupLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter Mode
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Mode")
+		return offset, fmt.Errorf("rawParametersContent too short for Mode")
 	}
-	c.Mode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Mode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
-	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data Identifier
-	bytesRead, err := c.Identifier.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.Identifier.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
 
