@@ -18,12 +18,14 @@ type WriteMpxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// ResponseMask (4 bytes): This field is the logical OR-ing of the RequestMask
+	// value contained in each SMB_COM_WRITE_MPX (section 2.2.4.26) received since the
+	// last sequenced SMB_COM_WRITE_MPX. The server responds only to the final
+	// (sequenced) command. This response contains the accumulated ResponseMask from
+	// all successfully received requests. The client uses the ResponseMask received to
+	// determine which packets, if any, MUST be retransmitted.
 	ResponseMask types.ULONG
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewWriteMpxResponse creates a new WriteMpxResponse structure
@@ -33,20 +35,13 @@ type WriteMpxResponse struct {
 func NewWriteMpxResponse() *WriteMpxResponse {
 	c := &WriteMpxResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		ResponseMask: types.ULONG(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_MPX)
 
 	return c
 }
-
-
 
 // Marshal marshals the WriteMpxResponse structure into a byte array
 //
@@ -81,23 +76,15 @@ func (c *WriteMpxResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter ResponseMask
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.ResponseMask))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -105,7 +92,7 @@ func (c *WriteMpxResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -137,34 +124,21 @@ func (c *WriteMpxResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter ResponseMask
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ResponseMask")
+		return offset, fmt.Errorf("rawParametersContent too short for ResponseMask")
 	}
-	c.ResponseMask = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.ResponseMask = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
