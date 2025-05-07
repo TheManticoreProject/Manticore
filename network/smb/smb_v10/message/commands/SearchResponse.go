@@ -18,13 +18,24 @@ type SearchResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// Count (2 bytes): The number of directory entries returned in this response
+	// message. This value MUST be less than or equal to the value of MaxCount in the
+	// initial request.
 	Count types.USHORT
 
 	// Data
-	BufferFormat types.UCHAR
-	DataLength types.USHORT
 
+	// BufferFormat (1 byte): This field MUST be 0x05, which indicates that a
+	// variable-size block is to follow.
+	// DataLength (2 bytes): The size, in bytes, of the DirectoryInformationData array,
+	// which follows. This field MUST be equal to 43 times the value of
+	// SMB_Parameters.Count.
+	// DirectoryInformationData (variable): Array of SMB_Directory_Information An array
+	// of zero or more SMB_Directory_Information records. The structure and contents of
+	// these records is specified below. Note that the SMB_Directory_Information record
+	// structure is a fixed 43 bytes in length.
+	SMB_Directory_Information types.SMB_STRING
 }
 
 // NewSearchResponse creates a new SearchResponse structure
@@ -34,21 +45,16 @@ type SearchResponse struct {
 func NewSearchResponse() *SearchResponse {
 	c := &SearchResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		Count: types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
-		DataLength: types.USHORT(0),
-
+		SMB_Directory_Information: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SEARCH)
 
 	return c
 }
-
-
 
 // Marshal marshals the SearchResponse structure into a byte array
 //
@@ -83,26 +89,22 @@ func (c *SearchResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
-	// Marshalling data DataLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data SMB_Directory_Information
+	marshalledSMB_Directory_Information, err := c.SMB_Directory_Information.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, marshalledSMB_Directory_Information...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter Count
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -110,7 +112,7 @@ func (c *SearchResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -146,37 +148,23 @@ func (c *SearchResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter Count
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Count")
+		return offset, fmt.Errorf("rawParametersContent too short for Count")
 	}
-	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
+
+	// Unmarshalling data SMB_Directory_Information
+	bytesRead, err = c.SMB_Directory_Information.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data DataLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataLength")
-	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
