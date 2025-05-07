@@ -18,16 +18,44 @@ type SearchRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// MaxCount (2 bytes): The maximum number of directory entries to return. This
+	// value represents the maximum number of entries across the entirety of the
+	// search, not just the initial response.
 	MaxCount types.USHORT
+
+	// SearchAttributes (2 bytes): An attribute mask used to specify the standard
+	// attributes a file MUST have in order to match the search. If the value of this
+	// field is 0x0000, then only normal files are returned. If the Volume Label
+	// attribute is set, the server MUST return only the volume label (the Volume Label
+	// attribute is exclusive). If the Directory, System, or Hidden attributes are
+	// specified, then those entries are returned in addition to the normal files.
+	// Exclusive search attributes (see section 2.2.1.2.4) can also be set.
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
 
 	// Data
-	BufferFormat1 types.UCHAR
-	FileName types.SMB_STRING
-	BufferFormat2 types.UCHAR
-	ResumeKeyLength types.USHORT
 
+	// BufferFormat1 (1 byte): This field MUST be 0x04, which indicates that a
+	// null-terminated SMB_STRING is to follow.
+	// FileName (variable): A null-terminated SMB_STRING. This is the full directory
+	// path (relative to the TID) of the file(s) being sought. Only the final component
+	// of the path MAY contain wildcards. This string MAY be the empty string.
+	FileName types.SMB_STRING
+
+	// BufferFormat2 (1 byte): This field MUST be 0x05, which indicates a variable
+	// block is to follow.
+	// ResumeKeyLength (2 bytes): This field MUST be either 0x0000 or 21 (0x0015). If
+	// the value of this field is 0x0000, this is an initial search request. The server
+	// MUST allocate resources to maintain search state so that subsequent requests MAY
+	// be processed. If the value of this field is 21 (0x0015), this request MUST be
+	// the continuation of a previous search, and the next field MUST contain a
+	// ResumeKey previously returned by the server.
+	// ResumeKey (variable): SMB_Resume_Key If the value of ResumeKeyLength is 21
+	// (0x0015), this field MUST contain a ResumeKey returned by the server in response
+	// to a previous SMB_COM_SEARCH request. The ResumeKey contains data used by both
+	// the client and the server to maintain the state of the search. The structure of the
+	// ResumeKey follows:
+	ResumeKey types.SMB_RESUME_KEY
 }
 
 // NewSearchRequest creates a new SearchRequest structure
@@ -37,24 +65,18 @@ type SearchRequest struct {
 func NewSearchRequest() *SearchRequest {
 	c := &SearchRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		MaxCount: types.USHORT(0),
+		MaxCount:         types.USHORT(0),
 		SearchAttributes: types.SMB_FILE_ATTRIBUTES{},
 
 		// Data
-		BufferFormat1: types.UCHAR(0),
-		FileName: types.SMB_STRING{},
-		BufferFormat2: types.UCHAR(0),
-		ResumeKeyLength: types.USHORT(0),
-
+		FileName:  types.SMB_STRING{},
+		ResumeKey: types.SMB_RESUME_KEY{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SEARCH)
 
 	return c
 }
-
-
 
 // Marshal marshals the SearchRequest structure into a byte array
 //
@@ -89,38 +111,37 @@ func (c *SearchRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat1))
-	
+
 	// Marshalling data FileName
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
-	// Marshalling data BufferFormat2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat2))
-	
-	// Marshalling data ResumeKeyLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ResumeKeyLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data ResumeKey
+	bytesStream, err = c.ResumeKey.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter MaxCount
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.MaxCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter SearchAttributes
-	
+	bytesStream, err = c.SearchAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -128,7 +149,7 @@ func (c *SearchRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -164,53 +185,37 @@ func (c *SearchRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter MaxCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
+		return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
 	}
-	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter SearchAttributes
-	
-	// Then unmarshal the data
-	offset = 0
-	
-	// Unmarshalling data BufferFormat1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat1")
-	}
-	c.BufferFormat1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.SearchAttributes.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
-	// Unmarshalling data BufferFormat2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat2")
+
+	// Then unmarshal the data
+	offset = 0
+
+	// Unmarshalling data FileName
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
-	c.BufferFormat2 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data ResumeKeyLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ResumeKeyLength")
+	offset += bytesRead
+
+	// Unmarshalling data ResumeKey
+	bytesRead, err = c.ResumeKey.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
-	c.ResumeKeyLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
