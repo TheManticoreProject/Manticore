@@ -18,15 +18,46 @@ type WriteAndCloseRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FID (2 bytes): This field MUST be a valid 16-bit unsigned integer indicating the
+	// file to which the data SHOULD be written.
 	FID types.USHORT
+
+	// CountOfBytesToWrite (2 bytes): This field is a 16-bit unsigned integer
+	// indicating the number of bytes to be written to the file. The client MUST ensure
+	// that the amount of data sent can fit in the negotiated maximum buffer size. If
+	// the value of this field is zero (0x0000), the server MUST truncate or extend the
+	// file to match the WriteOffsetInBytes.
 	CountOfBytesToWrite types.USHORT
+
+	// WriteOffsetInBytes  (4 bytes): This field is a 32-bit unsigned integer indicating
+	// the offset, in number of bytes, from the beginning of the file at which to begin
+	// writing to the file. The client MUST ensure that the amount of data sent can
+	// it in the negotiated maximum buffer size. Because this field is limited to 32-bits,
+	// this command is inappropriate for files that have 64-bit offsets.
 	WriteOffsetInBytes types.ULONG
+
+	// LastWriteTime (4 bytes): This field is a 32-bit unsigned integer indicating the
+	// number of seconds since Jan 1, 1970, 00:00:00.0. The server SHOULD set the last
+	// write time of the file represented by the FID to this value. If the value is
+	// zero (0x00000000), the server SHOULD use the current local time of the server to
+	// set the value. Failure to set the time MUST NOT result in an error response from
+	// the server.
 	LastWriteTime types.FILETIME
 
+	// Reserved (12 bytes): This field is optional. This field is reserved, and all
+	// entries MUST be zero (0x00000000). This field is used only in the 12-word version
+	// of the request.
+	Reserved [3]types.ULONG
+
 	// Data
+
+	// Pad (1 byte): The value of this field SHOULD be ignored. This is padding to
+	// force the byte alignment to a double word boundary.
 	Pad types.UCHAR
 
+	// Data (variable): The raw bytes to be written to the file.
+	Data []types.UCHAR
 }
 
 // NewWriteAndCloseRequest creates a new WriteAndCloseRequest structure
@@ -36,23 +67,21 @@ type WriteAndCloseRequest struct {
 func NewWriteAndCloseRequest() *WriteAndCloseRequest {
 	c := &WriteAndCloseRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		FID: types.USHORT(0),
+
+		FID:                 types.USHORT(0),
 		CountOfBytesToWrite: types.USHORT(0),
-		WriteOffsetInBytes: types.ULONG(0),
-		LastWriteTime: types.FILETIME{},
+		WriteOffsetInBytes:  types.ULONG(0),
+		LastWriteTime:       types.FILETIME{},
+		Reserved:            [3]types.ULONG{0, 0, 0},
 
 		// Data
 		Pad: types.UCHAR(0),
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_AND_CLOSE)
 
 	return c
 }
-
-
 
 // Marshal marshals the WriteAndCloseRequest structure into a byte array
 //
@@ -87,38 +116,47 @@ func (c *WriteAndCloseRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Marshalling data Pad
 	rawDataContent = append(rawDataContent, types.UCHAR(c.Pad))
-	
+
+	// Marshalling data Data
+	rawDataContent = append(rawDataContent, c.Data...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter CountOfBytesToWrite
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesToWrite))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter WriteOffsetInBytes
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.WriteOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter LastWriteTime
 	bytesStream, err := c.LastWriteTime.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
+	// Marshalling parameter Reserved
+	if c.Reserved != [3]types.ULONG{0, 0, 0} {
+		for _, reserved := range c.Reserved {
+			buf4 = make([]byte, 4)
+			binary.BigEndian.PutUint32(buf4, uint32(reserved))
+			rawParametersContent = append(rawParametersContent, buf4...)
+		}
+	}
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -126,7 +164,7 @@ func (c *WriteAndCloseRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -162,54 +200,63 @@ func (c *WriteAndCloseRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter CountOfBytesToWrite
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToWrite")
+		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToWrite")
 	}
-	c.CountOfBytesToWrite = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.CountOfBytesToWrite = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter WriteOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for WriteOffsetInBytes")
+		return offset, fmt.Errorf("rawParametersContent too short for WriteOffsetInBytes")
 	}
-	c.WriteOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.WriteOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter LastWriteTime
 	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err := c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
+	// Unmarshalling parameter Reserved
+	if c.GetParameters().WordCount == 12 {
+		if len(rawParametersContent) < offset+12 {
+			return offset, fmt.Errorf("rawParametersContent too short for Reserved")
+		}
+		c.Reserved = [3]types.ULONG{
+			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4])),
+			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset+4 : offset+8])),
+			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset+8 : offset+12])),
+		}
+		offset += 12
+	}
+
 	// Then unmarshal the data
 	offset = 0
-	
+
 	// Unmarshalling data Pad
 	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Pad")
+		return offset, fmt.Errorf("rawParametersContent too short for Pad")
 	}
 	c.Pad = types.UCHAR(rawDataContent[offset])
 	offset++
+
+	// Unmarshalling data Data
+	c.Data = rawDataContent[offset:]
 
 	return offset, nil
 }
