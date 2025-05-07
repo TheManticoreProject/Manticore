@@ -148,7 +148,10 @@ func TestSMB_NMPIPE_STATUS_String(t *testing.T) {
 func TestSMB_NMPIPE_STATUS_Marshal(t *testing.T) {
 	status := types.SMB_NMPIPE_STATUS{ICount: 5, Flags: 0x81}
 	expected := []byte{5, 0x81}
-	result := status.Marshal()
+	result, err := status.Marshal()
+	if err != nil {
+		t.Errorf("Expected Marshal() to return %v, got %v", expected, err)
+	}
 
 	if !bytes.Equal(result, expected) {
 		t.Errorf("Expected Marshal() to return %v, got %v", expected, result)

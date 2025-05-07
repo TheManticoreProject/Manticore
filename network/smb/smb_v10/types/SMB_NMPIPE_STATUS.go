@@ -106,8 +106,13 @@ func (s SMB_NMPIPE_STATUS) String() string {
 //
 // Returns:
 // - The byte array representing the SMB_NMPIPE_STATUS
-func (s SMB_NMPIPE_STATUS) Marshal() []byte {
-	return []byte{s.ICount, s.Flags}
+func (s SMB_NMPIPE_STATUS) Marshal() ([]byte, error) {
+	buf := make([]byte, 2)
+
+	buf[0] = s.ICount
+	buf[1] = s.Flags
+
+	return buf, nil
 }
 
 // Unmarshal unmarshals the SMB_NMPIPE_STATUS from a byte array
