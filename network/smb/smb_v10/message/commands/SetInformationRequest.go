@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
@@ -18,14 +17,24 @@ type SetInformationRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FileAttributes (2 bytes): This field is a 16-bit unsigned bit field encoded as
+	// SMB_FILE_ATTRIBUTES (section 2.2.4.10.1)
 	FileAttributes types.SMB_FILE_ATTRIBUTES
+
+	// LastWriteTime (4 bytes): The time of the last write to the file.
 	LastWriteTime types.FILETIME
 
-	// Data
-	BufferFormat types.UCHAR
-	FileName types.SMB_STRING
+	// Reserved (5 bytes): This field MUST be 0x0000000000000000.
+	Reserved [5]types.UCHAR
 
+	// Data
+
+	// BufferFormat (1 byte): This field MUST be 0x04.
+	// FileName (variable): A null-terminated string that represents the fully
+	// qualified name of the file relative to the supplied TID. This is the file for
+	// which attributes are set.
+	FileName types.SMB_STRING
 }
 
 // NewSetInformationRequest creates a new SetInformationRequest structure
@@ -35,22 +44,18 @@ type SetInformationRequest struct {
 func NewSetInformationRequest() *SetInformationRequest {
 	c := &SetInformationRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-		LastWriteTime: types.FILETIME{},
+		LastWriteTime:  types.FILETIME{},
+		Reserved:       [5]types.UCHAR{0, 0, 0, 0, 0},
 
 		// Data
-		BufferFormat: types.UCHAR(0),
 		FileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SET_INFORMATION)
 
 	return c
 }
-
-
 
 // Marshal marshals the SetInformationRequest structure into a byte array
 //
@@ -85,32 +90,35 @@ func (c *SetInformationRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
+
 	// Marshalling data FileName
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FileAttributes
-	
-	// Marshalling parameter LastWriteTime
-	bytesStream, err := c.LastWriteTime.Marshal()
+	bytesStream, err = c.FileAttributes.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
-	
+
+	// Marshalling parameter LastWriteTime
+	bytesStream, err = c.LastWriteTime.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, bytesStream...)
+
+	// Marshalling parameter Reserved
+	rawParametersContent = append(rawParametersContent, c.Reserved[:]...)
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -118,7 +126,7 @@ func (c *SetInformationRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -154,40 +162,38 @@ func (c *SetInformationRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FileAttributes
-	
-	// Unmarshalling parameter LastWriteTime
-	if len(rawParametersContent) < offset+8 {
-	    return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
-	}
-	bytesRead, err := c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
+	bytesRead, err = c.FileAttributes.Unmarshal(rawParametersContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
+	// Unmarshalling parameter LastWriteTime
+	if len(rawParametersContent) < offset+8 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
+	}
+	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
+
+	// Unmarshalling parameter Reserved
+	if len(rawParametersContent) < offset+10 {
+		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
+	}
+	copy(c.Reserved[:], rawParametersContent[offset:offset+10])
+	offset += 10
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
-	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data FileName
-	bytesRead, err := c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
 
