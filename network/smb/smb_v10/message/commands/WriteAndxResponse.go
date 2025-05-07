@@ -18,12 +18,18 @@ type WriteAndxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	AndXCommand  types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset   types.USHORT
-	Count        types.USHORT
-	Available    types.USHORT
-	Reserved     types.ULONG
+
+	// Count (2 bytes): The number of bytes written to the file.
+	Count types.USHORT
+
+	// Available (2 bytes): This field is valid when writing to named pipes or I/O
+	// devices. This field indicates the number of bytes remaining to be written after
+	// the requested write was completed. If the client wrote to a disk file, this
+	// field MUST be set to 0xFFFF.<62>
+	Available types.USHORT
+
+	// Reserved (4 bytes): This field MUST be 0x00000000.
+	Reserved types.ULONG
 }
 
 // NewWriteAndxResponse creates a new WriteAndxResponse structure
@@ -33,12 +39,9 @@ type WriteAndxResponse struct {
 func NewWriteAndxResponse() *WriteAndxResponse {
 	c := &WriteAndxResponse{
 		// Parameters
-		AndXCommand:  types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset:   types.USHORT(0),
-		Count:        types.USHORT(0),
-		Available:    types.USHORT(0),
-		Reserved:     types.ULONG(0),
+		Count:     types.USHORT(0),
+		Available: types.USHORT(0),
+		Reserved:  types.ULONG(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_ANDX)
@@ -88,19 +91,8 @@ func (c *WriteAndxResponse) Marshal() ([]byte, error) {
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
 
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-
-	// Marshalling parameter AndXOffset
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-
 	// Marshalling parameter Count
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
@@ -158,27 +150,6 @@ func (c *WriteAndxResponse) Unmarshal(data []byte) (int, error) {
 	// First unmarshal the parameters
 	offset = 0
 
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-		return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
-	offset += 2
-
 	// Unmarshalling parameter Count
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Count")
@@ -202,8 +173,7 @@ func (c *WriteAndxResponse) Unmarshal(data []byte) (int, error) {
 
 	// Then unmarshal the data
 	offset = 0
-
-	// No Data to unmarshal
+	// No data is sent in this message
 
 	return offset, nil
 }
