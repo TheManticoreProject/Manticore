@@ -1,28 +1,28 @@
 package commands
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
 // Transaction2Response
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/216e606a-eee1-4c3f-b88e-0eb14dc380b2
+// The SMB_COM_TRANSACTION2 response has two possible formats.
+// The standard format is used to return the results of the completed transaction.
+// A shortened interim response message is sent following the initial SMB_COM_TRANSACTION2
+// request if secondary request messages (SMB_COM_TRANSACTION2_SECONDARY) are pending.
+// Whenever a transaction request is split across multiple SMB requests, the server MUST
+// evaluate the initial SMB_COM_TRANSACTION2 request to determine whether or not it has
+// the resources necessary to process the transaction. It MUST also check for any other
+// errors it can detect based upon the initial request, and then send back an interim
+// response. The interim response advises the client as to whether it can send the rest
+// of the transaction to the server.
+// TODO: Implement the two possible formats
 type Transaction2Response struct {
 	command_interface.Command
-
-	// Parameters
-	WordCount types.UCHAR
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewTransaction2Response creates a new Transaction2Response structure
@@ -30,21 +30,12 @@ type Transaction2Response struct {
 // Returns:
 // - A pointer to the new Transaction2Response structure
 func NewTransaction2Response() *Transaction2Response {
-	c := &Transaction2Response{
-		// Parameters
-		WordCount: types.UCHAR(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
-	}
+	c := &Transaction2Response{}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TRANSACTION2)
 
 	return c
 }
-
-
 
 // Marshal marshals the Transaction2Response structure into a byte array
 //
@@ -79,18 +70,10 @@ func (c *Transaction2Response) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -98,7 +81,7 @@ func (c *Transaction2Response) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -125,32 +108,20 @@ func (c *Transaction2Response) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawParametersContent := c.GetParameters().GetBytes()
+	_ = c.GetParameters().GetBytes()
 	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+	// No parameters are sent in this message
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
