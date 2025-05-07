@@ -18,13 +18,20 @@ type TreeConnectResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// MaxBufferSize (2 bytes): The maximum size, in bytes, of the largest SMB message
+	// that the server can receive. This is the size of the largest SMB message that
+	// the client can send to the server. SMB message size includes the size of the SMB
+	// Header (section 2.2.3.1), parameter, and data blocks. This size MUST NOT include
+	// any transport-layer framing or other transport-layer data.
 	MaxBufferSize types.USHORT
+
+	// TID (2 bytes): The newly generated Tree ID, used in subsequent CIFS client
+	// requests to refer to a resource relative to the SMB_Data.Bytes.Path specified in
+	// the request. Most access to the server requires a valid TID, whether the resource
+	// is password protected or not. The value 0xFFFF is reserved; the server MUST NOT
+	// return a TID value of 0xFFFF.
 	TID types.USHORT
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewTreeConnectResponse creates a new TreeConnectResponse structure
@@ -34,21 +41,14 @@ type TreeConnectResponse struct {
 func NewTreeConnectResponse() *TreeConnectResponse {
 	c := &TreeConnectResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		MaxBufferSize: types.USHORT(0),
-		TID: types.USHORT(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
+		TID:           types.USHORT(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TREE_CONNECT)
 
 	return c
 }
-
-
 
 // Marshal marshals the TreeConnectResponse structure into a byte array
 //
@@ -83,28 +83,20 @@ func (c *TreeConnectResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter MaxBufferSize
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.MaxBufferSize))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter TID
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.TID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -112,7 +104,7 @@ func (c *TreeConnectResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -144,41 +136,28 @@ func (c *TreeConnectResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter MaxBufferSize
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for MaxBufferSize")
+		return offset, fmt.Errorf("rawParametersContent too short for MaxBufferSize")
 	}
-	c.MaxBufferSize = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.MaxBufferSize = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter TID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for TID")
+		return offset, fmt.Errorf("rawParametersContent too short for TID")
 	}
-	c.TID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.TID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
