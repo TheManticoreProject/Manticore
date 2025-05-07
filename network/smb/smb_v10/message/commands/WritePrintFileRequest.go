@@ -18,13 +18,17 @@ type WritePrintFileRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FID: This field MUST be a valid FID that is created using the
+	// SMB_COM_OPEN_PRINT_FILE command.
 	FID types.USHORT
 
 	// Data
-	BufferFormat types.UCHAR
-	DataLength types.USHORT
 
+	// BufferFormat (1 byte): This field MUST be 0x01.
+	// DataLength (2 bytes): Length, in bytes, of the following data block.
+	// Data (variable): STRING Bytes to be written to the spool file indicated by FID.
+	Data types.SMB_STRING
 }
 
 // NewWritePrintFileRequest creates a new WritePrintFileRequest structure
@@ -34,21 +38,16 @@ type WritePrintFileRequest struct {
 func NewWritePrintFileRequest() *WritePrintFileRequest {
 	c := &WritePrintFileRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		FID: types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
-		DataLength: types.USHORT(0),
-
+		Data: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_PRINT_FILE)
 
 	return c
 }
-
-
 
 // Marshal marshals the WritePrintFileRequest structure into a byte array
 //
@@ -83,26 +82,23 @@ func (c *WritePrintFileRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
-	// Marshalling data DataLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data
+	c.Data.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
+	bytesStream, err := c.Data.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -110,7 +106,7 @@ func (c *WritePrintFileRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -146,37 +142,23 @@ func (c *WritePrintFileRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
+
+	// Unmarshalling data Data
+	bytesRead, err = c.Data.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data DataLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataLength")
-	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
