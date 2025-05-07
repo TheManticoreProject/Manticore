@@ -18,13 +18,23 @@ type ReadResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// CountOfBytesReturned (2 bytes): The actual number of bytes returned to the
+	// client. This MUST be equal to CountOfBytesToRead unless the end of file was
+	// reached before reading CoutOfBytesToRead bytes or the ReadOffsetInBytes pointed
+	// at or beyond the end of file.
 	CountOfBytesReturned types.USHORT
 
-	// Data
-	BufferFormat types.UCHAR
-	CountOfBytesRead types.USHORT
+	// Reserved (4 bytes): Reserved. MUST be 0x00000000.
+	Reserved types.USHORT
 
+	// Data
+
+	// BufferFormat (1 byte): This field MUST be 0x01.
+	// CountOfBytesRead (2 bytes): The number of bytes read that are contained in the
+	// following array of bytes.
+	// Bytes (variable): The actual bytes read from the file.
+	Bytes types.SMB_STRING
 }
 
 // NewReadResponse creates a new ReadResponse structure
@@ -34,21 +44,16 @@ type ReadResponse struct {
 func NewReadResponse() *ReadResponse {
 	c := &ReadResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		CountOfBytesReturned: types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
-		CountOfBytesRead: types.USHORT(0),
-
+		Bytes: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_READ)
 
 	return c
 }
-
-
 
 // Marshal marshals the ReadResponse structure into a byte array
 //
@@ -83,26 +88,22 @@ func (c *ReadResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
-	// Marshalling data CountOfBytesRead
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesRead))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data Bytes
+	marshalledBytes, err := c.Bytes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, marshalledBytes...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter CountOfBytesReturned
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesReturned))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -110,7 +111,7 @@ func (c *ReadResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -146,37 +147,23 @@ func (c *ReadResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter CountOfBytesReturned
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesReturned")
+		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesReturned")
 	}
-	c.CountOfBytesReturned = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.CountOfBytesReturned = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
+
+	// Unmarshalling data Bytes
+	bytesRead, err = c.Bytes.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
 	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data CountOfBytesRead
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesRead")
-	}
-	c.CountOfBytesRead = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
