@@ -204,7 +204,7 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
@@ -271,7 +271,7 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileAttributes")
 	}
-	bytesRead, err = c.FileAttributes.Unmarshal(rawParametersContent[offset : offset+2])
+	_, err = c.FileAttributes.Unmarshal(rawParametersContent[offset : offset+2])
 	if err != nil {
 		return 0, err
 	}
