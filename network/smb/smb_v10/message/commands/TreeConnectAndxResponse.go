@@ -18,16 +18,28 @@ type TreeConnectAndxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	AndXCommand types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset types.USHORT
+
+	// OptionalSupport (2 bytes): A 16-bit field. The following OptionalSupport field
+	// flags are defined. Any combination of the following flags MUST be supported. All
+	// undefined values are considered reserved. The server SHOULD set them to 0, and
+	// the client MUST ignore them.
 	OptionalSupport types.USHORT
 
 	// Data
-	Service types.OEM_STRING
-	NativeFileSystem types.SMB_STRING
 
+	// Service (variable): The type of the shared resource to which the TID is connected.
+	// The Service field MUST be encoded as a null-terminated array of OEM characters, even
+	// if the client and server have negotiated to use Unicode strings. The valid values for
+	// this field are as follows.
+	Service types.OEM_STRING
+
+	// NativeFileSystem (variable): The name of the file system on the local resource to
+	// which the returned TID is connected. If SMB_FLAGS2_UNICODE is set in the Flags2 field
+	// of the SMB Header of the response, this value MUST be a null-terminated string of Unicode
+	// characters. Otherwise, this field MUST be a null-terminated string of OEM characters.
+	// For resources that are not backed by a file system, such as the IPC$ share used for
+	// named pipes, this field MUST be set to the empty string.
+	NativeFileSystem types.SMB_STRING
 }
 
 // NewTreeConnectAndxResponse creates a new TreeConnectAndxResponse structure
@@ -37,16 +49,11 @@ type TreeConnectAndxResponse struct {
 func NewTreeConnectAndxResponse() *TreeConnectAndxResponse {
 	c := &TreeConnectAndxResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AndXCommand: types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset: types.USHORT(0),
 		OptionalSupport: types.USHORT(0),
 
 		// Data
-		Service: types.OEM_STRING{},
+		Service:          types.OEM_STRING{},
 		NativeFileSystem: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TREE_CONNECT_ANDX)
@@ -54,13 +61,10 @@ func NewTreeConnectAndxResponse() *TreeConnectAndxResponse {
 	return c
 }
 
-
 // IsAndX returns true if the command is an AndX
 func (c *TreeConnectAndxResponse) IsAndX() bool {
 	return true
 }
-
-
 
 // Marshal marshals the TreeConnectAndxResponse structure into a byte array
 //
@@ -95,38 +99,29 @@ func (c *TreeConnectAndxResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Marshalling data Service
-	
-	// Marshalling data NativeFileSystem
-	bytesStream, err := c.NativeFileSystem.Marshal()
+	bytesStream, err := c.Service.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
+	// Marshalling data NativeFileSystem
+	bytesStream, err = c.NativeFileSystem.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-	
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-	
-	// Marshalling parameter AndXOffset
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter OptionalSupport
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.OptionalSupport))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -134,7 +129,7 @@ func (c *TreeConnectAndxResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -170,51 +165,28 @@ func (c *TreeConnectAndxResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling parameter OptionalSupport
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for OptionalSupport")
+		return offset, fmt.Errorf("rawParametersContent too short for OptionalSupport")
 	}
-	c.OptionalSupport = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.OptionalSupport = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
+
 	// Unmarshalling data Service
-	
-	// Unmarshalling data NativeFileSystem
-	bytesRead, err := c.NativeFileSystem.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.Service.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
+	}
+	offset += bytesRead
+
+	// Unmarshalling data NativeFileSystem
+	bytesRead, err = c.NativeFileSystem.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
 	}
 	offset += bytesRead
 
