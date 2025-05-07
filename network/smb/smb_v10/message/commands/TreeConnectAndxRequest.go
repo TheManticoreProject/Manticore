@@ -18,18 +18,58 @@ type TreeConnectAndxRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	AndXCommand types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset types.USHORT
+
+	// Flags (2 bytes): A 16-bit field used to modify the SMB_COM_TREE_CONNECT_ANDX
+	// Request (section 2.2.4.55.1). The client MUST set reserved values to 0, and the
+	// server MUST ignore them.
 	Flags types.USHORT
+
+	// PasswordLength (2 bytes): This field MUST be the length, in bytes, of the
+	// SMB_Data.Bytes.Password field.
 	PasswordLength types.USHORT
 
 	// Data
-	Pad []types.UCHAR
-	Path types.SMB_STRING
-	Service types.OEM_STRING
 
+	// Password (variable): An array of bytes.
+	//
+	// - If the server is operating in share level access control mode and plaintext
+	// passwords have been negotiated, then the Password MUST be an OEM_STRING
+	// representing the user's password in plaintext.
+	//
+	// - If the server is operating in share level access control mode and
+	// challenge/response authentication has been negotiated, then the Password
+	// MUST be an authentication response.
+	//
+	// - If authentication is not used, then the Password SHOULD be a single null
+	// padding byte (which takes the place of the Pad[] byte).
+	//
+	// The SMB_Parameters.Bytes.PasswordLength MUST be the full length of the
+	// Password field. If the Password is the null padding byte, the password
+	// length is 1.
+	Password []types.UCHAR
+
+	// Pad (variable): Padding bytes. If Unicode support has been enabled and
+	// SMB_FLAGS2_UNICODE is set in SMB_Header.Flags2, this field MUST contain zero or
+	// one null padding bytes as needed to ensure that the Path string is aligned on a
+	// 16-bit boundary.
+	Pad []types.UCHAR
+
+	// Path (variable): A null-terminated string that represents the server and share
+	// name of the resource to which the client attempts to connect. This field MUST be
+	// encoded using Universal Naming Convention (UNC) syntax. If SMB_FLAGS2_UNICODE is
+	// set in the Flags2 field of the SMB Header of the request, the string MUST be a
+	// null-terminated array of 16-bit Unicode characters. Otherwise, the string MUST
+	// be a null-terminated array of OEM characters. If the string consists of Unicode
+	// characters, this field MUST be aligned to start on a 2-byte boundary from the
+	// start of the SMB Header. A path in UNC syntax would be represented by a string
+	// in the following form:
+	Path types.SMB_STRING
+
+	// Service (variable): The type of resource that the client attempts to access.
+	// This field MUST be a null-terminated array of OEM characters even if the client
+	// and server have negotiated to use Unicode strings. The valid values for this
+	// field are as follows:
+	Service types.OEM_STRING
 }
 
 // NewTreeConnectAndxRequest creates a new TreeConnectAndxRequest structure
@@ -39,18 +79,13 @@ type TreeConnectAndxRequest struct {
 func NewTreeConnectAndxRequest() *TreeConnectAndxRequest {
 	c := &TreeConnectAndxRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AndXCommand: types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset: types.USHORT(0),
-		Flags: types.USHORT(0),
+		Flags:          types.USHORT(0),
 		PasswordLength: types.USHORT(0),
 
 		// Data
-		Pad: []types.UCHAR{},
-		Path: types.SMB_STRING{},
+		Pad:     []types.UCHAR{},
+		Path:    types.SMB_STRING{},
 		Service: types.OEM_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TREE_CONNECT_ANDX)
@@ -58,13 +93,10 @@ func NewTreeConnectAndxRequest() *TreeConnectAndxRequest {
 	return c
 }
 
-
 // IsAndX returns true if the command is an AndX
 func (c *TreeConnectAndxRequest) IsAndX() bool {
 	return true
 }
-
-
 
 // Marshal marshals the TreeConnectAndxRequest structure into a byte array
 //
@@ -99,46 +131,41 @@ func (c *TreeConnectAndxRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
+	// Marshalling data Password
+	rawDataContent = append(rawDataContent, c.Password...)
+	c.PasswordLength = types.USHORT(len(c.Password))
+
 	// Marshalling data Pad
-	rawDataContent = append(rawDataContent, types.UCHAR(c.Pad))
-	
+	rawDataContent = append(rawDataContent, c.Pad...)
+
 	// Marshalling data Path
 	bytesStream, err := c.Path.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Marshalling data Service
-	
+	bytesStream, err = c.Service.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawDataContent = append(rawDataContent, bytesStream...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-	
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-	
-	// Marshalling parameter AndXOffset
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Flags
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Flags))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter PasswordLength
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.PasswordLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -146,7 +173,7 @@ func (c *TreeConnectAndxRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -182,67 +209,51 @@ func (c *TreeConnectAndxRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling parameter Flags
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Flags")
+		return offset, fmt.Errorf("rawParametersContent too short for Flags")
 	}
-	c.Flags = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Flags = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter PasswordLength
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for PasswordLength")
+		return offset, fmt.Errorf("rawParametersContent too short for PasswordLength")
 	}
-	c.PasswordLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.PasswordLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
+
+	// Unmarshalling data Password
+	if len(rawDataContent) < offset+int(c.PasswordLength) {
+		return offset, fmt.Errorf("rawParametersContent too short for Password")
+	}
+	c.Password = rawDataContent[offset : offset+int(c.PasswordLength)]
+	offset += int(c.PasswordLength)
+
 	// Unmarshalling data Pad
 	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Pad")
+		return offset, fmt.Errorf("rawParametersContent too short for Pad")
 	}
-	c.Pad = types.UCHAR(rawDataContent[offset])
+	c.Pad = rawDataContent[offset : offset+1]
 	offset++
-	
+
 	// Unmarshalling data Path
-	bytesRead, err := c.Path.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.Path.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling data Service
+	bytesRead, err = c.Service.Unmarshal(rawDataContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	return offset, nil
 }
