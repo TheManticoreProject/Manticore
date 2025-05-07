@@ -56,7 +56,6 @@ type WriteAndUnlockRequest struct {
 func NewWriteAndUnlockRequest() *WriteAndUnlockRequest {
 	c := &WriteAndUnlockRequest{
 		// Parameters
-
 		FID:                                 types.USHORT(0),
 		CountOfBytesToWrite:                 types.USHORT(0),
 		WriteOffsetInBytes:                  types.ULONG(0),
@@ -107,10 +106,11 @@ func (c *WriteAndUnlockRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data Data
 	c.Data.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
-	rawDataContent, err := c.Data.Marshal()
+	byteStream, err := c.Data.Marshal()
 	if err != nil {
 		return nil, err
 	}
+	rawDataContent = append(rawDataContent, byteStream...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -170,7 +170,7 @@ func (c *WriteAndUnlockRequest) Unmarshal(data []byte) (int, error) {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
