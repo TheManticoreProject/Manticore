@@ -18,20 +18,68 @@ type IoctlResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// TotalParameterCount (2 bytes): The total number of IOCTL parameter bytes that
+	// the server sends to the client in this response. Parameter bytes for an IOCTL
+	// are carried within the SMB_Data.Parameters field of the SMB_COM_IOCTL request.
+	// This value MUST be the same as ParameterCount, and this value MUST be less than
+	// or equal to the MaxParameterCount field value in the client's request.
 	TotalParameterCount types.USHORT
+
+	// TotalDataCount (2 bytes): The total number of IOCTL data bytes that the server
+	// sends to the client in this response. Data bytes for an IOCTL are carried within
+	// the SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the
+	// same as DataCount, and this value MUST be less than or equal to the MaxDataCount
+	// field value in the client's request.
 	TotalDataCount types.USHORT
+
+	// ParameterCount (2 bytes): The total number of IOCTL parameter bytes that the
+	// server sends to the client in this response. Parameter bytes for an IOCTL are
+	// carried within the SMB_Data.Parameters field of the SMB_COM_IOCTL request. This
+	// value MUST be the same as TotalParameterCount and this value MUST be less than
+	// or equal to the MaxParameterCount field value in the client's request.
 	ParameterCount types.USHORT
+
+	// ParameterOffset (2 bytes): This field MUST contain the number of bytes from the
+	// start of the SMB Header (section 2.2.3.1) to the start of the
+	// SMB_Data.Parameters field. Client implementations MUST use this value to locate
+	// the IOCTL parameter block within the response.
 	ParameterOffset types.USHORT
+
 	ParameterDisplacement types.USHORT
+
+	// DataCount (2 bytes): The total number of IOCTL data bytes that the server sends
+	// to the client in this response. Data bytes for an IOCTL are carried within the
+	// SMB_Data.Data field of the SMB_COM_IOCTL request. This value MUST be the same as
+	// TotalDataCount, and this value MUST be less than or equal to the MaxDataCount
+	// field value of the client's request.
 	DataCount types.USHORT
+
+	// DataOffset (2 bytes): This field MUST be the number of bytes from the start of
+	// the SMB Header of the response to the start of the SMB_Data.Data field. Client
+	// implementations MUST use this value to locate the IOCTL data block within the
+	// response.
 	DataOffset types.USHORT
+
+	// DataDisplacement (2 bytes): The server SHOULD set the value of this field to
+	// 0x0000. The client MUST ignore the value of this field.
 	DataDisplacement types.USHORT
 
 	// Data
+
+	// Pad1 (variable): An array of padding bytes used to align the next field to a 16-
+	// or 32-bit boundary.
 	Pad1 []types.UCHAR
+
+	// Parameters (variable): IOCTL parameter bytes. The contents are implementation-dependent.
+	Parameters []types.UCHAR
+
+	// Pad2 (variable): An array of padding bytes used to align the next field to a 16-
+	// or 32-bit boundary.
 	Pad2 []types.UCHAR
 
+	// Data (variable): IOCTL data bytes. The contents are implementation-dependent.
+	Data []types.UCHAR
 }
 
 // NewIoctlResponse creates a new IoctlResponse structure
@@ -41,28 +89,26 @@ type IoctlResponse struct {
 func NewIoctlResponse() *IoctlResponse {
 	c := &IoctlResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		TotalParameterCount: types.USHORT(0),
-		TotalDataCount: types.USHORT(0),
-		ParameterCount: types.USHORT(0),
-		ParameterOffset: types.USHORT(0),
+		TotalParameterCount:   types.USHORT(0),
+		TotalDataCount:        types.USHORT(0),
+		ParameterCount:        types.USHORT(0),
+		ParameterOffset:       types.USHORT(0),
 		ParameterDisplacement: types.USHORT(0),
-		DataCount: types.USHORT(0),
-		DataOffset: types.USHORT(0),
-		DataDisplacement: types.USHORT(0),
+		DataCount:             types.USHORT(0),
+		DataOffset:            types.USHORT(0),
+		DataDisplacement:      types.USHORT(0),
 
 		// Data
-		Pad1: []types.UCHAR{},
-		Pad2: []types.UCHAR{},
-
+		Pad1:       []types.UCHAR{},
+		Parameters: []types.UCHAR{},
+		Pad2:       []types.UCHAR{},
+		Data:       []types.UCHAR{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_IOCTL)
 
 	return c
 }
-
-
 
 // Marshal marshals the IoctlResponse structure into a byte array
 //
@@ -97,59 +143,62 @@ func (c *IoctlResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Marshalling data Pad1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.Pad1))
-	
+	rawDataContent = append(rawDataContent, c.Pad1...)
+
+	// Marshalling data Parameters
+	rawDataContent = append(rawDataContent, c.Parameters...)
+
 	// Marshalling data Pad2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.Pad2))
-	
+	rawDataContent = append(rawDataContent, c.Pad2...)
+
+	// Marshalling data Data
+	rawDataContent = append(rawDataContent, c.Data...)
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter TotalParameterCount
 	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.TotalParameterCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter TotalDataCount
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.TotalDataCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter ParameterCount
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.ParameterCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter ParameterOffset
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.ParameterOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter ParameterDisplacement
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.ParameterDisplacement))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataCount
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataOffset
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataDisplacement
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataDisplacement))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -157,7 +206,7 @@ func (c *IoctlResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -193,86 +242,93 @@ func (c *IoctlResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter TotalParameterCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for TotalParameterCount")
+		return offset, fmt.Errorf("rawParametersContent too short for TotalParameterCount")
 	}
-	c.TotalParameterCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.TotalParameterCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter TotalDataCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for TotalDataCount")
+		return offset, fmt.Errorf("rawParametersContent too short for TotalDataCount")
 	}
-	c.TotalDataCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.TotalDataCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter ParameterCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ParameterCount")
+		return offset, fmt.Errorf("rawParametersContent too short for ParameterCount")
 	}
-	c.ParameterCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.ParameterCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter ParameterOffset
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ParameterOffset")
+		return offset, fmt.Errorf("rawParametersContent too short for ParameterOffset")
 	}
-	c.ParameterOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.ParameterOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter ParameterDisplacement
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ParameterDisplacement")
+		return offset, fmt.Errorf("rawParametersContent too short for ParameterDisplacement")
 	}
-	c.ParameterDisplacement = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.ParameterDisplacement = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataCount
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataCount")
+		return offset, fmt.Errorf("rawParametersContent too short for DataCount")
 	}
-	c.DataCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
+		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataDisplacement
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataDisplacement")
+		return offset, fmt.Errorf("rawParametersContent too short for DataDisplacement")
 	}
-	c.DataDisplacement = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataDisplacement = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
+
 	// Unmarshalling data Pad1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Pad1")
+	if len(rawDataContent) < offset+int(c.ParameterOffset) {
+		return offset, fmt.Errorf("rawDataContent too short for Pad1")
 	}
-	c.Pad1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
+	offset += int(c.ParameterOffset)
+
+	// Unmarshalling data Parameters
+	if len(rawDataContent) < offset+int(c.ParameterCount) {
+		return offset, fmt.Errorf("rawDataContent too short for Parameters")
+	}
+	c.Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
+	offset += int(c.ParameterCount)
+
 	// Unmarshalling data Pad2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Pad2")
+	if len(rawDataContent) < offset+int(c.DataOffset) {
+		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
-	c.Pad2 = types.UCHAR(rawDataContent[offset])
-	offset++
+	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
+	offset += int(c.DataOffset)
+
+	// Unmarshalling data Data
+	if len(rawDataContent) < offset+int(c.DataCount) {
+		return offset, fmt.Errorf("rawDataContent too short for Data")
+	}
+	c.Data = rawDataContent[offset : offset+int(c.DataCount)]
+	offset += int(c.DataCount)
 
 	return offset, nil
 }
