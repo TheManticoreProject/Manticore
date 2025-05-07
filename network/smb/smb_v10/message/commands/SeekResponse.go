@@ -18,12 +18,12 @@ type SeekResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// The response returns the new file pointer in Offset, expressed as the number of
+	// bytes from the start of the file. The Offset MAY be beyond the current end of
+	// file. An attempt to seek to before the start of file sets the current file
+	// pointer to the start of the file (0x00000000).
 	Offset types.ULONG
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewSeekResponse creates a new SeekResponse structure
@@ -33,20 +33,13 @@ type SeekResponse struct {
 func NewSeekResponse() *SeekResponse {
 	c := &SeekResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		Offset: types.ULONG(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SEEK)
 
 	return c
 }
-
-
 
 // Marshal marshals the SeekResponse structure into a byte array
 //
@@ -81,23 +74,15 @@ func (c *SeekResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter Offset
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.Offset))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -105,7 +90,7 @@ func (c *SeekResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -137,34 +122,21 @@ func (c *SeekResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter Offset
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Offset")
+		return offset, fmt.Errorf("rawParametersContent too short for Offset")
 	}
-	c.Offset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.Offset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
