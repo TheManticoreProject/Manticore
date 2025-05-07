@@ -21,6 +21,23 @@ func NewSMB_DATE() *SMB_DATE {
 	return &SMB_DATE{}
 }
 
+// NewSMB_DATEFromDate creates a new SMB_DATE structure from a date
+//
+// Parameters:
+// - year: The year of the date
+// - month: The month of the date
+// - day: The day of the date
+//
+// Returns:
+// - The new SMB_DATE structure
+func NewSMB_DATEFromDate(year int, month int, day int) *SMB_DATE {
+	return &SMB_DATE{
+		Year:  uint16(year),
+		Month: uint8(month),
+		Day:   uint8(day),
+	}
+}
+
 // Marshal marshals the SMB_DATE structure
 //
 // Returns:

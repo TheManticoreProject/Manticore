@@ -37,7 +37,7 @@ func TestSMB_DATE_Marshal(t *testing.T) {
 				Day:   15,
 			},
 			expected: []byte{
-				0xAD, 0x54, // (2023-1980)<<9 | 5<<5 | 15 = 0x54AD
+				0xAF, 0x56, // (2023-1980)<<9 | 5<<5 | 15 = 0x56AF
 			},
 		},
 		{
@@ -59,7 +59,7 @@ func TestSMB_DATE_Marshal(t *testing.T) {
 				Day:   31,
 			},
 			expected: []byte{
-				0x9F, 0xFE, // (2107-1980)<<9 | 12<<5 | 31 = 0xFE9F
+				0x9F, 0xFF, // (2107-1980)<<9 | 12<<5 | 31 = 0xFf9F
 			},
 		},
 	}
@@ -86,7 +86,7 @@ func TestSMB_DATE_Unmarshal(t *testing.T) {
 	}{
 		{
 			name:  "Basic Date",
-			input: []byte{0xAD, 0x54}, // (2023-1980)<<9 | 5<<5 | 15 = 0x54AD
+			input: []byte{0xAF, 0x56}, // (2023-1980)<<9 | 5<<5 | 15 = 0x56AF
 			expected: types.SMB_DATE{
 				Year:  2023,
 				Month: 5,
@@ -104,7 +104,7 @@ func TestSMB_DATE_Unmarshal(t *testing.T) {
 		},
 		{
 			name:  "Maximum Values",
-			input: []byte{0x9F, 0xFE}, // (2107-1980)<<9 | 12<<5 | 31 = 0xFE9F
+			input: []byte{0x9F, 0xFF}, // (2107-1980)<<9 | 12<<5 | 31 = 0xFF9F
 			expected: types.SMB_DATE{
 				Year:  2107,
 				Month: 12,
