@@ -139,6 +139,63 @@ func TestFILETIME_Unmarshal(t *testing.T) {
 	}
 }
 
+func TestNewFILETIMEFromTime(t *testing.T) {
+	testCases := []struct {
+		name          string
+		inputTime     time.Time
+		expectedInt64 int64
+		expectedLow   uint32
+		expectedHigh  uint32
+	}{
+		{
+			name:          "Aug 27, 2011 23:21:49.781250000 UTC",
+			inputTime:     time.Date(2011, time.August, 27, 23, 21, 49, 781250000, time.UTC),
+			expectedInt64: int64(0x01cc651018db5a14),
+			expectedLow:   uint32(0x18db5a14),
+			expectedHigh:  uint32(0x01cc6510),
+		},
+		{
+			name:          "Jan 1, 2000 00:00:00 UTC",
+			inputTime:     time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC),
+			expectedInt64: int64(0x01bf53eb256d4000),
+			expectedLow:   uint32(0x256d4000),
+			expectedHigh:  uint32(0x01bf53eb),
+		},
+		{
+			name:          "Dec 31, 2020 23:59:59 UTC",
+			inputTime:     time.Date(2020, time.December, 31, 23, 59, 59, 0, time.UTC),
+			expectedInt64: int64(0x01d6dfd10b9ce980),
+			expectedLow:   uint32(0x0b9ce980),
+			expectedHigh:  uint32(0x01d6dfd1),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fileTime := data_structures.NewFILETIMEFromTime(tc.inputTime)
+
+			// Check that the int64 representation matches
+			if got := fileTime.ToInt64(); got != tc.expectedInt64 {
+				t.Errorf("ToInt64() = 0x%016x, want 0x%016x", got, tc.expectedInt64)
+			}
+
+			// Check that the high and low parts match
+			if fileTime.DwLowDateTime != tc.expectedLow {
+				t.Errorf("DwLowDateTime = 0x%08x, want 0x%08x", fileTime.DwLowDateTime, tc.expectedLow)
+			}
+
+			if fileTime.DwHighDateTime != tc.expectedHigh {
+				t.Errorf("DwHighDateTime = 0x%08x, want 0x%08x", fileTime.DwHighDateTime, tc.expectedHigh)
+			}
+
+			// Check that converting back to time.Time works correctly
+			if gotTime := fileTime.GetTime(); !gotTime.Equal(tc.inputTime) {
+				t.Errorf("GetTime() = %v, want %v", gotTime, tc.inputTime)
+			}
+		})
+	}
+}
+
 func TestFILETIME_MarshalUnmarshalInvolution(t *testing.T) {
 	// Create an FILETIME instance with known values
 	originalTime := &data_structures.FILETIME{

@@ -19,6 +19,21 @@ type FILETIME struct {
 	DwHighDateTime uint32
 }
 
+// NewFILETIMEFromTime creates a new FILETIME structure from a time.Time value.
+//
+// Parameters:
+// - t: The time.Time value to create the FILETIME structure from
+//
+// Returns:
+// - A pointer to the new FILETIME structure
+func NewFILETIMEFromTime(t time.Time) *FILETIME {
+	value := (t.UnixNano() / 100) + UnixTimestampIn100NsIntervals
+	return &FILETIME{
+		DwLowDateTime:  uint32(value & 0xFFFFFFFF),
+		DwHighDateTime: uint32((value >> 32) & 0xFFFFFFFF),
+	}
+}
+
 // ToInt64 returns the int64 representation of the FILETIME structure.
 //
 // Returns:
