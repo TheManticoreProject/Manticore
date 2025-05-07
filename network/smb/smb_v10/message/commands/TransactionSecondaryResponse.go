@@ -1,26 +1,17 @@
 package commands
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
 // TransactionSecondaryResponse
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/5130e027-1ad0-494c-a280-39d643c21a6c
 type TransactionSecondaryResponse struct {
 	command_interface.Command
-
-	// Parameters
-
-	// Data
-
 }
 
 // NewTransactionSecondaryResponse creates a new TransactionSecondaryResponse structure
@@ -28,19 +19,12 @@ type TransactionSecondaryResponse struct {
 // Returns:
 // - A pointer to the new TransactionSecondaryResponse structure
 func NewTransactionSecondaryResponse() *TransactionSecondaryResponse {
-	c := &TransactionSecondaryResponse{
-		// Parameters
-
-		// Data
-
-	}
+	c := &TransactionSecondaryResponse{}
 
 	c.Command.SetCommandCode(codes.SMB_COM_TRANSACTION_SECONDARY)
 
 	return c
 }
-
-
 
 // Marshal marshals the TransactionSecondaryResponse structure into a byte array
 //
@@ -75,10 +59,10 @@ func (c *TransactionSecondaryResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -86,7 +70,7 @@ func (c *TransactionSecondaryResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -113,18 +97,20 @@ func (c *TransactionSecondaryResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawParametersContent := c.GetParameters().GetBytes()
+	_ = c.GetParameters().GetBytes()
 	bytesRead, err = c.GetData().Unmarshal(data[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
+	// No parameters are sent in this message
+
 	// Then unmarshal the data
 	offset = 0
+	// No data is sent in this message
 
 	return offset, nil
 }
