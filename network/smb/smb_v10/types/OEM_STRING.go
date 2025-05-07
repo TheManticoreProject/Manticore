@@ -20,6 +20,23 @@ func NewOEM_STRING() *OEM_STRING {
 	}
 }
 
+// NewOEM_STRINGFromString creates a new OEM_STRING from a string
+//
+// Parameters:
+// - str: The string to create the OEM_STRING from
+//
+// Returns:
+// - The new OEM_STRING
+func NewOEM_STRINGFromString(str string) *OEM_STRING {
+	return &OEM_STRING{
+		SMB_STRING: SMB_STRING{
+			BufferFormat: SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING,
+			Length:       uint16(len(str)),
+			Buffer:       []UCHAR(str),
+		},
+	}
+}
+
 // Marshal marshals the SMB_RESUME_KEY structure
 //
 // Returns:
