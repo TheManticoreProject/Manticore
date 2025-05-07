@@ -18,14 +18,20 @@ type UnlockByteRangeRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FID (2 bytes): This field MUST be a valid 16-bit signed integer indicating the
+	// file from which the data MUST be read.
 	FID types.SHORT
+
+	// CountOfBytesToUnlock (4 bytes): This field is a 32-bit unsigned integer
+	// indicating the number of contiguous bytes to be unlocked.
 	CountOfBytesToUnlock types.ULONG
+
+	// UnlockOffsetInBytes (4 bytes): This field is a 32-bit unsigned integer
+	// indicating the offset, in number of bytes, from which to begin the unlock.
+	// Because this field is limited to 32-bits, this command is inappropriate for
+	// files that have 64-bit offsets.
 	UnlockOffsetInBytes types.ULONG
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewUnlockByteRangeRequest creates a new UnlockByteRangeRequest structure
@@ -35,22 +41,15 @@ type UnlockByteRangeRequest struct {
 func NewUnlockByteRangeRequest() *UnlockByteRangeRequest {
 	c := &UnlockByteRangeRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		FID: types.SHORT(0),
+		FID:                  types.SHORT(0),
 		CountOfBytesToUnlock: types.ULONG(0),
-		UnlockOffsetInBytes: types.ULONG(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
+		UnlockOffsetInBytes:  types.ULONG(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_UNLOCK_BYTE_RANGE)
 
 	return c
 }
-
-
 
 // Marshal marshals the UnlockByteRangeRequest structure into a byte array
 //
@@ -85,33 +84,25 @@ func (c *UnlockByteRangeRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter CountOfBytesToUnlock
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.CountOfBytesToUnlock))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter UnlockOffsetInBytes
 	buf4 = make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.UnlockOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -119,7 +110,7 @@ func (c *UnlockByteRangeRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -151,48 +142,35 @@ func (c *UnlockByteRangeRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.SHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.SHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter CountOfBytesToUnlock
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToUnlock")
+		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToUnlock")
 	}
-	c.CountOfBytesToUnlock = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.CountOfBytesToUnlock = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter UnlockOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for UnlockOffsetInBytes")
+		return offset, fmt.Errorf("rawParametersContent too short for UnlockOffsetInBytes")
 	}
-	c.UnlockOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.UnlockOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
