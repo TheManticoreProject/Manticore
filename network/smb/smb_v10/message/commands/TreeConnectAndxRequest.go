@@ -236,7 +236,7 @@ func (c *TreeConnectAndxRequest) Unmarshal(data []byte) (int, error) {
 
 	// Unmarshalling data Pad
 	if len(rawDataContent) < offset+1 {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad")
+		return offset, fmt.Errorf("rawDataContent too short for Pad")
 	}
 	c.Pad = rawDataContent[offset : offset+1]
 	offset++
