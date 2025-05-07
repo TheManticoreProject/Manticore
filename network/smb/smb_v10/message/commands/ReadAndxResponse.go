@@ -18,18 +18,26 @@ type ReadAndxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	AndXCommand types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset types.USHORT
+
+	// Available (2 bytes): This field is valid when reading from named pipes. This
+	// field indicates the number of bytes remaining to be read after the requested
+	// read was completed.
 	Available types.USHORT
+
+	// DataCompactionMode (2 bytes): Reserved and MUST be 0x0000.
 	DataCompactionMode types.USHORT
+
+	// Reserved1 (2 bytes): This field MUST be 0x0000.
 	Reserved1 types.USHORT
+
+	// DataLength (2 bytes): The number of data bytes included in the response. If this
+	// value is less than the value in the
+	// Request.SMB_Parameters.MaxCountOfBytesToReturn field, it indicates that the read
+	// operation has reached the end of the file (EOF).
 	DataLength types.USHORT
+
+	// DataOffset (2 bytes): The offset in bytes from the header of the read data.
 	DataOffset types.USHORT
-
-	// Data
-
 }
 
 // NewReadAndxResponse creates a new ReadAndxResponse structure
@@ -39,18 +47,12 @@ type ReadAndxResponse struct {
 func NewReadAndxResponse() *ReadAndxResponse {
 	c := &ReadAndxResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AndXCommand: types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset: types.USHORT(0),
-		Available: types.USHORT(0),
+
+		Available:          types.USHORT(0),
 		DataCompactionMode: types.USHORT(0),
-		Reserved1: types.USHORT(0),
-		DataLength: types.USHORT(0),
-		DataOffset: types.USHORT(0),
-
-		// Data
-
+		Reserved1:          types.USHORT(0),
+		DataLength:         types.USHORT(0),
+		DataOffset:         types.USHORT(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_READ_ANDX)
@@ -58,13 +60,10 @@ func NewReadAndxResponse() *ReadAndxResponse {
 	return c
 }
 
-
 // IsAndX returns true if the command is an AndX
 func (c *ReadAndxResponse) IsAndX() bool {
 	return true
 }
-
-
 
 // Marshal marshals the ReadAndxResponse structure into a byte array
 //
@@ -99,49 +98,35 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-	
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-	
-	// Marshalling parameter AndXOffset
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Available
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Available))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataCompactionMode
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataCompactionMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Reserved1
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Reserved1))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataLength
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter DataOffset
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -149,7 +134,7 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -181,76 +166,49 @@ func (c *ReadAndxResponse) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling parameter Available
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Available")
+		return offset, fmt.Errorf("rawParametersContent too short for Available")
 	}
-	c.Available = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Available = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataCompactionMode
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataCompactionMode")
+		return offset, fmt.Errorf("rawParametersContent too short for DataCompactionMode")
 	}
-	c.DataCompactionMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataCompactionMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter Reserved1
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
+		return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
 	}
-	c.Reserved1 = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Reserved1 = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataLength
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataLength")
+		return offset, fmt.Errorf("rawParametersContent too short for DataLength")
 	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
+		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
+	// No data is sent in this message
 
 	return offset, nil
 }
