@@ -18,18 +18,40 @@ type SessionSetupAndxResponse struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
-	AndXCommand types.UCHAR
-	AndXReserved types.UCHAR
-	AndXOffset types.USHORT
+
+	// Action (2 bytes): A 16-bit field. The two lowest-order bits have been defined:
 	Action types.USHORT
 
 	// Data
-	Pad []types.UCHAR
-	NativeOS types.SMB_STRING
-	NativeLanMan types.SMB_STRING
-	PrimaryDomain types.SMB_STRING
 
+	// Pad (variable): Padding bytes. If Unicode support has been enabled, this field
+	// MUST contain zero or one null padding byte as needed to ensure that the NativeOS
+	// field, which follows, is aligned on a 16-bit boundary.
+	Pad []types.UCHAR
+
+	// NativeOS (variable): A string that represents the native operating system of the
+	// server. If SMB_FLAGS2_UNICODE is set in the Flags2 field of the SMB header of
+	// the response, the string MUST be a null-terminated array of 16-bit Unicode
+	// characters. Otherwise, the string MUST be a null-terminated array of OEM
+	// characters. If the string consists of Unicode characters, this field MUST be
+	// aligned to start on a 2-byte boundary from the start of the SMB header.<102>
+	NativeOS types.SMB_STRING
+
+	// NativeLanMan (variable): A string that represents the native LAN Manager type
+	// of the server. If SMB_FLAGS2_UNICODE is set in the Flags2 field of the SMB header
+	// of the response, the string MUST be a null-terminated array of 16-bit Unicode
+	// characters. Otherwise, the string MUST be a null-terminated array of OEM characters.
+	// If the string consists of Unicode characters, this field MUST be aligned to start
+	// on a 2-byte boundary from the start of the SMB header.
+	NativeLanMan types.SMB_STRING
+
+	// PrimaryDomain (variable): A string representing the primary domain or workgroup
+	// name of the server. If SMB_FLAGS2_UNICODE is set in the Flags2 field of the SMB header
+	// of the response, the string MUST be a null-terminated array of 16-bit Unicode characters.
+	// Otherwise, the string MUST be a null-terminated array of OEM characters. If the string
+	// consists of Unicode characters, this field MUST be aligned to start on a 2-byte boundary
+	// from the start of the SMB header.
+	PrimaryDomain types.SMB_STRING
 }
 
 // NewSessionSetupAndxResponse creates a new SessionSetupAndxResponse structure
@@ -39,18 +61,13 @@ type SessionSetupAndxResponse struct {
 func NewSessionSetupAndxResponse() *SessionSetupAndxResponse {
 	c := &SessionSetupAndxResponse{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		AndXCommand: types.UCHAR(0),
-		AndXReserved: types.UCHAR(0),
-		AndXOffset: types.USHORT(0),
 		Action: types.USHORT(0),
 
 		// Data
-		Pad: []types.UCHAR{},
-		NativeOS: types.SMB_STRING{},
-		NativeLanMan: types.SMB_STRING{},
+		Pad:           []types.UCHAR{},
+		NativeOS:      types.SMB_STRING{},
+		NativeLanMan:  types.SMB_STRING{},
 		PrimaryDomain: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SESSION_SETUP_ANDX)
@@ -58,13 +75,10 @@ func NewSessionSetupAndxResponse() *SessionSetupAndxResponse {
 	return c
 }
 
-
 // IsAndX returns true if the command is an AndX
 func (c *SessionSetupAndxResponse) IsAndX() bool {
 	return true
 }
-
-
 
 // Marshal marshals the SessionSetupAndxResponse structure into a byte array
 //
@@ -99,53 +113,42 @@ func (c *SessionSetupAndxResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
+
 	// Marshalling data Pad
-	rawDataContent = append(rawDataContent, types.UCHAR(c.Pad))
-	
+	rawDataContent = append(rawDataContent, c.Pad...)
+
 	// Marshalling data NativeOS
+	c.NativeOS.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
 	bytesStream, err := c.NativeOS.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Marshalling data NativeLanMan
-	bytesStream, err := c.NativeLanMan.Marshal()
+	c.NativeLanMan.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
+	bytesStream, err = c.NativeLanMan.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Marshalling data PrimaryDomain
-	bytesStream, err := c.PrimaryDomain.Marshal()
+	c.PrimaryDomain.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
+	bytesStream, err = c.PrimaryDomain.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
-	// Marshalling parameter AndXCommand
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXCommand))
-	
-	// Marshalling parameter AndXReserved
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.AndXReserved))
-	
-	// Marshalling parameter AndXOffset
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AndXOffset))
-	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Action
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Action))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -153,7 +156,7 @@ func (c *SessionSetupAndxResponse) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -189,70 +192,46 @@ func (c *SessionSetupAndxResponse) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXCommand
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXCommand")
-	}
-	c.AndXCommand = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXReserved
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for AndXReserved")
-	}
-	c.AndXReserved = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
-	// Unmarshalling parameter AndXOffset
-	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for AndXOffset")
-	}
-	c.AndXOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
-	offset += 2
-	
+
 	// Unmarshalling parameter Action
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Action")
+		return offset, fmt.Errorf("rawParametersContent too short for Action")
 	}
-	c.Action = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Action = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
+
 	// Unmarshalling data Pad
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Pad")
+	padLen := 0
+	if (len(rawParametersContent)+3)%2 == 1 {
+		padLen = 1
 	}
-	c.Pad = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+	if len(rawDataContent) < offset+padLen {
+		return offset, fmt.Errorf("rawParametersContent too short for Pad")
+	}
+	c.Pad = rawDataContent[offset : offset+padLen]
+	offset += padLen
+
 	// Unmarshalling data NativeOS
-	bytesRead, err := c.NativeOS.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.NativeOS.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling data NativeLanMan
-	bytesRead, err := c.NativeLanMan.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.NativeLanMan.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
+
 	// Unmarshalling data PrimaryDomain
-	bytesRead, err := c.PrimaryDomain.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.PrimaryDomain.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
 
