@@ -18,14 +18,18 @@ type SeekRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FID (2 bytes): The File ID of the open file within which to seek.
 	FID types.USHORT
+
+	// Mode (2 bytes): The seek mode. Possible values are as follows.
 	Mode types.USHORT
+
+	// Offset (4 bytes): A 32-bit signed long value indicating the file position,
+	// relative to the position indicated in Mode, to which to set the updated file
+	// pointer. The value of Offset ranges from -2 gigabytes to +2 gigabytes
+	// ((-2**31) to (2**31 -1) bytes).
 	Offset types.LONG
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewSeekRequest creates a new SeekRequest structure
@@ -35,22 +39,15 @@ type SeekRequest struct {
 func NewSeekRequest() *SeekRequest {
 	c := &SeekRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		FID: types.USHORT(0),
-		Mode: types.USHORT(0),
+		FID:    types.USHORT(0),
+		Mode:   types.USHORT(0),
 		Offset: types.LONG(0),
-
-		// Data
-		ByteCount: types.USHORT(0),
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SEEK)
 
 	return c
 }
-
-
 
 // Marshal marshals the SeekRequest structure into a byte array
 //
@@ -85,33 +82,25 @@ func (c *SeekRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Mode
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.Mode))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter Offset
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.Offset))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -119,7 +108,7 @@ func (c *SeekRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -151,48 +140,35 @@ func (c *SeekRequest) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter Mode
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Mode")
+		return offset, fmt.Errorf("rawParametersContent too short for Mode")
 	}
-	c.Mode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.Mode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter Offset
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for Offset")
+		return offset, fmt.Errorf("rawParametersContent too short for Offset")
 	}
-	c.Offset = types.LONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.Offset = types.LONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
