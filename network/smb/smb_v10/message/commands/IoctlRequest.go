@@ -89,14 +89,14 @@ type IoctlRequest struct {
 	// 2-byte or 4-byte boundary.
 	Pad1 []types.UCHAR
 
-	// Parameters (variable): The IOCTL parameters.
+	// Parameters (variable): IOCTL parameter bytes. The contents are implementation-dependent.
 	Parameters []types.UCHAR
 
 	// Pad2 (variable): An array of padding bytes, used to align the next field to a
 	// 2-byte or 4-byte boundary.
 	Pad2 []types.UCHAR
 
-	// Data (variable): The IOCTL data.
+	// Data (variable): IOCTL data bytes. The contents are implementation-dependent.
 	Data []types.UCHAR
 }
 
@@ -168,11 +168,16 @@ func (c *IoctlRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data Pad1
-
 	rawDataContent = append(rawDataContent, c.Pad1...)
+
+	// Marshalling data Parameters
+	rawDataContent = append(rawDataContent, c.Parameters...)
 
 	// Marshalling data Pad2
 	rawDataContent = append(rawDataContent, c.Pad2...)
+
+	// Marshalling data Data
+	rawDataContent = append(rawDataContent, c.Data...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -381,35 +386,32 @@ func (c *IoctlRequest) Unmarshal(data []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data Pad1
-	lenPad1 := c.ParameterOffset - 2
-	if len(rawDataContent) < offset+int(lenPad1) {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad1")
+	if len(rawDataContent) < offset+int(c.ParameterOffset) {
+		return offset, fmt.Errorf("rawDataContent too short for Pad1")
 	}
-	c.Pad1 = rawDataContent[offset : offset+int(lenPad1)]
-	offset += int(lenPad1)
+	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
+	offset += int(c.ParameterOffset)
 
 	// Unmarshalling data Parameters
-	lenParameters := c.DataOffset - c.ParameterOffset
-	if len(rawDataContent) < offset+int(lenParameters) {
-		return offset, fmt.Errorf("rawParametersContent too short for Parameters")
+	if len(rawDataContent) < offset+int(c.ParameterCount) {
+		return offset, fmt.Errorf("rawDataContent too short for Parameters")
 	}
-	c.Parameters = rawDataContent[offset : offset+int(lenParameters)]
-	offset += int(lenParameters)
+	c.Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
+	offset += int(c.ParameterCount)
 
 	// Unmarshalling data Pad2
-	lenPad2 := c.DataOffset - 2
-	if len(rawDataContent) < offset+int(lenPad2) {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad2")
+	if len(rawDataContent) < offset+int(c.DataOffset) {
+		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
-	c.Pad2 = rawDataContent[offset : offset+int(lenPad2)]
-	offset += int(lenPad2)
+	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
+	offset += int(c.DataOffset)
 
 	// Unmarshalling data Data
-	lenData := len(rawDataContent) - offset
-	if lenData > 0 {
-		c.Data = rawDataContent[offset : offset+lenData]
+	if len(rawDataContent) < offset+int(c.DataCount) {
+		return offset, fmt.Errorf("rawDataContent too short for Data")
 	}
-	offset += lenData
+	c.Data = rawDataContent[offset : offset+int(c.DataCount)]
+	offset += int(c.DataCount)
 
 	return offset, nil
 }
