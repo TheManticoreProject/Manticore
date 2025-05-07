@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
@@ -18,15 +17,28 @@ type RenameRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// SearchAttributes (2 bytes): Indicates the file attributes that the file(s) to be
+	// renamed MUST have. If the value of this field is 0x0000, then only normal files
+	// MUST be matched to be renamed. If the System or Hidden attributes are specified,
+	// then entries with those attributes MAY be matched in addition to the normal
+	// files. Read-only files MUST NOT be renamed. The read-only attribute of the file
+	// MUST be cleared before it can be renamed.
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
 
 	// Data
-	BufferFormat1 types.UCHAR
-	OldFileName types.SMB_STRING
-	BufferFormat2 types.UCHAR
-	NewFileName types.SMB_STRING
 
+	// BufferFormat1 (1 byte): This field MUST be 0x04.
+	// OldFileName (variable): A null-terminated string that contains the name of the
+	// file or files to be renamed. Wildcards MAY be used in the filename component of
+	// the path.
+	OldFileName types.SMB_STRING
+
+	// BufferFormat2 (1 byte): This field MUST be 0x04.
+	// NewFileName (variable): A null-terminated string containing the new name(s) to
+	// be given to the file(s) that matches OldFileName or the name of the destination
+	// directory into which the files matching OldFileName MUST be moved.
+	NewFileName types.SMB_STRING
 }
 
 // NewRenameRequest creates a new RenameRequest structure
@@ -36,23 +48,17 @@ type RenameRequest struct {
 func NewRenameRequest() *RenameRequest {
 	c := &RenameRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
 		SearchAttributes: types.SMB_FILE_ATTRIBUTES{},
 
 		// Data
-		BufferFormat1: types.UCHAR(0),
 		OldFileName: types.SMB_STRING{},
-		BufferFormat2: types.UCHAR(0),
 		NewFileName: types.SMB_STRING{},
-
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_RENAME)
 
 	return c
 }
-
-
 
 // Marshal marshals the RenameRequest structure into a byte array
 //
@@ -87,35 +93,33 @@ func (c *RenameRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat1
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat1))
-	
+
 	// Marshalling data OldFileName
+	c.OldFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.OldFileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
-	// Marshalling data BufferFormat2
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat2))
-	
+
 	// Marshalling data NewFileName
-	bytesStream, err := c.NewFileName.Marshal()
+	c.NewFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
+	bytesStream, err = c.NewFileName.Marshal()
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter SearchAttributes
-	
+	marshalledSearchAttributes, err := c.SearchAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, marshalledSearchAttributes...)
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -123,7 +127,7 @@ func (c *RenameRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -159,44 +163,28 @@ func (c *RenameRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter SearchAttributes
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
+	}
+	c.SearchAttributes.Unmarshal(rawParametersContent[offset : offset+2])
+	offset += 2
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat1
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat1")
-	}
-	c.BufferFormat1 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data OldFileName
-	bytesRead, err := c.OldFileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.OldFileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
-	
-	// Unmarshalling data BufferFormat2
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat2")
-	}
-	c.BufferFormat2 = types.UCHAR(rawDataContent[offset])
-	offset++
-	
+
 	// Unmarshalling data NewFileName
-	bytesRead, err := c.NewFileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.NewFileName.Unmarshal(rawDataContent[offset:])
 	if err != nil {
-	    return offset, err
+		return offset, err
 	}
 	offset += bytesRead
 
