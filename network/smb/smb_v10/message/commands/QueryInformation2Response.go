@@ -18,20 +18,35 @@ type QueryInformation2Response struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// CreateDate (2 bytes): This field is the date when the file was created.
 	CreateDate types.SMB_DATE
+
+	// CreateTime (2 bytes): This field is the time on CreateDate when the file was created.
 	CreationTime types.SMB_TIME
+
+	// LastAccessDate (2 bytes): This field is the date when the file was last accessed.
 	LastAccessDate types.SMB_DATE
+
+	// LastAccessTime (2 bytes): This field is the time on LastAccessDate when the file was last accessed.
 	LastAccessTime types.SMB_TIME
+
+	// LastWriteDate (2 bytes): This field is the date when data was last written to the file.
 	LastWriteDate types.SMB_DATE
+
+	// LastWriteTime (2 bytes): This field is the time on LastWriteDate when data was last written to the file.
 	LastWriteTime types.SMB_TIME
+
+	// FileDataSize (4 bytes): This field contains the number of bytes in the file, in bytes. Because this size
+	// is limited to 32 bits, this command is inappropriate for files whose size is too large.
 	FileDataSize types.ULONG
+
+	// FileAllocationSize (4 bytes): This field contains the allocation size of the file, in bytes. Because
+	// this size is limited to 32 bits, this command is inappropriate for files whose size is too large.
 	FileAllocationSize types.ULONG
+
+	// FileAttributes (2 bytes): This field is a 16-bit unsigned bit field encoding the attributes of the file.
 	FileAttributes types.SMB_FILE_ATTRIBUTES
-
-	// Data
-	ByteCount types.USHORT
-
 }
 
 // NewQueryInformation2Response creates a new QueryInformation2Response structure
@@ -41,28 +56,22 @@ type QueryInformation2Response struct {
 func NewQueryInformation2Response() *QueryInformation2Response {
 	c := &QueryInformation2Response{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		CreateDate: types.SMB_DATE{},
-		CreationTime: types.SMB_TIME{},
-		LastAccessDate: types.SMB_DATE{},
-		LastAccessTime: types.SMB_TIME{},
-		LastWriteDate: types.SMB_DATE{},
-		LastWriteTime: types.SMB_TIME{},
-		FileDataSize: types.ULONG(0),
+
+		CreateDate:         types.SMB_DATE{},
+		CreationTime:       types.SMB_TIME{},
+		LastAccessDate:     types.SMB_DATE{},
+		LastAccessTime:     types.SMB_TIME{},
+		LastWriteDate:      types.SMB_DATE{},
+		LastWriteTime:      types.SMB_TIME{},
+		FileDataSize:       types.ULONG(0),
 		FileAllocationSize: types.ULONG(0),
-		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-
-		// Data
-		ByteCount: types.USHORT(0),
-
+		FileAttributes:     types.SMB_FILE_ATTRIBUTES{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_QUERY_INFORMATION2)
 
 	return c
 }
-
-
 
 // Marshal marshals the QueryInformation2Response structure into a byte array
 //
@@ -97,42 +106,69 @@ func (c *QueryInformation2Response) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data ByteCount
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ByteCount))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter CreateDate
-	
+	byteStream, err := c.CreateDate.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter CreationTime
-	
+	byteStream, err = c.CreationTime.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter LastAccessDate
-	
+	byteStream, err = c.LastAccessDate.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter LastAccessTime
-	
+	byteStream, err = c.LastAccessTime.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter LastWriteDate
-	
+	byteStream, err = c.LastWriteDate.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter LastWriteTime
-	
+	byteStream, err = c.LastWriteTime.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameter FileDataSize
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.FileDataSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter FileAllocationSize
 	buf4 = make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.FileAllocationSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter FileAttributes
-	
+	byteStream, err = c.FileAttributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	rawParametersContent = append(rawParametersContent, byteStream...)
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -140,7 +176,7 @@ func (c *QueryInformation2Response) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -172,55 +208,77 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rawDataContent := c.GetData().GetBytes()
+	_ = c.GetData().GetBytes()
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter CreateDate
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for CreateDate")
+	}
+	bytesRead, err = c.CreateDate.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter CreationTime
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
+	}
+	bytesRead, err = c.CreationTime.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter LastAccessDate
-	
-	// Unmarshalling parameter LastAccessTime
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastAccessDate")
+	}
+	bytesRead, err = c.LastAccessDate.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter LastWriteDate
-	
-	// Unmarshalling parameter LastWriteTime
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteDate")
+	}
+	bytesRead, err = c.LastWriteDate.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter FileDataSize
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FileDataSize")
+		return offset, fmt.Errorf("rawParametersContent too short for FileDataSize")
 	}
-	c.FileDataSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.FileDataSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter FileAllocationSize
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FileAllocationSize")
+		return offset, fmt.Errorf("rawParametersContent too short for FileAllocationSize")
 	}
-	c.FileAllocationSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.FileAllocationSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter FileAttributes
-	
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for FileAttributes")
+	}
+	bytesRead, err = c.FileAttributes.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data ByteCount
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for ByteCount")
-	}
-	c.ByteCount = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	// No data is sent in this message
 
 	return offset, nil
 }
