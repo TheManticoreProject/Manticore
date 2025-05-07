@@ -526,28 +526,28 @@ func (c *TransactionRequest) Unmarshal(data []byte) (int, error) {
 
 	// Unmarshalling data Pad1
 	if len(rawDataContent) < offset+int(c.ParameterOffset) {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad1")
+		return offset, fmt.Errorf("rawDataContent too short for Pad1")
 	}
 	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
 	offset += int(c.ParameterOffset)
 
 	// Unmarshalling data Trans2_Parameters
 	if len(rawDataContent) < offset+int(c.ParameterCount) {
-		return offset, fmt.Errorf("rawParametersContent too short for Trans_Parameters")
+		return offset, fmt.Errorf("rawDataContent too short for Trans_Parameters")
 	}
 	c.Trans_Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
 	offset += int(c.ParameterCount)
 
 	// Unmarshalling data Pad2
 	if len(rawDataContent) < offset+int(c.DataOffset) {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad2")
+		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
 	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
 	offset += int(c.DataOffset)
 
 	// Unmarshalling data Trans2_Data
 	if len(rawDataContent) < offset+int(c.DataCount) {
-		return offset, fmt.Errorf("rawParametersContent too short for Trans_Data")
+		return offset, fmt.Errorf("rawDataContent too short for Trans_Data")
 	}
 	c.Trans_Data = rawDataContent[offset : offset+int(c.DataCount)]
 	offset += int(c.DataCount)
