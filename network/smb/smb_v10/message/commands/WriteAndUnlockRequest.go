@@ -18,16 +18,35 @@ type WriteAndUnlockRequest struct {
 	command_interface.Command
 
 	// Parameters
-	WordCount types.UCHAR
+
+	// FID (2 bytes): This field MUST be a valid 16-bit unsigned integer indicating the
+	// file to which the data MUST be written.
 	FID types.USHORT
+
+	// CountOfBytesToWrite (2 bytes): This field is a 16-bit unsigned integer
+	// indicating the number of bytes to be written to the file. The client MUST ensure
+	// that the amount of data sent can fit in the negotiated maximum buffer size.
 	CountOfBytesToWrite types.USHORT
+
+	// WriteOffsetInBytes (4 bytes): This field is a 32-bit unsigned integer indicating
+	// the offset, in number of bytes, from the beginning of the file at which to begin
+	// writing to the file. The client MUST ensure that the amount of data sent can fit
+	// in the negotiated maximum buffer size. Because this field is limited to 32 bits,
+	// this command is inappropriate for files that have 64-bit offsets.
 	WriteOffsetInBytes types.ULONG
+
+	// EstimateOfRemainingBytesToBeWritten (2 bytes): This field is a 16-bit unsigned
+	// integer indicating the remaining number of bytes that the client designates to
+	// write to the file. This is an advisory field and MAY be zero. This information
+	// can be used by the server to optimize cache behavior.
 	EstimateOfRemainingBytesToBeWritten types.USHORT
 
 	// Data
-	BufferFormat types.UCHAR
-	DataLength types.USHORT
 
+	// BufferFormat (1 byte): This field MUST be 0x01.
+	// DataLength (2 bytes): This field MUST be CountOfBytesToWrite.
+	// Data (variable): The raw bytes to be written to the file.
+	Data types.SMB_STRING
 }
 
 // NewWriteAndUnlockRequest creates a new WriteAndUnlockRequest structure
@@ -37,24 +56,20 @@ type WriteAndUnlockRequest struct {
 func NewWriteAndUnlockRequest() *WriteAndUnlockRequest {
 	c := &WriteAndUnlockRequest{
 		// Parameters
-		WordCount: types.UCHAR(0),
-		FID: types.USHORT(0),
-		CountOfBytesToWrite: types.USHORT(0),
-		WriteOffsetInBytes: types.ULONG(0),
+
+		FID:                                 types.USHORT(0),
+		CountOfBytesToWrite:                 types.USHORT(0),
+		WriteOffsetInBytes:                  types.ULONG(0),
 		EstimateOfRemainingBytesToBeWritten: types.USHORT(0),
 
 		// Data
-		BufferFormat: types.UCHAR(0),
-		DataLength: types.USHORT(0),
-
+		Data: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_AND_UNLOCK)
 
 	return c
 }
-
-
 
 // Marshal marshals the WriteAndUnlockRequest structure into a byte array
 //
@@ -89,41 +104,37 @@ func (c *WriteAndUnlockRequest) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	
-	// Marshalling data BufferFormat
-	rawDataContent = append(rawDataContent, types.UCHAR(c.BufferFormat))
-	
-	// Marshalling data DataLength
-	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
-	rawDataContent = append(rawDataContent, buf2...)
-	
+
+	// Marshalling data Data
+	c.Data.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
+	rawDataContent, err := c.Data.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
-	
-	// Marshalling parameter WordCount
-	rawParametersContent = append(rawParametersContent, types.UCHAR(c.WordCount))
-	
+
 	// Marshalling parameter FID
-	buf2 = make([]byte, 2)
+	buf2 := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter CountOfBytesToWrite
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesToWrite))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameter WriteOffsetInBytes
 	buf4 := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf4, uint32(c.WriteOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
-	
+
 	// Marshalling parameter EstimateOfRemainingBytesToBeWritten
 	buf2 = make([]byte, 2)
 	binary.BigEndian.PutUint16(buf2, uint16(c.EstimateOfRemainingBytesToBeWritten))
 	rawParametersContent = append(rawParametersContent, buf2...)
-	
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -131,7 +142,7 @@ func (c *WriteAndUnlockRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	marshalledCommand = append(marshalledCommand, marshalledParameters...)
-	
+
 	// Marshalling data
 	c.GetData().Add(rawDataContent)
 	marshalledData, err := c.GetData().Marshal()
@@ -167,58 +178,44 @@ func (c *WriteAndUnlockRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
-	
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-	    return offset, fmt.Errorf("data too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
-	
+
 	// Unmarshalling parameter FID
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for FID")
+		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter CountOfBytesToWrite
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToWrite")
+		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToWrite")
 	}
-	c.CountOfBytesToWrite = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.CountOfBytesToWrite = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Unmarshalling parameter WriteOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
-	    return offset, fmt.Errorf("rawParametersContent too short for WriteOffsetInBytes")
+		return offset, fmt.Errorf("rawParametersContent too short for WriteOffsetInBytes")
 	}
-	c.WriteOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset:offset+4]))
+	c.WriteOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
-	
+
 	// Unmarshalling parameter EstimateOfRemainingBytesToBeWritten
 	if len(rawParametersContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for EstimateOfRemainingBytesToBeWritten")
+		return offset, fmt.Errorf("rawParametersContent too short for EstimateOfRemainingBytesToBeWritten")
 	}
-	c.EstimateOfRemainingBytesToBeWritten = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset:offset+2]))
+	c.EstimateOfRemainingBytesToBeWritten = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
-	
+
 	// Then unmarshal the data
 	offset = 0
-	
-	// Unmarshalling data BufferFormat
-	if len(rawDataContent) < offset+1 {
-	    return offset, fmt.Errorf("rawParametersContent too short for BufferFormat")
+
+	// Unmarshalling data Data
+	bytesRead, err = c.Data.Unmarshal(rawDataContent)
+	if err != nil {
+		return 0, err
 	}
-	c.BufferFormat = types.UCHAR(rawDataContent[offset])
-	offset++
-	
-	// Unmarshalling data DataLength
-	if len(rawDataContent) < offset+2 {
-	    return offset, fmt.Errorf("rawParametersContent too short for DataLength")
-	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawDataContent[offset:offset+2]))
-	offset += 2
+	offset += bytesRead
 
 	return offset, nil
 }
