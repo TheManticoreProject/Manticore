@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 const (
@@ -30,8 +31,9 @@ type SMB_STRING struct {
 // - A pointer to the new SMB_STRING structure
 func NewSMB_STRING(buffer []byte) *SMB_STRING {
 	return &SMB_STRING{
-		Length: USHORT(len(buffer)),
-		Buffer: buffer,
+		BufferFormat: 0x00,
+		Length:       USHORT(len(buffer)),
+		Buffer:       buffer,
 	}
 }
 
@@ -47,9 +49,15 @@ func (s *SMB_STRING) SetBufferFormat(bufferFormat UCHAR) {
 //
 // Parameters:
 // - str: A string to set the SMB_STRING structure to
-func (s *SMB_STRING) SetString(str string) {
-	s.Buffer = []UCHAR(str)
+func (s *SMB_STRING) SetString(str string) error {
+	if len(str) > math.MaxUint16 {
+		return fmt.Errorf("string too long")
+	}
+
+	s.Buffer = []UCHAR([]byte(str))
 	s.Length = USHORT(len(str))
+
+	return nil
 }
 
 // Marshal serializes the SMB_STRING structure into a byte slice.
@@ -64,54 +72,72 @@ func (s *SMB_STRING) Marshal() ([]byte, error) {
 	buffer := []byte{}
 
 	switch s.BufferFormat {
-	case 0x01:
+	case SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT:
 		// A two-byte USHORT value indicating the length of the data buffer. The data buffer follows immediately after the length field.
 		buffer = append(buffer, s.BufferFormat)
 
+		// Length of the data buffer
 		buf2 := make([]byte, 2)
-		binary.LittleEndian.PutUint16(buf2, uint16(s.Length+1))
+		if len(s.Buffer) > math.MaxUint16 {
+			return nil, fmt.Errorf("string too long (length: %d)", len(s.Buffer))
+		}
+		s.Length = USHORT(len(s.Buffer))
+		binary.LittleEndian.PutUint16(buf2, uint16(s.Length))
 		buffer = append(buffer, buf2...)
 
+		// Data buffer
 		buffer = append(buffer, s.Buffer...)
-		buffer = append(buffer, 0x00)
 
-	case 0x02:
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING:
 		// A null-terminated OEM_STRING.
 		// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
 		buffer = append(buffer, s.BufferFormat)
 
+		// Data buffer
 		buffer = append(buffer, s.Buffer...)
 		buffer = append(buffer, 0x00)
 
-	case 0x03:
-		// A null-terminated OEM_STRING.
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT:
+		// A null-terminated OEM_STRING in UTF-16.
 		buffer = append(buffer, s.BufferFormat)
 
+		// Length of the data buffer
 		buf2 := make([]byte, 2)
-		binary.LittleEndian.PutUint16(buf2, uint16(s.Length+1))
+		if len(s.Buffer) > math.MaxUint16 {
+			return nil, fmt.Errorf("string too long (length: %d)", len(s.Buffer))
+		}
+		s.Length = USHORT(len(s.Buffer))
+		binary.LittleEndian.PutUint16(buf2, uint16(s.Length))
 		buffer = append(buffer, buf2...)
 
+		// Data buffer
 		buffer = append(buffer, s.Buffer...)
 		buffer = append(buffer, 0x00)
 
-	case 0x04:
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING:
 		// This field MUST be 0x04, which indicates that a null-terminated ASCII string follows.
 		// In the NT LAN Manager dialect, the string is of type SMB_STRING unless otherwise specified.
 		buffer = append(buffer, s.BufferFormat)
 
+		// Data buffer
 		buffer = append(buffer, s.Buffer...)
 		buffer = append(buffer, 0x00)
 
-	case 0x05:
+	case SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK:
 		// This field MUST be 0x05, which indicates that a variable block follows.
 		buffer = append(buffer, s.BufferFormat)
 
+		// Length of the data buffer
 		buf2 := make([]byte, 2)
-		binary.LittleEndian.PutUint16(buf2, uint16(s.Length+1))
+		if len(s.Buffer) > math.MaxUint16 {
+			return nil, fmt.Errorf("string too long (length: %d)", len(s.Buffer))
+		}
+		s.Length = USHORT(len(s.Buffer))
+		binary.LittleEndian.PutUint16(buf2, uint16(s.Length))
 		buffer = append(buffer, buf2...)
 
+		// Data buffer
 		buffer = append(buffer, s.Buffer...)
-		buffer = append(buffer, 0x00)
 
 	default:
 		return nil, fmt.Errorf("invalid buffer format: %d", s.BufferFormat)
@@ -138,23 +164,25 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 
 	// Handle different buffer formats
 	switch s.BufferFormat {
-	case 0x01:
+	case SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT:
 		// Variable block with 16-bit length
 		if len(buffer) < 3 {
 			return 0, fmt.Errorf("buffer too short for format 0x%02x", s.BufferFormat)
 		}
 
+		// Length of the data buffer
 		s.Length = USHORT(binary.LittleEndian.Uint16(buffer[1:3]))
 		if len(buffer) < int(s.Length)+3 {
 			return 0, fmt.Errorf("buffer too short for specified length")
 		}
 
+		// Data buffer
 		s.Buffer = make([]UCHAR, s.Length)
 		copy(s.Buffer, buffer[3:3+s.Length])
 
 		return int(s.Length) + 3, nil
 
-	case 0x02:
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING:
 		// Null-terminated string for dialect negotiation
 		// Find the null terminator
 		nullPos := -1
@@ -168,14 +196,16 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 			return 0, fmt.Errorf("no null terminator found for format 0x%02x", s.BufferFormat)
 		}
 
+		// Data buffer
 		s.Buffer = make([]UCHAR, nullPos-1)
 		copy(s.Buffer, buffer[1:nullPos])
 
+		// Length of the data buffer
 		s.Length = USHORT(len(s.Buffer))
 
 		return nullPos + 1, nil
 
-	case 0x03:
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT:
 		// Variable block with 16-bit length
 		if len(buffer) < 3 {
 			return 0, fmt.Errorf("buffer too short for format 0x%02x", s.BufferFormat)
@@ -186,12 +216,13 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 			return 0, fmt.Errorf("buffer too short for specified length")
 		}
 
+		// Data buffer
 		s.Buffer = make([]UCHAR, s.Length)
 		copy(s.Buffer, buffer[3:3+s.Length])
 
 		return int(s.Length) + 3, nil
 
-	case 0x04:
+	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING:
 		// This field MUST be 0x04, which indicates that a null-terminated ASCII string follows.
 		nullPos := -1
 		for i := 1; i < len(buffer); i++ {
@@ -204,17 +235,20 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 			return 0, fmt.Errorf("no null terminator found for format 0x%02x", s.BufferFormat)
 		}
 
+		// Data buffer
 		s.Buffer = make([]UCHAR, nullPos-1)
 		copy(s.Buffer, buffer[1:nullPos])
 
+		// Length of the data buffer
 		s.Length = USHORT(len(s.Buffer))
 
 		return nullPos + 1, nil
 
-	case 0x05:
+	case SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK:
 		// This field MUST be 0x05, which indicates that a variable block follows.
 		s.Length = USHORT(binary.LittleEndian.Uint16(buffer[1:3]))
 
+		// Data buffer
 		s.Buffer = make([]UCHAR, s.Length)
 		copy(s.Buffer, buffer[3:3+s.Length])
 
