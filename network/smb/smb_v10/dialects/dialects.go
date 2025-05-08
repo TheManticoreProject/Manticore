@@ -68,15 +68,17 @@ func (d *Dialects) AddDialect(dialect string) {
 // This function serializes the Dialects structure into a byte slice. It creates a new byte slice, appends the
 // buffer format and the dialect string to it, and returns the resulting byte slice.
 func (d *Dialects) Marshal() ([]byte, error) {
-	s := types.SMB_STRING{}
-	s.SetBufferFormat(types.UCHAR(0x02))
-	s.SetString(strings.Join(d.Dialects, "\x00"))
+	buffer := []byte{}
 
-	marshalled_dialects, err := s.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	return marshalled_dialects, nil
+	// A null-terminated OEM_STRING.
+	// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
+	buffer = append(buffer, types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
+
+	// Data buffer
+	buffer = append(buffer, []byte(strings.Join(d.Dialects, "\x00"))...)
+	buffer = append(buffer, 0x00)
+
+	return buffer, nil
 }
 
 // Unmarshal deserializes a byte slice into the Dialects structure
@@ -87,19 +89,43 @@ func (d *Dialects) Marshal() ([]byte, error) {
 // It iterates through the input byte slice, reading buffer format, dialect string, and null terminator.
 // It appends the dialect string to the Dialects field and returns the number of bytes read and an error if any.
 func (d *Dialects) Unmarshal(data []byte) (int, error) {
-	if len(data) < 2 { // At minimum, we need 1 byte for BufferFormat and 1 byte for a null terminator
-		return 0, fmt.Errorf("data too short to unmarshal SMB_Dialect")
+	bytesRead := 0
+
+	// buffer format
+	bufferFormat := data[0]
+	if bufferFormat != types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING {
+		return 0, fmt.Errorf("invalid buffer format: %d", bufferFormat)
+	}
+	bytesRead += 1
+
+	// buffer
+	buffer := data[1:]
+
+	// Find the last null terminator in the buffer
+	nullPos := -1
+	for i := len(buffer) - 1; i >= 0; i-- {
+		if buffer[i] == 0x00 {
+			nullPos = i
+			break
+		}
+	}
+	if nullPos == -1 {
+		return 0, fmt.Errorf("no null terminator found in dialect string")
 	}
 
-	// Reset dialects to ensure we're starting fresh
-	s := types.SMB_STRING{}
+	if nullPos == 0 {
+		// No dialects
+		d.Dialects = []string{}
+		bytesRead += 1
+	} else {
+		// Adjust buffer to only include up to the last null terminator (not including it)
+		buffer = buffer[:nullPos]
 
-	bytesRead, err := s.Unmarshal(data)
-	if err != nil {
-		return 0, err
+		// dialects
+		d.Dialects = strings.Split(string(buffer), "\x00")
+
+		bytesRead += nullPos + 1
 	}
-
-	d.Dialects = strings.Split(string(s.Buffer), "\x00")
 
 	return bytesRead, nil
 }

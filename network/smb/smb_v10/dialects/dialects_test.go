@@ -95,20 +95,13 @@ func TestMarshalUnmarshal(t *testing.T) {
 			}
 
 			// Verify unmarshalled data
-			if len(tc.dialects) == 0 {
-				// Special case for empty dialects
-				if len(d2.Dialects) != 1 || d2.Dialects[0] != "" {
-					t.Errorf("Expected empty string in dialects, got %v", d2.Dialects)
-				}
-			} else {
-				// Check that all dialects are present
-				joinedOriginal := strings.Join(tc.dialects, "\x00")
-				joinedUnmarshalled := strings.Join(d2.Dialects, "\x00")
+			// Check that all dialects are present
+			joinedOriginal := strings.Join(tc.dialects, "\x00")
+			joinedUnmarshalled := strings.Join(d2.Dialects, "\x00")
 
-				if joinedOriginal != joinedUnmarshalled {
-					t.Errorf("Unmarshalled dialects don't match original.\nExpected: %v\nGot: %v",
-						tc.dialects, d2.Dialects)
-				}
+			if joinedOriginal != joinedUnmarshalled {
+				t.Errorf("Unmarshalled dialects don't match original.\nExpected: %v\nGot: %v",
+					tc.dialects, d2.Dialects)
 			}
 		})
 	}
