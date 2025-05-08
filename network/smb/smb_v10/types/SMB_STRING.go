@@ -217,10 +217,14 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 		}
 
 		// Data buffer
+		// We ignore the null terminator here
 		s.Buffer = make([]UCHAR, s.Length)
 		copy(s.Buffer, buffer[3:3+s.Length])
 
-		return int(s.Length) + 3, nil
+		// We count the null terminator here because it is consumed
+		bytesRead := int(s.Length) + 3 + 1
+
+		return bytesRead, nil
 
 	case SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING:
 		// This field MUST be 0x04, which indicates that a null-terminated ASCII string follows.

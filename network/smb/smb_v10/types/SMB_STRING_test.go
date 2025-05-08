@@ -2,6 +2,7 @@ package types_test
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -293,43 +294,43 @@ func TestMarshalUnmarshal(t *testing.T) {
 	testCases := []struct {
 		name         string
 		bufferFormat types.UCHAR
-		inputString  string
+		inputString  []byte
 		expectError  bool
 	}{
 		{
 			name:         "Format 0x01 (VARIABLE_BLOCK_16BIT)",
 			bufferFormat: types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT,
-			inputString:  "test string",
+			inputString:  utf16.EncodeUTF16LE("test string"),
 			expectError:  false,
 		},
 		{
 			name:         "Format 0x02 (NULL_TERMINATED_OEM_STRING)",
 			bufferFormat: types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING,
-			inputString:  "dialect string",
+			inputString:  []byte("dialect string"),
 			expectError:  false,
 		},
 		{
 			name:         "Format 0x03 (NULL_TERMINATED_OEM_STRING_16BIT)",
 			bufferFormat: types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT,
-			inputString:  "oem string with length",
+			inputString:  utf16.EncodeUTF16LE("oem string with length"),
 			expectError:  false,
 		},
 		{
 			name:         "Format 0x04 (NULL_TERMINATED_ASCII_STRING)",
 			bufferFormat: types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING,
-			inputString:  "ascii string",
+			inputString:  []byte("ascii string"),
 			expectError:  false,
 		},
 		{
 			name:         "Format 0x05 (VARIABLE_BLOCK)",
 			bufferFormat: types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK,
-			inputString:  "variable block",
+			inputString:  []byte("variable block"),
 			expectError:  false,
 		},
 		{
 			name:         "Invalid Format",
 			bufferFormat: 0xFF,
-			inputString:  "invalid format",
+			inputString:  []byte("invalid format"),
 			expectError:  true,
 		},
 	}
@@ -339,7 +340,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 			// Create and setup the original SMB_STRING
 			original := &types.SMB_STRING{}
 			original.SetBufferFormat(tc.bufferFormat)
-			original.SetString(tc.inputString)
+			original.SetString(string(tc.inputString))
 
 			// Marshal the SMB_STRING
 			marshalled, err := original.Marshal()
@@ -378,6 +379,13 @@ func TestMarshalUnmarshal(t *testing.T) {
 
 			// Verify all bytes were consumed
 			if bytesRead != len(marshalled) {
+				unmarshalledBytes, err := unmarshalled.Marshal()
+				if err != nil {
+					t.Fatalf("Unexpected marshal error: %v", err)
+				}
+				fmt.Printf("marshalled   : %x (%d)\n", marshalled, len(marshalled))
+				fmt.Printf("unmarshalled : %x (%d)\n", unmarshalledBytes, len(unmarshalledBytes))
+
 				t.Errorf("Not all bytes consumed: expected %d, got %d", len(marshalled), bytesRead)
 			}
 		})
