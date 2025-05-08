@@ -86,6 +86,8 @@ func (r *SMB_RESUME_KEY) Marshal() ([]byte, error) {
 // - The number of bytes unmarshalled
 // - An error if the unmarshaling fails
 func (r *SMB_RESUME_KEY) Unmarshal(data []byte) (int, error) {
+	offset := 0
+
 	bytesRead, err := r.SMB_STRING.Unmarshal(data)
 	if err != nil {
 		return 0, err
@@ -96,8 +98,13 @@ func (r *SMB_RESUME_KEY) Unmarshal(data []byte) (int, error) {
 	}
 
 	r.Reserved = r.SMB_STRING.Buffer[0]
+	offset++
+
 	copy(r.ServerState[:], r.SMB_STRING.Buffer[1:17])
+	offset += 16
+
 	copy(r.ClientState[:], r.SMB_STRING.Buffer[17:21])
+	offset += 4
 
 	return bytesRead, nil
 }
