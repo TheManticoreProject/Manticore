@@ -7,14 +7,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/transport"
 )
 
-// Client represents an SMB v1.0 client
-type Client struct {
-	Transport   transport.Transport
-	TreeConnect *TreeConnect
-	Session     *Session    // An established session between the client and server
-	Connection  *Connection // An established SMB connection between the client and the server
-}
-
 // NewClientUsingNBTTransport creates a new SMB v1.0 client using NBT transport
 //
 // Returns:
@@ -24,8 +16,10 @@ func NewClientUsingNBTTransport(host net.IP, port int) *Client {
 	return &Client{
 		Transport: transport.NewTransport("nbt"),
 		Connection: &Connection{
-			Host: host,
-			Port: port,
+			Server: &Server{
+				Host: host,
+				Port: port,
+			},
 		},
 		TreeConnect: nil,
 		Session:     nil,
@@ -52,20 +46,20 @@ func (c *Client) Connect(ipaddr net.IP, port int) error {
 
 // SetHost sets the host IP address for the SMB client
 func (c *Client) SetHost(host net.IP) {
-	c.Connection.Host = host
+	c.Connection.Server.Host = host
 }
 
 // GetHost returns the current host IP address of the SMB client
 func (c *Client) GetHost() net.IP {
-	return c.Connection.Host
+	return c.Connection.Server.Host
 }
 
 // SetPort sets the port number for the SMB client
 func (c *Client) SetPort(port int) {
-	c.Connection.Port = port
+	c.Connection.Server.Port = port
 }
 
 // GetPort returns the current port number of the SMB client
 func (c *Client) GetPort() int {
-	return c.Connection.Port
+	return c.Connection.Server.Port
 }

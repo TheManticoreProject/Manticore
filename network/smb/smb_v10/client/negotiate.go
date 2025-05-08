@@ -87,6 +87,7 @@ func (c *Client) Negotiate() error {
 
 	c.Connection.Server.DomainName = string(negotiate_response.DomainName)
 	c.Connection.Server.Name = string(negotiate_response.ServerName)
+	c.Connection.Server.SecurityMode = negotiate_response.SecurityMode
 
 	return nil
 }

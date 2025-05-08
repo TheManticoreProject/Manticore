@@ -11,6 +11,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/utils"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securitymode"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -27,7 +28,7 @@ type NegotiateResponse struct {
 	DialectIndex types.USHORT
 
 	// An 8-bit field indicating the security modes supported or required by the server, as follows:
-	SecurityMode types.UCHAR
+	SecurityMode securitymode.SecurityMode
 
 	// The maximum number of outstanding SMB operations that the server supports. This value includes existing OpLocks,
 	// the NT_TRANSACT_NOTIFY_CHANGE subcommand, and any other commands that are pending on the server. If the negotiated
@@ -91,7 +92,7 @@ func NewNegotiateResponse() *NegotiateResponse {
 	c := &NegotiateResponse{
 		// Parameters
 		DialectIndex:    types.USHORT(0),
-		SecurityMode:    types.UCHAR(0),
+		SecurityMode:    securitymode.SecurityMode(0),
 		MaxMpxCount:     types.USHORT(0),
 		MaxNumberVcs:    types.USHORT(0),
 		MaxBufferSize:   types.ULONG(0),
@@ -274,7 +275,7 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 	if len(rawParametersContent) < offset+1 {
 		return offset, fmt.Errorf("rawParametersContent too short for SecurityMode")
 	}
-	c.SecurityMode = types.UCHAR(rawParametersContent[offset])
+	c.SecurityMode = securitymode.SecurityMode(rawParametersContent[offset])
 	offset++
 	// Unmarshalling parameter MaxMpxCount
 	if len(rawParametersContent) < offset+2 {

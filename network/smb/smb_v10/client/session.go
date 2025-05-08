@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/utils/encoding/utf16"
 )
 
 // Session represents an established session between the client and server
@@ -37,16 +38,12 @@ func (c *Client) SessionSetup() error {
 	// Data section
 	session_setup_cmd.OEMPassword = []types.UCHAR("OEMPassword")
 	session_setup_cmd.OEMPasswordLen = uint16(len(session_setup_cmd.OEMPassword))
-	session_setup_cmd.UnicodePassword = []types.UCHAR("U\x00n\x00i\x00c\x00o\x00d\x00e\x00P\x00a\x00s\x00s\x00w\x00o\x00r\x00d")
+	session_setup_cmd.UnicodePassword = []types.UCHAR(utf16.EncodeUTF16LE("UnicodePassword"))
 	session_setup_cmd.UnicodePasswordLen = uint16(len(session_setup_cmd.UnicodePassword))
 	// session_setup_cmd.Pad = []types.UCHAR{0x00, 0x00, 0x00, 0x00}
-	session_setup_cmd.AccountName.SetBufferFormat(0x04)
 	session_setup_cmd.AccountName.SetString("AccountName")
-	session_setup_cmd.PrimaryDomain.SetBufferFormat(0x04)
 	session_setup_cmd.PrimaryDomain.SetString("DomainName")
-	session_setup_cmd.NativeOS.SetBufferFormat(0x04)
 	session_setup_cmd.NativeOS.SetString("")
-	session_setup_cmd.NativeLanMan.SetBufferFormat(0x04)
 	session_setup_cmd.NativeLanMan.SetString("")
 
 	request_msg.AddCommand(session_setup_cmd)
@@ -80,7 +77,7 @@ func (c *Client) SessionSetup() error {
 		return fmt.Errorf("unexpected response command: %d", response_msg.Header.Command)
 	}
 
-	// session_setup_response := response_msg.Command.(*commands.SessionSetupAndxResponse)
+	_ = response_msg.Command.(*commands.SessionSetupAndxResponse)
 
 	// TODO
 
