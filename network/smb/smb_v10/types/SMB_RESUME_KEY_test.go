@@ -52,10 +52,10 @@ func TestSMB_RESUME_KEY_Marshal(t *testing.T) {
 	// Set some test data in the fields
 	resumeKey.Reserved = 1
 	for i := 0; i < 16; i++ {
-		resumeKey.ServerState[i] = byte(i + 2)
+		resumeKey.ServerState[i] = byte(i + 1)
 	}
 	for i := 0; i < 4; i++ {
-		resumeKey.ClientState[i] = byte(i + 18)
+		resumeKey.ClientState[i] = byte(i + 17)
 	}
 
 	data, err := resumeKey.Marshal()
@@ -67,13 +67,12 @@ func TestSMB_RESUME_KEY_Marshal(t *testing.T) {
 	// - BufferFormat (1 byte): 0x05
 	// - Length (2 bytes): 0x0015 (21 in little endian)
 	// - Buffer (21 bytes): [1,2,3,...,21]
-	expected := []byte{0x05, 0x16, 0x00}
+	expected := []byte{0x05, 0x15, 0x00}
 	expected = append(expected, byte(1)) // Reserved
 	// ServerState (16 bytes)
-	expected = append(expected, []byte{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}...)
+	expected = append(expected, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}...)
 	// ClientState (4 bytes)
-	expected = append(expected, []byte{18, 19, 20, 21}...)
-	expected = append(expected, 0x00)
+	expected = append(expected, []byte{17, 18, 19, 20}...)
 
 	if !bytes.Equal(data, expected) {
 		t.Errorf("Marshal produced incorrect output\nExpected: %v\nGot: %v", expected, data)
@@ -84,15 +83,17 @@ func TestSMB_RESUME_KEY_Unmarshal(t *testing.T) {
 	resumeKey := types.NewSMB_RESUME_KEY()
 
 	// Create test data
-	testData := []byte{0x05, 0x15, 0x00}
-	testData = append(testData, byte(1)) // Reserved
-	// ServerState (16 bytes)
-	for i := 2; i <= 17; i++ {
-		testData = append(testData, byte(i))
-	}
-	// ClientState (4 bytes)
-	for i := 18; i <= 21; i++ {
-		testData = append(testData, byte(i))
+	testData := []byte{
+		// BufferFormat
+		types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK,
+		// Length
+		21, 0x00,
+		// Reserved
+		0x00,
+		// ServerState (16 bytes)
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		// ClientState (4 bytes)
+		0x11, 0x12, 0x13, 0x14,
 	}
 
 	bytesRead, err := resumeKey.Unmarshal(testData)
@@ -113,13 +114,13 @@ func TestSMB_RESUME_KEY_Unmarshal(t *testing.T) {
 	}
 
 	// Verify Reserved field contains the expected value
-	if resumeKey.Reserved != 1 {
-		t.Errorf("Expected Reserved to be 1, got %d", resumeKey.Reserved)
+	if resumeKey.Reserved != testData[3] {
+		t.Errorf("Expected Reserved to be %d, got %d", testData[3], resumeKey.Reserved)
 	}
 
 	// Verify ServerState field contains the expected values
 	for i := 0; i < 16; i++ {
-		expected := byte(i + 2)
+		expected := testData[4+i]
 		if resumeKey.ServerState[i] != expected {
 			t.Errorf("Expected ServerState[%d] to be %d, got %d", i, expected, resumeKey.ServerState[i])
 		}
@@ -127,7 +128,7 @@ func TestSMB_RESUME_KEY_Unmarshal(t *testing.T) {
 
 	// Verify ClientState field contains the expected values
 	for i := 0; i < 4; i++ {
-		expected := byte(i + 18)
+		expected := testData[20+i]
 		if resumeKey.ClientState[i] != expected {
 			t.Errorf("Expected ClientState[%d] to be %d, got %d", i, expected, resumeKey.ClientState[i])
 		}
