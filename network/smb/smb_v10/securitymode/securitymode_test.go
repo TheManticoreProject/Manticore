@@ -3,7 +3,7 @@ package securitymode_test
 import (
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securitymode"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
 )
 
 func TestSecurityModeFlags(t *testing.T) {

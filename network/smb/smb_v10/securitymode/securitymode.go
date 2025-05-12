@@ -30,31 +30,49 @@ const (
 )
 
 // SupportsPlaintextPasswordAuth returns true if the server supports plaintext password authentication
+//
+// Returns:
+//   - bool: True if the server supports plaintext password authentication, false otherwise
 func (sm SecurityMode) SupportsPlaintextPasswordAuth() bool {
 	return (sm & NEGOTIATE_ENCRYPT_PASSWORDS) == 0
 }
 
 // SupportsChallengeResponseAuth returns true if the server supports challenge/response authentication
+//
+// Returns:
+//   - bool: True if the server supports challenge/response authentication, false otherwise
 func (sm SecurityMode) SupportsChallengeResponseAuth() bool {
 	return (sm & NEGOTIATE_ENCRYPT_PASSWORDS) != 0
 }
 
 // SupportsShareLevelAccessControl returns true if the server supports Share Level access control
+//
+// Returns:
+//   - bool: True if the server supports Share Level access control, false otherwise
 func (sm SecurityMode) SupportsShareLevelAccessControl() bool {
 	return (sm & NEGOTIATE_USER_SECURITY) == 0
 }
 
 // SupportsUserLevelAccessControl returns true if the server supports User Level access control
+//
+// Returns:
+//   - bool: True if the server supports User Level access control, false otherwise
 func (sm SecurityMode) SupportsUserLevelAccessControl() bool {
 	return (sm & NEGOTIATE_USER_SECURITY) != 0
 }
 
 // IsSecuritySignatureEnabled returns true if the server supports SMB security signatures
+//
+// Returns:
+//   - bool: True if the server supports SMB security signatures, false otherwise
 func (sm SecurityMode) IsSecuritySignatureEnabled() bool {
 	return (sm & NEGOTIATE_SECURITY_SIGNATURES_ENABLED) != 0
 }
 
 // IsSecuritySignatureRequired returns true if the server requires security signatures
+//
+// Returns:
+//   - bool: True if the server requires security signatures, false otherwise
 func (sm SecurityMode) IsSecuritySignatureRequired() bool {
 	return (sm & NEGOTIATE_SECURITY_SIGNATURES_REQUIRED) != 0
 }

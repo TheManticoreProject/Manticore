@@ -3,7 +3,7 @@ package client
 import (
 	"net"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securitymode"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
