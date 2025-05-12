@@ -349,6 +349,9 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 	domainName, offset := utils.GetNullTerminatedUnicodeString(rawDataContent)
 	c.DomainName = []types.UCHAR(domainName)
 	rawDataContent = rawDataContent[offset:]
+
+	fmt.Printf("rawDataContent: %v\n", rawDataContent)
+
 	// Unmarshalling data ServerName
 	serverName, offset := utils.GetNullTerminatedUnicodeString(rawDataContent)
 	c.ServerName = []types.UCHAR(serverName)

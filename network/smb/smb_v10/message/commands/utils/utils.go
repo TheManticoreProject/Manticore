@@ -19,7 +19,7 @@ func GetNullTerminatedUnicodeString(data []byte) (string, int) {
 			bytesString = append(bytesString, data[i+1])
 		}
 	}
-	return string(bytesString), len(bytesString)
+	return string(bytesString), len(bytesString) + 2
 }
 
 // GetNullTerminatedString returns the null-terminated string from the data
@@ -40,5 +40,5 @@ func GetNullTerminatedString(data []byte) (string, int) {
 			bytesString = append(bytesString, data[i])
 		}
 	}
-	return string(bytesString), len(bytesString)
+	return string(bytesString), len(bytesString) + 1
 }
