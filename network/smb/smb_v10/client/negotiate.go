@@ -8,6 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 )
 
 // Negotiate initiates the SMB protocol negotiation with the server.
@@ -34,7 +35,7 @@ func (c *Client) Negotiate() error {
 	request_msg := message.NewMessage()
 
 	request_msg.Header.SetFlags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
-	request_msg.Header.SetFlags2(flags.FLAGS2_UNICODE | flags.FLAGS2_LONG_NAMES_ALLOWED | flags.FLAGS2_NT_STATUS_ERROR_CODES | flags.FLAGS2_SMB_SECURITY_SIGNATURE)
+	request_msg.Header.SetFlags2(flags2.FLAGS2_UNICODE | flags2.FLAGS2_LONG_NAMES_ALLOWED | flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_SECURITY_SIGNATURE)
 
 	negotiate_cmd := commands.NewNegotiateRequest()
 	negotiate_cmd.Dialects.AddDialect(dialects.DIALECT_NT_LM_0_12)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securityfeatures"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
@@ -30,7 +31,7 @@ type Header struct {
 	Flags flags.Flags
 	// Flags2 (2 bytes): A 16-bit field of 1-bit flags that represent various features in effect for the message.
 	// Unspecified bits are reserved and MUST be zero.
-	Flags2 flags.Flags2
+	Flags2 flags2.Flags2
 	// PID (2 bytes): A 32-bit field that represents the process identifier (PID).
 	PIDHigh types.USHORT
 	// SecurityFeatures (8 bytes): This 8-byte field has three possible interpretations.
@@ -202,7 +203,7 @@ func (h *Header) Unmarshal(data []byte) (int, error) {
 	bytesRead += 1
 
 	// Flags2 (2 bytes)
-	h.Flags2 = flags.Flags2(binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2]))
+	h.Flags2 = flags2.Flags2(binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2]))
 	bytesRead += 2
 
 	// PIDHigh (2 bytes)

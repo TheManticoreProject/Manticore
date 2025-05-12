@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securityfeatures"
 )
 
@@ -15,7 +16,7 @@ func Test_HeaderMarshalUnmarshalInvolution(t *testing.T) {
 	h.Command = 0x11
 	h.Status = 0x22222222
 	h.Flags = flags.Flags(0x33)
-	h.Flags2 = flags.Flags2(0x4444)
+	h.Flags2 = flags2.Flags2(0x4444)
 	h.PIDHigh = 0x5555
 	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesSecuritySignature()
 	h.Reserved = 0x6666

@@ -1,4 +1,4 @@
-package flags
+package flags2
 
 import "strings"
 
@@ -10,13 +10,13 @@ const (
 	// Extended Attributes: Extended attributes are supported
 	FLAGS2_EXTENDED_ATTRIBUTES = 1 << 1
 	// Security Signatures: Security signatures are supported
-	FLAGS2_SMB_SECURITY_SIGNATURE = 1 << 2
+	FLAGS2_SECURITY_SIGNATURE = 1 << 2
 	// Compressed: Compression is requested
 	FLAGS2_COMPRESSED = 1 << 3
 	// Reserved: Reserved for future use
 	FLAGS2_RESERVED_4 = 1 << 4
 	// Security Signatures Required: Security signatures are required
-	FLAGS2_SMB_SECURITY_SIGNATURE_REQUIRED = 1 << 5
+	FLAGS2_SECURITY_SIGNATURE_REQUIRED = 1 << 5
 	// Reserved: Reserved for future use
 	FLAGS2_RESERVED_6 = 1 << 6
 	// Long Names Used: Path names in request are long file names
@@ -50,7 +50,7 @@ func (f Flags2) IsExtendedAttributes() bool {
 }
 
 func (f Flags2) IsSecuritySignature() bool {
-	return f&FLAGS2_SMB_SECURITY_SIGNATURE != 0
+	return f&FLAGS2_SECURITY_SIGNATURE != 0
 }
 
 func (f Flags2) IsCompressed() bool {
@@ -58,7 +58,7 @@ func (f Flags2) IsCompressed() bool {
 }
 
 func (f Flags2) IsSecuritySignatureRequired() bool {
-	return f&FLAGS2_SMB_SECURITY_SIGNATURE_REQUIRED != 0
+	return f&FLAGS2_SECURITY_SIGNATURE_REQUIRED != 0
 }
 
 func (f Flags2) IsLongNamesUsed() bool {
@@ -147,12 +147,12 @@ func (f Flags2) String() string {
 		flagList = append(flagList, "RESERVED_9")
 	}
 
-	if f&FLAGS2_SMB_SECURITY_SIGNATURE == FLAGS2_SMB_SECURITY_SIGNATURE {
-		flagList = append(flagList, "SMB_SECURITY_SIGNATURE")
+	if f&FLAGS2_SECURITY_SIGNATURE == FLAGS2_SECURITY_SIGNATURE {
+		flagList = append(flagList, "SECURITY_SIGNATURE")
 	}
 
-	if f&FLAGS2_SMB_SECURITY_SIGNATURE_REQUIRED == FLAGS2_SMB_SECURITY_SIGNATURE_REQUIRED {
-		flagList = append(flagList, "SMB_SECURITY_SIGNATURE_REQUIRED")
+	if f&FLAGS2_SECURITY_SIGNATURE_REQUIRED == FLAGS2_SECURITY_SIGNATURE_REQUIRED {
+		flagList = append(flagList, "SECURITY_SIGNATURE_REQUIRED")
 	}
 
 	if f&FLAGS2_UNICODE == FLAGS2_UNICODE {
