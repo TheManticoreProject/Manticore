@@ -3,9 +3,12 @@ package client
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/utils/encoding/utf16"
 )
@@ -34,29 +37,24 @@ func (c *Client) SessionSetup() error {
 
 	// Here put the common logic for all session setup commands
 	request_msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX
-	request_msg.Header.Flags = 0x18    // SMB_FLAGS_CANONICAL_PATHNAMES | SMB_FLAGS_CASELESS_PATHNAMES
-	request_msg.Header.Flags2 = 0x0001 // SMB_FLAGS2_KNOWS_LONG_NAMES
+	request_msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
+	request_msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED | flags2.FLAGS2_EXTENDED_SECURITY)
 
 	// Add Unicode support if server supports it
-	if c.Connection.Server.Capabilities&0x00000004 != 0 { // CAP_UNICODE
-		request_msg.Header.Flags2 |= 0x8000 // SMB_FLAGS2_UNICODE
-	}
-
-	// Add extended security if server supports it
-	if c.Connection.Server.Capabilities&0x80000000 != 0 { // CAP_EXTENDED_SECURITY
-		request_msg.Header.Flags2 |= 0x0800 // SMB_FLAGS2_EXTENDED_SECURITY
+	if c.Connection.Server.Capabilities&capabilities.CAP_UNICODE != 0 {
+		request_msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_UNICODE)
 	}
 
 	// Set message signing flags based on server security mode
 	if c.Connection.Server.SecurityMode.IsSecuritySignatureEnabled() {
-		request_msg.Header.Flags2 |= 0x0004 // SMB_FLAGS2_SECURITY_SIGNATURE
+		request_msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE)
 	}
 
 	// Set process ID and multiplex ID
-	request_msg.Header.SetPID(0x0001)
-	request_msg.Header.MID = 0x0002
-	request_msg.Header.TID = 0x0000
-	request_msg.Header.UID = 0x0000
+	request_msg.Header.SetPID(0)
+	request_msg.Header.MID = 0
+	request_msg.Header.TID = 65535
+	request_msg.Header.UID = 0
 
 	session_setup_cmd.MaxBufferSize = types.USHORT(c.Connection.Server.MaxBufferSize)
 	session_setup_cmd.MaxMpxCount = c.Connection.MaxMpxCount

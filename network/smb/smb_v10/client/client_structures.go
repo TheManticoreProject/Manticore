@@ -3,6 +3,7 @@ package client
 import (
 	"net"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -94,7 +95,7 @@ type Server struct {
 	SigningState string
 
 	// Capabilities is the capabilities of the server
-	Capabilities uint32
+	Capabilities capabilities.Capabilities
 
 	// MaxBufferSize is the negotiated maximum size for SMB messages sent to server
 	MaxBufferSize uint32
