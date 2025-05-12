@@ -3,6 +3,7 @@ module github.com/TheManticoreProject/Manticore
 go 1.24.0
 
 require (
+	github.com/TheManticoreProject/goopts v1.2.1
 	github.com/go-ldap/ldap/v3 v3.4.11
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	golang.org/x/crypto v0.37.0
