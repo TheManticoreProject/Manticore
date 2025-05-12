@@ -19,9 +19,9 @@ func TestLMHash(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.password, func(t *testing.T) {
-			result := LMHash(test.password)
+			result := LMHashToHex(test.password)
 			if result != test.expected {
-				t.Errorf("LMHash(%q) = %q; expected %q", test.password, result, test.expected)
+				t.Errorf("LMHashToHex(%q) = %q; expected %q", test.password, result, test.expected)
 			}
 		})
 	}

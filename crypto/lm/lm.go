@@ -13,7 +13,7 @@ import (
 // 3. Create two DES keys from each 7-byte half (convert 7 bytes to 8 bytes adding parity bits)
 // 4. DES encrypt the constant "KGS!@#$%" with each key
 // 5. Concatenate the two DES outputs
-func LMHash(password string) string {
+func LMHash(password string) []byte {
 	// Convert to uppercase and pad/truncate to 14 bytes
 	password = strings.ToUpper(password)
 	if len(password) > 14 {
@@ -67,5 +67,14 @@ func LMHash(password string) string {
 	finalHash := append(result1, result2...)
 
 	// Convert to lowercase hex string
-	return strings.ToLower(hex.EncodeToString(finalHash))
+	return finalHash
+}
+
+// LMHashToHex converts the LM hash to a lowercase hex string
+//
+// # The LM hash is converted to a hex string by encoding the hash as a lowercase hex string
+//
+// Returns the lowercase hex string representation of the LM hash
+func LMHashToHex(password string) string {
+	return strings.ToLower(hex.EncodeToString(LMHash(password)))
 }
