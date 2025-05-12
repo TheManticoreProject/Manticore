@@ -18,7 +18,7 @@ const (
 	// This flag MUST be set to zero by the client and MUST be ignored by the server.
 	FLAGS_CASE_INSENSITIVE = 0x08
 	// Obsolete
-	// If this bit is set then all pathnames in the SMB SHOULD be treated as case-insensitive.<26>
+	// If this bit is set then all pathnames in the SMB SHOULD be treated as case-insensitive.
 	FLAGS_CANONICALIZED_PATHS = 0x10
 	// Obsolescent
 	// When set in session setup, this bit indicates that all paths sent to the server are already in canonical format.

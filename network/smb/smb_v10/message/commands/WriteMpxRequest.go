@@ -35,7 +35,7 @@ type WriteMpxRequest struct {
 	// data contained in the SMB_Data.Bytes.Buffer field of the same message.
 	ByteOffsetToBeginWrite types.ULONG
 
-	// Timeout (4 bytes): This field MUST be ignored by the server.<36>
+	// Timeout (4 bytes): This field MUST be ignored by the server.
 	Timeout types.ULONG
 
 	// WriteMode (2 bytes): A 16-bit field containing flags defined as follows.

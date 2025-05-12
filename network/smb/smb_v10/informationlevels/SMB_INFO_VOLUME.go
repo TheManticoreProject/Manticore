@@ -13,7 +13,7 @@ type SMB_INFO_VOLUME struct {
 	// cCharCount: (1 byte): This field contains the number of characters in the
 	// VolumeLabel field.
 	Ccharcount types.UCHAR
-	// VolumeLabel: (variable): This field contains the volume label.<170>
+	// VolumeLabel: (variable): This field contains the volume label.
 	Volumelabel types.SMB_STRING
 }
 

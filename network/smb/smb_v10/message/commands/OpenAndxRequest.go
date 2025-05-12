@@ -29,7 +29,7 @@ type OpenAndxRequest struct {
 
 	// SearchAttrs (2 bytes): The set of attributes that the file MUST have in order to
 	// be found. If none of the attribute bytes is set, the file attributes MUST refer
-	// to a regular file.<57>
+	// to a regular file.
 	SearchAttrs types.SMB_FILE_ATTRIBUTES
 
 	// FileAttrs (2 bytes): The set of attributes that the file is to have if the file

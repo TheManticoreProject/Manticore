@@ -42,7 +42,7 @@ type NegotiateResponse struct {
 
 	// The maximum size, in bytes, of the largest SMB message that the server can receive. This is the size of the largest SMB message
 	// that the client can send to the server. SMB message size includes the size of the SMB header, parameter, and data blocks. This size
-	// does not include any transport-layer framing or other transport-layer data. The server SHOULD<81> provide a MaxBufferSize of 4356 bytes,
+	// does not include any transport-layer framing or other transport-layer data. The server SHOULD provide a MaxBufferSize of 4356 bytes,
 	// and MUST be a multiple of 4 bytes. If CAP_RAW_MODE is negotiated, the SMB_COM_WRITE_RAW command can bypass the MaxBufferSize limit.
 	// Otherwise, SMB messages sent to the server MUST have a total size less than or equal to the MaxBufferSize value. This includes AndX
 	// chained messages.

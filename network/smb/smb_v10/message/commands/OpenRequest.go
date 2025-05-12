@@ -25,7 +25,7 @@ type OpenRequest struct {
 
 	// SearchAttributes (2 bytes): Specifies the type of file. This field is used as a
 	// search mask. Both the FileName and the SearchAttributes of a file MUST match in
-	// order for the file to be opened.<28>
+	// order for the file to be opened.
 	SearchAttributes types.SMB_FILE_ATTRIBUTES
 
 	// Data

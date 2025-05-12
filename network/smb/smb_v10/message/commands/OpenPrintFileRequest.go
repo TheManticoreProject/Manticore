@@ -33,7 +33,7 @@ type OpenPrintFileRequest struct {
 	// BufferFormat (1 byte): This field MUST be 0x04, representing an ASCII string.
 	// Identifier (variable): A null-terminated string containing a suggested name for
 	// the spool file. The server can ignore, modify, or use this information to
-	// identify the print job.<126>
+	// identify the print job.
 	Identifier types.SMB_STRING
 }
 

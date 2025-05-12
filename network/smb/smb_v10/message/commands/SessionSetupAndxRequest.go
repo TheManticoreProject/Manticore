@@ -35,11 +35,11 @@ type SessionSetupAndxRequest struct {
 	// VcNumber (2 bytes): The number of this VC (virtual circuit) between the client
 	// and the server. This field SHOULD be set to a value of 0x0000 for the first
 	// virtual circuit between the client and the server and it SHOULD be set to a
-	// unique nonzero value for each additional virtual circuit.<93>
+	// unique nonzero value for each additional virtual circuit.
 	VcNumber types.USHORT
 
 	// SessionKey (4 bytes): The client MUST set this field to be equal to the
-	// SessionKey field in the SMB_COM_NEGOTIATE Response for this SMB connection.<94>
+	// SessionKey field in the SMB_COM_NEGOTIATE Response for this SMB connection.
 	SessionKey types.ULONG
 
 	// If SMB_FLAGS2_UNICODE is set (1), the value of OEMPasswordLen MUST be 0x0000 and
@@ -58,7 +58,7 @@ type SessionSetupAndxRequest struct {
 
 	// Capabilities (4 bytes): A 32-bit field providing a set of client capability
 	// indicators. The client uses this field to report its own set of capabilities to
-	// the server. The client capabilities are a subset of the server capabilities.<95>
+	// the server. The client capabilities are a subset of the server capabilities.
 	Capabilities capabilities.Capabilities
 
 	// Data
@@ -114,7 +114,7 @@ type SessionSetupAndxRequest struct {
 	// of the request, this string MUST be a null-terminated array of 16-bit Unicode
 	// characters. Otherwise, this string MUST be a null-terminated array of OEM
 	// characters. If this string consists of Unicode characters, this field MUST be
-	// aligned to start on a 2-byte boundary from the start of the SMB header.<100>
+	// aligned to start on a 2-byte boundary from the start of the SMB header.
 	NativeOS types.SMB_STRING
 
 	// NativeLanMan (variable): A string that represents the native LAN manager type

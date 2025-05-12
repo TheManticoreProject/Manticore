@@ -12,7 +12,7 @@ type SMB_FIND_FILE_FULL_DIRECTORY_INFO struct {
 	// entry in the list to the next entry in the list. If there are no additional
 	// entries, the value MUST be zero (0x00000000).
 	Nextentryoffset types.ULONG
-	// FileIndex: (4 bytes): This field SHOULD<160> be set to zero when sent in a
+	// FileIndex: (4 bytes): This field SHOULD be set to zero when sent in a
 	// response and SHOULD be ignored when received by the client.
 	Fileindex types.ULONG
 	// CreationTime: (8 bytes): This field contains the date and time when the file was
@@ -38,7 +38,7 @@ type SMB_FIND_FILE_FULL_DIRECTORY_INFO struct {
 	// of the file, encoded as an SMB_EXT_FILE_ATTR (section 2.2.1.2.3) data type.
 	Extfileattributes types.SMB_EXT_FILE_ATTR
 	// FileNameLength: (4 bytes): This field contains the length of the FileName field,
-	// in bytes.<161>
+	// in bytes.
 	Filenamelength types.ULONG
 	// EaSize: (4 bytes): This field contains the size of the file's extended attribute
 	// (EA) information, in bytes.

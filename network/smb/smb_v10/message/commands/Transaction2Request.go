@@ -61,7 +61,7 @@ type Transaction2Request struct {
 
 	// Timeout (4 bytes): The number of milliseconds that the server waits for
 	// completion of the transaction before generating a time-out. A value of
-	// 0x00000000 indicates that the operation is not blocked.<66>
+	// 0x00000000 indicates that the operation is not blocked.
 	Timeout types.ULONG
 
 	// Reserved2 (2 bytes): Reserved. This field MUST be 0x0000 in the client request.
@@ -86,7 +86,7 @@ type Transaction2Request struct {
 	// from the start of the SMB message to the start of the SMB_Data.Bytes.Parameters
 	// field. Server implementations MUST use this value to locate the transaction
 	// parameter block within the SMB message. If ParameterCount is zero, the
-	// client/server MAY set this field to zero.<67>
+	// client/server MAY set this field to zero.
 	ParameterOffset types.USHORT
 
 	// DataCount (2 bytes): The number of transaction data bytes being sent in this SMB
@@ -104,7 +104,7 @@ type Transaction2Request struct {
 	// bytes from the start of the SMB message to the start of the SMB_Data.Bytes.Data
 	// field. Server implementations MUST use this value to locate the transaction data
 	// block within the SMB message. If DataCount is zero, the client/server MAY set
-	// this field to zero.<68>
+	// this field to zero.
 	DataOffset types.USHORT
 
 	// SetupCount (1 byte): The number of setup words that are included in the

@@ -84,7 +84,7 @@ type TransactionRequest struct {
 	// value of 0x00000000 indicates that the server returns an error if the resource
 	// is not immediately available. If the operation does not complete within the
 	// specified time, the server MAY abort the request and send a failure
-	// response.<42>
+	// response.
 	Timeout types.ULONG
 
 	// Reserved2 (2 bytes): Reserved. This field MUST be 0x0000 in the client request.
@@ -111,7 +111,7 @@ type TransactionRequest struct {
 	// start of the SMB Header to the start of the SMB_Data.Trans_Parameters field.
 	// Server implementations MUST use this value to locate the transaction parameter
 	// block within the request. If ParameterCount is zero, the client/server MAY set
-	// this field to zero.<43>
+	// this field to zero.
 	ParameterOffset types.USHORT
 
 	// DataCount (2 bytes): The number of transaction data bytes that the client sends
@@ -132,7 +132,7 @@ type TransactionRequest struct {
 	// DataOffset (2 bytes): This field MUST be the number of bytes from the start of
 	// the SMB Header of the request to the start of the SMB_Data.Trans_Data field.
 	// Server implementations MUST use this value to locate the transaction data block
-	// within the request. If DataCount is zero, the client/server MAY<44> set this
+	// within the request. If DataCount is zero, the client/server MAY set this
 	// field to zero.
 	DataOffset types.USHORT
 

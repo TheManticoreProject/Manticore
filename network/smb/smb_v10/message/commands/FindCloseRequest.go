@@ -19,7 +19,7 @@ type FindCloseRequest struct {
 
 	// Parameters
 
-	// This field has no meaning in this context. It SHOULD<111> be set to 0x0000 by the client and MUST be ignored by the server.
+	// This field has no meaning in this context. It SHOULD be set to 0x0000 by the client and MUST be ignored by the server.
 	MaxCount types.USHORT
 
 	// This field has no meaning in this context. It SHOULD be set to 0x0000 by the client and MUST be ignored by the server.

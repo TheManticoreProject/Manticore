@@ -34,7 +34,7 @@ type SessionSetupAndxResponse struct {
 	// the response, the string MUST be a null-terminated array of 16-bit Unicode
 	// characters. Otherwise, the string MUST be a null-terminated array of OEM
 	// characters. If the string consists of Unicode characters, this field MUST be
-	// aligned to start on a 2-byte boundary from the start of the SMB header.<102>
+	// aligned to start on a 2-byte boundary from the start of the SMB header.
 	NativeOS types.SMB_STRING
 
 	// NativeLanMan (variable): A string that represents the native LAN Manager type

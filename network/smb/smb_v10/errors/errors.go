@@ -54,7 +54,7 @@ const (
 	ERRSRV_BADPW_STR           = "Invalid password."
 	ERRSRV_BADPATH_STR         = "DFS pathname not on local server."
 	ERRSRV_ACCESS_STR          = "Access denied. The specified UID does not have permission to execute the requested command within the current context (TID)."
-	ERRSRV_INVTID_STR          = "The TID specified in the command was invalid. Earlier documentation, with the exception of [SNIA], refers to this error code as ERRinvnid (Invalid Network Path Identifier). [SNIA] uses both names.<24>"
+	ERRSRV_INVTID_STR          = "The TID specified in the command was invalid. Earlier documentation, with the exception of [SNIA], refers to this error code as ERRinvnid (Invalid Network Path Identifier). [SNIA] uses both names."
 	ERRSRV_INVNETNAME_STR      = "Invalid server name in Tree Connect."
 	ERRSRV_INVDEVICE_STR       = "A printer request was made to a non-printer device or, conversely, a non-printer request was made to a printer device."
 	ERRSRV_INVSESS_STR         = "Invalid Connection ID (CID). This error code is only defined when the Direct IPX connectionless transport is in use."

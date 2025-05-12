@@ -43,7 +43,7 @@ type WriteAndxRequest struct {
 	// non-write operation. It SHOULD include the number of bytes to be written by this
 	// request. The server MAY either ignore this field or use it to perform
 	// optimizations. If a pipe write spans multiple requests, the client SHOULD set
-	// this field to the number of bytes remaining to be written.<61>
+	// this field to the number of bytes remaining to be written.
 	Remaining types.USHORT
 
 	// Reserved (2 bytes): This field MUST be 0x0000.

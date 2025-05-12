@@ -8,7 +8,7 @@ import (
 // SMB_INFO_ALLOCATION
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/194f7dd3-a019-4789-a70c-b28e029e6409
 type SMB_INFO_ALLOCATION struct {
-	// idFileSystem: (4 bytes): This field contains a file system identifier.<169>
+	// idFileSystem: (4 bytes): This field contains a file system identifier.
 	Idfilesystem types.ULONG
 	// cSectorUnit: (4 bytes): This field contains the number of sectors per allocation
 	// unit.

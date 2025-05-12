@@ -25,7 +25,7 @@ type WriteAndxResponse struct {
 	// Available (2 bytes): This field is valid when writing to named pipes or I/O
 	// devices. This field indicates the number of bytes remaining to be written after
 	// the requested write was completed. If the client wrote to a disk file, this
-	// field MUST be set to 0xFFFF.<62>
+	// field MUST be set to 0xFFFF.
 	Available types.USHORT
 
 	// Reserved (4 bytes): This field MUST be 0x00000000.

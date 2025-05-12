@@ -45,7 +45,7 @@ type Transaction2SecondaryRequest struct {
 	// This MUST be the number of bytes from the start of the SMB message to the start
 	// of the SMB_Data.Bytes.Trans2_Parameters field. Server implementations MUST use
 	// this value to locate the transaction parameter block within the SMB message. If
-	// ParameterCount is zero, the client/server MAY set this field to zero.<72>
+	// ParameterCount is zero, the client/server MAY set this field to zero.
 	ParameterOffset types.USHORT
 
 	// ParameterDisplacement (2 bytes): The offset relative to all of the transaction
@@ -66,7 +66,7 @@ type Transaction2SecondaryRequest struct {
 	// number of bytes from the start of the SMB message to the start of the
 	// SMB_Data.Bytes.Trans2_Data field. Server implementations MUST use this value to
 	// locate the transaction data block within the SMB message. If DataCount is zero,
-	// the client/server MAY set this field to zero.<73>
+	// the client/server MAY set this field to zero.
 	DataOffset types.USHORT
 
 	// DataDisplacement (2 bytes): The offset relative to all of the transaction data

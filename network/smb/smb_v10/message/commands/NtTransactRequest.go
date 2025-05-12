@@ -71,7 +71,7 @@ type NtTransactRequest struct {
 	// from the start of the SMB message to the start of the SMB_Data.Bytes.Parameters
 	// field. Server implementations MUST use this value to locate the transaction
 	// parameter block within the SMB message. If ParameterCount is zero, the
-	// client/server MAY set this field to zero.<113>
+	// client/server MAY set this field to zero.
 	ParameterOffset types.ULONG
 
 	// DataCount (4 bytes): The number of transaction data bytes being sent in this SMB
@@ -89,7 +89,7 @@ type NtTransactRequest struct {
 	// bytes from the start of the SMB message to the start of the SMB_Data.Bytes.Data
 	// field. Server implementations MUST use this value to locate the transaction data
 	// block within the SMB message. If DataCount is zero, the client/server MAY set
-	// this field to zero.<114>
+	// this field to zero.
 	DataOffset types.ULONG
 
 	// SetupCount (1 byte): The number of setup words that are included in the
