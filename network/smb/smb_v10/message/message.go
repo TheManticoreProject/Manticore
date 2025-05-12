@@ -104,7 +104,7 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 	}
 
 	// Unmarshal the header (first 32 bytes)
-	bytesRead, err = m.Header.UnmarshalWithSecurityFeaturesReserved(marshalledData[:header.SMB_HEADER_SIZE])
+	bytesRead, err = m.Header.Unmarshal(marshalledData[:header.SMB_HEADER_SIZE])
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (m *Message) UnmarshalRequest(marshalledData []byte) error {
 	}
 
 	// Unmarshal the header (first 32 bytes)
-	bytesRead, err = m.Header.UnmarshalWithSecurityFeaturesReserved(marshalledData[:header.SMB_HEADER_SIZE])
+	bytesRead, err = m.Header.Unmarshal(marshalledData[:header.SMB_HEADER_SIZE])
 	if err != nil {
 		return err
 	}
