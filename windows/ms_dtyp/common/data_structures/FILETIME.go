@@ -97,18 +97,18 @@ func (ft *FILETIME) GetUnixTimestamp() int64 {
 	return ft.GetTime().Unix()
 }
 
-// GetTimeString returns the string representation of the FILETIME structure.
+// GetTimeString returns the string representation of the FILETIME structure in UTC.
 //
 // Returns:
-// - The string representation of the FILETIME structure
+// - The string representation of the FILETIME structure in UTC
 func (ft *FILETIME) GetTimeString() string {
-	return ft.GetTime().Format("2006-01-02 15:04:05.00000")
+	return ft.GetTime().UTC().Format("2006-01-02 15:04:05.00000")
 }
 
-// String returns the string representation of the FILETIME structure.
+// String returns the string representation of the FILETIME structure in UTC.
 //
 // Returns:
-// - The string representation of the FILETIME structure
+// - The string representation of the FILETIME structure in UTC
 func (ft *FILETIME) String() string {
 	return ft.GetTimeString()
 }

@@ -101,8 +101,8 @@ func TestFILETIME_String(t *testing.T) {
 	}
 	smbTime.Unmarshal(data)
 
-	// Expected string format for Aug 27, 2011 23:21:49 UTC
-	expectedString := "2011-08-27 23:21:49.78125"
+	// Expected string format for Aug 27, 2011 21:21:49 UTC
+	expectedString := "2011-08-27 21:21:49.78125"
 
 	if str := smbTime.String(); str != expectedString {
 		t.Errorf("Expected string %s, got %s", expectedString, str)
