@@ -1,5 +1,7 @@
 package flags
 
+import "strings"
+
 // SMB Header Flags
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/69a29f73-de0c-45a6-a1aa-8ceeea42217f
 const (
@@ -34,3 +36,85 @@ const (
 	// distinguishes the message as a server response.
 	FLAGS_REPLY = 0x80
 )
+
+type Flags uint16
+
+func (f Flags) IsLockAndReadOk() bool {
+	return f&FLAGS_LOCK_AND_READ_OK != 0
+}
+
+func (f Flags) IsBufAvail() bool {
+	return f&FLAGS_BUF_AVAIL != 0
+}
+
+func (f Flags) IsReserved() bool {
+	return f&FLAGS_RESERVED != 0
+}
+
+func (f Flags) IsCaseInsensitive() bool {
+	return f&FLAGS_CASE_INSENSITIVE != 0
+}
+
+func (f Flags) IsCanonicalizedPaths() bool {
+	return f&FLAGS_CANONICALIZED_PATHS != 0
+}
+
+func (f Flags) IsOplock() bool {
+	return f&FLAGS_OPLOCK != 0
+}
+
+func (f Flags) IsOplockBatch() bool {
+	return f&FLAGS_OPBATCH != 0
+}
+
+func (f Flags) IsReply() bool {
+	return f&FLAGS_REPLY != 0
+}
+
+// String returns a string representation of the flags that are set,
+// with each flag name in uppercase separated by a pipe character.
+// Flags are listed in alphabetical order.
+func (f Flags) String() string {
+	var result string
+	var flagList []string
+
+	if f&FLAGS_BUF_AVAIL == FLAGS_BUF_AVAIL {
+		flagList = append(flagList, "BUF_AVAIL")
+	}
+
+	if f&FLAGS_CANONICALIZED_PATHS == FLAGS_CANONICALIZED_PATHS {
+		flagList = append(flagList, "CANONICALIZED_PATHS")
+	}
+
+	if f&FLAGS_CASE_INSENSITIVE == FLAGS_CASE_INSENSITIVE {
+		flagList = append(flagList, "CASE_INSENSITIVE")
+	}
+
+	if f&FLAGS_LOCK_AND_READ_OK == FLAGS_LOCK_AND_READ_OK {
+		flagList = append(flagList, "LOCK_AND_READ_OK")
+	}
+
+	if f&FLAGS_OPBATCH == FLAGS_OPBATCH {
+		flagList = append(flagList, "OPBATCH")
+	}
+
+	if f&FLAGS_OPLOCK == FLAGS_OPLOCK {
+		flagList = append(flagList, "OPLOCK")
+	}
+
+	if f&FLAGS_REPLY == FLAGS_REPLY {
+		flagList = append(flagList, "REPLY")
+	}
+
+	if f&FLAGS_RESERVED == FLAGS_RESERVED {
+		flagList = append(flagList, "RESERVED")
+	}
+
+	if len(flagList) == 0 {
+		return "NONE"
+	}
+
+	result = strings.Join(flagList, "|")
+
+	return result
+}

@@ -7,8 +7,8 @@ import "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/hea
 //
 // Parameters:
 //   - flags: The byte value to set as flags
-func (h *Header) SetFlags(flags byte) {
-	h.Flags = flags
+func (h *Header) SetFlags(value uint8) {
+	h.Flags = flags.Flags(value)
 }
 
 // SetFlags2 sets the flags2 field in the SMB Header.
@@ -16,8 +16,8 @@ func (h *Header) SetFlags(flags byte) {
 //
 // Parameters:
 //   - flags2: The uint16 value to set as flags2
-func (h *Header) SetFlags2(flags2 uint16) {
-	h.Flags2 = flags2
+func (h *Header) SetFlags2(value uint16) {
+	h.Flags2 = flags.Flags2(value)
 }
 
 // IsResponse returns true if the header is a response, false otherwise.

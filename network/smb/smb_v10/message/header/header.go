@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securityfeatures"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
@@ -26,10 +27,10 @@ type Header struct {
 	// Status (4 bytes): A 32-bit field used to communicate error messages from the server to the client.
 	Status types.ULONG
 	// Flags (1 byte): An 8-bit field of 1-bit flags describing various features in effect for the message.
-	Flags types.UCHAR
+	Flags flags.Flags
 	// Flags2 (2 bytes): A 16-bit field of 1-bit flags that represent various features in effect for the message.
 	// Unspecified bits are reserved and MUST be zero.
-	Flags2 types.USHORT
+	Flags2 flags.Flags2
 	// PID (2 bytes): A 32-bit field that represents the process identifier (PID).
 	PIDHigh types.USHORT
 	// SecurityFeatures (8 bytes): This 8-byte field has three possible interpretations.
@@ -115,11 +116,11 @@ func (h *Header) Marshal() ([]byte, error) {
 	buf = append(buf, buf4...)
 
 	// Flags (1 byte)
-	buf = append(buf, h.Flags)
+	buf = append(buf, byte(h.Flags))
 
 	// Flags2 (2 bytes)
 	buf2 := make([]byte, 2)
-	binary.LittleEndian.PutUint16(buf2, h.Flags2)
+	binary.LittleEndian.PutUint16(buf2, uint16(h.Flags2))
 	buf = append(buf, buf2...)
 
 	// PIDHigh (2 bytes)
@@ -197,11 +198,11 @@ func (h *Header) Unmarshal(data []byte) (int, error) {
 	bytesRead += 4
 
 	// Flags (1 byte)
-	h.Flags = data[bytesRead]
+	h.Flags = flags.Flags(data[bytesRead])
 	bytesRead += 1
 
 	// Flags2 (2 bytes)
-	h.Flags2 = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	h.Flags2 = flags.Flags2(binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2]))
 	bytesRead += 2
 
 	// PIDHigh (2 bytes)
