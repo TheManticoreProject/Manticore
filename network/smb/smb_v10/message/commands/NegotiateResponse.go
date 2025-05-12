@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
@@ -58,7 +59,7 @@ type NegotiateResponse struct {
 	// A 32-bit field providing a set of server capability indicators. This bit field is used to indicate to the client which features are supported
 	// by the server. Any value not listed in the following table is unused. The server MUST set the unused bits to 0 in a response, and the client MUST
 	// ignore these bits.
-	Capabilities types.ULONG
+	Capabilities capabilities.Capabilities
 
 	// The number of 100-nanosecond intervals that have elapsed since January 1, 1601, in Coordinated Universal Time (UTC) format.
 	SystemTime types.FILETIME
@@ -98,7 +99,7 @@ func NewNegotiateResponse() *NegotiateResponse {
 		MaxBufferSize:   types.ULONG(0),
 		MaxRawSize:      types.ULONG(0),
 		SessionKey:      types.ULONG(0),
-		Capabilities:    types.ULONG(0),
+		Capabilities:    capabilities.Capabilities(0),
 		SystemTime:      types.FILETIME{},
 		ServerTimeZone:  types.SHORT(0),
 		ChallengeLength: types.UCHAR(0),
@@ -151,7 +152,7 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 	if c.IsAndX() {
 		if c.GetAndX() == nil {
 			c.SetAndX(andx.NewAndX())
-			c.GetAndX().AndXCommand = c.GetCommandCode()
+			c.GetAndX().AndXCommand = codes.SMB_COM_NO_ANDX_COMMAND
 		}
 
 		for _, parameter := range c.GetAndX().GetParameters() {
@@ -317,7 +318,7 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Capabilities")
 	}
-	c.Capabilities = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Capabilities = capabilities.Capabilities(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 	// Unmarshalling parameter SystemTime
 	if len(rawParametersContent) < offset+8 {

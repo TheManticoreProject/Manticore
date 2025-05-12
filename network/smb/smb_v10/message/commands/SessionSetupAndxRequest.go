@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
@@ -58,7 +59,7 @@ type SessionSetupAndxRequest struct {
 	// Capabilities (4 bytes): A 32-bit field providing a set of client capability
 	// indicators. The client uses this field to report its own set of capabilities to
 	// the server. The client capabilities are a subset of the server capabilities.<95>
-	Capabilities types.ULONG
+	Capabilities capabilities.Capabilities
 
 	// Data
 
@@ -139,7 +140,7 @@ func NewSessionSetupAndxRequest() *SessionSetupAndxRequest {
 		OEMPasswordLen:     types.USHORT(0),
 		UnicodePasswordLen: types.USHORT(0),
 		Reserved:           types.ULONG(0),
-		Capabilities:       types.ULONG(0),
+		Capabilities:       capabilities.Capabilities(0),
 
 		// Data
 		OEMPassword:     []types.UCHAR{},
@@ -182,7 +183,7 @@ func (c *SessionSetupAndxRequest) Marshal() ([]byte, error) {
 	if c.IsAndX() {
 		if c.GetAndX() == nil {
 			c.SetAndX(andx.NewAndX())
-			c.GetAndX().AndXCommand = c.GetCommandCode()
+			c.GetAndX().AndXCommand = codes.SMB_COM_NO_ANDX_COMMAND
 		}
 
 		for _, parameter := range c.GetAndX().GetParameters() {
@@ -382,7 +383,7 @@ func (c *SessionSetupAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Capabilities")
 	}
-	c.Capabilities = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Capabilities = capabilities.Capabilities(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data

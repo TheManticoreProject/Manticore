@@ -65,7 +65,7 @@ func (c *CloseRequest) Marshal() ([]byte, error) {
 	if c.IsAndX() {
 		if c.GetAndX() == nil {
 			c.SetAndX(andx.NewAndX())
-			c.GetAndX().AndXCommand = c.GetCommandCode()
+			c.GetAndX().AndXCommand = codes.SMB_COM_NO_ANDX_COMMAND
 		}
 
 		for _, parameter := range c.GetAndX().GetParameters() {
