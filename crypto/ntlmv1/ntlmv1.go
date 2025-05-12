@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/TheManticoreProject/Manticore/crypto/lm"
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 )
 
@@ -187,4 +188,124 @@ func ParityAdjust(key []byte) ([]byte, error) {
 	}
 
 	return parityAdjustedKey, nil
+}
+
+// NTResponse calculates the NT response for NTLMv1 authentication
+//
+// The NT response is calculated by encrypting the server challenge with the NT hash
+// using DES encryption. The NT hash is split into three 7-byte keys, each adjusted
+// for DES parity, and each key is used to encrypt the challenge.
+//
+// Returns the 24-byte NT response or an error if the encryption fails.
+func (n *NTLMv1) NTResponse() ([]byte, error) {
+	// Split the NT hash into three 7-byte keys
+	key1 := n.NTHash[:7]
+	key2 := n.NTHash[7:14]
+	key3 := n.NTHash[14:16]
+	// Pad the third key to 7 bytes with zeros
+	key3 = append(key3, make([]byte, 5)...)
+
+	// Adjust keys for DES parity
+	key1, err := ParityAdjust(key1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key1 parity: %v", err)
+	}
+	key2, err = ParityAdjust(key2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key2 parity: %v", err)
+	}
+	key3, err = ParityAdjust(key3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key3 parity: %v", err)
+	}
+
+	// Create DES ciphers with each key
+	cipher1, err := des.NewCipher(key1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key1: %v", err)
+	}
+	cipher2, err := des.NewCipher(key2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key2: %v", err)
+	}
+	cipher3, err := des.NewCipher(key3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key3: %v", err)
+	}
+
+	// Encrypt the challenge with each cipher
+	result1 := make([]byte, 8)
+	result2 := make([]byte, 8)
+	result3 := make([]byte, 8)
+	cipher1.Encrypt(result1, n.ServerChallenge)
+	cipher2.Encrypt(result2, n.ServerChallenge)
+	cipher3.Encrypt(result3, n.ServerChallenge)
+
+	// Concatenate the results
+	ntResponse := append(result1, result2...)
+	ntResponse = append(ntResponse, result3...)
+
+	return ntResponse, nil
+}
+
+// LMResponse calculates the LM response for NTLMv1 authentication
+//
+// The LM response is calculated by first creating the LM hash from the password,
+// then encrypting the server challenge with the LM hash using DES encryption.
+// The LM hash is split into three 7-byte keys, each adjusted for DES parity,
+// and each key is used to encrypt the challenge.
+//
+// Returns the 24-byte LM response or an error if the encryption fails.
+func (n *NTLMv1) LMResponse() ([]byte, error) {
+	// Create the LM hash
+	lmHash := lm.LMHash(n.Password)
+
+	// Split the LM hash into three 7-byte keys
+	key1 := lmHash[:7]
+	key2 := lmHash[7:14]
+	key3 := lmHash[14:16]
+	// Pad the third key to 7 bytes with zeros
+	key3 = append(key3, make([]byte, 5)...)
+
+	// Adjust keys for DES parity
+	key1, err := ParityAdjust(key1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key1 parity: %v", err)
+	}
+	key2, err = ParityAdjust(key2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key2 parity: %v", err)
+	}
+	key3, err = ParityAdjust(key3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to adjust key3 parity: %v", err)
+	}
+
+	// Create DES ciphers with each key
+	cipher1, err := des.NewCipher(key1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key1: %v", err)
+	}
+	cipher2, err := des.NewCipher(key2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key2: %v", err)
+	}
+	cipher3, err := des.NewCipher(key3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES cipher with key3: %v", err)
+	}
+
+	// Encrypt the challenge with each cipher
+	result1 := make([]byte, 8)
+	result2 := make([]byte, 8)
+	result3 := make([]byte, 8)
+	cipher1.Encrypt(result1, n.ServerChallenge)
+	cipher2.Encrypt(result2, n.ServerChallenge)
+	cipher3.Encrypt(result3, n.ServerChallenge)
+
+	// Concatenate the results
+	lmResponse := append(result1, result2...)
+	lmResponse = append(lmResponse, result3...)
+
+	return lmResponse, nil
 }
