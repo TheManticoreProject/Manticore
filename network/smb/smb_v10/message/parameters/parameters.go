@@ -150,6 +150,8 @@ func (p *Parameters) Unmarshal(data []byte) (int, error) {
 		return bytesRead, fmt.Errorf("data is empty")
 	}
 
+	fmt.Printf("Parameters: %v\n", p)
+
 	p.WordCount = uint8(data[0])
 	bytesRead += 1
 

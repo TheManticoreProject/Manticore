@@ -53,6 +53,9 @@ type CommandInterface interface {
 
 	// Unmarshal unmarshals the command
 	Unmarshal([]byte) (int, error)
+
+	// Init initializes the command
+	Init()
 }
 
 // Command is a struct that implements the CommandInterface
@@ -71,6 +74,24 @@ type Command struct {
 
 	// Next command
 	NextCommand CommandInterface
+}
+
+// Init initializes the command
+//
+// Parameters:
+//   - commandCode: The command code to set
+func (c *Command) Init() {
+	c.AndX = nil
+
+	if c.Parameters == nil {
+		c.Parameters = parameters.NewParameters()
+	}
+
+	if c.Data == nil {
+		c.Data = data.NewData()
+	}
+
+	c.NextCommand = nil
 }
 
 // GetCommandCode returns the command code

@@ -12,10 +12,17 @@ import (
 
 // Session represents an established session between the client and server
 type Session struct {
-	Connection      *Client     // The SMB connection associated with this session
-	SessionKey      []byte      // The cryptographic session key associated with this session
-	SessionUID      uint16      // The 2-byte UID for this session
-	UserCredentials interface{} // Opaque implementation-specific entity that identifies the credentials
+	// The SMB connection associated with this session
+	Connection *Client
+
+	// The cryptographic session key associated with this session
+	SessionKey []byte
+
+	// The 2-byte UID for this session
+	SessionUID uint16
+
+	// Opaque implementation-specific entity that identifies the credentials
+	UserCredentials interface{}
 }
 
 func (c *Client) SessionSetup() error {
@@ -136,8 +143,6 @@ func (c *Client) SessionSetup() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal negotiate message: %v", err)
 	}
-
-	fmt.Printf("marshalled_message: %v\n", marshalled_message)
 
 	// Send the message
 	_, err = c.Transport.Send(marshalled_message)

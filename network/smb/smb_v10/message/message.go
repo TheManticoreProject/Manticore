@@ -123,6 +123,11 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 		}
 	}
 
+	// Init the command
+	// This is necessary to ensure that the command is initialized
+	// and that the parameters and data are not nil
+	c.Init()
+
 	// Unmarshal the command
 	_, err = c.Unmarshal(marshalledData)
 	if err != nil {
