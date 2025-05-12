@@ -1,12 +1,12 @@
 package header
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/securityfeatures"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
 const (
@@ -24,31 +24,33 @@ type Header struct {
 	// Command (1 byte): A one-byte command code. Defined SMB command codes are listed in section 2.2.2.1.
 	Command codes.CommandCode
 	// Status (4 bytes): A 32-bit field used to communicate error messages from the server to the client.
-	Status uint32
+	Status types.ULONG
 	// Flags (1 byte): An 8-bit field of 1-bit flags describing various features in effect for the message.
-	Flags byte
+	Flags types.UCHAR
 	// Flags2 (2 bytes): A 16-bit field of 1-bit flags that represent various features in effect for the message.
 	// Unspecified bits are reserved and MUST be zero.
-	Flags2 uint16
-	// PIDHigh (2 bytes): If set to a nonzero value, this field represents the high-order bytes of a process
-	// identifier (PID). It is combined with the PIDLow field below to form a full PID.
-	PIDHigh uint16
+	Flags2 types.USHORT
+	// PID (2 bytes): A 32-bit field that represents the process identifier (PID).
+	PIDHigh types.USHORT
 	// SecurityFeatures (8 bytes): This 8-byte field has three possible interpretations.
 	SecurityFeatures securityfeatures.SecurityFeatures
 	// Reserved (2 bytes): This field is reserved and SHOULD be set to 0x0000.
-	Reserved uint16
+	Reserved types.USHORT
 	// TID (2 bytes): A tree identifier (TID).
-	TID uint16
-	// PIDLow (2 bytes): The lower 16-bits of the PID.
-	PIDLow uint16
+	TID types.USHORT
+	// PIDLow (2 bytes): A 32-bit field that represents the process identifier (PID).
+	PIDLow types.USHORT
 	// UID (2 bytes): A user identifier (UID).
-	UID uint16
+	UID types.USHORT
 	// MID (2 bytes): A multiplex identifier (MID).
-	MID uint16
+	MID types.USHORT
 }
 
 // NewHeader creates a new SMB Header with default values
 // and initializes the SecurityFeatures field with a Reserved security features object.
+//
+// Returns:
+//   - *Header: A pointer to the newly created SMB Header
 func NewHeader() *Header {
 	h := &Header{
 		Protocol:         [4]byte{0xFF, 'S', 'M', 'B'},
@@ -70,6 +72,9 @@ func NewHeader() *Header {
 
 // NewHeaderWithSecurityFeaturesConnectionLess creates a new SMB Header with default values
 // and initializes the SecurityFeatures field with a ConnectionlessTransport security features object.
+//
+// Returns:
+//   - *Header: A pointer to the newly created SMB Header
 func NewHeaderWithSecurityFeaturesConnectionLess() *Header {
 	h := NewHeader()
 	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesConnectionlessTransport()
@@ -78,6 +83,9 @@ func NewHeaderWithSecurityFeaturesConnectionLess() *Header {
 
 // NewHeaderWithSecurityFeaturesSecuritySignature creates a new SMB Header with default values
 // and initializes the SecurityFeatures field with a SecuritySignature security features object.
+//
+// Returns:
+//   - *Header: A pointer to the newly created SMB Header
 func NewHeaderWithSecurityFeaturesSecuritySignature() *Header {
 	h := NewHeader()
 	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesSecuritySignature()
@@ -93,40 +101,72 @@ func NewHeaderWithSecurityFeaturesSecuritySignature() *Header {
 //   - []byte: The serialized header as a byte slice
 //   - error: Any error encountered during serialization, or nil if successful
 func (h *Header) Marshal() ([]byte, error) {
-	buf := bytes.NewBuffer([]byte{})
+	buf := []byte{}
 
-	binary.Write(buf, binary.LittleEndian, h.Protocol)
+	// Protocol (4 bytes)
+	buf = append(buf, h.Protocol[0:4]...)
 
-	binary.Write(buf, binary.LittleEndian, h.Command)
+	// Command (1 byte)
+	buf = append(buf, byte(h.Command))
 
-	binary.Write(buf, binary.LittleEndian, h.Status)
+	// Status (4 bytes)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, h.Status)
+	buf = append(buf, buf4...)
 
-	binary.Write(buf, binary.LittleEndian, h.Flags)
+	// Flags (1 byte)
+	buf = append(buf, h.Flags)
 
-	binary.Write(buf, binary.LittleEndian, h.Flags2)
+	// Flags2 (2 bytes)
+	buf2 := make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.Flags2)
+	buf = append(buf, buf2...)
 
-	binary.Write(buf, binary.LittleEndian, h.PIDHigh)
+	// PIDHigh (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.PIDHigh)
+	buf = append(buf, buf2...)
 
+	// SecurityFeatures (8 bytes)
 	securityFeaturesBytes, err := h.SecurityFeatures.Marshal()
 	if err != nil {
 		return nil, err
 	}
-	buf.Write(securityFeaturesBytes)
+	buf = append(buf, securityFeaturesBytes...)
 
-	binary.Write(buf, binary.LittleEndian, h.Reserved)
+	// Reserved (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.Reserved)
+	buf = append(buf, buf2...)
 
-	binary.Write(buf, binary.LittleEndian, h.TID)
+	// TID (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.TID)
+	buf = append(buf, buf2...)
 
-	binary.Write(buf, binary.LittleEndian, h.PIDLow)
+	// PIDLow (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.PIDLow)
+	buf = append(buf, buf2...)
 
-	binary.Write(buf, binary.LittleEndian, h.UID)
+	// UID (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.UID)
+	buf = append(buf, buf2...)
 
-	binary.Write(buf, binary.LittleEndian, h.MID)
+	// MID (2 bytes)
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, h.MID)
+	buf = append(buf, buf2...)
 
-	return buf.Bytes(), nil
+	if len(buf) != SMB_HEADER_SIZE {
+		return nil, fmt.Errorf("expected to have marshalled %d bytes, got %d", SMB_HEADER_SIZE, len(buf))
+	}
+
+	return buf, nil
 }
 
-// UnmarshalWithSecurityFeaturesConnectionlessTransport deserializes a byte slice into the SMB Header structure.
+// Unmarshal deserializes a byte slice into the SMB Header structure.
 // It reads the binary representation of the header fields from the input byte slice
 // using little-endian byte order. This method determines the appropriate security
 // features type based on the header flags and unmarshals accordingly.
@@ -137,149 +177,138 @@ func (h *Header) Marshal() ([]byte, error) {
 // Returns:
 //   - int: The number of bytes read from the input byte slice
 //   - error: Any error encountered during deserialization, or nil if successful
-func (h *Header) UnmarshalWithSecurityFeaturesConnectionlessTransport(data []byte) (int, error) {
-	if len(data) < SMB_HEADER_SIZE {
-		return 0, fmt.Errorf("data too short to unmarshal SMB header")
-	}
-
-	copy(h.Protocol[:], data[0:4])
-
-	h.Command = codes.CommandCode(data[4])
-
-	h.Status = binary.LittleEndian.Uint32(data[5:9])
-
-	h.Flags = data[9]
-
-	h.Flags2 = binary.LittleEndian.Uint16(data[10:12])
-
-	h.PIDHigh = binary.LittleEndian.Uint16(data[12:14])
-
-	securityFeaturesBytes := data[14:22]
-	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesConnectionlessTransport()
-	bytesRead, err := h.SecurityFeatures.Unmarshal(securityFeaturesBytes)
-	if err != nil {
-		return 0, err
-	}
-	if bytesRead != 8 {
-		return 0, fmt.Errorf("expected 8 bytes, got %d", bytesRead)
-	}
-
-	h.Reserved = binary.LittleEndian.Uint16(data[22:24])
-
-	h.TID = binary.LittleEndian.Uint16(data[24:26])
-
-	h.PIDLow = binary.LittleEndian.Uint16(data[26:28])
-
-	h.UID = binary.LittleEndian.Uint16(data[28:30])
-
-	h.MID = binary.LittleEndian.Uint16(data[30:32])
-
-	return SMB_HEADER_SIZE, nil
-}
-
-// UnmarshalWithSecurityFeaturesSecuritySignature deserializes a byte slice into the SMB Header structure.
-// It reads the binary representation of the header fields from the input byte slice
-// using little-endian byte order. This method determines the appropriate security
-// features type based on the header flags and unmarshals accordingly.
-//
-// Parameters:
-//   - data: The byte slice containing the serialized SMB header
-//
-// Returns:
-//   - int: The number of bytes read from the input byte slice
-//   - error: Any error encountered during deserialization, or nil if successful
-func (h *Header) UnmarshalWithSecurityFeaturesSecuritySignature(data []byte) (int, error) {
-	if len(data) < SMB_HEADER_SIZE {
-		return 0, fmt.Errorf("data too short to unmarshal SMB header")
-	}
-
-	copy(h.Protocol[:], data[0:4])
-
-	h.Command = codes.CommandCode(data[4])
-
-	h.Status = binary.LittleEndian.Uint32(data[5:9])
-
-	h.Flags = data[9]
-
-	h.Flags2 = binary.LittleEndian.Uint16(data[10:12])
-
-	h.PIDHigh = binary.LittleEndian.Uint16(data[12:14])
-
-	securityFeaturesBytes := data[14:22]
-	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesSecuritySignature()
-	bytesRead, err := h.SecurityFeatures.Unmarshal(securityFeaturesBytes)
-	if err != nil {
-		return 0, err
-	}
-	if bytesRead != 8 {
-		return 0, fmt.Errorf("expected 8 bytes, got %d", bytesRead)
-	}
-
-	h.Reserved = binary.LittleEndian.Uint16(data[22:24])
-
-	h.TID = binary.LittleEndian.Uint16(data[24:26])
-
-	h.PIDLow = binary.LittleEndian.Uint16(data[26:28])
-
-	h.UID = binary.LittleEndian.Uint16(data[28:30])
-
-	h.MID = binary.LittleEndian.Uint16(data[30:32])
-
-	return SMB_HEADER_SIZE, nil
-}
-
-// UnmarshalWithSecurityFeaturesConnectionlessTransport deserializes a byte slice into the SMB Header structure.
-// It reads the binary representation of the header fields from the input byte slice
-// using little-endian byte order. This method determines the appropriate security
-// features type based on the header flags and unmarshals accordingly.
-//
-// Parameters:
-//   - data: The byte slice containing the serialized SMB header
-//
-// Returns:
-//   - int: The number of bytes read from the input byte slice
-//   - error: Any error encountered during deserialization, or nil if successful
-func (h *Header) UnmarshalWithSecurityFeaturesReserved(data []byte) (int, error) {
-	if len(data) < SMB_HEADER_SIZE {
-		return 0, fmt.Errorf("data too short to unmarshal SMB header")
-	}
-
-	copy(h.Protocol[:], data[0:4])
-
-	h.Command = codes.CommandCode(data[4])
-
-	h.Status = binary.LittleEndian.Uint32(data[5:9])
-
-	h.Flags = data[9]
-
-	h.Flags2 = binary.LittleEndian.Uint16(data[10:12])
-
-	h.PIDHigh = binary.LittleEndian.Uint16(data[12:14])
-
-	securityFeaturesBytes := data[14:22]
-	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesReserved()
-	bytesRead, err := h.SecurityFeatures.Unmarshal(securityFeaturesBytes)
-	if err != nil {
-		return 0, err
-	}
-
-	if bytesRead != 8 {
-		return 0, fmt.Errorf("expected 8 bytes, got %d", bytesRead)
-	}
-
-	h.Reserved = binary.LittleEndian.Uint16(data[22:24])
-
-	h.TID = binary.LittleEndian.Uint16(data[24:26])
-
-	h.PIDLow = binary.LittleEndian.Uint16(data[26:28])
-
-	h.UID = binary.LittleEndian.Uint16(data[28:30])
-
-	h.MID = binary.LittleEndian.Uint16(data[30:32])
-
-	return SMB_HEADER_SIZE, nil
-}
-
 func (h *Header) Unmarshal(data []byte) (int, error) {
-	return h.UnmarshalWithSecurityFeaturesReserved(data)
+	if len(data) < SMB_HEADER_SIZE {
+		return 0, fmt.Errorf("data too short to unmarshal SMB header")
+	}
+
+	bytesRead := 0
+
+	// Protocol (4 bytes)
+	copy(h.Protocol[:], data[0:4])
+	bytesRead += 4
+
+	// Command (1 byte)
+	h.Command = codes.CommandCode(data[bytesRead])
+	bytesRead += 1
+
+	// Status (4 bytes)
+	h.Status = binary.LittleEndian.Uint32(data[bytesRead : bytesRead+4])
+	bytesRead += 4
+
+	// Flags (1 byte)
+	h.Flags = data[bytesRead]
+	bytesRead += 1
+
+	// Flags2 (2 bytes)
+	h.Flags2 = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// PIDHigh (2 bytes)
+	h.PIDHigh = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// SecurityFeatures (8 bytes)
+	securityFeaturesBytes := data[bytesRead : bytesRead+8]
+	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesReserved()
+	securityFeaturesBytesRead, err := h.SecurityFeatures.Unmarshal(securityFeaturesBytes)
+	if err != nil {
+		return 0, err
+	}
+	if securityFeaturesBytesRead != 8 {
+		return 0, fmt.Errorf("expected to have unmarshalled 8 bytes, got %d", securityFeaturesBytesRead)
+	}
+	bytesRead += securityFeaturesBytesRead
+
+	// Reserved (2 bytes)
+	h.Reserved = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// TID (2 bytes)
+	h.TID = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// PIDLow (2 bytes)
+	h.PIDLow = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// UID (2 bytes)
+	h.UID = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	// MID (2 bytes)
+	h.MID = binary.LittleEndian.Uint16(data[bytesRead : bytesRead+2])
+	bytesRead += 2
+
+	if bytesRead != SMB_HEADER_SIZE {
+		return 0, fmt.Errorf("expected to have unmarshalled %d bytes, got %d", SMB_HEADER_SIZE, bytesRead)
+	}
+
+	return bytesRead, nil
+}
+
+// GetMID returns the multiplex identifier (MID) value
+//
+// Returns:
+//   - types.USHORT: The multiplex identifier (MID) value
+func (h *Header) GetMID() types.USHORT {
+	return h.MID
+}
+
+// SetMID sets the multiplex identifier (MID) value
+//
+// Parameters:
+//   - mid: The new multiplex identifier (MID) value
+func (h *Header) SetMID(mid types.USHORT) {
+	h.MID = mid
+}
+
+// GetPID returns the full 32-bit process identifier (PID) value
+// combining PIDHigh and PIDLow
+//
+// Returns:
+//   - types.ULONG: The full 32-bit process identifier (PID) value
+func (h *Header) GetPID() types.ULONG {
+	return (types.ULONG(h.PIDHigh) << 16) | types.ULONG(h.PIDLow)
+}
+
+// SetPID sets both PIDHigh and PIDLow from a 32-bit process identifier (PID)
+//
+// Parameters:
+//   - pid: The new 32-bit process identifier (PID) value
+func (h *Header) SetPID(pid types.ULONG) {
+	h.PIDHigh = types.USHORT(pid >> 16)
+	h.PIDLow = types.USHORT(pid & 0xFFFF)
+}
+
+// GetTID returns the tree identifier (TID) value
+//
+// Returns:
+//   - types.USHORT: The tree identifier (TID) value
+func (h *Header) GetTID() types.USHORT {
+	return h.TID
+}
+
+// SetTID sets the tree identifier (TID) value
+//
+// Parameters:
+//   - tid: The new tree identifier (TID) value
+func (h *Header) SetTID(tid types.USHORT) {
+	h.TID = tid
+}
+
+// GetUID returns the user identifier (UID) value
+//
+// Returns:
+//   - types.USHORT: The user identifier (UID) value
+func (h *Header) GetUID() types.USHORT {
+	return h.UID
+}
+
+// SetUID sets the user identifier (UID) value
+//
+// Parameters:
+//   - uid: The new user identifier (UID) value
+func (h *Header) SetUID(uid types.USHORT) {
+	h.UID = uid
 }

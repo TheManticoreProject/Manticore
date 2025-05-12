@@ -19,19 +19,19 @@ func Test_HeaderMarshalUnmarshalInvolution(t *testing.T) {
 	h.SecurityFeatures = securityfeatures.NewSecurityFeaturesSecuritySignature()
 	h.Reserved = 0x6666
 	h.TID = 0x7777
-	h.PIDLow = 0x8888
-	h.UID = 0x9999
-	h.MID = 0xAAAA
+	h.PIDLow = 0x5555
+	h.UID = 0x8888
+	h.MID = 0x9999
 
 	marshalled, err := h.Marshal()
 	if err != nil {
 		t.Fatalf("Failed to marshal SMB header: %v", err)
 	}
 
-	t.Logf("Marshalled SMB header: %x", marshalled)
+	t.Logf("Marshalled SMB header (%d bytes): %x", len(marshalled), marshalled)
 
 	unmarshalled := header.NewHeader()
-	bytesRead, err := unmarshalled.UnmarshalWithSecurityFeaturesSecuritySignature(marshalled)
+	bytesRead, err := unmarshalled.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal SMB header: %v", err)
 	}
@@ -41,43 +41,43 @@ func Test_HeaderMarshalUnmarshalInvolution(t *testing.T) {
 	}
 
 	if unmarshalled.Command != h.Command {
-		t.Errorf("Command mismatch: %x != %x", unmarshalled.Command, h.Command)
+		t.Errorf("Command mismatch: got %s (0x%02x) expected %s (0x%02x)", unmarshalled.Command, uint8(unmarshalled.Command), h.Command, uint8(h.Command))
 	}
 
 	if unmarshalled.Status != h.Status {
-		t.Errorf("Status mismatch: %x != %x", unmarshalled.Status, h.Status)
+		t.Errorf("Status mismatch: got %x expected %x", unmarshalled.Status, h.Status)
 	}
 
 	if unmarshalled.Flags != h.Flags {
-		t.Errorf("Flags mismatch: %x != %x", unmarshalled.Flags, h.Flags)
+		t.Errorf("Flags mismatch: got %x expected %x", unmarshalled.Flags, h.Flags)
 	}
 
 	if unmarshalled.Flags2 != h.Flags2 {
-		t.Errorf("Flags2 mismatch: %x != %x", unmarshalled.Flags2, h.Flags2)
+		t.Errorf("Flags2 mismatch: got %x expected %x", unmarshalled.Flags2, h.Flags2)
 	}
 
 	if unmarshalled.PIDHigh != h.PIDHigh {
-		t.Errorf("PIDHigh mismatch: %x != %x", unmarshalled.PIDHigh, h.PIDHigh)
-	}
-
-	if unmarshalled.Reserved != h.Reserved {
-		t.Errorf("Reserved mismatch: %x != %x", unmarshalled.Reserved, h.Reserved)
-	}
-
-	if unmarshalled.TID != h.TID {
-		t.Errorf("TID mismatch: %x != %x", unmarshalled.TID, h.TID)
+		t.Errorf("PIDHigh mismatch: got %x expected %x", unmarshalled.PIDHigh, h.PIDHigh)
 	}
 
 	if unmarshalled.PIDLow != h.PIDLow {
-		t.Errorf("PIDLow mismatch: %x != %x", unmarshalled.PIDLow, h.PIDLow)
+		t.Errorf("PIDLow mismatch: got %x expected %x", unmarshalled.PIDLow, h.PIDLow)
+	}
+
+	if unmarshalled.Reserved != h.Reserved {
+		t.Errorf("Reserved mismatch: got %x expected %x", unmarshalled.Reserved, h.Reserved)
+	}
+
+	if unmarshalled.TID != h.TID {
+		t.Errorf("TID mismatch: got %x expected %x", unmarshalled.TID, h.TID)
 	}
 
 	if unmarshalled.UID != h.UID {
-		t.Errorf("UID mismatch: %x != %x", unmarshalled.UID, h.UID)
+		t.Errorf("UID mismatch: got %x expected %x", unmarshalled.UID, h.UID)
 	}
 
 	if unmarshalled.MID != h.MID {
-		t.Errorf("MID mismatch: %x != %x", unmarshalled.MID, h.MID)
+		t.Errorf("MID mismatch: got %x expected %x", unmarshalled.MID, h.MID)
 	}
 }
 
