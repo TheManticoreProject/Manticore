@@ -123,6 +123,12 @@ func (c *QueryInformationRequest) Unmarshal(data []byte) (int, error) {
 	}
 	rawDataContent := c.GetData().GetBytes()
 
+	// If the parameters and data are empty, this is a response containing an error code in
+	// the SMB Header Status field
+	if len(rawDataContent) == 0 {
+		return 0, nil
+	}
+
 	// First unmarshal the parameters
 	offset = 0
 	// No parameters are sent in this message
