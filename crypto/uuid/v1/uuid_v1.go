@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/TheManticoreProject/Manticore/crypto/uuid"
 )
 
 const (
@@ -23,11 +25,13 @@ const (
 
 // UUIDv1 represents a UUID v1 structure
 type UUIDv1 struct {
-	Time     uint64
-	Version  uint8
-	Variant  uint8
+	uuid.UUID
+
+	Time uint64
+
 	ClockSeq uint16
-	NodeID   [6]byte
+
+	NodeID [6]byte
 }
 
 // Unmarshal converts a 16-byte array into a UUIDv1 structure
@@ -38,17 +42,15 @@ func (u *UUIDv1) Unmarshal(marshalledData []byte) (int, error) {
 
 	// Extract the variant
 	// The variant is stored in the most significant bits of the 8th octet
-	u.Variant = marshalledData[8] >> 4
+	u.UUID.Variant = marshalledData[8] >> 4
 
 	// Reconstruct the time field
 	u.Time = binary.LittleEndian.Uint64(marshalledData[0:8])
 
-	fmt.Printf("marshalledData: %x\n", marshalledData)
-
 	// Extract version
-	u.Version = uint8((marshalledData[8] >> 4) & 0x0F)
-	if u.Version != 1 {
-		return 0, fmt.Errorf("invalid UUID version: got %d, want 1", u.Version)
+	u.UUID.Version = uint8((marshalledData[8] >> 4) & 0x0F)
+	if u.UUID.Version != 1 {
+		return 0, fmt.Errorf("invalid UUID version: got %d, want 1", u.UUID.Version)
 	}
 
 	// Extract clock sequence and node ID
@@ -159,8 +161,8 @@ func (u *UUIDv1) String() string {
 	return fmt.Sprintf(
 		"%08x-%04x-%04x-%04x-%012x",
 		u.Time,
-		u.Version,
-		u.Variant,
+		u.UUID.Version,
+		u.UUID.Variant,
 		u.ClockSeq,
 		u.NodeID,
 	)
