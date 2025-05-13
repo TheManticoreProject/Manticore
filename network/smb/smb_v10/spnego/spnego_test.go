@@ -5,18 +5,23 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm/negotiate"
 )
 
 func TestCreateNegTokenInit(t *testing.T) {
 	// Create a simple NTLM NEGOTIATE message
-	ntlmNegotiate, err := ntlm.CreateNegotiateMessage("DOMAIN", "WORKSTATION", true)
+	ntlmNegotiate, err := negotiate.CreateNegotiateMessage("DOMAIN", "WORKSTATION", true)
 	if err != nil {
 		t.Fatalf("Failed to create NTLM NEGOTIATE message: %v", err)
 	}
 
+	ntlmNegotiateBytes, err := ntlmNegotiate.Marshal()
+	if err != nil {
+		t.Fatalf("Failed to marshal NTLM NEGOTIATE message: %v", err)
+	}
+
 	// Wrap it in SPNEGO
-	token, err := spnego.CreateNegTokenInit(ntlmNegotiate)
+	token, err := spnego.CreateNegTokenInit(ntlmNegotiateBytes)
 	if err != nil {
 		t.Fatalf("Failed to create SPNEGO token: %v", err)
 	}
@@ -33,8 +38,8 @@ func TestCreateNegTokenInit(t *testing.T) {
 	}
 
 	// Verify it's the same as the original
-	if len(extractedToken) != len(ntlmNegotiate) {
-		t.Errorf("Extracted token length %d doesn't match original %d", len(extractedToken), len(ntlmNegotiate))
+	if len(extractedToken) != len(ntlmNegotiateBytes) {
+		t.Errorf("Extracted token length %d doesn't match original %d", len(extractedToken), len(ntlmNegotiateBytes))
 	}
 
 	// Check the NTLM signature

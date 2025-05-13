@@ -4,7 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm/authenticate"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm/challenge"
 	"github.com/TheManticoreProject/Manticore/utils/encoding/utf16"
 )
 
@@ -26,7 +27,7 @@ type AuthContext struct {
 	UseUnicode  bool
 
 	// NTLM specific fields
-	NTLMChallenge *ntlm.ChallengeMessage
+	NTLMChallenge *challenge.ChallengeMessage
 }
 
 // NewAuthContext creates a new authentication context
@@ -63,7 +64,7 @@ func (ctx *AuthContext) ProcessChallengeToken(token []byte) ([]byte, error) {
 	switch ctx.Type {
 	case AuthTypeNTLM:
 		// Parse the NTLM CHALLENGE message
-		challenge, err := ntlm.ParseChallengeMessage(innerToken)
+		challenge, err := challenge.ParseChallengeMessage(innerToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse NTLM CHALLENGE message: %v", err)
 		}
@@ -72,13 +73,18 @@ func (ctx *AuthContext) ProcessChallengeToken(token []byte) ([]byte, error) {
 		ctx.NTLMChallenge = challenge
 
 		// Create NTLM AUTHENTICATE message
-		ntlmAuth, err := ntlm.CreateAuthenticateMessage(challenge, ctx.Username, ctx.Password, ctx.Domain, ctx.Workstation)
+		ntlmAuth, err := authenticate.CreateAuthenticateMessage(challenge, ctx.Username, ctx.Password, ctx.Domain, ctx.Workstation)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create NTLM AUTHENTICATE message: %v", err)
 		}
 
+		ntlmAuthBytes, err := ntlmAuth.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal NTLM AUTHENTICATE message: %v", err)
+		}
+
 		// Wrap in SPNEGO
-		return CreateNegTokenInit(ntlmAuth)
+		return CreateNegTokenInit(ntlmAuthBytes)
 
 	case AuthTypeKerberos:
 		return nil, errors.New("kerberos authentication is not yet implemented")

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/spnego/ntlm/negotiate"
 )
 
 // CreateNegotiateToken creates the initial SPNEGO token with NTLM negotiate message
@@ -18,13 +18,18 @@ func (ctx *AuthContext) CreateNegotiateToken() ([]byte, error) {
 	switch ctx.Type {
 	case AuthTypeNTLM:
 		// Create NTLM NEGOTIATE message
-		ntlmNegotiate, err := ntlm.CreateNegotiateMessage(ctx.Domain, ctx.Workstation, ctx.UseUnicode)
+		ntlmNegotiate, err := negotiate.CreateNegotiateMessage(ctx.Domain, ctx.Workstation, ctx.UseUnicode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create NTLM NEGOTIATE message: %v", err)
 		}
 
+		ntlmNegotiateBytes, err := ntlmNegotiate.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal NTLM NEGOTIATE message: %v", err)
+		}
+
 		// Wrap in SPNEGO
-		return CreateNegTokenInit(ntlmNegotiate)
+		return CreateNegTokenInit(ntlmNegotiateBytes)
 
 	case AuthTypeKerberos:
 		return nil, errors.New("kerberos authentication is not yet implemented")
