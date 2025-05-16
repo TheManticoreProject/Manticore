@@ -3,16 +3,18 @@ package ldap
 import (
 	"fmt"
 
-	"github.com/go-ldap/ldap/v3"
+	goldapv3 "github.com/go-ldap/ldap/v3"
 )
 
-type Entry ldap.Entry
+type Entry = goldapv3.Entry
+
+type Control = goldapv3.Control
 
 const (
-	ScopeBaseObject   = ldap.ScopeBaseObject
-	ScopeSingleLevel  = ldap.ScopeSingleLevel
-	ScopeChildren     = ldap.ScopeChildren
-	ScopeWholeSubtree = ldap.ScopeWholeSubtree
+	ScopeBaseObject   = goldapv3.ScopeBaseObject
+	ScopeSingleLevel  = goldapv3.ScopeSingleLevel
+	ScopeChildren     = goldapv3.ScopeChildren
+	ScopeWholeSubtree = goldapv3.ScopeWholeSubtree
 )
 
 // GetRootDSE retrieves the Root DSE (Directory Service Entry) from the LDAP server.
@@ -34,16 +36,16 @@ const (
 //	} else {
 //	    fmt.Println("Failed to retrieve Root DSE")
 //	}
-func (ldapSession *Session) GetRootDSE() (*ldap.Entry, error) {
+func (ldapSession *Session) GetRootDSE() (*Entry, error) {
 	// Specify LDAP search parameters
 	// https://pkg.go.dev/gopkg.in/ldap.v3#NewSearchRequest
-	searchRequest := ldap.NewSearchRequest(
+	searchRequest := goldapv3.NewSearchRequest(
 		// Base DN blank
 		"",
 		// Scope Base
-		ldap.ScopeBaseObject,
+		goldapv3.ScopeBaseObject,
 		// DerefAliases
-		ldap.NeverDerefAliases,
+		goldapv3.NeverDerefAliases,
 		// SizeLimit
 		1,
 		// TimeLimit

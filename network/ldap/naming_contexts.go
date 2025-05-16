@@ -3,7 +3,7 @@ package ldap
 import (
 	"fmt"
 
-	"github.com/go-ldap/ldap/v3"
+	goldapv3 "github.com/go-ldap/ldap/v3"
 )
 
 // BaseDNExists checks if a given base distinguished name (baseDN) exists in the LDAP directory.
@@ -35,13 +35,13 @@ import (
 func (ldapSession *Session) BaseDNExists(baseDN string) bool {
 	// Specify LDAP search parameters
 	// https://pkg.go.dev/gopkg.in/ldap.v3#NewSearchRequest
-	searchRequest := ldap.NewSearchRequest(
+	searchRequest := goldapv3.NewSearchRequest(
 		// Base DN
 		baseDN,
 		// Scope
-		ldap.ScopeBaseObject,
+		goldapv3.ScopeBaseObject,
 		// DerefAliases
-		ldap.NeverDerefAliases,
+		goldapv3.NeverDerefAliases,
 		// SizeLimit
 		1,
 		// TimeLimit
@@ -58,7 +58,7 @@ func (ldapSession *Session) BaseDNExists(baseDN string) bool {
 
 	// Perform LDAP search
 	_, err := ldapSession.connection.Search(searchRequest)
-	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+	if goldapv3.IsErrorWithCode(err, goldapv3.LDAPResultNoSuchObject) {
 		return false
 	} else {
 		return true

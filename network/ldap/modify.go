@@ -3,12 +3,16 @@ package ldap
 import (
 	"fmt"
 
-	"github.com/go-ldap/ldap/v3"
+	goldapv3 "github.com/go-ldap/ldap/v3"
 )
 
 type ModifyRequest struct {
+	// Distinguished names
 	DistinguishedName string
-	Attributes        []*Action
+	// Actions to perform on attributes
+	Attributes []*Action
+	// LDAP controls
+	Controls []goldapv3.Control
 }
 
 type Action struct {
@@ -18,6 +22,7 @@ type Action struct {
 	DelValues       []string
 	ReplaceValues   []string
 	IncrementValues []string
+	OverwriteValues []string
 }
 
 // NewModifyRequest creates a new instance of ModifyRequest with the specified distinguished name.
@@ -46,6 +51,17 @@ func NewModifyRequest(distinguishedName string) *ModifyRequest {
 		DistinguishedName: distinguishedName,
 		Attributes:        make([]*Action, 0),
 	}
+}
+
+// AddControl adds a control to the ModifyRequest.
+//
+// Parameters:
+//   - control: A pointer to a goldapv3.Control struct representing the control to be added.
+func (req *ModifyRequest) AddControl(control goldapv3.Control) {
+	if req.Controls == nil {
+		req.Controls = make([]goldapv3.Control, 0)
+	}
+	req.Controls = append(req.Controls, control)
 }
 
 // Add adds a new attribute and its values to the ModifyRequest.
@@ -162,6 +178,43 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 	})
 }
 
+// Overwrite sets a overwrite operation for an attribute in the ModifyRequest.
+//
+// Parameters:
+//   - attrType: A string representing the type of the attribute to be overwritten.
+//   - attrVals: A slice of strings representing the new values for the attribute.
+func (ldapSession *Session) Overwrite(distinguishedName string, attrType string, attrVals []string) error {
+	// Overwrite the content of the attribute with the new values
+	m1 := goldapv3.NewModifyRequest(distinguishedName, nil)
+	m1.Delete(attrType, nil)
+
+	// Execute the modify request
+	err := ldapSession.connection.Modify(m1)
+	if err != nil {
+		// Check if the error is of type NO_ATTRIBUTE_OR_VAL (code 16)
+		if ldapErr, ok := err.(*goldapv3.Error); ok && ldapErr.ResultCode == 16 {
+			// Ignore NO_ATTRIBUTE_OR_VAL error as it just means the attribute doesn't exist yet
+			// LDAP Result Code 16 "No Such Attribute": 00002076: AtrErr: DSID-030F1BC2, #1:
+			// 0: 00002076: DSID-030F1BC2, problem 1001 (NO_ATTRIBUTE_OR_VAL), data 0, Att d (description)
+			// This is expected behavior, so we can ignore it
+		} else {
+			// Return other types of errors
+			return fmt.Errorf("error flushing attribute: %s", err)
+		}
+	}
+
+	m2 := goldapv3.NewModifyRequest(distinguishedName, nil)
+	m2.Add(attrType, attrVals)
+
+	// Execute the modify request
+	err = ldapSession.connection.Modify(m2)
+	if err != nil {
+		return fmt.Errorf("error replacing attribute: %s", err)
+	}
+
+	return nil
+}
+
 // Modify performs an LDAP modify operation on the specified distinguished name (DN) using the provided ModifyRequest.
 //
 // Parameters:
@@ -201,20 +254,24 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 //   - The ModifyRequest struct should contain the desired modifications, such as add, delete, or replace operations
 //     for specific attributes.
 //   - Ensure that the LDAP connection is properly established before calling this function.
-func (s *Session) Modify(modifyRequest *ModifyRequest) error {
-	m := ldap.NewModifyRequest(modifyRequest.DistinguishedName, nil)
+func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
+	m := goldapv3.NewModifyRequest(modifyRequest.DistinguishedName, modifyRequest.Controls)
 	for _, attribute := range modifyRequest.Attributes {
 		if len(attribute.AddValues) > 0 {
+			// Add the new values to the attribute
 			m.Add(attribute.Attribute, attribute.AddValues)
 		} else if len(attribute.DelValues) > 0 {
+			// Delete the values from the attribute
 			m.Delete(attribute.Attribute, attribute.DelValues)
 		} else if len(attribute.ReplaceValues) > 0 {
+			// Replace the content of the attribute with the new values
 			m.Replace(attribute.Attribute, attribute.ReplaceValues)
 		} else if len(attribute.IncrementValues) > 0 {
+			// Increment the value of the attribute
 			m.Increment(attribute.Attribute, attribute.IncrementValues[0])
 		}
 	}
-	return s.connection.Modify(m)
+	return ldapSession.connection.Modify(m)
 }
 
 // AddStringToAttributeList adds a string to an attribute list
@@ -228,7 +285,7 @@ func (s *Session) Modify(modifyRequest *ModifyRequest) error {
 //   - An error object if the add operation fails, otherwise nil.
 func (ldapSession *Session) AddStringToAttributeList(dn string, attributeName string, valueToAdd string) error {
 	// Create a modify request
-	modifyRequest := ldap.NewModifyRequest(dn, nil)
+	modifyRequest := goldapv3.NewModifyRequest(dn, nil)
 	modifyRequest.Add(attributeName, []string{valueToAdd})
 
 	// Execute the modify request
@@ -250,7 +307,7 @@ func (ldapSession *Session) AddStringToAttributeList(dn string, attributeName st
 //   - An error object if the flush operation fails, otherwise nil.
 func (ldapSession *Session) FlushAttribute(dn string, attributeName string) error {
 	// Create a modify request
-	modifyRequest := ldap.NewModifyRequest(dn, nil)
+	modifyRequest := goldapv3.NewModifyRequest(dn, nil)
 	modifyRequest.Delete(attributeName, nil)
 
 	// Execute the modify request
