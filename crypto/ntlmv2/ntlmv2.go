@@ -20,15 +20,20 @@ import (
 type NTLMv2 struct {
 	Domain          string
 	Username        string
-	Password        string
 	ServerChallenge [8]byte
 	ClientChallenge [8]byte
 	NTHash          [16]byte
 	ResponseKeyNT   [16]byte
 }
 
-// NewNTLMv2 creates a new NTLMv2 instance with the provided credentials and challenges
-func NewNTLMv2(domain, username, password string, serverChallenge, clientChallenge [8]byte) (*NTLMv2, error) {
+// NewNTLMv2WithPassword creates a new NTLMv2 instance with the provided credentials and challenges
+func NewNTLMv2WithPassword(domain, username, password string, serverChallenge, clientChallenge [8]byte) (*NTLMv2, error) {
+	ntHash := nt.NTHash(password)
+	return NewNTLMv2WithNTHash(domain, username, ntHash, serverChallenge, clientChallenge)
+}
+
+// NewNTLMv2WithNTHash creates a new NTLMv2 instance with the provided credentials and challenges
+func NewNTLMv2WithNTHash(domain, username string, nthash [16]byte, serverChallenge, clientChallenge [8]byte) (*NTLMv2, error) {
 	if len(serverChallenge) != 8 {
 		return nil, errors.New("server challenge must be 8 bytes")
 	}
@@ -37,15 +42,12 @@ func NewNTLMv2(domain, username, password string, serverChallenge, clientChallen
 		return nil, errors.New("client challenge must be 8 bytes")
 	}
 
-	ntHash := nt.NTHash(password)
-
 	ntlm := &NTLMv2{
 		Domain:          domain,
 		Username:        username,
-		Password:        password,
 		ServerChallenge: serverChallenge,
 		ClientChallenge: clientChallenge,
-		NTHash:          ntHash,
+		NTHash:          nthash,
 	}
 
 	// Calculate the ResponseKeyNT (HMAC-MD5 of NT-Hash with username and domain)
@@ -103,16 +105,13 @@ func (ntlm *NTLMv2) Hash() ([]byte, error) {
 		return nil, errors.New("client challenge must be 8 bytes")
 	}
 
-	// Calculate the NT-Hash of the password
-	ntHash := nt.NTHash(ntlm.Password)
-
 	// Convert username and domain to uppercase and encode in UTF-16LE
 	usernameUpper := strings.ToUpper(ntlm.Username)
 	domainUpper := strings.ToUpper(ntlm.Domain)
 	userDomain := utf16.EncodeUTF16LE(usernameUpper + domainUpper)
 
 	// Calculate the NTLMv2 hash (HMAC-MD5 of NT-Hash with userDomain)
-	v2Hash := hmac.New(md5.New, ntHash[:])
+	v2Hash := hmac.New(md5.New, ntlm.NTHash[:])
 	v2Hash.Write(userDomain)
 	v2HashBytes := v2Hash.Sum(nil)
 
@@ -158,4 +157,50 @@ func (ntlm *NTLMv2) ToHashcatString() (string, error) {
 	)
 
 	return hashcatString, nil
+}
+
+// LMResponse computes the LM response for the NTLMv2 authentication
+//
+// Returns:
+//   - The LM response as a byte slice
+//   - An error if the computation fails
+func (ntlm *NTLMv2) LMResponse() ([]byte, error) {
+	if len(ntlm.ServerChallenge) != 8 {
+		return nil, errors.New("server challenge must be 8 bytes")
+	}
+
+	if len(ntlm.ClientChallenge) != 8 {
+		return nil, errors.New("client challenge must be 8 bytes")
+	}
+
+	// Calculate the LM response (HMAC-MD5 of NTHash with server challenge and client challenge)
+	lm := hmac.New(md5.New, ntlm.NTHash[:])
+	lm.Write(ntlm.ServerChallenge[:])
+	lm.Write(ntlm.ClientChallenge[:])
+	lmResponse := lm.Sum(nil)
+
+	return lmResponse, nil
+}
+
+// NTResponse computes the NT response for the NTLMv2 authentication
+//
+// Returns:
+//   - The NT response as a byte slice
+//   - An error if the computation fails
+func (ntlm *NTLMv2) NTResponse() ([]byte, error) {
+	if len(ntlm.ServerChallenge) != 8 {
+		return nil, errors.New("server challenge must be 8 bytes")
+	}
+
+	if len(ntlm.ClientChallenge) != 8 {
+		return nil, errors.New("client challenge must be 8 bytes")
+	}
+
+	// Calculate the NT response (HMAC-MD5 of NTHash with server challenge and client challenge)
+	nt := hmac.New(md5.New, ntlm.NTHash[:])
+	nt.Write(ntlm.ServerChallenge[:])
+	nt.Write(ntlm.ClientChallenge[:])
+	ntResponse := nt.Sum(nil)
+
+	return ntResponse, nil
 }

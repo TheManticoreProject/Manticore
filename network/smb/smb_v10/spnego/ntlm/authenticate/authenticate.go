@@ -276,9 +276,9 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 }
 
 // Unmarshal deserializes a byte slice into an AuthenticateMessage
-func Unmarshal(data []byte) (*AuthenticateMessage, error) {
+func (a *AuthenticateMessage) Unmarshal(data []byte) (int, error) {
 	if len(data) < 88 {
-		return nil, fmt.Errorf("data too short to be a valid AuthenticateMessage")
+		return 0, fmt.Errorf("data too short to be a valid AuthenticateMessage")
 	}
 
 	msg := &AuthenticateMessage{}
@@ -327,7 +327,13 @@ func Unmarshal(data []byte) (*AuthenticateMessage, error) {
 		msg.Version.Unmarshal(data[64:72])
 	}
 
-	// MIC is ignored for now
+	// Calculate MIC
+	micOffset := 72
+	micEnd := micOffset + 16
+	if micEnd > len(data) {
+		return 0, fmt.Errorf("data too short to contain MIC")
+	}
+	copy(msg.MIC[:], data[micOffset:micEnd])
 
-	return msg, nil
+	return 88, nil
 }

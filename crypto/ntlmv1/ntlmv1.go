@@ -12,12 +12,14 @@ import (
 )
 
 // NTLMv1 represents the components needed for NTLMv1 authentication
+// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
 type NTLMv1 struct {
 	Username        string
 	Password        string
 	Domain          string
 	ServerChallenge []byte
 	NTHash          []byte
+	LMHash          []byte
 }
 
 // NewNTLMv1WithPassword creates a new NTLMv1 instance with the provided credentials and challenge
@@ -27,6 +29,7 @@ func NewNTLMv1WithPassword(domain, username, password string, serverChallenge []
 	}
 
 	ntHash := nt.NTHash(password)
+	lmHash := lm.LMHash(password)
 
 	ntlm := &NTLMv1{
 		Domain:          domain,
@@ -34,6 +37,7 @@ func NewNTLMv1WithPassword(domain, username, password string, serverChallenge []
 		Password:        password,
 		ServerChallenge: serverChallenge,
 		NTHash:          ntHash[:],
+		LMHash:          lmHash[:],
 	}
 
 	return ntlm, nil
@@ -51,6 +55,45 @@ func NewNTLMv1WithNTHash(domain, username string, nthash []byte, serverChallenge
 		Password:        "",
 		ServerChallenge: serverChallenge,
 		NTHash:          nthash,
+		LMHash:          lm.LMHash(""),
+	}
+
+	return ntlm, nil
+}
+
+// NewNTLMv1WithNTHash creates a new NTLMv1 instance with the provided credentials and challenge
+func NewNTLMv1WithLMHash(domain, username string, lmhash []byte, serverChallenge []byte) (*NTLMv1, error) {
+	if len(serverChallenge) != 8 {
+		return nil, fmt.Errorf("server challenge must be 8 bytes")
+	}
+
+	ntHash := nt.NTHash("")
+
+	ntlm := &NTLMv1{
+		Domain:          domain,
+		Username:        username,
+		Password:        "",
+		ServerChallenge: serverChallenge,
+		NTHash:          ntHash[:],
+		LMHash:          lmhash,
+	}
+
+	return ntlm, nil
+}
+
+// NewNTLMv1WithNTHash creates a new NTLMv1 instance with the provided credentials and challenge
+func NewNTLMv1WithHashes(domain, username string, lmhash []byte, nthash []byte, serverChallenge []byte) (*NTLMv1, error) {
+	if len(serverChallenge) != 8 {
+		return nil, fmt.Errorf("server challenge must be 8 bytes")
+	}
+
+	ntlm := &NTLMv1{
+		Domain:          domain,
+		Username:        username,
+		Password:        "",
+		ServerChallenge: serverChallenge,
+		NTHash:          nthash,
+		LMHash:          lmhash,
 	}
 
 	return ntlm, nil
