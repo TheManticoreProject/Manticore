@@ -185,12 +185,12 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 func (ldapSession *Session) Overwrite(distinguishedName string, attrName string, attrVals []string) error {
 	controls := NewControlsWithOIDs([]string{LDAP_SERVER_PERMISSIVE_MODIFY_OID}, false)
 
-	m1 := goldapv3.NewModifyRequest(distinguishedName, controls)
-	m1.Delete(attrName, []string{})
-	m1.Add(attrName, attrVals)
+	m := goldapv3.NewModifyRequest(distinguishedName, controls)
+	m.Delete(attrName, []string{})
+	m.Add(attrName, attrVals)
 
 	// Execute the modify request
-	err := ldapSession.connection.Modify(m1)
+	err := ldapSession.connection.Modify(m)
 	if err != nil {
 		return fmt.Errorf("error overwriting attribute %s of %s: %s", attrName, distinguishedName, err)
 	}
