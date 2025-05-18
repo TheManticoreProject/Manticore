@@ -177,12 +177,13 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 	})
 }
 
-// Overwrite sets an overwrite operation for an attribute in the ModifyRequest.
+// OverwriteAttributeValues sets an overwrite operation for an attribute in the ModifyRequest.
 //
 // Parameters:
+//   - distinguishedName: A string representing the distinguished name (DN) of the LDAP entry to be modified.
 //   - attrName: A string representing the name of the attribute to be overwritten.
 //   - attrVals: A slice of strings representing the new values for the attribute.
-func (ldapSession *Session) Overwrite(distinguishedName string, attrName string, attrVals []string) error {
+func (ldapSession *Session) OverwriteAttributeValues(distinguishedName string, attrName string, attrVals []string) error {
 	controls := NewControlsWithOIDs([]string{LDAP_SERVER_PERMISSIVE_MODIFY_OID}, false)
 
 	m := goldapv3.NewModifyRequest(distinguishedName, controls)
@@ -196,6 +197,16 @@ func (ldapSession *Session) Overwrite(distinguishedName string, attrName string,
 	}
 
 	return nil
+}
+
+// OverwriteAttributeValue sets an overwrite operation for an attribute in the ModifyRequest.
+//
+// Parameters:
+//   - distinguishedName: A string representing the distinguished name (DN) of the LDAP entry to be modified.
+//   - attrName: A string representing the name of the attribute to be overwritten.
+//   - attrVal: A string representing the new value for the attribute.
+func (ldapSession *Session) OverwriteAttributeValue(distinguishedName string, attrName string, attrVal string) error {
+	return ldapSession.OverwriteAttributeValues(distinguishedName, attrName, []string{attrVal})
 }
 
 // Modify performs an LDAP modify operation on the specified distinguished name (DN) using the provided ModifyRequest.
