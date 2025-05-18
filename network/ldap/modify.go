@@ -22,7 +22,6 @@ type Action struct {
 	DelValues       []string
 	ReplaceValues   []string
 	IncrementValues []string
-	OverwriteValues []string
 }
 
 // NewModifyRequest creates a new instance of ModifyRequest with the specified distinguished name.
@@ -178,38 +177,22 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 	})
 }
 
-// Overwrite sets a overwrite operation for an attribute in the ModifyRequest.
+// Overwrite sets an overwrite operation for an attribute in the ModifyRequest.
 //
 // Parameters:
-//   - attrType: A string representing the type of the attribute to be overwritten.
+//   - attrName: A string representing the name of the attribute to be overwritten.
 //   - attrVals: A slice of strings representing the new values for the attribute.
-func (ldapSession *Session) Overwrite(distinguishedName string, attrType string, attrVals []string) error {
-	// Overwrite the content of the attribute with the new values
-	m1 := goldapv3.NewModifyRequest(distinguishedName, nil)
-	m1.Delete(attrType, nil)
+func (ldapSession *Session) Overwrite(distinguishedName string, attrName string, attrVals []string) error {
+	controls := NewControlsWithOIDs([]string{LDAP_SERVER_PERMISSIVE_MODIFY_OID}, false)
+
+	m1 := goldapv3.NewModifyRequest(distinguishedName, controls)
+	m1.Delete(attrName, []string{})
+	m1.Add(attrName, attrVals)
 
 	// Execute the modify request
 	err := ldapSession.connection.Modify(m1)
 	if err != nil {
-		// Check if the error is of type NO_ATTRIBUTE_OR_VAL (code 16)
-		if ldapErr, ok := err.(*goldapv3.Error); ok && ldapErr.ResultCode == 16 {
-			// Ignore NO_ATTRIBUTE_OR_VAL error as it just means the attribute doesn't exist yet
-			// LDAP Result Code 16 "No Such Attribute": 00002076: AtrErr: DSID-030F1BC2, #1:
-			// 0: 00002076: DSID-030F1BC2, problem 1001 (NO_ATTRIBUTE_OR_VAL), data 0, Att d (description)
-			// This is expected behavior, so we can ignore it
-		} else {
-			// Return other types of errors
-			return fmt.Errorf("error flushing attribute: %s", err)
-		}
-	}
-
-	m2 := goldapv3.NewModifyRequest(distinguishedName, nil)
-	m2.Add(attrType, attrVals)
-
-	// Execute the modify request
-	err = ldapSession.connection.Modify(m2)
-	if err != nil {
-		return fmt.Errorf("error replacing attribute: %s", err)
+		return fmt.Errorf("error overwriting attribute %s of %s: %s", attrName, distinguishedName, err)
 	}
 
 	return nil
@@ -255,22 +238,53 @@ func (ldapSession *Session) Overwrite(distinguishedName string, attrType string,
 //     for specific attributes.
 //   - Ensure that the LDAP connection is properly established before calling this function.
 func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
+	// Create a new modify request
 	m := goldapv3.NewModifyRequest(modifyRequest.DistinguishedName, modifyRequest.Controls)
+
+	// Add the attributes to the modify request
 	for _, attribute := range modifyRequest.Attributes {
 		if len(attribute.AddValues) > 0 {
 			// Add the new values to the attribute
+			// If the modification type is "add", then there must be an attribute description and a set of values.
+			// If the specified attribute does not already exist in the target entry, then it will be added with all
+			// of the provided values. If the attribute does exist, then the provided values will be added to the
+			// existing values for that attribute. Under normal circumstances, a modify operation cannot be used to
+			// add a value that already exists in the entry.
+			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Add(attribute.Attribute, attribute.AddValues)
 		} else if len(attribute.DelValues) > 0 {
 			// Delete the values from the attribute
+			// If the modification type is "delete" and there is an attribute description without any values,
+			// then all values for the specified attribute will be removed from the entry. Under normal circumstances,
+			// a modify operation cannot be used with the delete modification type to remove an attribute that does
+			// not already exist (although the "replace" modification type can be used to accomplish this).
+			// If the modification type is "delete" and there is an attribute description with one or more values,
+			// then only the specified values will be removed from the entry. Under normal circumstances, a modify
+			// operation cannot be used to delete an attribute value that does not already exist in the entry.
+			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Delete(attribute.Attribute, attribute.DelValues)
 		} else if len(attribute.ReplaceValues) > 0 {
 			// Replace the content of the attribute with the new values
+			// If the modification type is "replace" and there is an attribute description without any values,
+			// then all values for the specified attribute will be removed from the entry. If the specified attribute
+			// does not exist in the entry, then this will have no effect.
+			// If the modification type is "replace" and there is an attribute description with one or more values,
+			// then any existing values for the specified attribute will be removed and replaced with the provided values.
+			// If the specified attribute did not previously have any values in the entry, then the attribute will be
+			// added with the provided set of values.
+			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Replace(attribute.Attribute, attribute.ReplaceValues)
 		} else if len(attribute.IncrementValues) > 0 {
 			// Increment the value of the attribute
+			// If the modification type is "increment", then there must be an attribute description with exactly one value,
+			// and that value must be a positive or negative integer. The target attribute must exist in the entry with
+			// exactly one value, and that value must be an integer. The increment operation will update the specified
+			// attribute so that its new value will be the sum of the provided value and the existing value.
+			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Increment(attribute.Attribute, attribute.IncrementValues[0])
 		}
 	}
+
 	return ldapSession.connection.Modify(m)
 }
 
@@ -283,13 +297,13 @@ func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
 //
 // Returns:
 //   - An error object if the add operation fails, otherwise nil.
-func (ldapSession *Session) AddStringToAttributeList(dn string, attributeName string, valueToAdd string) error {
+func (ldapSession *Session) AddStringToAttributeList(distinguishedName string, attributeName string, valueToAdd string) error {
 	// Create a modify request
-	modifyRequest := goldapv3.NewModifyRequest(dn, nil)
-	modifyRequest.Add(attributeName, []string{valueToAdd})
+	m := goldapv3.NewModifyRequest(distinguishedName, nil)
+	m.Add(attributeName, []string{valueToAdd})
 
 	// Execute the modify request
-	err := ldapSession.connection.Modify(modifyRequest)
+	err := ldapSession.connection.Modify(m)
 	if err != nil {
 		return fmt.Errorf("error adding value to attribute: %s", err)
 	}
@@ -305,13 +319,13 @@ func (ldapSession *Session) AddStringToAttributeList(dn string, attributeName st
 //
 // Returns:
 //   - An error object if the flush operation fails, otherwise nil.
-func (ldapSession *Session) FlushAttribute(dn string, attributeName string) error {
+func (ldapSession *Session) FlushAttribute(distinguishedName string, attributeName string) error {
 	// Create a modify request
-	modifyRequest := goldapv3.NewModifyRequest(dn, nil)
-	modifyRequest.Delete(attributeName, nil)
+	m := goldapv3.NewModifyRequest(distinguishedName, nil)
+	m.Replace(attributeName, []string{})
 
 	// Execute the modify request
-	err := ldapSession.connection.Modify(modifyRequest)
+	err := ldapSession.connection.Modify(m)
 	if err != nil {
 		return fmt.Errorf("error flushing attribute: %s", err)
 	}
