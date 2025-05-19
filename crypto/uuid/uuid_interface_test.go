@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/uuid"
-	uuid_v1 "github.com/TheManticoreProject/Manticore/crypto/uuid/uuid_v1"
+	"github.com/TheManticoreProject/Manticore/crypto/uuid/uuid_v1"
+	"github.com/TheManticoreProject/Manticore/crypto/uuid/uuid_v2"
 )
 
 func TestUUIDInterfaceCompatibility(t *testing.T) {
@@ -12,9 +13,9 @@ func TestUUIDInterfaceCompatibility(t *testing.T) {
 	var v1 uuid_v1.UUIDv1
 	var _ uuid.UUIDInterface = &v1
 
-	// // Test that UUIDv1 implements UUIDInterface
-	// var v2 uuid_v2.UUIDv2
-	// var _ uuid.UUIDInterface = &v2
+	// Test that UUIDv1 implements UUIDInterface
+	var v2 uuid_v2.UUIDv2
+	var _ uuid.UUIDInterface = &v2
 
 	// // Test that UUIDv1 implements UUIDInterface
 	// var v3 uuid_v3.UUIDv3
