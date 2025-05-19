@@ -20,7 +20,7 @@ func TestMarshal(t *testing.T) {
 			input:    [15]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
 			version:  0,
 			variant:  0,
-			expected: "11223344-5566-0788-0799-aabbccddeeff",
+			expected: "11223344-5566-0778-0899-aabbccddeeff",
 			wantErr:  false,
 		},
 	}
@@ -148,7 +148,7 @@ func TestBaseUUIDStructStringRoundTrip(t *testing.T) {
 	}{
 		{
 			name:    "Valid UUID v4",
-			input:   "11223344-5566-0788-0799-aabbccddeeff",
+			input:   "11223344-5566-0778-0899-aabbccddeeff",
 			version: 0,
 			variant: 0,
 			wantErr: false,

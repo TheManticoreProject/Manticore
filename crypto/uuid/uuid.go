@@ -43,14 +43,17 @@ func (u *UUID) Marshal() ([]byte, error) {
 	data6high := (u.Data[6] & 0xF0) >> 4
 	data6low := u.Data[6] & 0x0F
 
+	data7high := (u.Data[7] & 0xF0) >> 4
+	data7low := u.Data[7] & 0x0F
+
 	// Set the version in the 6th byte
-	data[6] = data6high&0xF | (u.Version&0xF)<<4
+	data[6] = (u.Version&0xF)<<4 | data6high&0xF
 
 	// Copy the 7th byte of the UUID (unchanged)
-	data[7] = u.Data[7]
+	data[7] = data6low&0xF<<4 | data7high&0xF
 
 	// Set the variant in the 8th byte
-	data[8] = data6low&0xF | (u.Variant&0xF)<<4
+	data[8] = (u.Variant&0xF)<<4 | data7low&0xF
 
 	// Copy the last 7 bytes of the UUID
 	copy(data[9:9+7], u.Data[8:8+7])
@@ -71,22 +74,18 @@ func (u *UUID) Unmarshal(marshalledData []byte) (int, error) {
 		return 0, fmt.Errorf("invalid UUID length: got %d bytes, want 16 bytes", len(marshalledData))
 	}
 
-	// Copy the first 6 bytes of the UUID
-	copy(u.Data[0:6], marshalledData[0:6])
-
 	// Extract version from the 6th byte
 	u.Version = (marshalledData[6] & 0xF0) >> 4
-	data6high := marshalledData[6] & 0x0F
-
-	// Copy the 7th byte
-	u.Data[7] = marshalledData[7]
 
 	// Extract variant from the 8th byte
 	u.Variant = (marshalledData[8] & 0xF0) >> 4
-	data6low := marshalledData[8] & 0x0F
 
-	// Store the lower 4 bits of byte 8 in the upper 4 bits of byte 6
-	u.Data[6] = (data6high&0xF)<<4 | data6low&0xF
+	// Copy the first 6 bytes of the UUID
+	copy(u.Data[0:6], marshalledData[0:6])
+
+	u.Data[6] = (marshalledData[6]&0x0F)<<4 | (marshalledData[7]&0xF0)>>4
+
+	u.Data[7] = (marshalledData[7]&0x0F)<<4 | (marshalledData[8] & 0x0F)
 
 	// Copy the last 7 bytes (9-15)
 	copy(u.Data[8:8+7], marshalledData[9:9+7])
