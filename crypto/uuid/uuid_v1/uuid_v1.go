@@ -187,6 +187,43 @@ func (u *UUIDv1) GetClockSequence() uint16 {
 	return u.ClockSeq
 }
 
+// SetTime sets the time field of the UUIDv1 structure
+//
+// Parameters:
+//   - t: The time to set
+func (u *UUIDv1) SetTime(t time.Time) {
+	// Convert Unix time to UUID v1 timestamp (100-nanosecond intervals since October 15, 1582)
+	unixNs := t.UnixNano()
+	timestamp := uint64(unixNs/100) + UUIDv1Epoch
+	u.Time = timestamp
+
+	// Update the UUID data fields related to time
+	u.UUID.Version = 1
+}
+
+// SetNodeID sets the node ID field of the UUIDv1 structure
+//
+// Parameters:
+//   - nodeID: A byte slice containing the node ID (6 bytes)
+//
+// Returns:
+//   - An error if the node ID is invalid
+func (u *UUIDv1) SetNodeID(nodeID []byte) error {
+	if len(nodeID) != 6 {
+		return fmt.Errorf("invalid node ID length: got %d bytes, want 6", len(nodeID))
+	}
+	copy(u.NodeID[:], nodeID)
+	return nil
+}
+
+// SetClockSequence sets the clock sequence field of the UUIDv1 structure
+//
+// Parameters:
+//   - clockSeq: The clock sequence to set
+func (u *UUIDv1) SetClockSequence(clockSeq uint16) {
+	u.ClockSeq = clockSeq
+}
+
 // String returns the string representation of the UUIDv1 structure
 //
 // Returns:
