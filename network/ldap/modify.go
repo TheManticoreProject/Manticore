@@ -55,7 +55,7 @@ func NewModifyRequest(distinguishedName string) *ModifyRequest {
 // AddControl adds a control to the ModifyRequest.
 //
 // Parameters:
-//   - control: A pointer to a goldapv3.Control struct representing the control to be added.
+//   - control: A goldapv3.Control interface representing the control to be added.
 func (req *ModifyRequest) AddControl(control goldapv3.Control) {
 	if req.Controls == nil {
 		req.Controls = make([]goldapv3.Control, 0)
