@@ -1,0 +1,28 @@
+name: Update Go Pkg Version
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger only when a new version tag is pushed
+  workflow_dispatch:  # Allows manual trigger of the workflow
+
+jobs:
+  update_go_pkg_version:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Extract version from tag
+      id: extract_version
+      run: |
+        TAG=${GITHUB_REF#refs/tags/}
+        echo "VERSION=${TAG}" >> $GITHUB_ENV
+
+    - name: Update go pkg cache
+      run: |
+        export GITHUB_REPOSITORY_LOWER=$(echo ${GITHUB_REPOSITORY} | tr '[:upper:]' '[:lower:]')
+        curl -v "https://sum.golang.org/lookup/${GITHUB_REPOSITORY_LOWER}@${{ env.VERSION }}"
+      env:
+        VERSION: ${{ env.VERSION }}
