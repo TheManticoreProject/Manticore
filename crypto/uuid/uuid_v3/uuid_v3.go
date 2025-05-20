@@ -52,9 +52,13 @@ func (u *UUIDv3) Marshal() ([]byte, error) {
 		md5Hash.Write([]byte(u.Name))
 		hashBytes := md5Hash.Sum(nil)
 
+		// We remove the variant and version from the hash
 		hashBytesShifted := []byte{}
 
 		hashBytesShifted = append(hashBytesShifted, hashBytes[0:6]...)
+
+		fmt.Printf("[6]:0x%02x | [7]:0x%02x | [8]:0x%02x | [9]:0x%02x\n", hashBytes[6], hashBytes[7], hashBytes[8], hashBytes[9])
+		fmt.Printf("hashBytes  : %x\n", hashBytes)
 
 		a := hashBytes[6]<<4 | (hashBytes[7] >> 4)
 		hashBytesShifted = append(hashBytesShifted, a)
@@ -67,8 +71,9 @@ func (u *UUIDv3) Marshal() ([]byte, error) {
 		// Copy the first 15 bytes of the hash to our data array
 		copy(u.data[:], hashBytesShifted[0:15])
 
-		fmt.Printf("hashBytesShifted: %x\n", hashBytesShifted)
+		u.UUID.Variant = (hashBytes[8] & 0xF0) >> 4
 
+		fmt.Printf("hashBytesS : %x\n", hashBytesShifted)
 	}
 
 	// Set the UUID version and variant
