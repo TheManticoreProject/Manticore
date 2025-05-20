@@ -23,6 +23,8 @@ const (
 type UUIDv2 struct {
 	uuid.UUID
 
+	LocalDomainNumber uint32
+
 	Time uint64
 
 	Clock uint8
@@ -43,9 +45,8 @@ func (u *UUIDv2) Marshal() ([]byte, error) {
 
 	u.UUID.Data = [15]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
-	// Set time fields (the first 6 bytes of information)
-	timeLow := uint32(u.Time & 0x00000000FFFFFFFF)
-	binary.BigEndian.PutUint32(data[0:4], timeLow)
+	// Set time fields (the first 4 bytes of information)
+	binary.BigEndian.PutUint32(data[0:4], u.LocalDomainNumber)
 
 	timeMid := uint16((u.Time & 0x0000FFFF00000000) >> 32)
 	binary.BigEndian.PutUint16(data[4:6], timeMid)
@@ -93,7 +94,7 @@ func (u *UUIDv2) Unmarshal(marshalledData []byte) (int, error) {
 	}
 
 	// Extract time fields from the UUID data
-	timeLow := binary.BigEndian.Uint32(u.UUID.Data[0:4])
+	u.LocalDomainNumber = binary.BigEndian.Uint32(u.UUID.Data[0:4])
 
 	timeMid := binary.BigEndian.Uint16(u.UUID.Data[4:6])
 
@@ -106,7 +107,7 @@ func (u *UUIDv2) Unmarshal(marshalledData []byte) (int, error) {
 	u.LocalDomain = u.UUID.Data[8]
 
 	// Reconstruct the time field
-	u.Time = uint64(timeHigh)<<48 | uint64(timeMid)<<32 | uint64(timeLow)
+	u.Time = uint64(timeHigh)<<48 | uint64(timeMid)<<32
 
 	// Copy node ID
 	copy(u.NodeID[:], u.UUID.Data[9:15])
@@ -197,6 +198,14 @@ func (u *UUIDv2) GetLocalDomain() uint8 {
 	return u.LocalDomain
 }
 
+// GetLocalDomainNumber returns the local domain number of the UUIDv2 structure
+//
+// Returns:
+//   - The local domain number of the UUIDv2 structure
+func (u *UUIDv2) GetLocalDomainNumber() uint32 {
+	return u.LocalDomainNumber
+}
+
 // SetTime sets the time field of the UUIDv2 structure
 //
 // Parameters:
@@ -240,6 +249,14 @@ func (u *UUIDv2) SetClock(clock uint8) {
 //   - localDomain: The local domain to set
 func (u *UUIDv2) SetLocalDomain(localDomain uint8) {
 	u.LocalDomain = localDomain
+}
+
+// SetLocalDomainNumber sets the local domain number field of the UUIDv2 structure
+//
+// Parameters:
+//   - localDomainNumber: The local domain number to set
+func (u *UUIDv2) SetLocalDomainNumber(localDomainNumber uint32) {
+	u.LocalDomainNumber = localDomainNumber
 }
 
 // String returns the string representation of the UUIDv2 structure

@@ -238,15 +238,22 @@ func TestUUIDv2TimeFromString(t *testing.T) {
 		{
 			name:           "Standard UUIDv2",
 			uuidStr:        "19c55c02-3406-21f0-9cd2-0242ac120002",
-			wantTimeString: "2025-05-18 16:35:25.529805.5 UTC", // 133920597255298050
-			wantTime:       0x01f0340619c55c02,
+			wantTimeString: "2025-05-18 16:34:42.293350.2 UTC", // 133920597255298050
+			wantTime:       0x01f0340600000000,
 			wantErr:        false,
 		},
 		{
 			name:           "Standard UUIDv2",
 			uuidStr:        "861c3b82-3406-21f0-9cd2-0242ac120002",
-			wantTimeString: "2025-05-18 16:38:27.293069.2 UTC", // 133920599072930690
-			wantTime:       0x01f03406861c3b82,
+			wantTimeString: "2025-05-18 16:34:42.293350.2 UTC", // 133920599072930690
+			wantTime:       0x01f0340600000000,
+			wantErr:        false,
+		},
+		{
+			name:           "Standard UUIDv2",
+			uuidStr:        "861c3b82-3407-21f0-9cd2-0242ac120002",
+			wantTimeString: "2025-05-18 16:41:51.790080.7 UTC", // 133920599072930690
+			wantTime:       0x01f0340700000000,
 			wantErr:        false,
 		},
 	}
@@ -290,13 +297,13 @@ func TestUUIDv2MarshalUnmarshalPreservesTime(t *testing.T) {
 		{
 			name: "Standard UUIDv2",
 			// uuidStr:  "19c55c02-3406-21f0-9cd2-0242ac120002",
-			timeUint: 133920597255298050,
+			timeUint: 0x01f0340600000000,
 			wantErr:  false,
 		},
 		{
 			name: "Another UUIDv2",
 			// uuidStr:  "861c3b82-3406-21f0-9cd2-0242ac120002",
-			timeUint: 133920599072930690,
+			timeUint: 0x01f0340600000000,
 			wantErr:  false,
 		},
 		{
@@ -308,7 +315,7 @@ func TestUUIDv2MarshalUnmarshalPreservesTime(t *testing.T) {
 		{
 			name: "Another UUIDv2",
 			// uuidStr:  "00000000-0000-2000-0000-000000000000",
-			timeUint: 0x0122334455667788,
+			timeUint: 0x01f0340600000000,
 			wantErr:  false,
 		},
 	}
