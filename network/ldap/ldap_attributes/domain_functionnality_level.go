@@ -31,6 +31,7 @@ var DomainFunctionalityLevelToWindowsVersion = map[DomainFunctionalityLevel]stri
 	DOMAIN_FUNCTIONALITY_LEVEL_2025:         "Windows Server 2025",
 }
 
+// String returns the string representation of the domain functionality level
 func (v DomainFunctionalityLevel) String() string {
 	if name, exists := DomainFunctionalityLevelToWindowsVersion[v]; exists {
 		return fmt.Sprintf("Domain Functionality Level: %s", name)
@@ -39,6 +40,7 @@ func (v DomainFunctionalityLevel) String() string {
 	}
 }
 
+// IsSupported returns true if the domain functionality level is supported by the current version of Windows
 func (v DomainFunctionalityLevel) IsSupported() bool {
 	return v == DOMAIN_FUNCTIONALITY_LEVEL_2000 || v == DOMAIN_FUNCTIONALITY_LEVEL_2003 || v == DOMAIN_FUNCTIONALITY_LEVEL_2008 || v == DOMAIN_FUNCTIONALITY_LEVEL_2008_R2 || v == DOMAIN_FUNCTIONALITY_LEVEL_2012 || v == DOMAIN_FUNCTIONALITY_LEVEL_2012_R2 || v == DOMAIN_FUNCTIONALITY_LEVEL_2016 || v == DOMAIN_FUNCTIONALITY_LEVEL_2025
 }
