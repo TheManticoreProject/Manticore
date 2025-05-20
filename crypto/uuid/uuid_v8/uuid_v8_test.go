@@ -97,3 +97,88 @@ func TestUUIDv8(t *testing.T) {
 		})
 	}
 }
+
+func TestUUIDv8FromStringRoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		uuidStr string
+		wantErr bool
+	}{
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "10000000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "01000000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00100000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00010000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00001000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000100-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000010-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000001-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-1000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0100-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0010-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0001-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8100-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8010-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8001-0000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-1000-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0100-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0010-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0001-000000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-100000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-010000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-001000000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000100000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000010000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000001000000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000100000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000010000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000001000", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000000100", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000000010", false},
+		{"Valid UUIDv8", "00000000-0000-8000-0000-000000000001", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var u uuid_v8.UUIDv8
+			err := u.FromString(tt.uuidStr)
+
+			// Check if error matches expectation
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FromString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// Skip further checks if we expected an error
+			if tt.wantErr {
+				return
+			}
+
+			// Verify the string matches the input
+			if u.String() != tt.uuidStr {
+				t.Errorf("UUIDv8.String() \n\tgot  %v\n\twant %v", u.String(), tt.uuidStr)
+			}
+
+			// Test marshaling and unmarshaling
+			marshalledData, err := u.Marshal()
+			if err != nil {
+				t.Errorf("Marshal() error = %v", err)
+				return
+			}
+
+			var u2 uuid_v8.UUIDv8
+			_, err = u2.Unmarshal(marshalledData)
+			if err != nil {
+				t.Errorf("Unmarshal() error = %v", err)
+				return
+			}
+
+			// Check that the string representation is preserved
+			if u2.String() != tt.uuidStr {
+				t.Errorf("String representation not preserved: original %s, got %s",
+					tt.uuidStr, u2.String())
+			}
+		})
+	}
+}
