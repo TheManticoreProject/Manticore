@@ -184,18 +184,21 @@ func (req *ModifyRequest) Replace(attrType string, attrVals []string) {
 //   - attrName: A string representing the name of the attribute to be overwritten.
 //   - attrVals: A slice of strings representing the new values for the attribute.
 func (ldapSession *Session) OverwriteAttributeValues(distinguishedName string, attrName string, attrVals []string) error {
-	controls := NewControlsWithOIDs([]string{LDAP_SERVER_PERMISSIVE_MODIFY_OID}, false)
+	if len(attrVals) == 0 {
+		ldapSession.FlushAttribute(distinguishedName, attrName)
+	} else {
+		controls := NewControlsWithOIDs([]string{LDAP_SERVER_PERMISSIVE_MODIFY_OID}, false)
 
-	m := goldapv3.NewModifyRequest(distinguishedName, controls)
-	m.Delete(attrName, []string{})
-	m.Add(attrName, attrVals)
+		m := goldapv3.NewModifyRequest(distinguishedName, controls)
+		m.Delete(attrName, []string{})
+		m.Add(attrName, attrVals)
 
-	// Execute the modify request
-	err := ldapSession.connection.Modify(m)
-	if err != nil {
-		return fmt.Errorf("error overwriting attribute %s of %s: %s", attrName, distinguishedName, err)
+		// Execute the modify request
+		err := ldapSession.connection.Modify(m)
+		if err != nil {
+			return fmt.Errorf("error overwriting attribute %s of %s: %s", attrName, distinguishedName, err)
+		}
 	}
-
 	return nil
 }
 
