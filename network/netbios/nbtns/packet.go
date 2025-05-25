@@ -110,6 +110,7 @@ func (p *NBTNSPacket) Marshal() ([]byte, error) {
 			// Add name length and name
 			buf = append(buf, byte(len(encoded)))
 			buf = append(buf, []byte(encoded)...)
+			buf = append(buf, byte(0x00))
 
 			// Add type, class, TTL, and RDATA length
 			buf = binary.BigEndian.AppendUint16(buf, rr.Type)
@@ -158,7 +159,7 @@ func (p *NBTNSPacket) Unmarshal(data []byte) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("failed to decode name: %v", err)
 		}
-		offset += nameLen
+		offset += nameLen + 1 // null terminator
 
 		if offset+4 > len(data) {
 			return 0, fmt.Errorf("truncated question")
