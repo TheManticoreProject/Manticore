@@ -116,7 +116,7 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 		Header: NBTNSHeader{
 			TransactionID: packet.Header.TransactionID,
 			Flags:         FlagResponse | FlagAuthoritative,
-			Questions:     packet.Header.Questions,
+			Questions:     0,
 		},
 	}
 

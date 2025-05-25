@@ -1,6 +1,7 @@
 package nbtns
 
 import (
+	"encoding/binary"
 	"net"
 	"time"
 )
@@ -27,18 +28,23 @@ func (h *PacketHandler) handleNameQuery(request *NBTNSPacket, response *NBTNSPac
 		}
 
 		// Create resource record for each owner
-		for _, owner := range owners {
+		for _, ip := range owners {
+			owner := ADDR_ENTRY{
+				Address: binary.BigEndian.Uint32(ip.To4()),
+				Flags:   0x0000,
+			}
 			rr := NBTNSResourceRecord{
 				Name:     q.Name,
 				Type:     q.Type,
 				Class:    q.Class,
 				TTL:      uint32(24 * time.Hour.Seconds()), // 24 hour TTL
-				RDLength: uint16(len(owner)),
-				RData:    owner,
+				RDLength: uint16(owner.Length()),
+				RData:    owner.Marshal(),
 			}
 			response.Answers = append(response.Answers, rr)
 		}
 
+		response.Header.Flags |= FlagRecursion
 		response.Header.Answers = uint16(len(response.Answers))
 
 		// Set group bit if this is a group name

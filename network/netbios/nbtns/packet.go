@@ -33,6 +33,13 @@ const (
 	FlagTruncated     uint16 = 0x0200
 	FlagRecursion     uint16 = 0x0100
 	FlagBroadcast     uint16 = 0x0010
+
+	// Question Type
+	QuestionTypeNB     uint16 = 0x0020
+	QuestionTypeNBSTAT uint16 = 0x0021
+
+	// Question Class
+	QuestionClassIn uint16 = 0x0001 // Internet class
 )
 
 // NBTNSHeader represents the header of a NetBIOS name service packet

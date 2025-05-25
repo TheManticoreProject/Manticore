@@ -1,6 +1,7 @@
 package nbtns
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -158,14 +159,18 @@ func (s *Server) handleNameQuery(request *NBTNSPacket, response *NBTNSPacket) {
 		}
 
 		// Create resource record for each owner
-		for _, owner := range owners {
+		for _, ip := range owners {
+			owner := ADDR_ENTRY{
+				Address: binary.BigEndian.Uint32(ip.To4()),
+				Flags:   0x0000,
+			}
 			rr := NBTNSResourceRecord{
 				Name:     q.Name,
 				Type:     q.Type,
 				Class:    q.Class,
 				TTL:      uint32(24 * time.Hour.Seconds()), // 24 hour TTL
-				RDLength: uint16(len(owner)),
-				RData:    owner,
+				RDLength: uint16(owner.Length()),
+				RData:    owner.Marshal(),
 			}
 			response.Answers = append(response.Answers, rr)
 		}

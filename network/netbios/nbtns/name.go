@@ -2,6 +2,7 @@ package nbtns
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
@@ -40,6 +41,12 @@ type NameRecord struct {
 type NetBIOSName struct {
 	Name    string
 	ScopeID string
+}
+
+// POSITIVE NAME QUERY RESPONSE
+type ADDR_ENTRY struct {
+	Flags   uint16
+	Address uint32
 }
 
 // Constants for name encoding
@@ -165,4 +172,17 @@ func isValidDomainName(name string) bool {
 	}
 
 	return true
+}
+
+// Marshals ADDR_ENTRY to buffer
+func (n *ADDR_ENTRY) Marshal() []byte {
+	buf := make([]byte, 6)
+	binary.BigEndian.PutUint16(buf[0:2], n.Flags)
+	binary.BigEndian.PutUint32(buf[2:6], n.Address)
+	return buf
+}
+
+// returns static 6 bytes number
+func (n *ADDR_ENTRY) Length() uint16 {
+	return 6
 }
