@@ -3,6 +3,7 @@ package nbtns
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -66,7 +67,7 @@ func (n *NetBIOSNameServer) QueryName(name string) ([]net.IP, NameType, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	record, exists := n.names[name]
+	record, exists := n.names[strings.TrimRight(name, "\x00")]
 	if !exists || record.Status != Active {
 		return nil, Unique, fmt.Errorf("name not found: %s", name)
 	}
