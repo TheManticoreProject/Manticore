@@ -2,12 +2,13 @@ package ldap_test
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap"
 )
 
-func TestParse(t *testing.T) {
+func TestUnmarshal(t *testing.T) {
 	tests := []struct {
 		name        string
 		rawBytes    []byte
@@ -20,12 +21,12 @@ func TestParse(t *testing.T) {
 			rawBytes:    []byte("B:10:48656c6c6f:CN=John Doe,OU=Users,DC=example,DC=com"),
 			expectError: false,
 			expectedDN:  "CN=John Doe,OU=Users,DC=example,DC=com",
-			expectedBin: []byte("Hello"),
+			expectedBin: []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f}, // "Hello" in hex
 		},
 		{
-			name:        "Invalid size",
-			rawBytes:    []byte("B:5:48656c6c6f:CN=John Doe,OU=Users,DC=example,DC=com"),
-			expectError: true,
+			name:        "Invalid size (size field does not match binary length)",
+			rawBytes:    []byte("B:8:48656c6c6f:CN=John Doe,OU=Users,DC=example,DC=com"),
+			expectError: true, // Only 5 bytes (10 hex characters), so size should be 10, not 8
 		},
 		{
 			name:        "Invalid hex string",
@@ -37,23 +38,39 @@ func TestParse(t *testing.T) {
 			rawBytes:    []byte("B:10:48656c6c6f"),
 			expectError: true,
 		},
+		{
+			name:        "Empty input",
+			rawBytes:    []byte(""),
+			expectError: true,
+		},
+		{
+			name:        "Non-numeric size",
+			rawBytes:    []byte("B:XX:48656c6c6f:CN=Name"),
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &ldap.DNWithBinary{}
-			err := d.Parse(tt.rawBytes)
-			if (err != nil) != tt.expectError {
-				t.Errorf("Parse() error = %v, expectError %v", err, tt.expectError)
+			bytesRead, err := d.Unmarshal(tt.rawBytes)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Unmarshal() expected error but got none")
+				}
+				return
+			} else if err != nil {
+				t.Errorf("Unmarshal() unexpected error: %v", err)
 				return
 			}
-			if !tt.expectError {
-				if d.DistinguishedName != tt.expectedDN {
-					t.Errorf("Expected DistinguishedName = %v, got %v", tt.expectedDN, d.DistinguishedName)
-				}
-				if !bytes.Equal(d.BinaryData, tt.expectedBin) {
-					t.Errorf("Expected BinaryData = %v, got %v", tt.expectedBin, d.BinaryData)
-				}
+			if bytesRead != len(tt.rawBytes) {
+				t.Errorf("Unmarshal() bytesRead = %v, want %v", bytesRead, len(tt.rawBytes))
+			}
+			if d.DistinguishedName != tt.expectedDN {
+				t.Errorf("Expected DistinguishedName = %v, got %v", tt.expectedDN, d.DistinguishedName)
+			}
+			if !bytes.Equal(d.BinaryData, tt.expectedBin) {
+				t.Errorf("Expected BinaryData = %v, got %v (hex=%s)", tt.expectedBin, d.BinaryData, hex.EncodeToString(d.BinaryData))
 			}
 		})
 	}

@@ -38,9 +38,15 @@ func TestKeyCredential_Unmarshal(t *testing.T) {
 			)
 
 			dnb := ldap.DNWithBinary{}
-			err := dnb.Parse([]byte(tt.msDsKeyCredentialLinkValue))
+			bytesRead, err := dnb.Unmarshal([]byte(tt.msDsKeyCredentialLinkValue))
 			if err != nil {
-				t.Errorf("Parse() error = %v", err)
+				if !tt.wantErr {
+					t.Errorf("Unmarshal() error = %v", err)
+				}
+				return
+			}
+			if bytesRead != len([]byte(tt.msDsKeyCredentialLinkValue)) {
+				t.Errorf("Unmarshal() bytesRead = %v, want %v", bytesRead, len([]byte(tt.msDsKeyCredentialLinkValue)))
 				return
 			}
 
