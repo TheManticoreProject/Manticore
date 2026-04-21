@@ -79,7 +79,7 @@ func (c *KerberosClient) GetTGT() error {
 	// if a different salt or etype is required.
 	etype := messages.ETypeAES256CTSHMACSHA196
 	salt := c.realm + c.username
-	resp, err := c.sendASReqWithPreauth(etype, salt, nil)
+	resp, nonce, err := c.sendASReqWithPreauth(etype, salt, nil)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (c *KerberosClient) GetTGT() error {
 		return fmt.Errorf("kerberos: KDC error %d: %s", krb_err.ErrorCode, krb_err.EText)
 	}
 
-	return c.processASRep(resp, etype, salt, nil)
+	return c.processASRep(resp, etype, salt, nil, nonce)
 }
 
 // pacRequestPA returns a PA-PAC-REQUEST PAData element with include-pac = TRUE.
@@ -202,6 +202,13 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse EncTGSRepPart: %w", err)
 	}
 
+	// RFC 4120 §3.3.3: the nonce in the reply must match the nonce in the
+	// request. Rejecting a mismatch defends against replays of captured
+	// TGS-REPs that happen to decrypt under the current TGT session key.
+	if enc_tgs_rep.Nonce != nonce {
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS-REP nonce mismatch: got %d, want %d", enc_tgs_rep.Nonce, nonce)
+	}
+
 	return tgs_rep.Ticket, tgs_rep.TicketRaw, enc_tgs_rep.Key.KeyValue, nil
 }
 
@@ -227,8 +234,11 @@ func (c *KerberosClient) KDCHost() string { return c.kdcHost }
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 // sendASReq builds and sends an AS-REQ with the given optional PA-DATA slice.
-// Returns the raw KDC response bytes.
-func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, error) {
+// Returns the raw KDC response bytes and the nonce that was placed in the
+// request (the caller must compare it to the nonce in the decrypted
+// EncASRepPart per RFC 4120 §3.1.3).
+func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, error) {
+	nonce := randomNonce()
 	req := &messages.ASReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeASReq,
@@ -245,7 +255,7 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, error) {
 				NameString: []string{"krbtgt", c.realm},
 			},
 			Till:  time.Now().UTC().Add(24 * time.Hour),
-			Nonce: randomNonce(),
+			Nonce: nonce,
 			EType: []int{
 				messages.ETypeAES256CTSHMACSHA196,
 				messages.ETypeAES128CTSHMACSHA196,
@@ -256,9 +266,13 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, error) {
 
 	req_bytes, err := req.Marshal()
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: marshal AS-REQ: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: marshal AS-REQ: %w", err)
 	}
-	return kdcSend(c.kdcHost, defaultKDCPort, req_bytes)
+	resp, err := kdcSend(c.kdcHost, defaultKDCPort, req_bytes)
+	if err != nil {
+		return nil, 0, err
+	}
+	return resp, nonce, nil
 }
 
 // pickETypeFromError extracts the preferred etype, salt and S2KParams from the
@@ -323,11 +337,11 @@ func pickBestEType(info messages.ETypeInfo2, default_salt string) (int, string, 
 }
 
 // sendASReqWithPreauth builds and sends an AS-REQ with PA-ENC-TIMESTAMP.
-// Returns the raw KDC response bytes.
-func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params []byte) ([]byte, error) {
+// Returns the raw KDC response bytes and the nonce placed in the request.
+func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params []byte) ([]byte, int, error) {
 	key, err := kerbcrypto.StringToKey(etype, c.password, salt, s2k_params)
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: StringToKey: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: StringToKey: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -337,18 +351,18 @@ func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params
 	}
 	ts_bytes, err := ts.Marshal()
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: marshal PA-ENC-TIMESTAMP: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: marshal PA-ENC-TIMESTAMP: %w", err)
 	}
 
 	enc_ts, err := kerbcrypto.Encrypt(etype, key, kerbcrypto.KeyUsageASReqPAEncTimestamp, ts_bytes)
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: encrypt PA-ENC-TIMESTAMP: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: encrypt PA-ENC-TIMESTAMP: %w", err)
 	}
 
 	pa_enc_ts := messages.EncryptedData{EType: etype, Cipher: enc_ts}
 	pa_enc_ts_bytes, err := asn1.Marshal(pa_enc_ts)
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: marshal EncryptedData for PA-ENC-TIMESTAMP: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: marshal EncryptedData for PA-ENC-TIMESTAMP: %w", err)
 	}
 
 	pa_data := []messages.PAData{
@@ -360,7 +374,7 @@ func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params
 
 // doASReqWithPreauth sends an AS-REQ with PA-ENC-TIMESTAMP and processes the AS-REP.
 func (c *KerberosClient) doASReqWithPreauth(etype int, salt string, s2k_params []byte) error {
-	resp, err := c.sendASReqWithPreauth(etype, salt, s2k_params)
+	resp, nonce, err := c.sendASReqWithPreauth(etype, salt, s2k_params)
 	if err != nil {
 		return err
 	}
@@ -370,11 +384,13 @@ func (c *KerberosClient) doASReqWithPreauth(etype int, salt string, s2k_params [
 		return fmt.Errorf("kerberos: GetTGT failed (error %d): %s", krb_err.ErrorCode, krb_err.EText)
 	}
 
-	return c.processASRep(resp, etype, salt, s2k_params)
+	return c.processASRep(resp, etype, salt, s2k_params, nonce)
 }
 
-// processASRep decrypts the AS-REP enc-part and stores the TGT session key.
-func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_params []byte) error {
+// processASRep decrypts the AS-REP enc-part, verifies that the returned nonce
+// matches the one sent in the AS-REQ (RFC 4120 §3.1.3), and stores the TGT
+// session key on the client.
+func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_params []byte, request_nonce int) error {
 	var as_rep messages.ASRep
 	if _, err := as_rep.Unmarshal(resp); err != nil {
 		return fmt.Errorf("kerberos: parse AS-REP: %w", err)
@@ -393,6 +409,13 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 	var enc_as_rep messages.EncASRepPart
 	if _, err := enc_as_rep.Unmarshal(enc_plain); err != nil {
 		return fmt.Errorf("kerberos: parse EncASRepPart: %w", err)
+	}
+
+	// RFC 4120 §3.1.3: the nonce in the reply must match the nonce in the
+	// request. Rejecting a mismatch defends against replays of captured
+	// AS-REPs that happen to decrypt under the current client key.
+	if enc_as_rep.Nonce != request_nonce {
+		return fmt.Errorf("kerberos: AS-REP nonce mismatch: got %d, want %d", enc_as_rep.Nonce, request_nonce)
 	}
 
 	c.tgtTicket = as_rep.Ticket
