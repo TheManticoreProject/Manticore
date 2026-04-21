@@ -19,8 +19,13 @@ type TGSRep struct {
 	CRealm string
 	// CName is the client's principal name.
 	CName PrincipalName
-	// Ticket is the issued service ticket.
+	// Ticket is the issued service ticket (parsed).
 	Ticket Ticket
+	// TicketRaw holds the raw APPLICATION[1] ticket bytes as received from the
+	// KDC. Use these verbatim when embedding the ticket in an AP-REQ to avoid
+	// re-encoding differences between Go's encoding/asn1 and the KDC's original
+	// DER output (see ASRep.TicketRaw for the matching field on AS-REP).
+	TicketRaw []byte
 	// EncPart is the encrypted reply body, decryptable with the TGT session key.
 	EncPart EncryptedData
 }
@@ -80,7 +85,10 @@ func (r *TGSRep) Unmarshal(data []byte) (int, error) {
 	// inner.Ticket.Bytes is the APPLICATION[1] ticket (Go does not strip the [5] explicit
 	// wrapper when unmarshaling into asn1.RawValue — the outer tag stays in the RawValue
 	// itself, and Bytes holds the content of that outer tag = the full APPLICATION[1]).
-	if _, err := r.Ticket.Unmarshal(inner.Ticket.Bytes); err != nil {
+	// Preserve those raw bytes so callers can re-emit the service ticket verbatim in a
+	// downstream AP-REQ, matching the ASRep.TicketRaw contract.
+	r.TicketRaw = inner.Ticket.Bytes
+	if _, err := r.Ticket.Unmarshal(r.TicketRaw); err != nil {
 		return 0, fmt.Errorf("tgsrep ticket unmarshal: %w", err)
 	}
 
