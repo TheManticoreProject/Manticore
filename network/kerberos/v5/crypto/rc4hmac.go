@@ -11,10 +11,14 @@ import (
 
 // rc4HMACUsageMap translates RFC 4120 key usage numbers to the Microsoft
 // message-type values used in RC4-HMAC key derivation, per RFC 4757 Section 4
-// and MS-KILE Section 3.1.5.7.
+// (as corrected by the errata) and MS-KILE Section 3.1.5.7.
+//
+// Per the RFC 4757 errata, usage 9 is NOT remapped to 8 — only usages 3 and
+// 23 are remapped. Keeping the pre-errata mapping of 9 → 8 breaks
+// interoperability with any KDC that correctly uses usage 9 for TGS-REP
+// enc-part encrypted under a client-supplied sub-session key.
 var rc4HMACUsageMap = map[int]uint32{
 	3:  8,  // AS-REP enc-part
-	9:  8,  // TGS-REP enc-part (sub-session key)
 	23: 13, // AD-KDC-ISSUED checksum
 }
 
