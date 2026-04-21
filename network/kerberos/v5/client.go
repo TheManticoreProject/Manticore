@@ -152,7 +152,7 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, pacBool}},
 		},
 		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForwardable(),
+			KDCOptions: kdcOptionsForTGSReq(),
 			Realm:      c.realm,
 			SName:      sname,
 			Till:       time.Now().UTC().Add(24 * time.Hour),
@@ -234,7 +234,7 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, error) {
 		MsgType: messages.MsgTypeASReq,
 		PAData:  pa_data,
 		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForwardable(),
+			KDCOptions: kdcOptionsForASReq(),
 			CName: messages.PrincipalName{
 				NameType:   messages.NameTypePrincipal,
 				NameString: []string{c.username},
@@ -447,15 +447,45 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 	return ap_req.Marshal()
 }
 
-// kdcOptionsForwardable returns a KDCOptions BitString with the forwardable flag set.
-// Bit positions follow RFC 4120 Section 5.4.1 (bit 0 = MSB).
-func kdcOptionsForwardable() asn1.BitString {
-	// Forwardable = bit 1 (RFC 4120), renewable-ok = bit 27.
-	// Encoded as a 32-bit big-endian bit string: bit 1 → 0x40 in first byte.
-	return asn1.BitString{
-		Bytes:     []byte{0x40, 0x00, 0x00, 0x00},
-		BitLength: 32,
+// Bit positions for KDCOptions (RFC 4120 Section 5.4.1, RFC 6806 for canonicalize).
+// Bit 0 is the MSB; bit N sits in byte N/8 at position 7-(N%8).
+const (
+	kdcOptionForwardable  = 1  // byte 0, 0x40
+	kdcOptionProxiable    = 3  // byte 0, 0x10
+	kdcOptionRenewable    = 8  // byte 1, 0x80
+	kdcOptionCanonicalize = 15 // byte 1, 0x01 (RFC 6806)
+	kdcOptionRenewableOK  = 27 // byte 3, 0x10
+)
+
+// encodeKDCOptions packs a list of bit positions into a 32-bit BitString
+// suitable for use as the KDCOptions field of an AS-REQ or TGS-REQ.
+func encodeKDCOptions(bits ...int) asn1.BitString {
+	b := make([]byte, 4)
+	for _, pos := range bits {
+		b[pos/8] |= 1 << (7 - (pos % 8))
 	}
+	return asn1.BitString{Bytes: b, BitLength: 32}
+}
+
+// kdcOptionsForASReq returns the KDCOptions BitString for an AS-REQ, matching
+// the flags a real Active Directory client sends (forwardable + proxiable +
+// renewable).
+func kdcOptionsForASReq() asn1.BitString {
+	return encodeKDCOptions(kdcOptionForwardable, kdcOptionProxiable, kdcOptionRenewable)
+}
+
+// kdcOptionsForTGSReq returns the KDCOptions BitString for a TGS-REQ. Adds
+// canonicalize (RFC 6806) so the KDC canonicalizes the requested SPN — AD
+// KDCs can otherwise respond with S_PRINCIPAL_UNKNOWN for non-canonical SPN
+// forms — and renewable-ok so the issued service ticket carries the same
+// renewable window as the TGT it was derived from.
+func kdcOptionsForTGSReq() asn1.BitString {
+	return encodeKDCOptions(
+		kdcOptionForwardable,
+		kdcOptionRenewable,
+		kdcOptionCanonicalize,
+		kdcOptionRenewableOK,
+	)
 }
 
 // parseSPN splits a service principal name into a PrincipalName.
