@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // ASREPRoastResult contains the raw fields extracted from an AS-REP response for an

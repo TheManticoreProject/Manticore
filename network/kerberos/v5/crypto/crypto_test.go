@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // ---------------------------------------------------------------------------
@@ -285,6 +285,33 @@ func TestRC4HMACUsageMsgTypeEncoding(t *testing.T) {
 		got := usageMsgType(tc.usage)
 		if !bytes.Equal(got, tc.want) {
 			t.Errorf("usageMsgType(%d) = %x, want %x", tc.usage, got, tc.want)
+ 		}
+	}
+}
+
+// RC4-HMAC usage remapping (RFC 4757 errata)
+// ---------------------------------------------------------------------------
+
+// TestRC4HMACUsageMapping enforces the RFC 4757 errata:
+// only usages 3 and 23 are remapped (to 8 and 13); every other usage,
+// including 9, passes through unchanged.
+func TestRC4HMACUsageMapping(t *testing.T) {
+	cases := []struct {
+		usage int
+		want  uint32
+	}{
+		{1, 1},   // PA-ENC-TIMESTAMP — unchanged
+		{3, 8},   // AS-REP enc-part — remapped
+		{7, 7},   // TGS-REQ authenticator — unchanged
+		{8, 8},   // TGS-REP enc-part (session key) — unchanged
+		{9, 9},   // TGS-REP enc-part (sub-session key) — MUST NOT remap to 8
+		{11, 11}, // AP-REQ authenticator — unchanged
+		{23, 13}, // AD-KDC-ISSUED checksum — remapped
+	}
+	for _, tc := range cases {
+		got := mapRC4HMACUsage(tc.usage)
+		if got != tc.want {
+			t.Errorf("mapRC4HMACUsage(%d) = %d, want %d", tc.usage, got, tc.want)
 		}
 	}
 }

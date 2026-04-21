@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/crypto"
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // KerberosClient manages Kerberos authentication against an Active Directory KDC.
@@ -23,7 +23,7 @@ import (
 //	c := kerberos.NewClient("john", "CORP.LOCAL", "10.0.0.1")
 //	c.WithPassword("secret")
 //	if err := c.GetTGT(); err != nil { ... }
-//	ticket, sessionKey, err := c.GetTGS("cifs/dc01.corp.local", true)
+//	ticket, ticketRaw, sessionKey, err := c.GetTGS("cifs/dc01.corp.local", true)
 type KerberosClient struct {
 	username string
 	realm    string
@@ -117,21 +117,24 @@ func pacRequestPA() messages.PAData {
 // includePAC controls whether the KDC should include the PAC in the service ticket.
 // Pass false for kerberoasting (produces shorter, hashcat-crackable ciphers).
 //
-// Returns the service Ticket and its associated session key bytes.
-func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, []byte, error) {
+// Returns the parsed service Ticket, the raw APPLICATION[1] ticket bytes as
+// received from the KDC (suitable for verbatim re-emission in a downstream
+// AP-REQ via messages.APReq{TicketRaw: ...}.Marshal), and the associated
+// session key bytes.
+func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, []byte, []byte, error) {
 	if !c.hasTGT {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}
 
 	sname, err := parseSPN(spn, c.realm)
 	if err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: parse SPN %q: %w", spn, err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse SPN %q: %w", spn, err)
 	}
 
 	// Build AP-REQ wrapping the TGT.
 	ap_req_bytes, err := c.buildAPReq()
 	if err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 
 	// Build TGS-REQ.
@@ -164,23 +167,23 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 
 	tgs_req_bytes, err := tgs_req.Marshal()
 	if err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: marshal TGS-REQ: %w", err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal TGS-REQ: %w", err)
 	}
 	resp, err := kdcSend(c.kdcHost, defaultKDCPort, tgs_req_bytes)
 	if err != nil {
-		return messages.Ticket{}, nil, err
+		return messages.Ticket{}, nil, nil, err
 	}
 
 	// Check for KRBError.
 	var krb_err messages.KRBError
 	if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: TGS error %d: %s", krb_err.ErrorCode, krb_err.EText)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS error %d: %s", krb_err.ErrorCode, krb_err.EText)
 	}
 
 	// Parse TGS-REP.
 	var tgs_rep messages.TGSRep
 	if _, err := tgs_rep.Unmarshal(resp); err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: parse TGS-REP: %w", err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse TGS-REP: %w", err)
 	}
 
 	// Decrypt enc-part with the TGT session key.
@@ -191,15 +194,15 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 		tgs_rep.EncPart.Cipher,
 	)
 	if err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: decrypt TGS-REP enc-part: %w", err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: decrypt TGS-REP enc-part: %w", err)
 	}
 
 	var enc_tgs_rep messages.EncTGSRepPart
 	if _, err := enc_tgs_rep.Unmarshal(enc_plain); err != nil {
-		return messages.Ticket{}, nil, fmt.Errorf("kerberos: parse EncTGSRepPart: %w", err)
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse EncTGSRepPart: %w", err)
 	}
 
-	return tgs_rep.Ticket, enc_tgs_rep.Key.KeyValue, nil
+	return tgs_rep.Ticket, tgs_rep.TicketRaw, enc_tgs_rep.Key.KeyValue, nil
 }
 
 // Destroy zeroes out key material held by the client.

@@ -6,7 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 
-	"github.com/TheManticoreProject/Manticore/network/kerberos"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/go-ldap/ldap/v3/gssapi"
 	krb5client "github.com/jcmturner/gokrb5/v8/client"
