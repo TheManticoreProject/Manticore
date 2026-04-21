@@ -94,12 +94,13 @@ func (r *APReq) Unmarshal(data []byte) (int, error) {
 	r.APOptions = inner.APOptions
 	r.Authenticator = inner.Authenticator
 
-	// Unmarshal the ticket from the raw value
-	tkt_raw_bytes, err := asn1.Marshal(inner.Ticket)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := r.Ticket.Unmarshal(tkt_raw_bytes); err != nil {
+	// inner.Ticket.Bytes is the APPLICATION[1] ticket TLV (Go leaves the outer
+	// [3] EXPLICIT context tag on the RawValue itself when unmarshaling, and
+	// Bytes = content inside that context tag). Preserve those raw bytes so
+	// they can be re-emitted verbatim if this APReq is re-marshaled, and parse
+	// them as a Ticket.
+	r.TicketRaw = inner.Ticket.Bytes
+	if _, err := r.Ticket.Unmarshal(r.TicketRaw); err != nil {
 		return 0, fmt.Errorf("apreq ticket unmarshal: %w", err)
 	}
 
