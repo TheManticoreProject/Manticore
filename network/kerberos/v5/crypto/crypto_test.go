@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // ---------------------------------------------------------------------------

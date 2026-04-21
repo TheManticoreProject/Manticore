@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/crypto"
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // KerberosClient manages Kerberos authentication against an Active Directory KDC.

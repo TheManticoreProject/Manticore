@@ -2,7 +2,7 @@
 // string-to-key derivation, encryption, and decryption for RC4-HMAC and
 // AES-CTS-HMAC-SHA1-96 encryption types.
 //
-// Import path: github.com/TheManticoreProject/Manticore/network/kerberos/crypto
+// Import path: github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto
 package kerbcrypto
 
 import (
@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/TheManticoreProject/Manticore/network/kerberos/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // Key usage constants per RFC 4120 Section 7.5.1.
