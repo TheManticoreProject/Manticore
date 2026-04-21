@@ -254,3 +254,37 @@ func TestUnsupportedEType(t *testing.T) {
 		t.Error("Decrypt: expected error for unsupported etype")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RC4-HMAC usageMsgType encoding
+// ---------------------------------------------------------------------------
+
+// TestRC4HMACUsageMsgTypeEncoding verifies that usageMsgType produces the
+// fixed 4-byte little-endian uint32 encoding required by MS-KILE / RFC 4757
+// (matching impacket's pack('<I', msusage) and gokrb5's
+// binary.LittleEndian.PutUint32), for both small and >=128 values.
+//
+// The regression target is values >= 128: the previous implementation used
+// binary.PutUvarint, which for 128 emits 0x80 0x01 in the first two bytes
+// instead of 0x80 0x00 0x00 0x00.
+func TestRC4HMACUsageMsgTypeEncoding(t *testing.T) {
+	cases := []struct {
+		usage int
+		want  []byte
+	}{
+		{1, []byte{0x01, 0x00, 0x00, 0x00}},
+		{3, []byte{0x08, 0x00, 0x00, 0x00}},     // remapped to 8
+		{23, []byte{0x0d, 0x00, 0x00, 0x00}},    // remapped to 13
+		{127, []byte{0x7f, 0x00, 0x00, 0x00}},   // boundary: still 1-byte varint
+		{128, []byte{0x80, 0x00, 0x00, 0x00}},   // first value where varint and LE-uint32 diverge
+		{255, []byte{0xff, 0x00, 0x00, 0x00}},
+		{256, []byte{0x00, 0x01, 0x00, 0x00}},
+		{65536, []byte{0x00, 0x00, 0x01, 0x00}},
+	}
+	for _, tc := range cases {
+		got := usageMsgType(tc.usage)
+		if !bytes.Equal(got, tc.want) {
+			t.Errorf("usageMsgType(%d) = %x, want %x", tc.usage, got, tc.want)
+		}
+	}
+}

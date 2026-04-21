@@ -27,12 +27,13 @@ func mapRC4HMACUsage(usage int) uint32 {
 	return uint32(usage)
 }
 
-// usageMsgType encodes a mapped usage as a 4-byte little-endian slice.
-// binary.PutUvarint is used for consistency with MS/gokrb5 reference behaviour.
+// usageMsgType encodes a mapped usage as a 4-byte little-endian uint32,
+// matching MS-KILE Section 3.1.5.7 and RFC 4757 Section 4 (impacket's
+// pack('<I', msusage), jcmturner/gokrb5's binary.LittleEndian.PutUint32).
 func usageMsgType(usage int) []byte {
 	mapped := mapRC4HMACUsage(usage)
 	tb := make([]byte, 4)
-	binary.PutUvarint(tb, uint64(mapped))
+	binary.LittleEndian.PutUint32(tb, mapped)
 	return tb
 }
 
