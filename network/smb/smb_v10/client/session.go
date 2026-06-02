@@ -29,6 +29,10 @@ type Session struct {
 	// The 2-byte UID for this session
 	SessionUID uint16
 
+	// TreeID is the TID of the tree connect currently selected for outbound
+	// commands (file I/O, etc.). It is populated by Client.TreeConnect.
+	TreeID uint16
+
 	// The credentials for this session
 	Credentials *credentials.Credentials
 }

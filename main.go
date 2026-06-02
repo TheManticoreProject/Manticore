@@ -17,6 +17,10 @@ var (
 	// Network settings
 	target string
 
+	// Share / file under test
+	shareName string
+	filePath  string
+
 	// Authentication details
 	authDomain   string
 	authUsername string
@@ -38,6 +42,8 @@ func parseArgs() {
 		fmt.Printf("[error] Error creating ArgumentGroup: %s\n", err)
 	} else {
 		subparser_list_group_network.NewStringArgument(&target, "", "--target", "", false, "IP Address of the target host.")
+		subparser_list_group_network.NewStringArgument(&shareName, "", "--share", "share", false, "Name of the share to connect to.")
+		subparser_list_group_network.NewStringArgument(&filePath, "", "--file", "file.txt", false, "Path of the file to read at the share root.")
 	}
 	// Authentication
 	subparser_list_group_auth, err := ap.NewArgumentGroup("Authentication")
@@ -64,6 +70,8 @@ func parseArgs() {
 
 func main() {
 	parseArgs()
+
+	client.FileIODebug = debug
 
 	creds, err := credentials.NewCredentials(authDomain, authUsername, authPassword, authHashes)
 	if err != nil {
@@ -113,11 +121,39 @@ func main() {
 		return
 	}
 
-	err = c.TreeConnect("IPC$")
+	err = c.TreeConnect(shareName)
 	if err != nil {
-		fmt.Printf("[error] Error connecting to IPC$ share: %s\n", err)
+		fmt.Printf("[error] Error connecting to share %q: %s\n", shareName, err)
 		return
 	}
+	fmt.Printf("[info] Connected to share [%s] (TID 0x%04x)\n", shareName, c.Session.TreeID)
 
-	fmt.Printf("[info] Connected to IPC$ share\n")
+	// Open the file at the root of the share for reading.
+	fid, err := c.OpenFile(
+		filePath,
+		client.GENERIC_READ,
+		client.FILE_SHARE_READ|client.FILE_SHARE_WRITE,
+		client.FILE_OPEN,
+		client.FILE_NON_DIRECTORY_FILE,
+	)
+	if err != nil {
+		fmt.Printf("[error] Error opening file %q: %s\n", filePath, err)
+		return
+	}
+	fmt.Printf("[info] Opened file [%s] (FID 0x%04x)\n", filePath, uint16(fid))
+
+	// Read up to 1 MiB from the file.
+	contents, err := c.ReadFile(fid, 0, 1024*1024)
+	if err != nil {
+		fmt.Printf("[error] Error reading file %q: %s\n", filePath, err)
+		_ = c.CloseFile(fid)
+		return
+	}
+	fmt.Printf("[info] Read %d bytes from [%s]\n", len(contents), filePath)
+
+	if err = c.CloseFile(fid); err != nil {
+		fmt.Printf("[warn] Error closing file %q: %s\n", filePath, err)
+	}
+
+	fmt.Printf("----- %s -----\n%s\n----- end -----\n", filePath, string(contents))
 }

@@ -1,0 +1,254 @@
+package client
+
+import (
+	"encoding/hex"
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+)
+
+// FID is an opaque file handle returned by the server for an open file or directory.
+type FID uint16
+
+// NT access mask values (subset) used by OpenFile.
+const (
+	GENERIC_READ  uint32 = 0x80000000
+	GENERIC_WRITE uint32 = 0x40000000
+)
+
+// FILE_SHARE_* values for the shareAccess argument of OpenFile.
+const (
+	FILE_SHARE_NONE   uint32 = 0x00000000
+	FILE_SHARE_READ   uint32 = 0x00000001
+	FILE_SHARE_WRITE  uint32 = 0x00000002
+	FILE_SHARE_DELETE uint32 = 0x00000004
+)
+
+// CreateDisposition values for the createDisp argument of OpenFile.
+const (
+	FILE_SUPERSEDE    uint32 = 0x00000000
+	FILE_OPEN         uint32 = 0x00000001
+	FILE_CREATE       uint32 = 0x00000002
+	FILE_OPEN_IF      uint32 = 0x00000003
+	FILE_OVERWRITE    uint32 = 0x00000004
+	FILE_OVERWRITE_IF uint32 = 0x00000005
+)
+
+// CreateOptions values for the createOptions argument of OpenFile.
+const (
+	FILE_DIRECTORY_FILE     uint32 = 0x00000001
+	FILE_NON_DIRECTORY_FILE uint32 = 0x00000040
+)
+
+// FileIODebug, when true, dumps the raw bytes of file-I/O requests and responses
+// to stdout. It is a coarse diagnostic aid until a structured logger is wired in.
+var FileIODebug bool
+
+func fileIODump(label string, data []byte) {
+	if FileIODebug {
+		fmt.Printf("[debug] %s (%d bytes)\n%s\n", label, len(data), hex.Dump(data))
+	}
+}
+
+// newFileIOMessage builds a message pre-populated with the header fields common to
+// every file-I/O command issued on the currently selected tree/session.
+func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
+	msg := message.NewMessage()
+	msg.Header.Command = command
+	msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
+	msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED)
+	msg.Header.SetPID(msg.Header.GetPID())
+	msg.Header.MID = c.Connection.MaxMpxCount
+	msg.Header.TID = c.Session.TreeID
+	msg.Header.UID = c.Session.SessionUID
+	return msg
+}
+
+// sendReceive marshals msg, sends it on the transport, and returns both the parsed
+// response message and the raw response bytes (the raw bytes are needed by callers
+// that index into the message by an absolute offset, e.g. ReadAndx DataOffset).
+func (c *Client) sendReceive(msg *message.Message, label string) (*message.Message, []byte, error) {
+	marshalled, err := msg.Marshal()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal %s: %v", label, err)
+	}
+	fileIODump(label+" request", marshalled)
+
+	if _, err = c.Transport.Send(marshalled); err != nil {
+		return nil, nil, fmt.Errorf("failed to send %s: %v", label, err)
+	}
+
+	raw, err := c.Transport.Receive()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to receive %s response: %v", label, err)
+	}
+	fileIODump(label+" response", raw)
+
+	response := message.NewMessage()
+	if err = response.Unmarshal(raw); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal %s response: %v", label, err)
+	}
+
+	return response, raw, nil
+}
+
+// OpenFile opens (or creates) a file on the currently connected tree and returns
+// the server-assigned FID.
+//
+// Wire: NtCreateAndxRequest / NtCreateAndxResponse.
+func (c *Client) OpenFile(path string, desiredAccess, shareAccess, createDisp, createOptions uint32) (FID, error) {
+	if c.Session == nil {
+		return 0, fmt.Errorf("no session established")
+	}
+
+	// NtCreate FileName is relative to the share root (the TID) and uses backslash separators.
+	smbPath := path
+	if len(smbPath) == 0 || smbPath[0] != '\\' {
+		smbPath = "\\" + smbPath
+	}
+
+	msg := c.newFileIOMessage(codes.SMB_COM_NT_CREATE_ANDX)
+
+	cmd := commands.NewNtCreateAndxRequest()
+	cmd.DesiredAccess = types.ULONG(desiredAccess)
+	cmd.ShareAccess = types.ULONG(shareAccess)
+	cmd.CreateDisposition = types.ULONG(createDisp)
+	cmd.CreateOptions = types.ULONG(createOptions)
+	// SEC_IMPERSONATE (2): give the server a static snapshot of the client's security context.
+	cmd.ImpersonationLevel = types.ULONG(0x00000002)
+	// FILE_ATTRIBUTE_NORMAL
+	cmd.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(0x00000080)
+	if err := cmd.FileName.SetString(smbPath); err != nil {
+		return 0, fmt.Errorf("failed to set file name: %v", err)
+	}
+	cmd.NameLength = types.USHORT(len(smbPath))
+
+	msg.AddCommand(cmd)
+
+	response, _, err := c.sendReceive(msg, "NtCreateAndx")
+	if err != nil {
+		return 0, err
+	}
+
+	if response.Header.Status != 0x00000000 {
+		return 0, fmt.Errorf("NtCreateAndx failed: 0x%08x", response.Header.Status)
+	}
+
+	createResponse, ok := response.Command.(*commands.NtCreateAndxResponse)
+	if !ok {
+		return 0, fmt.Errorf("unexpected response command: 0x%02x", response.Header.Command)
+	}
+
+	return FID(createResponse.FID), nil
+}
+
+// CloseFile releases an open FID on the server.
+//
+// Wire: CloseRequest / CloseResponse.
+func (c *Client) CloseFile(fid FID) error {
+	if c.Session == nil {
+		return fmt.Errorf("no session established")
+	}
+
+	msg := c.newFileIOMessage(codes.SMB_COM_CLOSE)
+
+	cmd := commands.NewCloseRequest()
+	cmd.FID = types.USHORT(fid)
+	// LastTimeModified left at zero: the server uses its own default and does not
+	// apply an explicit modification time on close.
+
+	msg.AddCommand(cmd)
+
+	response, _, err := c.sendReceive(msg, "Close")
+	if err != nil {
+		return err
+	}
+
+	if response.Header.Status != 0x00000000 {
+		return fmt.Errorf("Close failed: 0x%08x", response.Header.Status)
+	}
+
+	return nil
+}
+
+// ReadFile reads up to maxLen bytes starting at offset from the file referenced by
+// fid. It issues as many ReadAndx requests as required, stopping at maxLen or at the
+// first short read (end of file).
+//
+// Wire: ReadAndxRequest / ReadAndxResponse.
+func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error) {
+	if c.Session == nil {
+		return nil, fmt.Errorf("no session established")
+	}
+
+	// Bound each read by what the server will accept in a single response. Leave room
+	// for the SMB header and the ReadAndx parameter/data framing.
+	chunkSize := uint32(0xFF00)
+	if c.Connection.Server != nil && c.Connection.Server.MaxBufferSize > 0 {
+		if budget := c.Connection.Server.MaxBufferSize; budget < chunkSize+512 {
+			if budget <= 512 {
+				return nil, fmt.Errorf("negotiated MaxBufferSize (%d) too small to read", budget)
+			}
+			chunkSize = budget - 512
+		}
+	}
+
+	result := make([]byte, 0, maxLen)
+
+	for uint32(len(result)) < maxLen {
+		want := maxLen - uint32(len(result))
+		if want > chunkSize {
+			want = chunkSize
+		}
+
+		msg := c.newFileIOMessage(codes.SMB_COM_READ_ANDX)
+
+		cmd := commands.NewReadAndxRequest()
+		cmd.FID = types.USHORT(fid)
+		cmd.Offset = types.ULONG(uint32(offset + uint64(len(result))))
+		cmd.MaxCountOfBytesToReturn = types.USHORT(want)
+		cmd.MinCountOfBytesToReturn = types.USHORT(0)
+		cmd.Timeout = types.ULONG(0)
+		cmd.Remaining = types.USHORT(0)
+
+		msg.AddCommand(cmd)
+
+		response, raw, err := c.sendReceive(msg, "ReadAndx")
+		if err != nil {
+			return result, err
+		}
+
+		if response.Header.Status != 0x00000000 {
+			return result, fmt.Errorf("ReadAndx failed: 0x%08x", response.Header.Status)
+		}
+
+		readResponse, ok := response.Command.(*commands.ReadAndxResponse)
+		if !ok {
+			return result, fmt.Errorf("unexpected response command: 0x%02x", response.Header.Command)
+		}
+
+		dataLen := int(readResponse.DataLength)
+		dataOff := int(readResponse.DataOffset)
+		if dataLen == 0 {
+			// End of file reached.
+			break
+		}
+		if dataOff < 0 || dataOff+dataLen > len(raw) {
+			return result, fmt.Errorf("ReadAndx data window [%d:%d] out of bounds (response is %d bytes)", dataOff, dataOff+dataLen, len(raw))
+		}
+
+		result = append(result, raw[dataOff:dataOff+dataLen]...)
+
+		// A short read means we have reached the end of the file.
+		if uint32(dataLen) < want {
+			break
+		}
+	}
+
+	return result, nil
+}
