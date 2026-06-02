@@ -102,6 +102,13 @@ func (c *LockAndReadResponse) Marshal() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesReturned))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
+	// Marshalling parameter Reserved (4 USHORT = 8 bytes, all MUST be 0x00)
+	for _, reservedWord := range c.Reserved {
+		bufReserved := make([]byte, 2)
+		binary.BigEndian.PutUint16(bufReserved, uint16(reservedWord))
+		rawParametersContent = append(rawParametersContent, bufReserved...)
+	}
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -158,6 +165,15 @@ func (c *LockAndReadResponse) Unmarshal(data []byte) (int, error) {
 	}
 	c.CountOfBytesReturned = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter Reserved (4 USHORT = 8 bytes)
+	for i := range c.Reserved {
+		if len(rawParametersContent) < offset+2 {
+			return offset, fmt.Errorf("rawParametersContent too short for Reserved")
+		}
+		c.Reserved[i] = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0
