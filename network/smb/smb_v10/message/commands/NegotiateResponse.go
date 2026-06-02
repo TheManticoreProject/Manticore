@@ -205,17 +205,21 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	if c.SecurityMode.SupportsChallengeResponseAuth() {
+	// The SMB_Data layout is selected by the CAP_EXTENDED_SECURITY capability bit, as
+	// specified in [MS-SMB] section 2.2.4.5.2.1 (Extended Security Response). When it is
+	// set, the data block carries ServerGUID + SecurityBlob; otherwise it carries the
+	// [MS-CIFS] section 2.2.4.52.2 layout of Challenge + DomainName.
+	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
+		// Marshalling data ServerGUID
+		rawDataContent = append(rawDataContent, c.ServerGUID.ToBytes()...)
+		// Marshalling data SecurityBlob
+		rawDataContent = append(rawDataContent, c.SecurityBlob...)
+	} else {
 		// Marshalling data Challenge
 		c.ChallengeLength = types.UCHAR(len(c.Challenge))
 		rawDataContent = append(rawDataContent, c.Challenge...)
 		// Marshalling data DomainName
 		rawDataContent = append(rawDataContent, c.DomainName...)
-	} else {
-		// Marshalling data ServerGUID
-		rawDataContent = append(rawDataContent, c.ServerGUID.ToBytes()...)
-		// Marshalling data SecurityBlob
-		rawDataContent = append(rawDataContent, c.SecurityBlob...)
 	}
 
 	// Then marshal the parameters
@@ -391,8 +395,12 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 	offset++
 
 	// Then unmarshal the data
+	// The SMB_Data layout is selected by the CAP_EXTENDED_SECURITY capability bit, as
+	// specified in [MS-SMB] section 2.2.4.5.2.1 (Extended Security Response). When it is
+	// set, the data block carries ServerGUID + SecurityBlob; otherwise it carries the
+	// [MS-CIFS] section 2.2.4.52.2 layout of Challenge + DomainName.
 	offset = 0
-	if c.SecurityMode.SupportsChallengeResponseAuth() {
+	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
 		// Unmarshalling data ServerGUID
 		if len(rawDataContent) < offset+16 {
 			return offset, fmt.Errorf("rawDataContent too short for ServerGUID")
