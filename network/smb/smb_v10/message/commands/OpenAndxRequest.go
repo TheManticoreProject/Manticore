@@ -37,9 +37,9 @@ type OpenAndxRequest struct {
 	// MUST refer to a regular file.
 	FileAttrs types.SMB_FILE_ATTRIBUTES
 
-	// CreationTime (4 bytes): A 32-bit integer time value to be assigned to the file
-	// as the time of creation if the file is created.
-	CreationTime types.FILETIME
+	// CreationTime (4 bytes): A 32-bit integer time value (UTIME) to be assigned to the
+	// file as the time of creation if the file is created.
+	CreationTime types.ULONG
 
 	// OpenMode (2 bytes): A 16-bit field that controls the way a file SHOULD be
 	// treated when it is opened for use by certain extended SMB requests.
@@ -74,7 +74,7 @@ func NewOpenAndxRequest() *OpenAndxRequest {
 		AccessMode:     types.USHORT(0),
 		SearchAttrs:    types.SMB_FILE_ATTRIBUTES{},
 		FileAttrs:      types.SMB_FILE_ATTRIBUTES{},
-		CreationTime:   types.FILETIME{},
+		CreationTime:   types.ULONG(0),
 		OpenMode:       types.USHORT(0),
 		AllocationSize: types.ULONG(0),
 		Timeout:        types.ULONG(0),
@@ -162,12 +162,10 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter CreationTime
-	bytesStream, err = c.CreationTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter CreationTime (4-byte UTIME)
+	bufCreationTime := make([]byte, 4)
+	binary.BigEndian.PutUint32(bufCreationTime, uint32(c.CreationTime))
+	rawParametersContent = append(rawParametersContent, bufCreationTime...)
 
 	// Marshalling parameter OpenMode
 	buf2 = make([]byte, 2)
@@ -272,15 +270,12 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter CreationTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter CreationTime (4-byte UTIME)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
 	}
-	bytesRead, err = c.CreationTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.CreationTime = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter OpenMode
 	if len(rawParametersContent) < offset+2 {
