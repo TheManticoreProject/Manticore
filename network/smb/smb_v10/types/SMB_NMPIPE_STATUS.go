@@ -123,8 +123,8 @@ func (s SMB_NMPIPE_STATUS) Marshal() ([]byte, error) {
 // Returns:
 // - The number of bytes unmarshalled
 func (s *SMB_NMPIPE_STATUS) Unmarshal(data []byte) (int, error) {
-	if len(data) != 2 {
-		return 0, fmt.Errorf("data must be 2 bytes long")
+	if len(data) < 2 {
+		return 0, fmt.Errorf("data must be at least 2 bytes long")
 	}
 
 	s.ICount = data[0]

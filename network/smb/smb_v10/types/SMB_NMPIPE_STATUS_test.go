@@ -181,11 +181,13 @@ func TestSMB_NMPIPE_STATUS_Unmarshal(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "Invalid data length (too long)",
+			// A buffer longer than 2 bytes is valid: the field is fixed-size, so only
+			// the first 2 bytes are consumed and the remainder belongs to the caller.
+			name:        "Trailing data after the field",
 			data:        []byte{5, 0x81, 0x00},
-			expected:    types.SMB_NMPIPE_STATUS{},
-			expectedLen: 0,
-			expectError: true,
+			expected:    types.SMB_NMPIPE_STATUS{ICount: 5, Flags: 0x81},
+			expectedLen: 2,
+			expectError: false,
 		},
 	}
 
