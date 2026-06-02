@@ -158,7 +158,7 @@ func (c *LockingAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter TypeOfLock
@@ -169,17 +169,17 @@ func (c *LockingAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Timeout
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Timeout))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Timeout))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter NumberOfRequestedUnlocks
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.NumberOfRequestedUnlocks))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.NumberOfRequestedUnlocks))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter NumberOfRequestedLocks
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.NumberOfRequestedLocks))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.NumberOfRequestedLocks))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -239,7 +239,7 @@ func (c *LockingAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter TypeOfLock
@@ -260,21 +260,21 @@ func (c *LockingAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Timeout")
 	}
-	c.Timeout = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Timeout = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter NumberOfRequestedUnlocks
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for NumberOfRequestedUnlocks")
 	}
-	c.NumberOfRequestedUnlocks = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.NumberOfRequestedUnlocks = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter NumberOfRequestedLocks
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for NumberOfRequestedLocks")
 	}
-	c.NumberOfRequestedLocks = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.NumberOfRequestedLocks = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
