@@ -101,7 +101,7 @@ func (c *OpenRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter AccessMode
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AccessMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.AccessMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter SearchAttributes
@@ -165,7 +165,7 @@ func (c *OpenRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
 	}
-	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.AccessMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter SearchAttributes
