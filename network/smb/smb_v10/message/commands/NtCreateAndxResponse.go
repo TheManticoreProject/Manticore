@@ -141,12 +141,12 @@ func (c *NtCreateAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter CreateDisposition
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.CreateDisposition))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CreateDisposition))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter CreateTime
@@ -179,22 +179,22 @@ func (c *NtCreateAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter ExtFileAttributes
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ExtFileAttributes))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ExtFileAttributes))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter AllocationSize
 	buf8 := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf8, uint64(c.AllocationSize.QuadPart))
+	binary.LittleEndian.PutUint64(buf8, uint64(c.AllocationSize.QuadPart))
 	rawParametersContent = append(rawParametersContent, buf8...)
 
 	// Marshalling parameter EndOfFile
 	buf8 = make([]byte, 8)
-	binary.BigEndian.PutUint64(buf8, uint64(c.EndOfFile.QuadPart))
+	binary.LittleEndian.PutUint64(buf8, uint64(c.EndOfFile.QuadPart))
 	rawParametersContent = append(rawParametersContent, buf8...)
 
 	// Marshalling parameter ResourceType
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ResourceType))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.ResourceType))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter NMPipeStatus
@@ -271,14 +271,14 @@ func (c *NtCreateAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter CreateDisposition
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreateDisposition")
 	}
-	c.CreateDisposition = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CreateDisposition = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter CreateTime
@@ -325,28 +325,28 @@ func (c *NtCreateAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ExtFileAttributes")
 	}
-	c.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter AllocationSize
 	if len(rawParametersContent) < offset+8 {
 		return offset, fmt.Errorf("rawParametersContent too short for AllocationSize")
 	}
-	c.AllocationSize.QuadPart = uint64(binary.BigEndian.Uint64(rawParametersContent[offset : offset+8]))
+	c.AllocationSize.QuadPart = uint64(binary.LittleEndian.Uint64(rawParametersContent[offset : offset+8]))
 	offset += 8
 
 	// Unmarshalling parameter EndOfFile
 	if len(rawParametersContent) < offset+8 {
 		return offset, fmt.Errorf("rawParametersContent too short for EndOfFile")
 	}
-	c.EndOfFile.QuadPart = uint64(binary.BigEndian.Uint64(rawParametersContent[offset : offset+8]))
+	c.EndOfFile.QuadPart = uint64(binary.LittleEndian.Uint64(rawParametersContent[offset : offset+8]))
 	offset += 8
 
 	// Unmarshalling parameter ResourceType
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for ResourceType")
 	}
-	c.ResourceType = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.ResourceType = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter NMPipeStatus
