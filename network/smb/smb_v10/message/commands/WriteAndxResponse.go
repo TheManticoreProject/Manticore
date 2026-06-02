@@ -93,17 +93,17 @@ func (c *WriteAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Count
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Available
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Available))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Available))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Reserved
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Reserved))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Reserved))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -163,21 +163,21 @@ func (c *WriteAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Count")
 	}
-	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Count = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Available
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Available")
 	}
-	c.Available = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Available = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Reserved
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
-	c.Reserved = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Reserved = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
