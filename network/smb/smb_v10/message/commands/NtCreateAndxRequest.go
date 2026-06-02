@@ -159,13 +159,13 @@ func (c *NtCreateAndxRequest) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshalling data FileName
-	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-	bytesStream, err := c.FileName.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawDataContent = append(rawDataContent, bytesStream...)
+	// Marshalling data FileName.
+	// For SMB_COM_NT_CREATE_ANDX the FileName is a raw null-terminated string and MUST
+	// NOT be prefixed with an SMB_STRING buffer-format byte. Marshalling it through
+	// SMB_STRING (ASCII) would prepend a spurious 0x04 byte, which servers reject with
+	// STATUS_OBJECT_NAME_INVALID.
+	rawDataContent = append(rawDataContent, []byte(c.FileName.Buffer)...)
+	rawDataContent = append(rawDataContent, 0x00)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -366,12 +366,19 @@ func (c *NtCreateAndxRequest) Unmarshal(data []byte) (int, error) {
 	// Then unmarshal the data
 	offset = 0
 
-	// Unmarshalling data FileName
-	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
-	if err != nil {
-		return offset, err
+	// Unmarshalling data FileName: a raw null-terminated string with no SMB_STRING
+	// buffer-format byte (mirrors Marshal above).
+	nameBytes := []byte{}
+	for offset < len(rawDataContent) && rawDataContent[offset] != 0x00 {
+		nameBytes = append(nameBytes, rawDataContent[offset])
+		offset++
 	}
-	offset += bytesRead
+	c.FileName.Buffer = []types.UCHAR(nameBytes)
+	c.FileName.Length = types.USHORT(len(nameBytes))
+	if offset < len(rawDataContent) {
+		// Consume the null terminator.
+		offset++
+	}
 
 	return offset, nil
 }
