@@ -89,7 +89,7 @@ func (c *FindCloseResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Count
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -146,7 +146,7 @@ func (c *FindCloseResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Count")
 	}
-	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Count = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
