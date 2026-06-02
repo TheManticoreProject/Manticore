@@ -107,7 +107,7 @@ func (c *QueryInformationResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FileSize
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -184,7 +184,7 @@ func (c *QueryInformationResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileSize")
 	}
-	c.FileSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
