@@ -86,17 +86,17 @@ func (c *LockByteRangeRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter CountOfBytesToLock
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.CountOfBytesToLock))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CountOfBytesToLock))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter LockOffsetInBytes
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.LockOffsetInBytes))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LockOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -153,21 +153,21 @@ func (c *LockByteRangeRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter CountOfBytesToLock
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToLock")
 	}
-	c.CountOfBytesToLock = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CountOfBytesToLock = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter LockOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LockOffsetInBytes")
 	}
-	c.LockOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.LockOffsetInBytes = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
