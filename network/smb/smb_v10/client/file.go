@@ -7,9 +7,23 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+)
+
+const (
+	// writeAndxWordsSize is the size in bytes of the WriteAndx request Words block
+	// for the 32-bit-offset form (WordCount 0x0C, no OffsetHigh): AndX(4) + FID(2) +
+	// Offset(4) + Timeout(4) + WriteMode(2) + Remaining(2) + Reserved(2) + DataLength(2)
+	// + DataOffset(2).
+	writeAndxWordsSize = 24
+
+	// writeAndxDataOffset is the byte offset, measured from the start of the SMB
+	// header, at which the Data block begins in our single (non-chained) WriteAndx
+	// request: SMB header + WordCount(1) + Words + ByteCount(2) + Pad(1).
+	writeAndxDataOffset = header.SMB_HEADER_SIZE + 1 + writeAndxWordsSize + 2 + 1
 )
 
 // FID is an opaque file handle returned by the server for an open file or directory.
@@ -251,4 +265,80 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 	}
 
 	return result, nil
+}
+
+// WriteFile writes data to the file referenced by fid starting at offset and
+// returns the total number of bytes written. It issues as many WriteAndx requests
+// as required, bounding each one so the request message stays within the negotiated
+// MaxBufferSize.
+//
+// Wire: WriteAndxRequest / WriteAndxResponse.
+func (c *Client) WriteFile(fid FID, offset uint64, data []byte) (int, error) {
+	if c.Session == nil {
+		return 0, fmt.Errorf("no session established")
+	}
+
+	// Each request carries: SMB header + WriteAndx parameters + Pad + Data. Keep the
+	// whole message within the negotiated buffer by reserving the fixed overhead.
+	chunkSize := 0xFF00
+	if c.Connection.Server != nil && c.Connection.Server.MaxBufferSize > 0 {
+		budget := int(c.Connection.Server.MaxBufferSize) - writeAndxDataOffset
+		if budget <= 0 {
+			return 0, fmt.Errorf("negotiated MaxBufferSize (%d) too small to write", c.Connection.Server.MaxBufferSize)
+		}
+		if budget < chunkSize {
+			chunkSize = budget
+		}
+	}
+
+	written := 0
+	for written < len(data) {
+		end := written + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk := data[written:end]
+
+		msg := c.newFileIOMessage(codes.SMB_COM_WRITE_ANDX)
+
+		cmd := commands.NewWriteAndxRequest()
+		cmd.FID = types.USHORT(fid)
+		cmd.Offset = types.ULONG(uint32(offset + uint64(written)))
+		cmd.Timeout = types.ULONG(0)
+		cmd.WriteMode = types.USHORT(0)
+		cmd.Remaining = types.USHORT(0)
+		cmd.Reserved = types.USHORT(0)
+		cmd.DataLength = types.USHORT(len(chunk))
+		// DataOffset is measured from the start of the SMB header (not from the AndX
+		// command's position), so it is a fixed value for our single-command layout.
+		cmd.DataOffset = types.USHORT(writeAndxDataOffset)
+		cmd.OffsetHigh = types.ULONG(0)
+		cmd.Pad = types.UCHAR(0)
+		cmd.Data = []types.UCHAR(chunk)
+
+		msg.AddCommand(cmd)
+
+		response, _, err := c.sendReceive(msg, "WriteAndx")
+		if err != nil {
+			return written, err
+		}
+
+		if response.Header.Status != 0x00000000 {
+			return written, fmt.Errorf("WriteAndx failed: 0x%08x", response.Header.Status)
+		}
+
+		writeResponse, ok := response.Command.(*commands.WriteAndxResponse)
+		if !ok {
+			return written, fmt.Errorf("unexpected response command: 0x%02x", response.Header.Command)
+		}
+
+		n := int(writeResponse.Count)
+		if n <= 0 {
+			return written, fmt.Errorf("server accepted 0 bytes of a %d-byte write", len(chunk))
+		}
+
+		written += n
+	}
+
+	return written, nil
 }
