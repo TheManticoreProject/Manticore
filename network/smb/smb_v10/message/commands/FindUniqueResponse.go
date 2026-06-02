@@ -24,6 +24,12 @@ type FindUniqueResponse struct {
 	Count types.USHORT
 
 	// Data
+
+	// BufferFormat (1 byte): This field MUST be 0x05, which indicates that a variable-size block is to follow.
+	// DataLength (2 bytes): The size, in bytes, of the DirectoryInformationData array, which follows. This field MUST
+	// be equal to 43 times the value of SMB_Parameters.Words.Count.
+	// DirectoryInformationData (variable): An array of zero or more SMB_Directory_Information records. Note that the
+	// SMB_Directory_Information record structure is a fixed 43 bytes in length.
 	DirectoryInformationData []types.SMB_DIRECTORY_INFORMATION
 }
 
@@ -79,21 +85,34 @@ func (c *FindUniqueResponse) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshalling data DirectoryInformationData
+	// Marshalling the directory information records first so we can compute DataLength
+	directoryRecords := []byte{}
 	for _, directoryInformationData := range c.DirectoryInformationData {
 		bytesStream, err := directoryInformationData.Marshal()
 		if err != nil {
 			return nil, err
 		}
-		rawDataContent = append(rawDataContent, bytesStream...)
+		directoryRecords = append(directoryRecords, bytesStream...)
 	}
+
+	// BufferFormat (1 byte): MUST be 0x05, indicating that a variable-size block follows
+	rawDataContent = append(rawDataContent, 0x05)
+
+	// DataLength (2 bytes, little-endian): size in bytes of the DirectoryInformationData array,
+	// which MUST equal 43 times the number of directory entries
+	dataLengthBuf := make([]byte, 2)
+	binary.LittleEndian.PutUint16(dataLengthBuf, uint16(len(directoryRecords)))
+	rawDataContent = append(rawDataContent, dataLengthBuf...)
+
+	// DirectoryInformationData (variable)
+	rawDataContent = append(rawDataContent, directoryRecords...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
 
 	// Marshalling parameter Count
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Count))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Count))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -150,7 +169,7 @@ func (c *FindUniqueResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Count")
 	}
-	c.Count = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Count = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
@@ -159,6 +178,18 @@ func (c *FindUniqueResponse) Unmarshal(data []byte) (int, error) {
 	// Unmarshalling data DirectoryInformationData
 	// Clear any existing entries
 	c.DirectoryInformationData = []types.SMB_DIRECTORY_INFORMATION{}
+
+	// BufferFormat (1 byte): MUST be 0x05
+	if len(rawDataContent) < offset+1 {
+		return offset, fmt.Errorf("rawDataContent too short for BufferFormat")
+	}
+	offset++
+
+	// DataLength (2 bytes, little-endian): size in bytes of the DirectoryInformationData array
+	if len(rawDataContent) < offset+2 {
+		return offset, fmt.Errorf("rawDataContent too short for DataLength")
+	}
+	offset += 2
 
 	// Each directory information entry is 43 bytes fixed size
 	const entrySize = 43
