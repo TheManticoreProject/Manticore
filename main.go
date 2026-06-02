@@ -18,8 +18,9 @@ var (
 	target string
 
 	// Share / file under test
-	shareName string
-	filePath  string
+	shareName    string
+	filePath     string
+	writeContent string
 
 	// Authentication details
 	authDomain   string
@@ -44,6 +45,7 @@ func parseArgs() {
 		subparser_list_group_network.NewStringArgument(&target, "", "--target", "", false, "IP Address of the target host.")
 		subparser_list_group_network.NewStringArgument(&shareName, "", "--share", "share", false, "Name of the share to connect to.")
 		subparser_list_group_network.NewStringArgument(&filePath, "", "--file", "file.txt", false, "Path of the file to read at the share root.")
+		subparser_list_group_network.NewStringArgument(&writeContent, "", "--write", "", false, "If set, write this content to --file (create/overwrite) before reading it back.")
 	}
 	// Authentication
 	subparser_list_group_auth, err := ap.NewArgumentGroup("Authentication")
@@ -127,6 +129,31 @@ func main() {
 		return
 	}
 	fmt.Printf("[info] Connected to share [%s] (TID 0x%04x)\n", shareName, c.Session.TreeID)
+
+	// Optionally write content to the file first (creating or overwriting it).
+	if writeContent != "" {
+		wfid, err := c.OpenFile(
+			filePath,
+			client.GENERIC_READ|client.GENERIC_WRITE,
+			client.FILE_SHARE_READ|client.FILE_SHARE_WRITE,
+			client.FILE_OVERWRITE_IF,
+			client.FILE_NON_DIRECTORY_FILE,
+		)
+		if err != nil {
+			fmt.Printf("[error] Error opening file %q for write: %s\n", filePath, err)
+			return
+		}
+		n, err := c.WriteFile(wfid, 0, []byte(writeContent))
+		if err != nil {
+			fmt.Printf("[error] Error writing file %q: %s\n", filePath, err)
+			_ = c.CloseFile(wfid)
+			return
+		}
+		fmt.Printf("[info] Wrote %d bytes to [%s]\n", n, filePath)
+		if err = c.CloseFile(wfid); err != nil {
+			fmt.Printf("[warn] Error closing file %q after write: %s\n", filePath, err)
+		}
+	}
 
 	// Open the file at the root of the share for reading.
 	fid, err := c.OpenFile(
