@@ -22,10 +22,10 @@ type CloseRequest struct {
 	// The FID of the object to be closed.
 	FID types.USHORT
 
-	// A time value encoded as the number of seconds since January 1, 1970 00:00:00.0. The client can request that the last
-	// modification time for the file be updated to this time value. A value of 0x00000000 or 0xFFFFFFFF results in the server
-	// not updating the last modification time.
-	LastTimeModified types.FILETIME
+	// A time value encoded as the number of seconds since January 1, 1970 00:00:00.0 (a 4-byte UTIME). The client can request
+	// that the last modification time for the file be updated to this time value. A value of 0x00000000 or 0xFFFFFFFF results in
+	// the server not updating the last modification time.
+	LastTimeModified types.ULONG
 }
 
 // NewCloseRequest creates a new CloseRequest structure
@@ -36,7 +36,7 @@ func NewCloseRequest() *CloseRequest {
 	c := &CloseRequest{
 		// Parameters
 		FID:              types.USHORT(0),
-		LastTimeModified: types.FILETIME{},
+		LastTimeModified: types.ULONG(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_CLOSE)
@@ -86,12 +86,10 @@ func (c *CloseRequest) Marshal() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
-	// Marshalling parameter LastTimeModified
-	bytesStream, err := c.LastTimeModified.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter LastTimeModified (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LastTimeModified))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -150,15 +148,12 @@ func (c *CloseRequest) Unmarshal(data []byte) (int, error) {
 	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
-	// Unmarshalling parameter LastTimeModified
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastTimeModified (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastTimeModified")
 	}
-	bytesRead, err = c.LastTimeModified.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.LastTimeModified = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Then unmarshal the data
 	offset = 0
