@@ -88,7 +88,7 @@ func (c *EchoRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter EchoCount
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.EchoCount))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.EchoCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -145,7 +145,7 @@ func (c *EchoRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for EchoCount")
 	}
-	c.EchoCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.EchoCount = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
