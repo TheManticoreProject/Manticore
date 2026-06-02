@@ -213,47 +213,47 @@ func (c *NtTransactRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Reserved1
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Reserved1))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved1))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter TotalParameterCount
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter TotalDataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalDataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalDataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter MaxParameterCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.MaxParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.MaxParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter MaxDataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.MaxDataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.MaxDataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter SetupCount
@@ -261,7 +261,7 @@ func (c *NtTransactRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Function
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Function))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Function))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -325,63 +325,63 @@ func (c *NtTransactRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
 	}
-	c.Reserved1 = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Reserved1 = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter TotalParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalParameterCount")
 	}
-	c.TotalParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter TotalDataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalDataCount")
 	}
-	c.TotalDataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalDataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter MaxParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for MaxParameterCount")
 	}
-	c.MaxParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.MaxParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter MaxDataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for MaxDataCount")
 	}
-	c.MaxDataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.MaxDataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterCount")
 	}
-	c.ParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterOffset")
 	}
-	c.ParameterOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataCount")
 	}
-	c.DataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter SetupCount
@@ -395,7 +395,7 @@ func (c *NtTransactRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Function")
 	}
-	c.Function = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Function = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
