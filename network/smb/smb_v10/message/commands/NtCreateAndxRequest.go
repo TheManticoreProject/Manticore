@@ -175,52 +175,52 @@ func (c *NtCreateAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter NameLength
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.NameLength))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.NameLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Flags
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Flags))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Flags))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter RootDirectoryFID
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.RootDirectoryFID))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.RootDirectoryFID))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DesiredAccess
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DesiredAccess))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DesiredAccess))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter AllocationSize
 	buf8 := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf8, uint64(c.AllocationSize.QuadPart))
+	binary.LittleEndian.PutUint64(buf8, uint64(c.AllocationSize.QuadPart))
 	rawParametersContent = append(rawParametersContent, buf8...)
 
 	// Marshalling parameter ExtFileAttributes
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ExtFileAttributes))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ExtFileAttributes))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ShareAccess
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ShareAccess))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ShareAccess))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter CreateDisposition
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.CreateDisposition))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CreateDisposition))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter CreateOptions
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.CreateOptions))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CreateOptions))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ImpersonationLevel
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ImpersonationLevel))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ImpersonationLevel))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter SecurityFlags
@@ -290,70 +290,70 @@ func (c *NtCreateAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for NameLength")
 	}
-	c.NameLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.NameLength = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Flags
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Flags")
 	}
-	c.Flags = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Flags = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter RootDirectoryFID
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for RootDirectoryFID")
 	}
-	c.RootDirectoryFID = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.RootDirectoryFID = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DesiredAccess
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DesiredAccess")
 	}
-	c.DesiredAccess = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DesiredAccess = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter AllocationSize
 	if len(rawParametersContent) < offset+8 {
 		return offset, fmt.Errorf("rawParametersContent too short for AllocationSize")
 	}
-	c.AllocationSize.QuadPart = uint64(binary.BigEndian.Uint64(rawParametersContent[offset : offset+8]))
+	c.AllocationSize.QuadPart = uint64(binary.LittleEndian.Uint64(rawParametersContent[offset : offset+8]))
 	offset += 8
 
 	// Unmarshalling parameter ExtFileAttributes
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ExtFileAttributes")
 	}
-	c.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ShareAccess
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ShareAccess")
 	}
-	c.ShareAccess = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ShareAccess = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter CreateDisposition
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreateDisposition")
 	}
-	c.CreateDisposition = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CreateDisposition = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter CreateOptions
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreateOptions")
 	}
-	c.CreateOptions = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CreateOptions = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ImpersonationLevel
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ImpersonationLevel")
 	}
-	c.ImpersonationLevel = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ImpersonationLevel = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter SecurityFlags

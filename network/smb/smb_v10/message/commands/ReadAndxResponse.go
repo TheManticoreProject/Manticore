@@ -104,27 +104,27 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Available
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Available))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Available))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter DataCompactionMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataCompactionMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataCompactionMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Reserved1
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Reserved1))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved1))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter DataLength
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter DataOffset
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataOffset))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -184,35 +184,35 @@ func (c *ReadAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Available")
 	}
-	c.Available = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Available = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter DataCompactionMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataCompactionMode")
 	}
-	c.DataCompactionMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.DataCompactionMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Reserved1
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
 	}
-	c.Reserved1 = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Reserved1 = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter DataLength
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataLength")
 	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.DataLength = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.DataOffset = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
