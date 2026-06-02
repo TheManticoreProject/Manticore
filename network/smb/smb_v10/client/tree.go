@@ -79,5 +79,10 @@ func (c *Client) TreeConnect(shareName string) error {
 	}
 	c.Connection.TreeConnectTable[response_msg.Header.TID] = tree_connect_response_cmd
 
+	// Select this tree as the current one for subsequent commands (file I/O, etc.).
+	if c.Session != nil {
+		c.Session.TreeID = response_msg.Header.TID
+	}
+
 	return nil
 }
