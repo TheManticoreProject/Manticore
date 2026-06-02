@@ -109,12 +109,12 @@ func (c *FindCloseRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter MaxCount
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.MaxCount))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.MaxCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter SearchAttributes
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.SearchAttributes))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.SearchAttributes))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -171,14 +171,14 @@ func (c *FindCloseRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
 	}
-	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.MaxCount = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter SearchAttributes
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for SearchAttributes")
 	}
-	c.SearchAttributes = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.SearchAttributes = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
