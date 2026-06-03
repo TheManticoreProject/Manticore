@@ -2,7 +2,6 @@ package dialects
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
@@ -65,66 +64,61 @@ func (d *Dialects) AddDialect(dialect string) {
 
 // Marshal serializes the Dialects structure into a byte slice
 //
-// This function serializes the Dialects structure into a byte slice. It creates a new byte slice, appends the
-// buffer format and the dialect string to it, and returns the resulting byte slice.
+// Per MS-CIFS section 2.2.4.52.1, the Dialects field is a list of SMB_Dialect entries,
+// each consisting of a BufferFormat byte (0x02) followed by a null-terminated OEM string.
+// One BufferFormat byte MUST precede each dialect string, not just the first one.
 func (d *Dialects) Marshal() ([]byte, error) {
 	buffer := []byte{}
 
-	// A null-terminated OEM_STRING.
-	// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
-	buffer = append(buffer, types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
+	for _, dialect := range d.Dialects {
+		// A null-terminated OEM_STRING.
+		// This format code is used only in the SMB_COM_NEGOTIATE (section 2.2.4.52) command to identify SMB dialect strings.
+		buffer = append(buffer, types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
 
-	// Data buffer
-	buffer = append(buffer, []byte(strings.Join(d.Dialects, "\x00"))...)
-	buffer = append(buffer, 0x00)
+		// Dialect string followed by its null terminator
+		buffer = append(buffer, []byte(dialect)...)
+		buffer = append(buffer, 0x00)
+	}
 
 	return buffer, nil
 }
 
 // Unmarshal deserializes a byte slice into the Dialects structure
 //
-// This function deserializes a byte slice into the Dialects structure. It checks if the input byte slice is
-// at least 2 bytes long (to ensure there's enough data for a buffer format and a null terminator).
-// It then resets the Dialects field to ensure we're starting fresh.
-// It iterates through the input byte slice, reading buffer format, dialect string, and null terminator.
-// It appends the dialect string to the Dialects field and returns the number of bytes read and an error if any.
+// Per MS-CIFS section 2.2.4.52.1, the Dialects field is a list of SMB_Dialect entries,
+// each consisting of a BufferFormat byte (0x02) followed by a null-terminated OEM string.
+// This function iterates over the list, validating the BufferFormat byte of each entry and
+// reading the null-terminated dialect string that follows, until the buffer is exhausted.
+// It returns the number of bytes read and an error if any.
 func (d *Dialects) Unmarshal(data []byte) (int, error) {
 	bytesRead := 0
 
-	// buffer format
-	bufferFormat := data[0]
-	if bufferFormat != types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING {
-		return 0, fmt.Errorf("invalid buffer format: %d", bufferFormat)
-	}
-	bytesRead += 1
+	d.Dialects = []string{}
 
-	// buffer
-	buffer := data[1:]
-
-	// Find the last null terminator in the buffer
-	nullPos := -1
-	for i := len(buffer) - 1; i >= 0; i-- {
-		if buffer[i] == 0x00 {
-			nullPos = i
-			break
+	for bytesRead < len(data) {
+		// Each entry begins with a BufferFormat byte that MUST be 0x02.
+		bufferFormat := data[bytesRead]
+		if bufferFormat != types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING {
+			return 0, fmt.Errorf("invalid buffer format: %d", bufferFormat)
 		}
-	}
-	if nullPos == -1 {
-		return 0, fmt.Errorf("no null terminator found in dialect string")
-	}
-
-	if nullPos == 0 {
-		// No dialects
-		d.Dialects = []string{}
 		bytesRead += 1
-	} else {
-		// Adjust buffer to only include up to the last null terminator (not including it)
-		buffer = buffer[:nullPos]
 
-		// dialects
-		d.Dialects = strings.Split(string(buffer), "\x00")
+		// The dialect string is null-terminated.
+		nullPos := -1
+		for i := bytesRead; i < len(data); i++ {
+			if data[i] == 0x00 {
+				nullPos = i
+				break
+			}
+		}
+		if nullPos == -1 {
+			return 0, fmt.Errorf("no null terminator found in dialect string")
+		}
 
-		bytesRead += nullPos + 1
+		d.Dialects = append(d.Dialects, string(data[bytesRead:nullPos]))
+
+		// Advance past the dialect string and its null terminator.
+		bytesRead = nullPos + 1
 	}
 
 	return bytesRead, nil
