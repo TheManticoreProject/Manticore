@@ -391,3 +391,40 @@ func TestMarshalUnmarshal(t *testing.T) {
 		})
 	}
 }
+
+// TestSMB_STRING_Unmarshal_VariableBlockShortInput verifies that a truncated
+// VARIABLE_BLOCK (0x05) buffer returns an error rather than panicking with an
+// index-out-of-range while slicing the length field or the data block.
+func TestSMB_STRING_Unmarshal_VariableBlockShortInput(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input []byte
+	}{
+		{
+			name:  "Only format byte (missing length field)",
+			input: []byte{types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK},
+		},
+		{
+			name:  "Format byte and one length byte",
+			input: []byte{types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK, 0x04},
+		},
+		{
+			name:  "Declared length exceeds available data",
+			input: []byte{types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK, 0x10, 0x00, 0x41, 0x42},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			smbString := &types.SMB_STRING{}
+
+			bytesRead, err := smbString.Unmarshal(tc.input)
+			if err == nil {
+				t.Fatalf("Expected an error for truncated input %x, got nil", tc.input)
+			}
+			if bytesRead != 0 {
+				t.Errorf("Expected 0 bytes read on error, got %d", bytesRead)
+			}
+		})
+	}
+}
