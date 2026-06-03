@@ -1,6 +1,9 @@
 package types
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 // SMB_FILE_ATTRIBUTES is a structure that contains the attributes of a file
 // Sourc: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/2198f480-e047-4df0-ba64-f28eadef00b9
@@ -43,6 +46,9 @@ func (s *SMB_FILE_ATTRIBUTES) Marshal() ([]byte, error) {
 // Returns:
 // - The number of bytes unmarshalled
 func (s *SMB_FILE_ATTRIBUTES) Unmarshal(data []byte) (int, error) {
+	if len(data) < 2 {
+		return 0, fmt.Errorf("data too short to unmarshal SMB_FILE_ATTRIBUTES: got %d bytes, need 2", len(data))
+	}
 	s.Attributes = binary.LittleEndian.Uint16(data)
 	return 2, nil
 }
