@@ -249,11 +249,31 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
+	// Unmarshalling parameter LastAccessTime
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastAccessTime")
+	}
+	bytesRead, err = c.LastAccessTime.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter LastWriteDate
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteDate")
 	}
 	bytesRead, err = c.LastWriteDate.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
+	// Unmarshalling parameter LastWriteTime
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
+	}
+	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset : offset+2])
 	if err != nil {
 		return 0, err
 	}
