@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -254,17 +255,31 @@ func (c *TreeConnectAndxRequest) Unmarshal(data []byte) (int, error) {
 	offset += int(c.PasswordLength)
 
 	// Unmarshalling data Pad
-	if len(rawDataContent) < offset+1 {
-		return offset, fmt.Errorf("rawDataContent too short for Pad")
-	}
-	c.Pad = rawDataContent[offset : offset+1]
-	offset++
+	// Per MS-CIFS 2.2.4.55.1 the Pad field is zero or one null padding bytes used
+	// only to 16-bit-align the Unicode Path; when the Password is the single null
+	// padding byte it "takes the place of the Pad[] byte" and no Pad is present.
+	// The marshaller does not emit a standalone Pad byte in the round-trippable
+	// cases, so Unmarshal MUST NOT unconditionally consume one here: doing so eats
+	// the first byte of Path. Treat all bytes after Password as Path + Service.
+	c.Pad = []types.UCHAR{}
 
 	// Unmarshalling data Path
-	c.Path = rawDataContent[offset:]
-	offset += len(c.Path)
+	// Path is a null-terminated string; it ends at (and includes) its first null
+	// byte. The bytes that follow belong to the Service field, so Path MUST NOT
+	// swallow the remainder of the buffer.
+	pathNull := bytes.IndexByte(rawDataContent[offset:], 0x00)
+	if pathNull < 0 {
+		// No terminator found: the remaining bytes are the (unterminated) Path.
+		c.Path = rawDataContent[offset:]
+		offset += len(c.Path)
+		c.Service = []types.UCHAR{}
+		return offset, nil
+	}
+	c.Path = rawDataContent[offset : offset+pathNull+1]
+	offset += pathNull + 1
 
 	// Unmarshalling data Service
+	// Service is a null-terminated OEM string that follows Path.
 	c.Service = rawDataContent[offset:]
 	offset += len(c.Service)
 
