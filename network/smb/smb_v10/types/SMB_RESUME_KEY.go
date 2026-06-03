@@ -92,7 +92,6 @@ func (r *SMB_RESUME_KEY) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println(r.SMB_STRING.Buffer)
 	if len(r.SMB_STRING.Buffer) < 21 {
 		return 0, fmt.Errorf("SMB_STRING.Buffer length is not 21")
 	}
