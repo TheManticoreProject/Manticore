@@ -99,27 +99,27 @@ func (c *QueryInformationDiskResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter TotalUnits
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.TotalUnits))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.TotalUnits))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter BlocksPerUnit
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.BlocksPerUnit))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.BlocksPerUnit))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter BlockSize
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.BlockSize))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.BlockSize))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter FreeUnits
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FreeUnits))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FreeUnits))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Reserved
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Reserved))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -176,35 +176,35 @@ func (c *QueryInformationDiskResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalUnits")
 	}
-	c.TotalUnits = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.TotalUnits = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter BlocksPerUnit
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for BlocksPerUnit")
 	}
-	c.BlocksPerUnit = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.BlocksPerUnit = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter BlockSize
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for BlockSize")
 	}
-	c.BlockSize = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.BlockSize = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter FreeUnits
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FreeUnits")
 	}
-	c.FreeUnits = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FreeUnits = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Reserved
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
-	c.Reserved = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Reserved = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
