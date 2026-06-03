@@ -27,14 +27,14 @@ type SetInformation2Request struct {
 	CreateDate types.SMB_DATE
 
 	// CreateTime (2 bytes): This is the time on CreateDate when the file was created.
-	CreationTime types.SMB_TIME
+	CreationTime types.SMB_TIME_DOS
 
 	// LastAccessDate (2 bytes): This is the date when the file was last accessed.
 	LastAccessDate types.SMB_DATE
 
 	// LastAccessTime (2 bytes): This is the time on LastAccessDate when the file was
 	// last accessed.
-	LastAccessTime types.SMB_TIME
+	LastAccessTime types.SMB_TIME_DOS
 
 	// LastWriteDate (2 bytes): This is the date when data was last written to the
 	// file.
@@ -42,7 +42,7 @@ type SetInformation2Request struct {
 
 	// LastWriteTime (2 bytes): This is the time on LastWriteDate when data was last
 	// written to the file.
-	LastWriteTime types.SMB_TIME
+	LastWriteTime types.SMB_TIME_DOS
 }
 
 // NewSetInformation2Request creates a new SetInformation2Request structure
@@ -54,11 +54,11 @@ func NewSetInformation2Request() *SetInformation2Request {
 		// Parameters
 		FID:            types.USHORT(0),
 		CreateDate:     types.SMB_DATE{},
-		CreationTime:   types.SMB_TIME{},
+		CreationTime:   types.SMB_TIME_DOS{},
 		LastAccessDate: types.SMB_DATE{},
-		LastAccessTime: types.SMB_TIME{},
+		LastAccessTime: types.SMB_TIME_DOS{},
 		LastWriteDate:  types.SMB_DATE{},
-		LastWriteTime:  types.SMB_TIME{},
+		LastWriteTime:  types.SMB_TIME_DOS{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_SET_INFORMATION2)
