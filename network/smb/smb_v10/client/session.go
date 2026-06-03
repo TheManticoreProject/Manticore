@@ -43,41 +43,36 @@ func (s *Session) SessionSetup() error {
 	}
 
 	// Prepare and send a NTLMSSP NEGOTIATE message =============================================================================================
-	request_step1_msg := message.NewMessage()
-	session_setup_cmd := commands.NewSessionSetupAndxRequest()
+	requestStep1Msg := message.NewMessage()
+	sessionSetupCmd := commands.NewSessionSetupAndxRequest()
 
 	// Here put the common logic for all session setup commands
-	request_step1_msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX
-	request_step1_msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
-	request_step1_msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED | flags2.FLAGS2_EXTENDED_SECURITY)
+	requestStep1Msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX
+	requestStep1Msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
+	requestStep1Msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED | flags2.FLAGS2_EXTENDED_SECURITY)
 
 	// Add Unicode support if server supports it
 	if s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE {
-		request_step1_msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_UNICODE)
+		requestStep1Msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_UNICODE)
 	}
 
 	// Set message signing flags based on server security mode
 	if s.Client.Connection.Server.SecurityMode.IsSecuritySignatureEnabled() {
-		request_step1_msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE)
+		requestStep1Msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE)
 	}
 
 	// Set process ID and multiplex ID
-	request_step1_msg.Header.SetPID(0)
-	request_step1_msg.Header.MID = 0
-	request_step1_msg.Header.TID = 65535
-	request_step1_msg.Header.UID = 0
+	requestStep1Msg.Header.SetPID(0)
+	requestStep1Msg.Header.MID = 0
+	requestStep1Msg.Header.TID = 65535
+	requestStep1Msg.Header.UID = 0
 
-	session_setup_cmd.MaxBufferSize = types.USHORT(s.Client.Connection.Server.MaxBufferSize)
-	session_setup_cmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
-	session_setup_cmd.Capabilities = s.Client.Connection.Server.Capabilities
+	sessionSetupCmd.MaxBufferSize = types.USHORT(s.Client.Connection.Server.MaxBufferSize)
+	sessionSetupCmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
+	sessionSetupCmd.Capabilities = s.Client.Connection.Server.Capabilities
 
-	// if s.Client.Connection.Server.Capabilities&0x00000004 != 0 { // CAP_UNICODE
-	// 	session_setup_cmd.NativeOS = string(utf16.EncodeUTF16LE(s.Client.NativeOS))
-	// 	session_setup_cmd.NativeLanMan = string(utf16.EncodeUTF16LE(s.Client.NativeLanMan))
-	// } else {
-	session_setup_cmd.NativeOS = s.Client.NativeOS
-	session_setup_cmd.NativeLanMan = s.Client.NativeLanMan
-	// }
+	sessionSetupCmd.NativeOS = s.Client.NativeOS
+	sessionSetupCmd.NativeLanMan = s.Client.NativeLanMan
 
 	// Check if we're using share level access control
 	if s.Client.Connection.Server.SecurityMode.SupportsShareLevelAccessControl() {
@@ -85,14 +80,14 @@ func (s *Session) SessionSetup() error {
 		// If no authentication has been performed on the SMB connection, use anonymous authentication
 
 		// Parameters
-		session_setup_cmd.VcNumber = types.USHORT(0x0000)
-		session_setup_cmd.SessionKey = s.Client.Connection.Server.SessionKey
-		session_setup_cmd.OEMPasswordLen = types.USHORT(0x0000)
-		session_setup_cmd.UnicodePasswordLen = types.USHORT(0x0000)
+		sessionSetupCmd.VcNumber = types.USHORT(0x0000)
+		sessionSetupCmd.SessionKey = s.Client.Connection.Server.SessionKey
+		sessionSetupCmd.OEMPasswordLen = types.USHORT(0x0000)
+		sessionSetupCmd.UnicodePasswordLen = types.USHORT(0x0000)
 
 		// Data section - for null session, use empty strings
-		session_setup_cmd.OEMPassword = []types.UCHAR{}
-		session_setup_cmd.UnicodePassword = []types.UCHAR{}
+		sessionSetupCmd.OEMPassword = []types.UCHAR{}
+		sessionSetupCmd.UnicodePassword = []types.UCHAR{}
 
 	} else {
 		// User level access control is required by the server
@@ -104,8 +99,8 @@ func (s *Session) SessionSetup() error {
 			// Server supports challenge/response authentication
 			// Determine authentication type based on policies
 
-			session_setup_cmd.VcNumber = types.USHORT(0x0000)
-			session_setup_cmd.SessionKey = s.Client.Connection.Server.SessionKey
+			sessionSetupCmd.VcNumber = types.USHORT(0x0000)
+			sessionSetupCmd.SessionKey = s.Client.Connection.Server.SessionKey
 
 			useUnicode := s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
 
@@ -121,7 +116,6 @@ func (s *Session) SessionSetup() error {
 			negotiateFlags := spnego_ntlm_negotiate_flags.NegotiateFlags(
 				spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_NTLM |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
-					// spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_128 |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_56 |
 					spnego_ntlm_negotiate_flags.NTLMSSP_REQUEST_TARGET |
@@ -143,13 +137,13 @@ func (s *Session) SessionSetup() error {
 			if err != nil {
 				return fmt.Errorf("failed to create negotiate token: %v", err)
 			}
-			session_setup_cmd.SecurityBlob = negotiateToken
+			sessionSetupCmd.SecurityBlob = negotiateToken
 		} else {
 			// Server doesn't support challenge/response authentication
 
 			// Use plaintext authentication
-			session_setup_cmd.VcNumber = types.USHORT(0x0000)
-			session_setup_cmd.SessionKey = s.Client.Connection.Server.SessionKey
+			sessionSetupCmd.VcNumber = types.USHORT(0x0000)
+			sessionSetupCmd.SessionKey = s.Client.Connection.Server.SessionKey
 
 			if s.Credentials == nil {
 				return fmt.Errorf("plaintext authentication requires credentials but none were provided")
@@ -159,50 +153,50 @@ func (s *Session) SessionSetup() error {
 			// Check if Unicode is supported
 			if s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE {
 				// Send password in Unicode
-				session_setup_cmd.UnicodePassword = []types.UCHAR(utf16.EncodeUTF16LE(password))
-				session_setup_cmd.UnicodePasswordLen = types.USHORT(len(session_setup_cmd.UnicodePassword))
-				session_setup_cmd.OEMPasswordLen = types.USHORT(0x0000)
-				session_setup_cmd.OEMPassword = []types.UCHAR{}
+				sessionSetupCmd.UnicodePassword = []types.UCHAR(utf16.EncodeUTF16LE(password))
+				sessionSetupCmd.UnicodePasswordLen = types.USHORT(len(sessionSetupCmd.UnicodePassword))
+				sessionSetupCmd.OEMPasswordLen = types.USHORT(0x0000)
+				sessionSetupCmd.OEMPassword = []types.UCHAR{}
 			} else {
 				// Send password in OEM format
-				session_setup_cmd.OEMPassword = []types.UCHAR(password)
-				session_setup_cmd.OEMPasswordLen = types.USHORT(len(session_setup_cmd.OEMPassword))
-				session_setup_cmd.UnicodePasswordLen = types.USHORT(0x0000)
-				session_setup_cmd.UnicodePassword = []types.UCHAR{}
+				sessionSetupCmd.OEMPassword = []types.UCHAR(password)
+				sessionSetupCmd.OEMPasswordLen = types.USHORT(len(sessionSetupCmd.OEMPassword))
+				sessionSetupCmd.UnicodePasswordLen = types.USHORT(0x0000)
+				sessionSetupCmd.UnicodePassword = []types.UCHAR{}
 			}
 		}
 	}
-	request_step1_msg.AddCommand(session_setup_cmd)
+	requestStep1Msg.AddCommand(sessionSetupCmd)
 
-	marshalled_message, err := request_step1_msg.Marshal()
+	marshalledMessage, err := requestStep1Msg.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal negotiate message: %v", err)
 	}
 
 	// Send the message
-	_, err = s.Client.Transport.Send(marshalled_message)
+	_, err = s.Client.Transport.Send(marshalledMessage)
 	if err != nil {
 		return fmt.Errorf("failed to send negotiate message: %v", err)
 	}
 
 	// Wait for a NTLMSSP CHALLENGE response message =============================================================================================
 
-	raw_response_message, err := s.Client.Transport.Receive()
+	rawResponseMessage, err := s.Client.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive response message: %v", err)
 	}
 
-	response_msg := message.NewMessage()
-	err = response_msg.Unmarshal(raw_response_message)
+	responseMsg := message.NewMessage()
+	err = responseMsg.Unmarshal(rawResponseMessage)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal response message: %v", err)
 	}
 
-	if response_msg.Header.Command != codes.SMB_COM_SESSION_SETUP_ANDX {
-		return fmt.Errorf("unexpected response command: %d", response_msg.Header.Command)
+	if responseMsg.Header.Command != codes.SMB_COM_SESSION_SETUP_ANDX {
+		return fmt.Errorf("unexpected response command: %d", responseMsg.Header.Command)
 	}
 
-	session_setup_response_challenge := response_msg.Command.(*commands.SessionSetupAndxResponse)
+	challengeResponse := responseMsg.Command.(*commands.SessionSetupAndxResponse)
 
 	// Prepare and send a NTLMSSP AUTH message ==================================================================================================
 
@@ -220,70 +214,70 @@ func (s *Session) SessionSetup() error {
 		useUnicode,
 	)
 
-	request_step2_msg := message.NewMessage()
-	request_step2_msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX
-	request_step2_msg.Header.Flags = request_step1_msg.Header.Flags
-	request_step2_msg.Header.Flags2 = request_step1_msg.Header.Flags2
-	request_step2_msg.Header.SetPID(request_step1_msg.Header.GetPID())
-	request_step2_msg.Header.MID = request_step1_msg.Header.MID
-	request_step2_msg.Header.TID = request_step1_msg.Header.TID
+	requestStep2Msg := message.NewMessage()
+	requestStep2Msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX
+	requestStep2Msg.Header.Flags = requestStep1Msg.Header.Flags
+	requestStep2Msg.Header.Flags2 = requestStep1Msg.Header.Flags2
+	requestStep2Msg.Header.SetPID(requestStep1Msg.Header.GetPID())
+	requestStep2Msg.Header.MID = requestStep1Msg.Header.MID
+	requestStep2Msg.Header.TID = requestStep1Msg.Header.TID
 	// Here we need to set the UID to the UID of the response message
-	request_step2_msg.Header.UID = response_msg.Header.UID
+	requestStep2Msg.Header.UID = responseMsg.Header.UID
 	// Save the session UID
-	s.SessionUID = request_step2_msg.Header.UID
+	s.SessionUID = requestStep2Msg.Header.UID
 
-	session_setup_step2_cmd := commands.NewSessionSetupAndxRequest()
-	session_setup_step2_cmd.VcNumber = session_setup_cmd.VcNumber
-	session_setup_step2_cmd.SessionKey = session_setup_cmd.SessionKey
-	session_setup_step2_cmd.Capabilities = session_setup_cmd.Capabilities
+	sessionSetupStep2Cmd := commands.NewSessionSetupAndxRequest()
+	sessionSetupStep2Cmd.VcNumber = sessionSetupCmd.VcNumber
+	sessionSetupStep2Cmd.SessionKey = sessionSetupCmd.SessionKey
+	sessionSetupStep2Cmd.Capabilities = sessionSetupCmd.Capabilities
 
-	authenticateToken, err := authCtx.CreateAuthenticateTokenFromChallengeToken(session_setup_response_challenge.SecurityBlob)
+	authenticateToken, err := authCtx.CreateAuthenticateTokenFromChallengeToken(challengeResponse.SecurityBlob)
 	if err != nil {
 		return fmt.Errorf("failed to process challenge token: %v", err)
 	}
 
-	session_setup_step2_cmd.SecurityBlob = authenticateToken
+	sessionSetupStep2Cmd.SecurityBlob = authenticateToken
 
-	request_step2_msg.AddCommand(session_setup_step2_cmd)
+	requestStep2Msg.AddCommand(sessionSetupStep2Cmd)
 
-	marshalled_message_step2, err := request_step2_msg.Marshal()
+	marshalledStep2, err := requestStep2Msg.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal step 2 message: %v", err)
 	}
 
 	// Send the message
-	_, err = s.Client.Transport.Send(marshalled_message_step2)
+	_, err = s.Client.Transport.Send(marshalledStep2)
 	if err != nil {
 		return fmt.Errorf("failed to send negotiate message: %v", err)
 	}
 
 	// Wait for a response message =============================================================================================
 
-	raw_response_message_step4, err := s.Client.Transport.Receive()
+	rawAuthResponse, err := s.Client.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive response message: %v", err)
 	}
 
-	response_msg_step4 := message.NewMessage()
-	err = response_msg_step4.Unmarshal(raw_response_message_step4)
+	authResponseMsg := message.NewMessage()
+	err = authResponseMsg.Unmarshal(rawAuthResponse)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal response message: %v", err)
 	}
 
-	if response_msg_step4.Header.Command != codes.SMB_COM_SESSION_SETUP_ANDX {
-		return fmt.Errorf("unexpected response command: %d", response_msg_step4.Header.Command)
+	if authResponseMsg.Header.Command != codes.SMB_COM_SESSION_SETUP_ANDX {
+		return fmt.Errorf("unexpected response command: %d", authResponseMsg.Header.Command)
 	}
 
-	_, ok := response_msg_step4.Command.(*commands.SessionSetupAndxResponse)
+	_, ok := authResponseMsg.Command.(*commands.SessionSetupAndxResponse)
 	if !ok {
 		return fmt.Errorf("failed to cast response command to SessionSetupAndxResponse")
 	}
 
-	if response_msg_step4.Header.Status != 0x00 {
-		if _, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(response_msg_step4.Header.Status)]; ok {
-			return fmt.Errorf("session setup failed: %s (0x%08x)", nt_status.NTStatusToStringName[nt_status.NT_STATUS(response_msg_step4.Header.Status)], response_msg_step4.Header.Status)
+	if authResponseMsg.Header.Status != 0x00 {
+		if _, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(authResponseMsg.Header.Status)]; ok {
+			return fmt.Errorf("session setup failed: %s (0x%08x)", nt_status.NTStatusToStringName[nt_status.NT_STATUS(authResponseMsg.Header.Status)], authResponseMsg.Header.Status)
 		} else {
-			return fmt.Errorf("session setup failed: 0x%08x", response_msg_step4.Header.Status)
+			return fmt.Errorf("session setup failed: 0x%08x", authResponseMsg.Header.Status)
 		}
 	}
 
