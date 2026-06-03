@@ -539,33 +539,54 @@ func (c *TransactionRequest) Unmarshal(rawData []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling data Pad1
-	if len(rawDataContent) < offset+int(c.ParameterOffset) {
-		return offset, fmt.Errorf("rawDataContent too short for Pad1")
-	}
-	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
-	offset += int(c.ParameterOffset)
+	// Unmarshalling data Pad1, Trans_Parameters, Pad2, Trans_Data.
+	//
+	// ParameterOffset and DataOffset are measured from the start of the SMB header,
+	// not as lengths within this data block, so they cannot be used directly as the
+	// Pad1/Pad2 byte counts. Recover the inter-block gaps from the shared
+	// header-relative base instead:
+	//   len(Pad2) = DataOffset - (ParameterOffset + ParameterCount)
+	//   len(Pad1) = remaining bytes once Trans_Parameters, Pad2 and Trans_Data are accounted for
+	parameterCount := int(c.ParameterCount)
+	dataCount := int(c.DataCount)
 
-	// Unmarshalling data Trans2_Parameters
-	if len(rawDataContent) < offset+int(c.ParameterCount) {
+	pad2Length := 0
+	if dataCount > 0 {
+		pad2Length = int(c.DataOffset) - (int(c.ParameterOffset) + parameterCount)
+		if pad2Length < 0 {
+			return offset, fmt.Errorf("invalid offsets: DataOffset precedes end of Trans_Parameters")
+		}
+	}
+
+	pad1Length := len(rawDataContent) - offset - parameterCount - pad2Length - dataCount
+	if pad1Length < 0 {
+		return offset, fmt.Errorf("rawDataContent too short for Transaction data block")
+	}
+
+	// Unmarshalling data Pad1
+	c.Pad1 = rawDataContent[offset : offset+pad1Length]
+	offset += pad1Length
+
+	// Unmarshalling data Trans_Parameters
+	if len(rawDataContent) < offset+parameterCount {
 		return offset, fmt.Errorf("rawDataContent too short for Trans_Parameters")
 	}
-	c.Trans_Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
-	offset += int(c.ParameterCount)
+	c.Trans_Parameters = rawDataContent[offset : offset+parameterCount]
+	offset += parameterCount
 
 	// Unmarshalling data Pad2
-	if len(rawDataContent) < offset+int(c.DataOffset) {
+	if len(rawDataContent) < offset+pad2Length {
 		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
-	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
-	offset += int(c.DataOffset)
+	c.Pad2 = rawDataContent[offset : offset+pad2Length]
+	offset += pad2Length
 
-	// Unmarshalling data Trans2_Data
-	if len(rawDataContent) < offset+int(c.DataCount) {
+	// Unmarshalling data Trans_Data
+	if len(rawDataContent) < offset+dataCount {
 		return offset, fmt.Errorf("rawDataContent too short for Trans_Data")
 	}
-	c.Trans_Data = rawDataContent[offset : offset+int(c.DataCount)]
-	offset += int(c.DataCount)
+	c.Trans_Data = rawDataContent[offset : offset+dataCount]
+	offset += dataCount
 
 	return offset, nil
 }
