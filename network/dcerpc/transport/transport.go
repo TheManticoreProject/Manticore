@@ -1,10 +1,12 @@
 // Package transport defines the transport abstraction used by the DCE/RPC client.
 //
 // Unlike the SMB byte-stream transport (network/smb/smb_v10/transport), which frames
-// raw bytes over a socket, a DCE/RPC transport carries whole PDUs as discrete
-// messages: a connection-oriented call is strictly request -> response, so the
-// interface exposes a single SendReceive exchange rather than independent Send and
-// Receive primitives.
+// raw bytes over a socket, a DCE/RPC transport carries PDUs. A connection-oriented
+// call may span several fragments in each direction, so the interface exposes
+// independent Send and Recv primitives: the DCE/RPC client writes all request
+// fragments with Send, then reassembles the response by reading with Recv. This
+// matches the named-pipe model in [MS-RPCE] 2.1.1.2, where PDUs are written and read
+// as named pipe writes and reads.
 //
 // Concrete implementations:
 //   - network/dcerpc/transport/smb: ncacn_np, DCE/RPC over an SMB named pipe.
@@ -16,11 +18,15 @@ type Transport interface {
 	// idempotent: calling Connect on an already-connected transport is a no-op.
 	Connect() error
 
-	// SendReceive writes a single outgoing PDU and returns the bytes of the response
-	// PDU(s). The returned buffer holds up to MaxRecvFrag bytes read from the
-	// endpoint; reassembling DCE/RPC fragments that span multiple reads is the
-	// responsibility of the caller (the DCE/RPC client layer).
-	SendReceive(pdu []byte) ([]byte, error)
+	// Send writes a single complete PDU to the endpoint.
+	Send(pdu []byte) error
+
+	// Recv reads from the endpoint and returns the bytes of a single read (up to
+	// MaxRecvFrag bytes). The returned buffer may contain part of a PDU, exactly one
+	// PDU, or several PDUs; reassembling fragments across reads is the caller's
+	// responsibility. An empty result indicates the peer wrote nothing (for example,
+	// the pipe was closed).
+	Recv() ([]byte, error)
 
 	// Close tears down the endpoint. For ncacn_np it closes the pipe handle but
 	// leaves the underlying SMB session and tree connect intact, since their

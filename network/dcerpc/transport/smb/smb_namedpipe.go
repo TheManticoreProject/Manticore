@@ -101,33 +101,37 @@ func (p *SMBNamedPipe) Connect() error {
 	return nil
 }
 
-// SendReceive writes pdu to the pipe and returns the response bytes. The pipe offset
-// is meaningless, so a zero offset is used for both the write and the read.
-func (p *SMBNamedPipe) SendReceive(pdu []byte) ([]byte, error) {
+// Send writes a complete PDU to the pipe. The pipe offset is meaningless, so a zero
+// offset is used.
+func (p *SMBNamedPipe) Send(pdu []byte) error {
 	if !p.opened {
-		return nil, fmt.Errorf("named pipe %q is not open: call Connect first", p.pipeName)
+		return fmt.Errorf("named pipe %q is not open: call Connect first", p.pipeName)
 	}
 	if len(pdu) == 0 {
-		return nil, fmt.Errorf("refusing to send an empty PDU on named pipe %q", p.pipeName)
+		return fmt.Errorf("refusing to send an empty PDU on named pipe %q", p.pipeName)
 	}
 
 	written, err := p.conn.WriteFile(p.fid, 0, pdu)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write PDU to named pipe %q: %w", p.pipeName, err)
+		return fmt.Errorf("failed to write PDU to named pipe %q: %w", p.pipeName, err)
 	}
 	if written != len(pdu) {
-		return nil, fmt.Errorf("short write to named pipe %q: wrote %d of %d bytes", p.pipeName, written, len(pdu))
+		return fmt.Errorf("short write to named pipe %q: wrote %d of %d bytes", p.pipeName, written, len(pdu))
 	}
+	return nil
+}
 
-	response, err := p.conn.ReadFile(p.fid, 0, uint32(p.maxRecv))
+// Recv reads up to MaxRecvFrag bytes from the pipe. The pipe offset is meaningless,
+// so a zero offset is used.
+func (p *SMBNamedPipe) Recv() ([]byte, error) {
+	if !p.opened {
+		return nil, fmt.Errorf("named pipe %q is not open: call Connect first", p.pipeName)
+	}
+	data, err := p.conn.ReadFile(p.fid, 0, uint32(p.maxRecv))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read PDU from named pipe %q: %w", p.pipeName, err)
+		return nil, fmt.Errorf("failed to read from named pipe %q: %w", p.pipeName, err)
 	}
-	if len(response) == 0 {
-		return nil, fmt.Errorf("empty response from named pipe %q", p.pipeName)
-	}
-
-	return response, nil
+	return data, nil
 }
 
 // Close closes the pipe handle. The underlying SMB session and tree connect are left

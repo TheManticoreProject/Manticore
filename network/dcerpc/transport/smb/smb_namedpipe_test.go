@@ -148,7 +148,7 @@ func TestConnect_PropagatesOpenError(t *testing.T) {
 	}
 }
 
-func TestSendReceive_WritesThenReads(t *testing.T) {
+func TestSendThenRecv(t *testing.T) {
 	resp := []byte{0x05, 0x00, 0x0c, 0x03} // looks like a bind_ack header prefix
 	fake := &fakePipeConn{openFID: 7, readData: resp}
 	p := newWithConn(fake, `\PIPE\lsarpc`)
@@ -157,9 +157,12 @@ func TestSendReceive_WritesThenReads(t *testing.T) {
 	}
 
 	req := []byte{0x05, 0x00, 0x0b, 0x03, 0xde, 0xad}
-	got, err := p.SendReceive(req)
+	if err := p.Send(req); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	got, err := p.Recv()
 	if err != nil {
-		t.Fatalf("SendReceive() error = %v", err)
+		t.Fatalf("Recv() error = %v", err)
 	}
 
 	if !bytes.Equal(fake.written, req) {
@@ -172,63 +175,59 @@ func TestSendReceive_WritesThenReads(t *testing.T) {
 		t.Errorf("read maxLen = %d, want %d", fake.readMaxLen, DefaultMaxRecvFrag)
 	}
 	if !bytes.Equal(got, resp) {
-		t.Errorf("SendReceive() = %x, want %x", got, resp)
+		t.Errorf("Recv() = %x, want %x", got, resp)
 	}
 }
 
-func TestSendReceive_RequiresConnect(t *testing.T) {
+func TestSend_RequiresConnect(t *testing.T) {
 	p := newWithConn(&fakePipeConn{}, `\PIPE\lsarpc`)
-	if _, err := p.SendReceive([]byte{0x01}); err == nil {
-		t.Fatal("SendReceive() before Connect: error = nil, want non-nil")
+	if err := p.Send([]byte{0x01}); err == nil {
+		t.Fatal("Send() before Connect: error = nil, want non-nil")
 	}
 }
 
-func TestSendReceive_RejectsEmptyPDU(t *testing.T) {
+func TestRecv_RequiresConnect(t *testing.T) {
+	p := newWithConn(&fakePipeConn{}, `\PIPE\lsarpc`)
+	if _, err := p.Recv(); err == nil {
+		t.Fatal("Recv() before Connect: error = nil, want non-nil")
+	}
+}
+
+func TestSend_RejectsEmptyPDU(t *testing.T) {
 	fake := &fakePipeConn{openFID: 1}
 	p := newWithConn(fake, `\PIPE\lsarpc`)
 	if err := p.Connect(); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if _, err := p.SendReceive(nil); err == nil {
-		t.Fatal("SendReceive(nil): error = nil, want non-nil")
+	if err := p.Send(nil); err == nil {
+		t.Fatal("Send(nil): error = nil, want non-nil")
 	}
 	if fake.written != nil {
 		t.Error("empty PDU should not have been written")
 	}
 }
 
-func TestSendReceive_ShortWriteIsError(t *testing.T) {
-	fake := &fakePipeConn{openFID: 1, writeN: 2, readData: []byte{0xff}}
+func TestSend_ShortWriteIsError(t *testing.T) {
+	fake := &fakePipeConn{openFID: 1, writeN: 2}
 	p := newWithConn(fake, `\PIPE\lsarpc`)
 	if err := p.Connect(); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if _, err := p.SendReceive([]byte{0x01, 0x02, 0x03, 0x04}); err == nil {
-		t.Fatal("SendReceive() with short write: error = nil, want non-nil")
+	if err := p.Send([]byte{0x01, 0x02, 0x03, 0x04}); err == nil {
+		t.Fatal("Send() with short write: error = nil, want non-nil")
 	}
 }
 
-func TestSendReceive_PropagatesReadError(t *testing.T) {
+func TestRecv_PropagatesReadError(t *testing.T) {
 	wantErr := errors.New("pipe broken")
 	fake := &fakePipeConn{openFID: 1, readErr: wantErr}
 	p := newWithConn(fake, `\PIPE\lsarpc`)
 	if err := p.Connect(); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	_, err := p.SendReceive([]byte{0x01})
+	_, err := p.Recv()
 	if !errors.Is(err, wantErr) {
-		t.Errorf("SendReceive() error = %v, want wrapped %v", err, wantErr)
-	}
-}
-
-func TestSendReceive_EmptyResponseIsError(t *testing.T) {
-	fake := &fakePipeConn{openFID: 1, readData: []byte{}}
-	p := newWithConn(fake, `\PIPE\lsarpc`)
-	if err := p.Connect(); err != nil {
-		t.Fatalf("Connect() error = %v", err)
-	}
-	if _, err := p.SendReceive([]byte{0x01}); err == nil {
-		t.Fatal("SendReceive() with empty response: error = nil, want non-nil")
+		t.Errorf("Recv() error = %v, want wrapped %v", err, wantErr)
 	}
 }
 
