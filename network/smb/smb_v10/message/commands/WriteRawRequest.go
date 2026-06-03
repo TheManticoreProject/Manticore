@@ -338,20 +338,19 @@ func (c *WriteRawRequest) Unmarshal(rawData []byte) (int, error) {
 	// Then unmarshal the data
 	offset = 0
 
-	// Unmarshalling data Pad
-	// TODO: Compute padding length
-	if len(rawDataContent) < offset+1 {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad")
-	}
-	c.Pad = rawDataContent[offset : offset+int(c.DataLength)]
-	offset += int(c.DataLength)
-
-	// Unmarshalling data Data
-	if len(rawDataContent) < offset+int(c.DataLength) {
+	// Unmarshalling data Pad and Data
+	// Per MS-CIFS the data block is: Pad[] (variable padding) followed by Data[DataLength].
+	// Data occupies the trailing DataLength bytes; Pad is everything before it.
+	dataLen := int(c.DataLength)
+	if len(rawDataContent) < dataLen {
 		return offset, fmt.Errorf("rawDataContent too short for Data")
 	}
-	c.Data = rawDataContent[offset : offset+int(c.DataLength)]
-	offset += int(c.DataLength)
+	padLen := len(rawDataContent) - dataLen
+	c.Pad = rawDataContent[offset : offset+padLen]
+	offset += padLen
+
+	c.Data = rawDataContent[offset : offset+dataLen]
+	offset += dataLen
 
 	return offset, nil
 }
