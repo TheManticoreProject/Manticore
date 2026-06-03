@@ -208,16 +208,25 @@ func (c *LockingAndxRequest) Marshal() ([]byte, error) {
 //
 // Returns:
 // - The number of bytes unmarshalled
-func (c *LockingAndxRequest) Unmarshal(data []byte) (int, error) {
+func (c *LockingAndxRequest) Unmarshal(rawData []byte) (int, error) {
+	// Initialize the Parameters structure if it is nil to avoid a nil
+	// pointer dereference when Unmarshal is called on a freshly constructed value.
+	if c.GetParameters() == nil {
+		c.SetParameters(parameters.NewParameters())
+	}
+	// Initialize the Data structure if it is nil for the same reason.
+	if c.GetData() == nil {
+		c.SetData(data.NewData())
+	}
 	offset := 0
 
 	// First unmarshal the two structures
-	bytesRead, err := c.GetParameters().Unmarshal(data)
+	bytesRead, err := c.GetParameters().Unmarshal(rawData)
 	if err != nil {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	_, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(rawData[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
@@ -244,14 +253,14 @@ func (c *LockingAndxRequest) Unmarshal(data []byte) (int, error) {
 
 	// Unmarshalling parameter TypeOfLock
 	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("data too short for TypeOfLock")
+		return offset, fmt.Errorf("rawData too short for TypeOfLock")
 	}
 	c.TypeOfLock = types.UCHAR(rawParametersContent[offset])
 	offset++
 
 	// Unmarshalling parameter NewOpLockLevel
 	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("data too short for NewOpLockLevel")
+		return offset, fmt.Errorf("rawData too short for NewOpLockLevel")
 	}
 	c.NewOpLockLevel = types.UCHAR(rawParametersContent[offset])
 	offset++
