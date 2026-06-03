@@ -116,6 +116,11 @@ type Transaction2Request struct {
 	// SetupCount is defined as a USHORT, the high order byte MUST be0x00.
 	Reserved3 types.UCHAR
 
+	// Setup (variable): An array of SetupCount USHORT setup words. For a Transaction2
+	// request this carries the subcommand code (e.g. TRANS2_FIND_FIRST2) as the first
+	// (and usually only) setup word.
+	Setup []types.USHORT
+
 	// Data
 
 	// Name (1 byte): This field is not used in SMB_COM_TRANSACTION2 requests. This
@@ -169,6 +174,7 @@ func NewTransaction2Request() *Transaction2Request {
 		DataOffset:          types.USHORT(0),
 		SetupCount:          types.UCHAR(0),
 		Reserved3:           types.UCHAR(0),
+		Setup:               []types.USHORT{},
 
 		// Data
 		Name:              types.UCHAR(0),
@@ -296,11 +302,19 @@ func (c *Transaction2Request) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
-	// Marshalling parameter SetupCount
+	// Marshalling parameter SetupCount (the number of setup words that follow)
+	c.SetupCount = types.UCHAR(len(c.Setup))
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.SetupCount))
 
 	// Marshalling parameter Reserved3
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.Reserved3))
+
+	// Marshalling parameter Setup (SetupCount USHORT words, e.g. the TRANS2 subcommand)
+	for _, setupWord := range c.Setup {
+		buf2 = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf2, uint16(setupWord))
+		rawParametersContent = append(rawParametersContent, buf2...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -456,6 +470,16 @@ func (c *Transaction2Request) Unmarshal(data []byte) (int, error) {
 	}
 	c.Reserved3 = types.UCHAR(rawParametersContent[offset])
 	offset++
+
+	// Unmarshalling parameter Setup (SetupCount USHORT words)
+	c.Setup = make([]types.USHORT, 0, int(c.SetupCount))
+	for i := 0; i < int(c.SetupCount); i++ {
+		if len(rawParametersContent) < offset+2 {
+			return offset, fmt.Errorf("rawParametersContent too short for Setup word %d", i)
+		}
+		c.Setup = append(c.Setup, types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset:offset+2])))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0
