@@ -140,12 +140,12 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Flags
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Flags))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Flags))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter AccessMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AccessMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.AccessMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter SearchAttrs
@@ -169,23 +169,23 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter OpenMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.OpenMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.OpenMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter AllocationSize
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.AllocationSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.AllocationSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Timeout
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Timeout))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Timeout))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Reserved
 	buf2 = make([]byte, 2)
 	for i := range c.Reserved {
-		binary.BigEndian.PutUint16(buf2, uint16(c.Reserved[i]))
+		binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved[i]))
 		rawParametersContent = append(rawParametersContent, buf2...)
 	}
 
@@ -246,14 +246,14 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Flags")
 	}
-	c.Flags = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Flags = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter AccessMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
 	}
-	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.AccessMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter SearchAttrs
@@ -281,21 +281,21 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for OpenMode")
 	}
-	c.OpenMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.OpenMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter AllocationSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for AllocationSize")
 	}
-	c.AllocationSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.AllocationSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Timeout
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Timeout")
 	}
-	c.Timeout = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Timeout = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Reserved
@@ -303,7 +303,7 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
 	for i := range c.Reserved {
-		c.Reserved[i] = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+		c.Reserved[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 		offset += 2
 	}
 
