@@ -409,6 +409,14 @@ func (c *SessionSetupAndxRequest) Unmarshal(data []byte) (int, error) {
 		return 0, nil
 	}
 
+	// Determine which variant of the request this is from the parameter
+	// WordCount. The Capabilities field that carries CAP_EXTENDED_SECURITY is
+	// located at the end of the parameter block and therefore cannot be used to
+	// drive parsing of the fields that precede it. Per [MS-CIFS] 2.2.4.53.1 the
+	// non-extended-security request has WordCount 0x0D, while [MS-SMB] 2.2.4.5
+	// defines WordCount 0x0C for the extended-security request.
+	isExtendedSecurity := c.GetParameters().WordCount == 0x0C
+
 	// First unmarshal the parameters
 	offset = 0
 	if c.IsAndX() {
@@ -443,7 +451,7 @@ func (c *SessionSetupAndxRequest) Unmarshal(data []byte) (int, error) {
 	c.SessionKey = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
-	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
+	if isExtendedSecurity {
 		// Unmarshalling parameter SecurityBlobLength
 		if len(rawParametersContent) < offset+2 {
 			return offset, fmt.Errorf("rawParametersContent too short for SecurityBlobLength")
@@ -483,13 +491,15 @@ func (c *SessionSetupAndxRequest) Unmarshal(data []byte) (int, error) {
 	// Then unmarshal the data
 	offset = 0
 
-	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
+	if isExtendedSecurity {
 		// Unmarshalling data SecurityBlob
-		if len(rawDataContent) < offset+2 {
-			return offset, fmt.Errorf("rawDataContent too short for SecurityBlobLength")
+		// The length of the SecurityBlob is carried by the SecurityBlobLength
+		// parameter (parsed above), not by a length field inside the data block.
+		if len(rawDataContent) < offset+int(c.SecurityBlobLength) {
+			return offset, fmt.Errorf("rawDataContent too short for SecurityBlob")
 		}
-		c.SecurityBlobLength = types.USHORT(binary.LittleEndian.Uint16(rawDataContent[offset : offset+2]))
-		offset += 2
+		c.SecurityBlob = rawDataContent[offset : offset+int(c.SecurityBlobLength)]
+		offset += int(c.SecurityBlobLength)
 
 		// Unmarshalling data NativeOS
 		nativeOSdata, bytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
