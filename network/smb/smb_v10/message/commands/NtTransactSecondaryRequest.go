@@ -19,6 +19,11 @@ type NtTransactSecondaryRequest struct {
 
 	// Parameters
 
+	// Reserved1 (3 bytes): Reserved. Used to align the following fields to a 32-bit
+	// boundary. This field MUST contain null padding bytes in the server response. The
+	// client MUST ignore the contents of this field.
+	Reserved1 [3]types.UCHAR
+
 	// TotalParameterCount (4 bytes): The total number of transaction parameter bytes
 	// to be sent to the server over the course of this transaction. This value MAY be
 	// less than or equal to the TotalParameterCount in preceding request messages that
@@ -109,6 +114,7 @@ type NtTransactSecondaryRequest struct {
 func NewNtTransactSecondaryRequest() *NtTransactSecondaryRequest {
 	c := &NtTransactSecondaryRequest{
 		// Parameters
+		Reserved1:             [3]types.UCHAR{0, 0, 0},
 		TotalParameterCount:   types.ULONG(0),
 		TotalDataCount:        types.ULONG(0),
 		ParameterCount:        types.ULONG(0),
@@ -179,6 +185,11 @@ func (c *NtTransactSecondaryRequest) Marshal() ([]byte, error) {
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
+
+	// Marshalling parameter Reserved1 (3 bytes)
+	for _, b := range c.Reserved1 {
+		rawParametersContent = append(rawParametersContent, types.UCHAR(b))
+	}
 
 	// Marshalling parameter TotalParameterCount
 	buf4 := make([]byte, 4)
@@ -272,6 +283,13 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 
 	// First unmarshal the parameters
 	offset = 0
+
+	// Unmarshalling parameter Reserved1 (3 bytes)
+	if len(rawParametersContent) < offset+3 {
+		return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
+	}
+	copy(c.Reserved1[:], rawParametersContent[offset:offset+3])
+	offset += 3
 
 	// Unmarshalling parameter TotalParameterCount
 	if len(rawParametersContent) < offset+4 {
