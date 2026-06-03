@@ -80,7 +80,7 @@ func (c *SeekResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Offset
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Offset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Offset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -137,7 +137,7 @@ func (c *SeekResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Offset")
 	}
-	c.Offset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Offset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
