@@ -28,8 +28,8 @@ const fileAttributeDirectory = 0x00000010
 // ShortName(24).
 const bothDirInfoFixedSize = 94
 
-// FileEntry is a high-level directory entry returned by ListDirectory and ListEntries.
-type FileEntry struct {
+// Entry is a high-level directory entry (file or directory) returned by ListDirectory and ListEntries.
+type Entry struct {
 	LongName    string
 	ShortName   string
 	Size        uint64
@@ -47,7 +47,7 @@ type FileEntry struct {
 // An empty path defaults to the share root.
 //
 // Wire: TRANS2_FIND_FIRST2 / FIND_NEXT2 with "\path\*" pattern.
-func (c *Client) ListDirectory(path string) ([]FileEntry, error) {
+func (c *Client) ListDirectory(path string) ([]Entry, error) {
 	if path == "" {
 		path = "\\"
 	}
@@ -65,7 +65,7 @@ func (c *Client) ListDirectory(path string) ([]FileEntry, error) {
 //
 // pattern uses SMB wildcards and backslash separators relative to the share root
 // (e.g. "\*.txt", "\docs\report-*.pdf"). An empty pattern defaults to "\*".
-func (c *Client) ListEntries(pattern string) ([]FileEntry, error) {
+func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	if c.Session == nil {
 		return nil, fmt.Errorf("no session established")
 	}
@@ -221,10 +221,11 @@ func parseTrans2Response(raw []byte) ([]byte, []byte, error) {
 }
 
 // parseBothDirInfo decodes a buffer of consecutive SMB_FIND_FILE_BOTH_DIRECTORY_INFO
-// entries (as returned in the FIND_FIRST2/FIND_NEXT2 data) into FileEntry values.
+// entries (as returned in the FIND_FIRST2/FIND_NEXT2 data) into Entry values.
+// Each entry may represent a file or a directory.
 // FileName is decoded as OEM/ASCII because the client issues non-Unicode requests.
-func parseBothDirInfo(data []byte) []FileEntry {
-	entries := []FileEntry{}
+func parseBothDirInfo(data []byte) []Entry {
+	entries := []Entry{}
 
 	for pos := 0; pos+bothDirInfoFixedSize <= len(data); {
 		next := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
@@ -247,7 +248,7 @@ func parseBothDirInfo(data []byte) []FileEntry {
 			longName = string(data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+nameLen])
 		}
 
-		entries = append(entries, FileEntry{
+		entries = append(entries, Entry{
 			LongName:    longName,
 			ShortName:   shortName,
 			Size:        size,
