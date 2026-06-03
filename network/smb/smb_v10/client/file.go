@@ -22,8 +22,15 @@ const (
 
 	// writeAndxDataOffset is the byte offset, measured from the start of the SMB
 	// header, at which the Data block begins in our single (non-chained) WriteAndx
-	// request: SMB header + WordCount(1) + Words + ByteCount(2) + Pad(1).
+	// request when the 32-bit-offset form (WordCount 0x0C, no OffsetHigh) is used:
+	// SMB header + WordCount(1) + Words + ByteCount(2) + Pad(1).
 	writeAndxDataOffset = header.SMB_HEADER_SIZE + 1 + writeAndxWordsSize + 2 + 1
+
+	// writeAndxDataOffset64 is the equivalent Data block offset when the 64-bit-offset
+	// form (WordCount 0x0E) is used. WriteAndxRequest.Marshal appends the 4-byte
+	// OffsetHigh word to the parameter block when OffsetHigh is non-zero, which shifts
+	// the Data block 4 bytes further from the start of the header.
+	writeAndxDataOffset64 = writeAndxDataOffset + 4
 )
 
 // FID is an opaque file handle returned by the server for an open file or directory.
@@ -222,9 +229,15 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 
 		msg := c.newFileIOMessage(codes.SMB_COM_READ_ANDX)
 
+		absOffset := offset + uint64(len(result))
+
 		cmd := commands.NewReadAndxRequest()
 		cmd.FID = types.USHORT(fid)
-		cmd.Offset = types.ULONG(uint32(offset + uint64(len(result))))
+		cmd.Offset = types.ULONG(uint32(absOffset))
+		// Carry the upper 32 bits of the file offset so reads past 4 GiB target the
+		// correct location. ReadAndxRequest emits the 0x0C (64-bit) form when OffsetHigh
+		// is non-zero; for offsets below 4 GiB this stays zero and the 0x0A form is used.
+		cmd.OffsetHigh = types.ULONG(uint32(absOffset >> 32))
 		cmd.MaxCountOfBytesToReturn = types.USHORT(want)
 		cmd.MinCountOfBytesToReturn = types.USHORT(0)
 		cmd.Timeout = types.ULONG(0)
@@ -301,18 +314,29 @@ func (c *Client) WriteFile(fid FID, offset uint64, data []byte) (int, error) {
 
 		msg := c.newFileIOMessage(codes.SMB_COM_WRITE_ANDX)
 
+		absOffset := offset + uint64(written)
+
 		cmd := commands.NewWriteAndxRequest()
 		cmd.FID = types.USHORT(fid)
-		cmd.Offset = types.ULONG(uint32(offset + uint64(written)))
+		cmd.Offset = types.ULONG(uint32(absOffset))
+		// Carry the upper 32 bits of the file offset so writes past 4 GiB land at the
+		// correct location instead of wrapping at 2^32.
+		cmd.OffsetHigh = types.ULONG(uint32(absOffset >> 32))
 		cmd.Timeout = types.ULONG(0)
 		cmd.WriteMode = types.USHORT(0)
 		cmd.Remaining = types.USHORT(0)
 		cmd.Reserved = types.USHORT(0)
 		cmd.DataLength = types.USHORT(len(chunk))
 		// DataOffset is measured from the start of the SMB header (not from the AndX
-		// command's position), so it is a fixed value for our single-command layout.
-		cmd.DataOffset = types.USHORT(writeAndxDataOffset)
-		cmd.OffsetHigh = types.ULONG(0)
+		// command's position). When OffsetHigh is non-zero, WriteAndxRequest.Marshal
+		// appends the 4-byte OffsetHigh word to the parameter block, which moves the
+		// Data block 4 bytes further out; use the matching offset so the server reads
+		// the data from where it is actually placed.
+		if cmd.OffsetHigh != 0 {
+			cmd.DataOffset = types.USHORT(writeAndxDataOffset64)
+		} else {
+			cmd.DataOffset = types.USHORT(writeAndxDataOffset)
+		}
 		cmd.Pad = types.UCHAR(0)
 		cmd.Data = []types.UCHAR(chunk)
 
