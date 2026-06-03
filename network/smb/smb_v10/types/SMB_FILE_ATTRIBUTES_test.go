@@ -177,3 +177,28 @@ func TestSMB_FILE_ATTRIBUTES_Unmarshal(t *testing.T) {
 		})
 	}
 }
+
+func TestSMB_FILE_ATTRIBUTES_Unmarshal_ShortInput(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input []byte
+	}{
+		{name: "Empty input", input: []byte{}},
+		{name: "One byte", input: []byte{0x01}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fileAttr := &types.SMB_FILE_ATTRIBUTES{}
+
+			// Must return an error rather than panicking on a short buffer.
+			bytesRead, err := fileAttr.Unmarshal(tc.input)
+			if err == nil {
+				t.Fatalf("Expected an error for short input %v, got nil", tc.input)
+			}
+			if bytesRead != 0 {
+				t.Errorf("Expected 0 bytes read on error, got %d", bytesRead)
+			}
+		})
+	}
+}
