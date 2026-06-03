@@ -130,6 +130,21 @@ func main() {
 	}
 	fmt.Printf("[info] Connected to share [%s] (TID 0x%04x)\n", shareName, c.Session.TreeID)
 
+	// List the root of the share.
+	entries, err := c.FindFiles("\\*")
+	if err != nil {
+		fmt.Printf("[error] Error listing share root: %s\n", err)
+		return
+	}
+	fmt.Printf("[info] Directory listing of [\\] (%d entries)\n", len(entries))
+	for _, e := range entries {
+		kind := "f"
+		if e.IsDirectory {
+			kind = "d"
+		}
+		fmt.Printf("  %s %12d  %s  %s\n", kind, e.Size, e.ModifiedAt.Format("2006-01-02 15:04:05"), e.LongName)
+	}
+
 	// Optionally write content to the file first (creating or overwriting it).
 	if writeContent != "" {
 		wfid, err := c.OpenFile(
