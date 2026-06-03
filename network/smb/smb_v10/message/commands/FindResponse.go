@@ -85,14 +85,27 @@ func (c *FindResponse) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshalling data DirectoryInformationData
+	// Marshalling the directory information records first so we can compute DataLength
+	directoryRecords := []byte{}
 	for _, directoryInformationData := range c.DirectoryInformationData {
 		marshalledData, err := directoryInformationData.Marshal()
 		if err != nil {
 			return nil, err
 		}
-		rawDataContent = append(rawDataContent, marshalledData...)
+		directoryRecords = append(directoryRecords, marshalledData...)
 	}
+
+	// BufferFormat (1 byte): MUST be 0x05, indicating that a variable-size block follows
+	rawDataContent = append(rawDataContent, 0x05)
+
+	// DataLength (2 bytes, little-endian): size in bytes of the DirectoryInformationData array,
+	// which MUST equal 43 times the number of directory entries
+	dataLengthBuf := make([]byte, 2)
+	binary.LittleEndian.PutUint16(dataLengthBuf, uint16(len(directoryRecords)))
+	rawDataContent = append(rawDataContent, dataLengthBuf...)
+
+	// DirectoryInformationData (variable)
+	rawDataContent = append(rawDataContent, directoryRecords...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -165,6 +178,18 @@ func (c *FindResponse) Unmarshal(data []byte) (int, error) {
 	// Unmarshalling data DirectoryInformationData
 	// Clear any existing entries
 	c.DirectoryInformationData = []types.SMB_DIRECTORY_INFORMATION{}
+
+	// BufferFormat (1 byte): MUST be 0x05
+	if len(rawDataContent) < offset+1 {
+		return offset, fmt.Errorf("rawDataContent too short for BufferFormat")
+	}
+	offset++
+
+	// DataLength (2 bytes, little-endian): size in bytes of the DirectoryInformationData array
+	if len(rawDataContent) < offset+2 {
+		return offset, fmt.Errorf("rawDataContent too short for DataLength")
+	}
+	offset += 2
 
 	// Each directory information entry is 43 bytes fixed size
 	const entrySize = 43
