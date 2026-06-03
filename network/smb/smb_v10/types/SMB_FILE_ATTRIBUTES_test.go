@@ -104,12 +104,12 @@ func TestSMB_FILE_ATTRIBUTES_Marshal(t *testing.T) {
 		{
 			name:           "Read-only attribute",
 			attributes:     0x0001,
-			expectedOutput: []byte{0x00, 0x01},
+			expectedOutput: []byte{0x01, 0x00},
 		},
 		{
 			name:           "Multiple attributes",
 			attributes:     0x0037, // Read-only, Hidden, System, Directory, Archive
-			expectedOutput: []byte{0x00, 0x37},
+			expectedOutput: []byte{0x37, 0x00},
 		},
 	}
 
@@ -146,13 +146,13 @@ func TestSMB_FILE_ATTRIBUTES_Unmarshal(t *testing.T) {
 		},
 		{
 			name:              "Read-only attribute",
-			input:             []byte{0x00, 0x01},
+			input:             []byte{0x01, 0x00},
 			expectedAttr:      0x0001,
 			expectedBytesRead: 2,
 		},
 		{
 			name:              "Multiple attributes",
-			input:             []byte{0x00, 0x37, 0xFF}, // Extra byte should be ignored
+			input:             []byte{0x37, 0x00, 0xFF}, // Extra byte should be ignored
 			expectedAttr:      0x0037,
 			expectedBytesRead: 2,
 		},
