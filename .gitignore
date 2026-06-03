@@ -28,5 +28,5 @@ go.work.sum
 ./bin/
 ./main.go
 
-# Local files for debug 
-./.private/
+# Local files for debug
+.private/
