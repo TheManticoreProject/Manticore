@@ -181,21 +181,21 @@ func (c *TreeConnectRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data Path
-	bytesRead, err = c.Path.Unmarshal(rawDataContent)
+	bytesRead, err = c.Path.Unmarshal(rawDataContent[offset:])
 	if err != nil {
 		return 0, err
 	}
 	offset += bytesRead
 
 	// Unmarshalling data Password
-	bytesRead, err = c.Password.Unmarshal(rawDataContent)
+	bytesRead, err = c.Password.Unmarshal(rawDataContent[offset:])
 	if err != nil {
 		return 0, err
 	}
 	offset += bytesRead
 
 	// Unmarshalling data Service
-	bytesRead, err = c.Service.Unmarshal(rawDataContent)
+	bytesRead, err = c.Service.Unmarshal(rawDataContent[offset:])
 	if err != nil {
 		return 0, err
 	}
