@@ -260,16 +260,25 @@ func (c *NtTransactSecondaryRequest) Marshal() ([]byte, error) {
 //
 // Returns:
 // - The number of bytes unmarshalled
-func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
+func (c *NtTransactSecondaryRequest) Unmarshal(rawData []byte) (int, error) {
+	// Initialize the Parameters structure if it is nil to avoid a nil
+	// pointer dereference when Unmarshal is called on a freshly constructed value.
+	if c.GetParameters() == nil {
+		c.SetParameters(parameters.NewParameters())
+	}
+	// Initialize the Data structure if it is nil for the same reason.
+	if c.GetData() == nil {
+		c.SetData(data.NewData())
+	}
 	offset := 0
 
 	// First unmarshal the two structures
-	bytesRead, err := c.GetParameters().Unmarshal(data)
+	bytesRead, err := c.GetParameters().Unmarshal(rawData)
 	if err != nil {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	_, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(rawData[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
@@ -349,7 +358,7 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 
 	// Unmarshalling parameter Reserved2
 	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("data too short for Reserved2")
+		return offset, fmt.Errorf("rawData too short for Reserved2")
 	}
 	c.Reserved2 = types.UCHAR(rawParametersContent[offset])
 	offset++
@@ -380,7 +389,7 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 	// block, Pad2, and data block are accounted for within rawDataContent.
 	pad1Length := len(rawDataContent) - parameterCount - pad2Length - dataCount
 	if pad1Length < 0 {
-		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Secondary data block")
+		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Secondary rawData block")
 	}
 
 	// Unmarshalling data Pad1

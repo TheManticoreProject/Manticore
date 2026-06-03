@@ -141,16 +141,25 @@ func (c *OpenRequest) Marshal() ([]byte, error) {
 //
 // Returns:
 // - The number of bytes unmarshalled
-func (c *OpenRequest) Unmarshal(data []byte) (int, error) {
+func (c *OpenRequest) Unmarshal(rawData []byte) (int, error) {
+	// Initialize the Parameters structure if it is nil to avoid a nil
+	// pointer dereference when Unmarshal is called on a freshly constructed value.
+	if c.GetParameters() == nil {
+		c.SetParameters(parameters.NewParameters())
+	}
+	// Initialize the Data structure if it is nil for the same reason.
+	if c.GetData() == nil {
+		c.SetData(data.NewData())
+	}
 	offset := 0
 
 	// First unmarshal the two structures
-	bytesRead, err := c.GetParameters().Unmarshal(data)
+	bytesRead, err := c.GetParameters().Unmarshal(rawData)
 	if err != nil {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	_, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(rawData[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
