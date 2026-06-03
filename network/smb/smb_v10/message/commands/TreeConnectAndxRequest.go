@@ -198,20 +198,29 @@ func (c *TreeConnectAndxRequest) Marshal() ([]byte, error) {
 // Unmarshal unmarshals a byte array into the command structure
 //
 // Parameters:
-// - data: The byte array to unmarshal
+// - marshalledData: The byte array to unmarshal
 //
 // Returns:
 // - The number of bytes unmarshalled
-func (c *TreeConnectAndxRequest) Unmarshal(data []byte) (int, error) {
+func (c *TreeConnectAndxRequest) Unmarshal(marshalledData []byte) (int, error) {
 	offset := 0
 
+	// Create the Parameters structure if it is nil
+	if c.GetParameters() == nil {
+		c.SetParameters(parameters.NewParameters())
+	}
+	// Create the Data structure if it is nil
+	if c.GetData() == nil {
+		c.SetData(data.NewData())
+	}
+
 	// First unmarshal the two structures
-	bytesRead, err := c.GetParameters().Unmarshal(data)
+	bytesRead, err := c.GetParameters().Unmarshal(marshalledData)
 	if err != nil {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	_, err = c.GetData().Unmarshal(data[bytesRead:])
+	_, err = c.GetData().Unmarshal(marshalledData[bytesRead:])
 	if err != nil {
 		return 0, err
 	}
