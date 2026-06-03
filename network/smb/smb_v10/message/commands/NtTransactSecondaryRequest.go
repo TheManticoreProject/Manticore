@@ -355,35 +355,58 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 	offset++
 
 	// Then unmarshal the data
+	//
+	// rawDataContent is the SMB_Data.Bytes block, laid out as:
+	//   Pad1[] | NT_Trans_Parameters[ParameterCount] | Pad2[] | NT_Trans_Data[DataCount]
+	// ParameterOffset and DataOffset are absolute offsets measured from the start of
+	// the SMB_Header, not lengths within this block, so they cannot be used directly as
+	// slice lengths. The block shares a single header-relative base with both offsets,
+	// so the inter-block gaps are recovered as differences:
+	//   len(Pad2) = DataOffset - (ParameterOffset + ParameterCount)
+	//   len(Pad1) = len(rawDataContent) - ParameterCount - len(Pad2) - DataCount
 	offset = 0
 
-	// Unmarshalling data Pad1
-	if len(rawDataContent) < offset+int(c.ParameterOffset) {
-		return offset, fmt.Errorf("rawDataContent too short for Pad1")
+	parameterCount := int(c.ParameterCount)
+	dataCount := int(c.DataCount)
+
+	// Length of Pad2 is the gap between the end of the parameter block and the start of
+	// the data block, both expressed relative to the same header-relative base.
+	pad2Length := int(c.DataOffset) - (int(c.ParameterOffset) + parameterCount)
+	if pad2Length < 0 {
+		return offset, fmt.Errorf("invalid offsets: DataOffset precedes end of NT_Trans_Parameters")
 	}
-	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
-	offset += int(c.ParameterOffset)
+
+	// Length of Pad1 is whatever leading padding remains once the fixed-size parameter
+	// block, Pad2, and data block are accounted for within rawDataContent.
+	pad1Length := len(rawDataContent) - parameterCount - pad2Length - dataCount
+	if pad1Length < 0 {
+		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Secondary data block")
+	}
+
+	// Unmarshalling data Pad1
+	c.Pad1 = rawDataContent[offset : offset+pad1Length]
+	offset += pad1Length
 
 	// Unmarshalling data NT_Trans_Parameters
-	if len(rawDataContent) < offset+int(c.ParameterCount) {
+	if len(rawDataContent) < offset+parameterCount {
 		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Parameters")
 	}
-	c.NT_Trans_Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
-	offset += int(c.ParameterCount)
+	c.NT_Trans_Parameters = rawDataContent[offset : offset+parameterCount]
+	offset += parameterCount
 
 	// Unmarshalling data Pad2
-	if len(rawDataContent) < offset+int(c.DataOffset) {
+	if len(rawDataContent) < offset+pad2Length {
 		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
-	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
-	offset += int(c.DataOffset)
+	c.Pad2 = rawDataContent[offset : offset+pad2Length]
+	offset += pad2Length
 
 	// Unmarshalling data NT_Trans_Data
-	if len(rawDataContent) < offset+int(c.DataCount) {
+	if len(rawDataContent) < offset+dataCount {
 		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Data")
 	}
-	c.NT_Trans_Data = rawDataContent[offset : offset+int(c.DataCount)]
-	offset += int(c.DataCount)
+	c.NT_Trans_Data = rawDataContent[offset : offset+dataCount]
+	offset += dataCount
 
 	return offset, nil
 }
