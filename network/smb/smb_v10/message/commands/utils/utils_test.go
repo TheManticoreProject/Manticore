@@ -97,3 +97,39 @@ func TestGetNullTerminatedUnicodeString(t *testing.T) {
 		})
 	}
 }
+
+// TestGetNullTerminatedUnicodeStringOddLength verifies that odd-length input
+// (a dangling byte without its UTF-16 high half, and no terminator) does not
+// panic with an index-out-of-range on the data[i+1] access.
+func TestGetNullTerminatedUnicodeStringOddLength(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          []byte
+		expectedString string
+	}{
+		{
+			name:           "Single dangling byte",
+			input:          []byte{'A'},
+			expectedString: "",
+		},
+		{
+			name:           "Unterminated string with trailing dangling byte",
+			input:          []byte{'H', 0, 'i', 0, 'X'},
+			expectedString: "H\x00i\x00",
+		},
+		{
+			name:           "Empty input",
+			input:          []byte{},
+			expectedString: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			str, _ := utils.GetNullTerminatedUnicodeString(tt.input)
+			if str != tt.expectedString {
+				t.Errorf("GetNullTerminatedUnicodeString() got string = %q, want %q", str, tt.expectedString)
+			}
+		})
+	}
+}
