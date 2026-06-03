@@ -37,7 +37,9 @@ type FindUniqueRequest struct {
 	// BufferFormat2 (1 byte): This field MUST be 0x05, which indicates that a variable block is to follow.
 	// ResumeKeyLength (2 bytes): This field MUST be 0x0000. No Resume Key is permitted in the SMB_COM_FIND_UNIQUE request.
 	// If the server receives an SMB_COM_FIND_UNIQUE request with a nonzero ResumeKeyLength, it MUST ignore this field.
-	ResumeKey types.SMB_RESUME_KEY
+	// No Resume Key is permitted, so this is encoded as the BufferFormat2 byte (0x05) followed by a
+	// ResumeKeyLength of 0x0000 and no resume-key body, i.e. an empty variable-block SMB_STRING.
+	ResumeKey types.SMB_STRING
 }
 
 // NewFindUniqueRequest creates a new FindUniqueRequest structure
@@ -52,7 +54,7 @@ func NewFindUniqueRequest() *FindUniqueRequest {
 
 		// Data
 		FileName:  types.SMB_STRING{},
-		ResumeKey: types.SMB_RESUME_KEY{},
+		ResumeKey: types.SMB_STRING{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_FIND_UNIQUE)
@@ -95,6 +97,8 @@ func (c *FindUniqueRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
+	// BufferFormat1 (1 byte) MUST be 0x04, indicating a null-terminated ASCII string follows.
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
@@ -102,6 +106,9 @@ func (c *FindUniqueRequest) Marshal() ([]byte, error) {
 	rawDataContent = append(rawDataContent, bytesStream...)
 
 	// Marshalling data ResumeKey
+	// BufferFormat2 (1 byte) MUST be 0x05; with no resume key permitted, this emits a
+	// ResumeKeyLength of 0x0000 and no resume-key body.
+	c.ResumeKey.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK)
 	bytesStream, err = c.ResumeKey.Marshal()
 	if err != nil {
 		return nil, err
@@ -113,7 +120,7 @@ func (c *FindUniqueRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter MaxCount
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.MaxCount))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.MaxCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter SearchAttributes
@@ -177,7 +184,7 @@ func (c *FindUniqueRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for MaxCount")
 	}
-	c.MaxCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.MaxCount = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter SearchAttributes

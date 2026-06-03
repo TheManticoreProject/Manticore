@@ -19,6 +19,11 @@ type NtTransactSecondaryRequest struct {
 
 	// Parameters
 
+	// Reserved1 (3 bytes): Reserved. Used to align the following fields to a 32-bit
+	// boundary. This field MUST contain null padding bytes in the server response. The
+	// client MUST ignore the contents of this field.
+	Reserved1 [3]types.UCHAR
+
 	// TotalParameterCount (4 bytes): The total number of transaction parameter bytes
 	// to be sent to the server over the course of this transaction. This value MAY be
 	// less than or equal to the TotalParameterCount in preceding request messages that
@@ -109,6 +114,7 @@ type NtTransactSecondaryRequest struct {
 func NewNtTransactSecondaryRequest() *NtTransactSecondaryRequest {
 	c := &NtTransactSecondaryRequest{
 		// Parameters
+		Reserved1:             [3]types.UCHAR{0, 0, 0},
 		TotalParameterCount:   types.ULONG(0),
 		TotalDataCount:        types.ULONG(0),
 		ParameterCount:        types.ULONG(0),
@@ -180,44 +186,49 @@ func (c *NtTransactSecondaryRequest) Marshal() ([]byte, error) {
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
 
+	// Marshalling parameter Reserved1 (3 bytes)
+	for _, b := range c.Reserved1 {
+		rawParametersContent = append(rawParametersContent, types.UCHAR(b))
+	}
+
 	// Marshalling parameter TotalParameterCount
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter TotalDataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalDataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalDataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterDisplacement
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterDisplacement))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterDisplacement))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataDisplacement
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataDisplacement))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataDisplacement))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Reserved2
@@ -273,60 +284,67 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 	// First unmarshal the parameters
 	offset = 0
 
+	// Unmarshalling parameter Reserved1 (3 bytes)
+	if len(rawParametersContent) < offset+3 {
+		return offset, fmt.Errorf("rawParametersContent too short for Reserved1")
+	}
+	copy(c.Reserved1[:], rawParametersContent[offset:offset+3])
+	offset += 3
+
 	// Unmarshalling parameter TotalParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalParameterCount")
 	}
-	c.TotalParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter TotalDataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalDataCount")
 	}
-	c.TotalDataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalDataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterCount")
 	}
-	c.ParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterOffset")
 	}
-	c.ParameterOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterDisplacement
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterDisplacement")
 	}
-	c.ParameterDisplacement = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterDisplacement = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataCount")
 	}
-	c.DataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataDisplacement
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataDisplacement")
 	}
-	c.DataDisplacement = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataDisplacement = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Reserved2
@@ -337,35 +355,58 @@ func (c *NtTransactSecondaryRequest) Unmarshal(data []byte) (int, error) {
 	offset++
 
 	// Then unmarshal the data
+	//
+	// rawDataContent is the SMB_Data.Bytes block, laid out as:
+	//   Pad1[] | NT_Trans_Parameters[ParameterCount] | Pad2[] | NT_Trans_Data[DataCount]
+	// ParameterOffset and DataOffset are absolute offsets measured from the start of
+	// the SMB_Header, not lengths within this block, so they cannot be used directly as
+	// slice lengths. The block shares a single header-relative base with both offsets,
+	// so the inter-block gaps are recovered as differences:
+	//   len(Pad2) = DataOffset - (ParameterOffset + ParameterCount)
+	//   len(Pad1) = len(rawDataContent) - ParameterCount - len(Pad2) - DataCount
 	offset = 0
 
-	// Unmarshalling data Pad1
-	if len(rawDataContent) < offset+int(c.ParameterOffset) {
-		return offset, fmt.Errorf("rawDataContent too short for Pad1")
+	parameterCount := int(c.ParameterCount)
+	dataCount := int(c.DataCount)
+
+	// Length of Pad2 is the gap between the end of the parameter block and the start of
+	// the data block, both expressed relative to the same header-relative base.
+	pad2Length := int(c.DataOffset) - (int(c.ParameterOffset) + parameterCount)
+	if pad2Length < 0 {
+		return offset, fmt.Errorf("invalid offsets: DataOffset precedes end of NT_Trans_Parameters")
 	}
-	c.Pad1 = rawDataContent[offset : offset+int(c.ParameterOffset)]
-	offset += int(c.ParameterOffset)
+
+	// Length of Pad1 is whatever leading padding remains once the fixed-size parameter
+	// block, Pad2, and data block are accounted for within rawDataContent.
+	pad1Length := len(rawDataContent) - parameterCount - pad2Length - dataCount
+	if pad1Length < 0 {
+		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Secondary data block")
+	}
+
+	// Unmarshalling data Pad1
+	c.Pad1 = rawDataContent[offset : offset+pad1Length]
+	offset += pad1Length
 
 	// Unmarshalling data NT_Trans_Parameters
-	if len(rawDataContent) < offset+int(c.ParameterCount) {
+	if len(rawDataContent) < offset+parameterCount {
 		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Parameters")
 	}
-	c.NT_Trans_Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
-	offset += int(c.ParameterCount)
+	c.NT_Trans_Parameters = rawDataContent[offset : offset+parameterCount]
+	offset += parameterCount
 
 	// Unmarshalling data Pad2
-	if len(rawDataContent) < offset+int(c.DataOffset) {
+	if len(rawDataContent) < offset+pad2Length {
 		return offset, fmt.Errorf("rawDataContent too short for Pad2")
 	}
-	c.Pad2 = rawDataContent[offset : offset+int(c.DataOffset)]
-	offset += int(c.DataOffset)
+	c.Pad2 = rawDataContent[offset : offset+pad2Length]
+	offset += pad2Length
 
 	// Unmarshalling data NT_Trans_Data
-	if len(rawDataContent) < offset+int(c.DataCount) {
+	if len(rawDataContent) < offset+dataCount {
 		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Data")
 	}
-	c.NT_Trans_Data = rawDataContent[offset : offset+int(c.DataCount)]
-	offset += int(c.DataCount)
+	c.NT_Trans_Data = rawDataContent[offset : offset+dataCount]
+	offset += dataCount
 
 	return offset, nil
 }

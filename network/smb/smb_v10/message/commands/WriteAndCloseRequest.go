@@ -37,13 +37,13 @@ type WriteAndCloseRequest struct {
 	// this command is inappropriate for files that have 64-bit offsets.
 	WriteOffsetInBytes types.ULONG
 
-	// LastWriteTime (4 bytes): This field is a 32-bit unsigned integer indicating the
-	// number of seconds since Jan 1, 1970, 00:00:00.0. The server SHOULD set the last
+	// LastWriteTime (4 bytes): This field is a 32-bit unsigned integer (UTIME) indicating
+	// the number of seconds since Jan 1, 1970, 00:00:00.0. The server SHOULD set the last
 	// write time of the file represented by the FID to this value. If the value is
 	// zero (0x00000000), the server SHOULD use the current local time of the server to
 	// set the value. Failure to set the time MUST NOT result in an error response from
 	// the server.
-	LastWriteTime types.FILETIME
+	LastWriteTime types.ULONG
 
 	// Reserved (12 bytes): This field is optional. This field is reserved, and all
 	// entries MUST be zero (0x00000000). This field is used only in the 12-word version
@@ -71,7 +71,7 @@ func NewWriteAndCloseRequest() *WriteAndCloseRequest {
 		FID:                 types.USHORT(0),
 		CountOfBytesToWrite: types.USHORT(0),
 		WriteOffsetInBytes:  types.ULONG(0),
-		LastWriteTime:       types.FILETIME{},
+		LastWriteTime:       types.ULONG(0),
 		Reserved:            [3]types.ULONG{0, 0, 0},
 
 		// Data
@@ -129,31 +129,29 @@ func (c *WriteAndCloseRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter CountOfBytesToWrite
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesToWrite))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.CountOfBytesToWrite))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter WriteOffsetInBytes
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.WriteOffsetInBytes))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.WriteOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
-	// Marshalling parameter LastWriteTime
-	bytesStream, err := c.LastWriteTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LastWriteTime))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Reserved
 	if c.Reserved != [3]types.ULONG{0, 0, 0} {
 		for _, reserved := range c.Reserved {
 			buf4 = make([]byte, 4)
-			binary.BigEndian.PutUint32(buf4, uint32(reserved))
+			binary.LittleEndian.PutUint32(buf4, uint32(reserved))
 			rawParametersContent = append(rawParametersContent, buf4...)
 		}
 	}
@@ -212,32 +210,29 @@ func (c *WriteAndCloseRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter CountOfBytesToWrite
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToWrite")
 	}
-	c.CountOfBytesToWrite = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.CountOfBytesToWrite = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter WriteOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for WriteOffsetInBytes")
 	}
-	c.WriteOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.WriteOffsetInBytes = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
-	// Unmarshalling parameter LastWriteTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.LastWriteTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter Reserved
 	if c.GetParameters().WordCount == 12 {
@@ -245,9 +240,9 @@ func (c *WriteAndCloseRequest) Unmarshal(data []byte) (int, error) {
 			return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 		}
 		c.Reserved = [3]types.ULONG{
-			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4])),
-			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset+4 : offset+8])),
-			types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset+8 : offset+12])),
+			types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4])),
+			types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset+4 : offset+8])),
+			types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset+8 : offset+12])),
 		}
 		offset += 12
 	}

@@ -154,12 +154,12 @@ func (c *QueryInformation2Response) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FileDataSize
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileDataSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileDataSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter FileAllocationSize
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileAllocationSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileAllocationSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter FileAttributes
@@ -249,6 +249,16 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
+	// Unmarshalling parameter LastAccessTime
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastAccessTime")
+	}
+	bytesRead, err = c.LastAccessTime.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter LastWriteDate
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteDate")
@@ -259,18 +269,28 @@ func (c *QueryInformation2Response) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
+	// Unmarshalling parameter LastWriteTime
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
+	}
+	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset : offset+2])
+	if err != nil {
+		return 0, err
+	}
+	offset += bytesRead
+
 	// Unmarshalling parameter FileDataSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileDataSize")
 	}
-	c.FileDataSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileDataSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter FileAllocationSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileAllocationSize")
 	}
-	c.FileAllocationSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileAllocationSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter FileAttributes

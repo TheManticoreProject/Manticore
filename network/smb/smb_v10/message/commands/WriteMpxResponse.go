@@ -82,7 +82,7 @@ func (c *WriteMpxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter ResponseMask
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ResponseMask))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ResponseMask))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -139,7 +139,7 @@ func (c *WriteMpxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ResponseMask")
 	}
-	c.ResponseMask = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ResponseMask = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data

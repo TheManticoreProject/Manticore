@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
 )
 
 // buildNegotiateResponseParameters constructs the marshalled parameters section
@@ -20,13 +20,15 @@ import (
 //	DialectIndex(2) + SecurityMode(1) + MaxMpxCount(2) + MaxNumberVcs(2) +
 //	MaxBufferSize(4) + MaxRawSize(4) + SessionKey(4) + Capabilities(4) +
 //	SystemTime(8) + ServerTimeZone(2) + ChallengeLength(1) = 34 bytes
-func buildNegotiateResponseParameters(secMode securitymode.SecurityMode) []byte {
+func buildNegotiateResponseParameters(caps capabilities.Capabilities) []byte {
 	// Raw little-endian parameter bytes.
 	params := make([]byte, 34)
 	// DialectIndex = 0
 	binary.LittleEndian.PutUint16(params[0:2], 0)
-	// SecurityMode (1 byte)
-	params[2] = byte(secMode)
+	// SecurityMode (1 byte) left as zero.
+	// Capabilities (4 bytes) at offset 19 selects the SMB_Data layout: when
+	// CAP_EXTENDED_SECURITY is set the data block carries ServerGUID + SecurityBlob.
+	binary.LittleEndian.PutUint32(params[19:23], uint32(caps))
 	// Remaining fields left as zero; ChallengeLength at offset 33 is 0.
 
 	// Repack as 17 big-endian uint16 words so that Parameters.Unmarshal
@@ -47,7 +49,7 @@ func buildNegotiateResponseParameters(secMode securitymode.SecurityMode) []byte 
 // shorter than 16 bytes) returns an error instead of panicking on an
 // out-of-range slice access.
 func Test_NegotiateResponse_Unmarshal_ShortExtendedSecurityDataDoesNotPanic(t *testing.T) {
-	paramsSection := buildNegotiateResponseParameters(securitymode.NEGOTIATE_ENCRYPT_PASSWORDS)
+	paramsSection := buildNegotiateResponseParameters(capabilities.CAP_EXTENDED_SECURITY)
 
 	// Data section: ByteCount = 4 (less than the 16 bytes required for ServerGUID)
 	dataSection := []byte{0x04, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}

@@ -111,7 +111,7 @@ func (c *TreeConnectAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter OptionalSupport
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.OptionalSupport))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.OptionalSupport))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -171,7 +171,7 @@ func (c *TreeConnectAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for OptionalSupport")
 	}
-	c.OptionalSupport = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.OptionalSupport = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data

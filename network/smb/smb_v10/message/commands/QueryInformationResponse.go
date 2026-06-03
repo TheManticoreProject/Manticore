@@ -23,8 +23,9 @@ type QueryInformationResponse struct {
 	// SMB_FILE_ATTRIBUTES (see section 2.2.1.2.4).
 	FileAttributes types.SMB_FILE_ATTRIBUTES
 
-	// LastWriteTime (4 bytes): The time of the last write to the file.
-	LastWriteTime types.FILETIME
+	// LastWriteTime (4 bytes): The time of the last write to the file, encoded as a
+	// UTIME (the number of seconds since Jan 1, 1970, 00:00:00.0).
+	LastWriteTime types.ULONG
 
 	// FileSize (4 bytes): This field contains the size of the file, in bytes. Because
 	// this size is limited to 32 bits, this command is inappropriate for files whose
@@ -44,7 +45,7 @@ func NewQueryInformationResponse() *QueryInformationResponse {
 		// Parameters
 
 		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-		LastWriteTime:  types.FILETIME{},
+		LastWriteTime:  types.ULONG(0),
 		FileSize:       types.ULONG(0),
 		Reserved:       [5]types.USHORT{},
 	}
@@ -98,16 +99,14 @@ func (c *QueryInformationResponse) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, byteStream...)
 
-	// Marshalling parameter LastWriteTime
-	bytesStream, err := c.LastWriteTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter LastWriteTime (UTIME, 4 bytes, little-endian)
+	bufLastWriteTime := make([]byte, 4)
+	binary.LittleEndian.PutUint32(bufLastWriteTime, uint32(c.LastWriteTime))
+	rawParametersContent = append(rawParametersContent, bufLastWriteTime...)
 
 	// Marshalling parameter FileSize
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -170,21 +169,18 @@ func (c *QueryInformationResponse) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter LastWriteTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastWriteTime (UTIME, 4 bytes, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset : offset+8])
-	if err != nil {
-		return 0, err
-	}
-	offset += bytesRead
+	c.LastWriteTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter FileSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileSize")
 	}
-	c.FileSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
