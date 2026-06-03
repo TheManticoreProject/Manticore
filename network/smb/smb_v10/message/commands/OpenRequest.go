@@ -90,6 +90,10 @@ func (c *OpenRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
+	// Per MS-CIFS, the SMB_COM_OPEN data block starts with a BufferFormat byte that MUST be 0x04
+	// (a null-terminated ASCII string follows). The SMB_STRING marshaller emits this byte from its
+	// BufferFormat field, so it must be set before marshalling.
+	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
 	bytesStream, err := c.FileName.Marshal()
 	if err != nil {
 		return nil, err
