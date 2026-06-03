@@ -47,6 +47,12 @@ type ReadAndxRequest struct {
 	// This field is not used in the NT LAN Manager dialect. Clients MUST set this
 	// field to 0x0000, and servers MUST ignore it.
 	Remaining types.USHORT
+
+	// OffsetHigh (4 bytes): This field is optional. If WordCount is 0x0A this field is
+	// not included in the request. If WordCount is 0x0C this field represents the upper
+	// 32 bits of a 64-bit offset, measured in bytes, of where the read SHOULD start
+	// relative to the beginning of the file.
+	OffsetHigh types.ULONG
 }
 
 // NewReadAndxRequest creates a new ReadAndxRequest structure
@@ -62,6 +68,7 @@ func NewReadAndxRequest() *ReadAndxRequest {
 		MinCountOfBytesToReturn: types.USHORT(0),
 		Timeout:                 types.ULONG(0),
 		Remaining:               types.USHORT(0),
+		OffsetHigh:              types.ULONG(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_READ_ANDX)
@@ -140,6 +147,14 @@ func (c *ReadAndxRequest) Marshal() ([]byte, error) {
 	buf2 = make([]byte, 2)
 	binary.LittleEndian.PutUint16(buf2, uint16(c.Remaining))
 	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter OffsetHigh
+	// This field is optional and is only included when WordCount is 0x0C (64-bit offset).
+	if c.OffsetHigh != 0 {
+		buf4 = make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf4, uint32(c.OffsetHigh))
+		rawParametersContent = append(rawParametersContent, buf4...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -235,6 +250,16 @@ func (c *ReadAndxRequest) Unmarshal(data []byte) (int, error) {
 	}
 	c.Remaining = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter OffsetHigh
+	// This field is optional and is only present when WordCount is 0x0C (64-bit offset).
+	if c.GetParameters().WordCount == 0x0C {
+		if len(rawParametersContent) < offset+4 {
+			return offset, fmt.Errorf("rawParametersContent too short for OffsetHigh")
+		}
+		c.OffsetHigh = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+		offset += 4
+	}
 
 	// Then unmarshal the data
 	offset = 0
