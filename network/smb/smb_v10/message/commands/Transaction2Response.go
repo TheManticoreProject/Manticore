@@ -8,6 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
@@ -403,10 +404,13 @@ func (c *Transaction2Response) Unmarshal(rawData []byte) (int, error) {
 	// keeps the parse robust to zero-length or present padding.
 	offset = 0
 
-	// The number of bytes that precede the SMB_Data.Bytes block within the SMB message:
-	// the SMB_Parameters block (WordCount byte + parameter words, == bytesRead) plus the
-	// 2-byte ByteCount field of the SMB_Data block.
-	bytesBeforeData := bytesRead + 2
+	// The number of bytes from the start of the SMB Header to the start of the
+	// SMB_Data.Bytes block: the 32-byte SMB Header, plus the SMB_Parameters block
+	// (WordCount byte + parameter words, == bytesRead), plus the 2-byte ByteCount
+	// field of the SMB_Data block. ParameterOffset and DataOffset are measured from
+	// the start of the SMB Header, so the header size MUST be included here for the
+	// derived Pad1/Pad2 lengths to be correct.
+	bytesBeforeData := header.SMB_HEADER_SIZE + bytesRead + 2
 
 	// Unmarshalling data Pad1
 	pad1Length := 0
