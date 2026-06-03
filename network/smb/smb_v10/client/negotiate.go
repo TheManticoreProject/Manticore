@@ -70,6 +70,10 @@ func (c *Client) Negotiate() error {
 		return fmt.Errorf("unexpected response command: %d", responseMsg.Header.Command)
 	}
 
+	if responseMsg.Header.Status != 0x00000000 {
+		return fmt.Errorf("negotiate failed: 0x%08x", responseMsg.Header.Status)
+	}
+
 	negotiateResponse := responseMsg.Command.(*commands.NegotiateResponse)
 
 	selectedDialect, err := negotiateResponse.GetSelectedDialect(negotiateCmd.Dialects)
