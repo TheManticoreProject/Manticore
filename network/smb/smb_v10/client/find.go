@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
@@ -122,62 +123,65 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 // response parameter and data buffers. It does not implement Transaction2Secondary
 // fragmentation, so the request must fit in a single message.
 func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]byte, []byte, error) {
-	msg := c.newFileIOMessage(codes.SMB_COM_TRANSACTION2)
-
-	cmd := commands.NewTransaction2Request()
-	cmd.Setup = []types.USHORT{types.USHORT(subcommand)}
-	cmd.MaxParameterCount = types.USHORT(1024)
-	cmd.MaxSetupCount = types.UCHAR(0)
-	cmd.Flags = types.USHORT(0)
-	cmd.Timeout = types.ULONG(0)
+	maxBuffer := 0xFFFF
+	if c.Connection != nil && c.Connection.Server != nil && c.Connection.Server.MaxBufferSize > 0 {
+		maxBuffer = int(c.Connection.Server.MaxBufferSize)
+	}
 
 	// Bound the data the server may return by the negotiated buffer.
 	maxData := 0xFFFF
-	if c.Connection.Server != nil && c.Connection.Server.MaxBufferSize > 0 {
-		if budget := int(c.Connection.Server.MaxBufferSize) - 512; budget > 0 && budget < maxData {
-			maxData = budget
+	if budget := maxBuffer - 512; budget > 0 && budget < maxData {
+		maxData = budget
+	}
+
+	// Plan how the request parameter/data payload is split across the primary
+	// SMB_COM_TRANSACTION2 message and any SMB_COM_TRANSACTION2_SECONDARY messages
+	// when it does not fit in a single SMB buffer.
+	plan := planTrans2Send(len(trans2Params), len(trans2Data), maxBuffer)
+
+	// Send the primary request first, then any continuation messages. The server
+	// only replies once the whole transaction has been received.
+	for i, chunk := range plan {
+		var msg *message.Message
+		label := "Transaction2 request"
+		if i == 0 {
+			msg = c.buildTrans2Primary(subcommand, maxData, trans2Params, trans2Data, chunk)
+		} else {
+			msg = c.buildTrans2Secondary(trans2Params, trans2Data, chunk)
+			label = "Transaction2_Secondary request"
+		}
+		marshalled, err := msg.Marshal()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal %s: %v", label, err)
+		}
+		fileIODump(label, marshalled)
+		if _, err := c.Transport.Send(marshalled); err != nil {
+			return nil, nil, fmt.Errorf("failed to send %s: %v", label, err)
 		}
 	}
-	cmd.MaxDataCount = types.USHORT(maxData)
 
-	// Compute offsets. The request always carries exactly one setup word, so
-	// WordCount = 14 fixed words + 1 setup word = 15.
-	const wordCount = 14 + 1
-	// Bytes from the start of the SMB header to the end of the Name byte: the data
-	// block on the wire is ByteCount(2) + Name(1) + Pad1 + Trans2_Parameters + ...
-	preParams := header.SMB_HEADER_SIZE + 1 /*WordCount*/ + 2*wordCount + 2 /*ByteCount*/ + 1 /*Name*/
-	pad1 := (4 - (preParams % 4)) % 4
-	parameterOffset := preParams + pad1
-
-	cmd.TotalParameterCount = types.USHORT(len(trans2Params))
-	cmd.ParameterCount = types.USHORT(len(trans2Params))
-	cmd.ParameterOffset = types.USHORT(parameterOffset)
-	cmd.Pad1 = make([]types.UCHAR, pad1)
-	cmd.Trans2_Parameters = []types.UCHAR(trans2Params)
-
-	if len(trans2Data) > 0 {
-		afterParams := parameterOffset + len(trans2Params)
-		pad2 := (4 - (afterParams % 4)) % 4
-		cmd.TotalDataCount = types.USHORT(len(trans2Data))
-		cmd.DataCount = types.USHORT(len(trans2Data))
-		cmd.DataOffset = types.USHORT(afterParams + pad2)
-		cmd.Pad2 = make([]types.UCHAR, pad2)
-		cmd.Trans2_Data = []types.UCHAR(trans2Data)
-	}
-
-	msg.AddCommand(cmd)
-
-	response, raw, err := c.sendReceive(msg, "Transaction2")
+	// Receive the (possibly fragmented) response.
+	raw, err := c.Transport.Receive()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to receive Transaction2 response: %v", err)
 	}
-	if response.Header.Status != 0x00000000 {
-		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, response.Header.Status)
+	fileIODump("Transaction2 response", raw)
+
+	// Read the SMB header to check the status. The parameter/data payload is
+	// parsed by reassembleTrans2 below, so a full command unmarshal is not needed.
+	if len(raw) < header.SMB_HEADER_SIZE {
+		return nil, nil, fmt.Errorf("Transaction2 response too short")
+	}
+	respHeader := header.Header{}
+	if _, err := respHeader.Unmarshal(raw[:header.SMB_HEADER_SIZE]); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal Transaction2 response header: %v", err)
+	}
+	if respHeader.Status != 0x00000000 {
+		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, respHeader.Status)
 	}
 
-	// Reassemble the response, which the server may split across several SMB
-	// messages for a large parameter/data payload. The first message has already
-	// been received; further fragments are read directly from the transport.
+	// Reassemble the response, which the server may also split across several SMB
+	// messages for a large parameter/data payload.
 	return reassembleTrans2(raw, func() ([]byte, error) {
 		next, err := c.Transport.Receive()
 		if err != nil {
@@ -186,6 +190,166 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		fileIODump("Transaction2 response (continuation)", next)
 		return next, nil
 	})
+}
+
+// trans2SendChunk describes the slice of the request parameter and data payloads
+// carried by one SMB message (the primary request or a continuation).
+type trans2SendChunk struct {
+	paramDisplacement int
+	paramLen          int
+	dataDisplacement  int
+	dataLen           int
+}
+
+// Per-message overheads (bytes consumed before the parameter/data payload),
+// including a small slack for the 4-byte alignment padding (Pad1 + Pad2 <= 6).
+const (
+	// header + WordCount(1) + 15 words + ByteCount(2) + Name(1) + pad slack.
+	trans2PrimaryOverhead = header.SMB_HEADER_SIZE + 1 + 2*15 + 2 + 1 + 8
+	// header + WordCount(1) + 9 words + ByteCount(2) + pad slack (no Name field).
+	trans2SecondaryOverhead = header.SMB_HEADER_SIZE + 1 + 2*9 + 2 + 8
+)
+
+// planTrans2Send splits a request payload of totalParams parameter bytes and
+// totalData data bytes into per-message chunks bounded by the negotiated buffer.
+// Parameters are emitted before data (per [MS-CIFS] 2.2.4.46.1); a message only
+// begins carrying data once all parameters have been placed. A payload that fits
+// in the primary message yields a single chunk.
+func planTrans2Send(totalParams, totalData, maxBuffer int) []trans2SendChunk {
+	primaryBudget := maxBuffer - trans2PrimaryOverhead
+	secondaryBudget := maxBuffer - trans2SecondaryOverhead
+	if primaryBudget < 1 {
+		primaryBudget = 1
+	}
+	if secondaryBudget < 1 {
+		secondaryBudget = 1
+	}
+
+	chunks := []trans2SendChunk{}
+	pOff, dOff := 0, 0
+	for {
+		budget := secondaryBudget
+		if len(chunks) == 0 {
+			budget = primaryBudget
+		}
+
+		pLen := totalParams - pOff
+		if pLen > budget {
+			pLen = budget
+		}
+		if pLen < 0 {
+			pLen = 0
+		}
+		budget -= pLen
+
+		dLen := 0
+		if pOff+pLen >= totalParams { // all parameters placed; this message may carry data
+			dLen = totalData - dOff
+			if dLen > budget {
+				dLen = budget
+			}
+			if dLen < 0 {
+				dLen = 0
+			}
+		}
+
+		chunks = append(chunks, trans2SendChunk{
+			paramDisplacement: pOff,
+			paramLen:          pLen,
+			dataDisplacement:  dOff,
+			dataLen:           dLen,
+		})
+		pOff += pLen
+		dOff += dLen
+
+		if pOff >= totalParams && dOff >= totalData {
+			break
+		}
+		// Guard against a pathologically small buffer that cannot make progress.
+		if pLen == 0 && dLen == 0 {
+			break
+		}
+	}
+	return chunks
+}
+
+// buildTrans2Primary builds the primary SMB_COM_TRANSACTION2 request carrying the
+// given chunk of the parameter/data payload. TotalParameterCount/TotalDataCount
+// advertise the full transaction size; ParameterCount/DataCount cover this message.
+func (c *Client) buildTrans2Primary(subcommand uint16, maxData int, fullParams, fullData []byte, chunk trans2SendChunk) *message.Message {
+	msg := c.newFileIOMessage(codes.SMB_COM_TRANSACTION2)
+
+	cmd := commands.NewTransaction2Request()
+	cmd.Setup = []types.USHORT{types.USHORT(subcommand)}
+	cmd.MaxParameterCount = types.USHORT(1024)
+	cmd.MaxSetupCount = types.UCHAR(0)
+	cmd.Flags = types.USHORT(0)
+	cmd.Timeout = types.ULONG(0)
+	cmd.MaxDataCount = types.USHORT(maxData)
+
+	// The request carries exactly one setup word, so WordCount = 14 + 1 = 15.
+	const wordCount = 14 + 1
+	preParams := header.SMB_HEADER_SIZE + 1 /*WordCount*/ + 2*wordCount + 2 /*ByteCount*/ + 1 /*Name*/
+	pad1 := (4 - (preParams % 4)) % 4
+	parameterOffset := preParams + pad1
+
+	cmd.TotalParameterCount = types.USHORT(len(fullParams))
+	cmd.TotalDataCount = types.USHORT(len(fullData))
+	cmd.ParameterCount = types.USHORT(chunk.paramLen)
+	cmd.ParameterOffset = types.USHORT(parameterOffset)
+	cmd.Pad1 = make([]types.UCHAR, pad1)
+	cmd.Trans2_Parameters = []types.UCHAR(fullParams[chunk.paramDisplacement : chunk.paramDisplacement+chunk.paramLen])
+
+	if chunk.dataLen > 0 {
+		afterParams := parameterOffset + chunk.paramLen
+		pad2 := (4 - (afterParams % 4)) % 4
+		cmd.DataCount = types.USHORT(chunk.dataLen)
+		cmd.DataOffset = types.USHORT(afterParams + pad2)
+		cmd.Pad2 = make([]types.UCHAR, pad2)
+		cmd.Trans2_Data = []types.UCHAR(fullData[chunk.dataDisplacement : chunk.dataDisplacement+chunk.dataLen])
+	}
+
+	msg.AddCommand(cmd)
+	return msg
+}
+
+// buildTrans2Secondary builds an SMB_COM_TRANSACTION2_SECONDARY continuation
+// request carrying the given chunk of the parameter/data payload at its
+// displacement within the full transaction.
+func (c *Client) buildTrans2Secondary(fullParams, fullData []byte, chunk trans2SendChunk) *message.Message {
+	msg := c.newFileIOMessage(codes.SMB_COM_TRANSACTION2_SECONDARY)
+
+	cmd := commands.NewTransaction2SecondaryRequest()
+	cmd.TotalParameterCount = types.USHORT(len(fullParams))
+	cmd.TotalDataCount = types.USHORT(len(fullData))
+	cmd.FID = types.USHORT(0xFFFF) // unused for these transactions
+
+	// Secondary requests have no Setup or Name field: WordCount = 9.
+	const wordCount = 9
+	preParams := header.SMB_HEADER_SIZE + 1 /*WordCount*/ + 2*wordCount + 2 /*ByteCount*/
+	pad1 := (4 - (preParams % 4)) % 4
+	parameterOffset := preParams + pad1
+
+	cmd.Pad1 = make([]types.UCHAR, pad1)
+	if chunk.paramLen > 0 {
+		cmd.ParameterCount = types.USHORT(chunk.paramLen)
+		cmd.ParameterOffset = types.USHORT(parameterOffset)
+		cmd.ParameterDisplacement = types.USHORT(chunk.paramDisplacement)
+		cmd.Trans2_Parameters = []types.UCHAR(fullParams[chunk.paramDisplacement : chunk.paramDisplacement+chunk.paramLen])
+	}
+
+	if chunk.dataLen > 0 {
+		afterParams := parameterOffset + chunk.paramLen
+		pad2 := (4 - (afterParams % 4)) % 4
+		cmd.DataCount = types.USHORT(chunk.dataLen)
+		cmd.DataOffset = types.USHORT(afterParams + pad2)
+		cmd.DataDisplacement = types.USHORT(chunk.dataDisplacement)
+		cmd.Pad2 = make([]types.UCHAR, pad2)
+		cmd.Trans2_Data = []types.UCHAR(fullData[chunk.dataDisplacement : chunk.dataDisplacement+chunk.dataLen])
+	}
+
+	msg.AddCommand(cmd)
+	return msg
 }
 
 // trans2Fragment holds the decoded contents of a single SMB_COM_TRANSACTION2
