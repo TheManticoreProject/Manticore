@@ -28,7 +28,7 @@ const fileAttributeDirectory = 0x00000010
 // ShortName(24).
 const bothDirInfoFixedSize = 94
 
-// FileEntry is a high-level directory entry returned by FindFiles.
+// FileEntry is a high-level directory entry returned by ListDirectory and ListEntries.
 type FileEntry struct {
 	LongName    string
 	ShortName   string
@@ -41,13 +41,31 @@ type FileEntry struct {
 	IsDirectory bool
 }
 
-// FindFiles enumerates entries matching pattern in the current tree, using
+// ListDirectory lists all entries (files and directories) in the given directory
+// on the current tree. path is a directory path using backslash separators
+// relative to the share root (e.g. "\", "\subdir", "\subdir\nested").
+// An empty path defaults to the share root.
+//
+// Wire: TRANS2_FIND_FIRST2 / FIND_NEXT2 with "\path\*" pattern.
+func (c *Client) ListDirectory(path string) ([]FileEntry, error) {
+	if path == "" {
+		path = "\\"
+	}
+	if path[len(path)-1] == '\\' {
+		path += "*"
+	} else {
+		path += "\\*"
+	}
+	return c.ListEntries(path)
+}
+
+// ListEntries enumerates entries matching pattern in the current tree, using
 // TRANS2_FIND_FIRST2 followed by as many TRANS2_FIND_NEXT2 calls as needed, and
 // always closing the search with FindClose2.
 //
 // pattern uses SMB wildcards and backslash separators relative to the share root
-// (for example "\*" lists the root). An empty pattern defaults to "\*".
-func (c *Client) FindFiles(pattern string) ([]FileEntry, error) {
+// (e.g. "\*.txt", "\docs\report-*.pdf"). An empty pattern defaults to "\*".
+func (c *Client) ListEntries(pattern string) ([]FileEntry, error) {
 	if c.Session == nil {
 		return nil, fmt.Errorf("no session established")
 	}
