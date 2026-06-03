@@ -136,47 +136,47 @@ func (c *WriteMpxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter TotalByteCount
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.TotalByteCount))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.TotalByteCount))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Reserved
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Reserved))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter ByteOffsetToBeginWrite
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ByteOffsetToBeginWrite))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ByteOffsetToBeginWrite))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Timeout
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Timeout))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Timeout))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter WriteMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.WriteMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.WriteMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter RequestMask
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.RequestMask))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.RequestMask))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataLength
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataLength))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataLength))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter DataOffset
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.DataOffset))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -233,63 +233,63 @@ func (c *WriteMpxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter TotalByteCount
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalByteCount")
 	}
-	c.TotalByteCount = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.TotalByteCount = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Reserved
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
-	c.Reserved = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Reserved = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter ByteOffsetToBeginWrite
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ByteOffsetToBeginWrite")
 	}
-	c.ByteOffsetToBeginWrite = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ByteOffsetToBeginWrite = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Timeout
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Timeout")
 	}
-	c.Timeout = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Timeout = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter WriteMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for WriteMode")
 	}
-	c.WriteMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.WriteMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter RequestMask
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for RequestMask")
 	}
-	c.RequestMask = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.RequestMask = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataLength
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataLength")
 	}
-	c.DataLength = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.DataLength = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.DataOffset = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
