@@ -250,7 +250,14 @@ func (s *SMB_STRING) Unmarshal(buffer []byte) (int, error) {
 
 	case SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK:
 		// This field MUST be 0x05, which indicates that a variable block follows.
+		if len(buffer) < 3 {
+			return 0, fmt.Errorf("buffer too short for format 0x%02x", s.BufferFormat)
+		}
+
 		s.Length = USHORT(binary.LittleEndian.Uint16(buffer[1:3]))
+		if len(buffer) < int(s.Length)+3 {
+			return 0, fmt.Errorf("buffer too short for specified length")
+		}
 
 		// Data buffer
 		s.Buffer = make([]UCHAR, s.Length)
