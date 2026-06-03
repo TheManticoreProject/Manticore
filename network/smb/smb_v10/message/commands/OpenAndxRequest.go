@@ -162,10 +162,10 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter CreationTime (4-byte UTIME)
-	bufCreationTime := make([]byte, 4)
-	binary.BigEndian.PutUint32(bufCreationTime, uint32(c.CreationTime))
-	rawParametersContent = append(rawParametersContent, bufCreationTime...)
+	// Marshalling parameter CreationTime (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CreationTime))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter OpenMode
 	buf2 = make([]byte, 2)
@@ -173,7 +173,7 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter AllocationSize
-	buf4 := make([]byte, 4)
+	buf4 = make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf4, uint32(c.AllocationSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
@@ -270,11 +270,11 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter CreationTime (4-byte UTIME)
+	// Unmarshalling parameter CreationTime (4-byte UTIME, little-endian)
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
 	}
-	c.CreationTime = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CreationTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter OpenMode
