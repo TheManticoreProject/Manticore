@@ -42,6 +42,13 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("transport is not connected")
 	}
 
+	// The NTLM challenge/response path and the second authentication phase both
+	// build an authentication context from s.Credentials. Reject nil credentials
+	// up front with a clear error instead of dereferencing a nil pointer later.
+	if s.Credentials == nil {
+		return fmt.Errorf("session setup requires credentials but none were provided")
+	}
+
 	// Prepare and send a NTLMSSP NEGOTIATE message =============================================================================================
 	requestStep1Msg := message.NewMessage()
 	sessionSetupCmd := commands.NewSessionSetupAndxRequest()
