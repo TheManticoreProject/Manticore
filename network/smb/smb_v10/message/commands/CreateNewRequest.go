@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
@@ -21,8 +22,8 @@ type CreateNewRequest struct {
 	// A 16-bit field of 1-bit flags that represent the file attributes to assign to the file if it is created successfully.
 	FileAttributes types.SMB_FILE_ATTRIBUTES
 
-	// The time that the file was created on the client, represented as the number of seconds since Jan 1, 1970, 00:00:00.0.
-	CreationTime types.FILETIME
+	// The time that the file was created on the client, represented as the number of seconds since Jan 1, 1970, 00:00:00.0 (a 4-byte UTIME).
+	CreationTime types.ULONG
 
 	// Data
 
@@ -38,7 +39,7 @@ func NewCreateNewRequest() *CreateNewRequest {
 	c := &CreateNewRequest{
 		// Parameters
 		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-		CreationTime:   types.FILETIME{},
+		CreationTime:   types.ULONG(0),
 
 		// Data
 		FileName: types.SMB_STRING{},
@@ -101,12 +102,10 @@ func (c *CreateNewRequest) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter CreationTime
-	bytesStream, err = c.CreationTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter CreationTime (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CreationTime))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -165,15 +164,12 @@ func (c *CreateNewRequest) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter CreationTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter CreationTime (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
 	}
-	bytesRead, err = c.CreationTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.CreationTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Then unmarshal the data
 	offset = 0
