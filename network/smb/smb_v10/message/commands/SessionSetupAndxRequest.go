@@ -265,51 +265,31 @@ func (c *SessionSetupAndxRequest) Marshal() ([]byte, error) {
 		// Marshalling data Pad
 		rawDataContent = append(rawDataContent, c.Pad...)
 
-		// Marshalling data AccountName
-		c.AccountName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-		bytesStream, err := c.AccountName.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		rawDataContent = append(rawDataContent, bytesStream...)
+		// Marshalling data AccountName (raw null-terminated string, no buffer-format prefix)
+		rawDataContent = append(rawDataContent, c.AccountName.Buffer...)
+		rawDataContent = append(rawDataContent, 0x00)
 
-		// Marshalling data PrimaryDomain
-		c.PrimaryDomain.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
-		bytesStream, err = c.PrimaryDomain.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		rawDataContent = append(rawDataContent, bytesStream...)
+		// Marshalling data PrimaryDomain (raw null-terminated string, no buffer-format prefix)
+		rawDataContent = append(rawDataContent, c.PrimaryDomain.Buffer...)
+		rawDataContent = append(rawDataContent, 0x00)
 
-		// Marshalling data NativeOS
-		nativeOSSmbString := types.SMB_STRING{}
+		// Marshalling data NativeOS (raw null-terminated string, no buffer-format prefix)
 		if c.Capabilities.HasCapability(capabilities.CAP_UNICODE) {
-			nativeOSSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT)
-			nativeOSSmbString.SetString(string(utf16.EncodeUTF16LE(c.NativeOS)))
+			rawDataContent = append(rawDataContent, utf16.EncodeUTF16LE(c.NativeOS)...)
+			rawDataContent = append(rawDataContent, 0x00, 0x00)
 		} else {
-			nativeOSSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
-			nativeOSSmbString.SetString(c.NativeOS)
+			rawDataContent = append(rawDataContent, c.NativeOS...)
+			rawDataContent = append(rawDataContent, 0x00)
 		}
-		bytesStream, err = nativeOSSmbString.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		rawDataContent = append(rawDataContent, bytesStream...)
 
-		// Marshalling data NativeLanMan
-		nativeLanManSmbString := types.SMB_STRING{}
+		// Marshalling data NativeLanMan (raw null-terminated string, no buffer-format prefix)
 		if c.Capabilities.HasCapability(capabilities.CAP_UNICODE) {
-			nativeLanManSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING_16BIT)
-			nativeLanManSmbString.SetString(string(utf16.EncodeUTF16LE(c.NativeLanMan)))
+			rawDataContent = append(rawDataContent, utf16.EncodeUTF16LE(c.NativeLanMan)...)
+			rawDataContent = append(rawDataContent, 0x00, 0x00)
 		} else {
-			nativeLanManSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
-			nativeLanManSmbString.SetString(c.NativeLanMan)
+			rawDataContent = append(rawDataContent, c.NativeLanMan...)
+			rawDataContent = append(rawDataContent, 0x00)
 		}
-		bytesStream, err = nativeLanManSmbString.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		rawDataContent = append(rawDataContent, bytesStream...)
 	}
 
 	// Then marshal the parameters
@@ -545,39 +525,27 @@ func (c *SessionSetupAndxRequest) Unmarshal(rawData []byte) (int, error) {
 		c.Pad = rawDataContent[offset : offset+padLen]
 		offset += padLen
 
-		// Unmarshalling data AccountName
-		bytesRead, err = c.AccountName.Unmarshal(rawDataContent[offset:])
-		if err != nil {
-			return offset, err
-		}
-		offset += bytesRead
+		// Unmarshalling data AccountName (raw null-terminated string, no buffer-format prefix)
+		accountNameData, accountNameBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		c.AccountName.Buffer = accountNameData
+		c.AccountName.Length = types.USHORT(len(accountNameData))
+		offset += accountNameBytesRead
 
-		// Unmarshalling data PrimaryDomain
-		bytesRead, err = c.PrimaryDomain.Unmarshal(rawDataContent[offset:])
-		if err != nil {
-			return offset, err
-		}
-		offset += bytesRead
+		// Unmarshalling data PrimaryDomain (raw null-terminated string, no buffer-format prefix)
+		primaryDomainData, primaryDomainBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		c.PrimaryDomain.Buffer = primaryDomainData
+		c.PrimaryDomain.Length = types.USHORT(len(primaryDomainData))
+		offset += primaryDomainBytesRead
 
-		// Unmarshalling NativeOS
-		nativeOSSmbString := types.SMB_STRING{}
-		nativeOSSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
-		nativeOSSmbString.SetString(c.NativeOS)
-		bytesRead, err = nativeOSSmbString.Unmarshal(rawDataContent[offset:])
-		if err != nil {
-			return offset, err
-		}
-		offset += bytesRead
+		// Unmarshalling NativeOS (raw null-terminated string, no buffer-format prefix)
+		nativeOSdata, nativeOSBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		offset += nativeOSBytesRead
+		c.NativeOS = string(nativeOSdata)
 
-		// Unmarshalling NativeLanMan
-		nativeLanManSmbString := types.SMB_STRING{}
-		nativeLanManSmbString.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
-		nativeLanManSmbString.SetString(c.NativeLanMan)
-		bytesRead, err = nativeLanManSmbString.Unmarshal(rawDataContent[offset:])
-		if err != nil {
-			return offset, err
-		}
-		offset += bytesRead
+		// Unmarshalling NativeLanMan (raw null-terminated string, no buffer-format prefix)
+		nativeLanMandata, nativeLanManBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		offset += nativeLanManBytesRead
+		c.NativeLanMan = string(nativeLanMandata)
 	}
 
 	return offset, nil
