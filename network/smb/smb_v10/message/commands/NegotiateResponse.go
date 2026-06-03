@@ -417,17 +417,27 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 		}
 		c.Challenge = rawDataContent[offset : offset+int(c.ChallengeLength)]
 		offset += int(c.ChallengeLength)
-		rawDataContent = rawDataContent[offset:]
 
-		// Unmarshalling data DomainName
-		domainName, offset := utils.GetNullTerminatedUnicodeString(rawDataContent)
+		// Unmarshalling data DomainName (null-terminated UTF-16LE) from the remaining bytes.
+		// GetNullTerminatedUnicodeString returns len(string)+2, which can exceed the
+		// remaining length when there is no terminator (e.g. empty data), so clamp before
+		// advancing to avoid a slice-bounds panic.
+		rest := rawDataContent[offset:]
+		domainName, n := utils.GetNullTerminatedUnicodeString(rest)
 		c.DomainName = []types.UCHAR(domainName)
-		rawDataContent = rawDataContent[offset:]
+		if n > len(rest) {
+			n = len(rest)
+		}
+		offset += n
+		rest = rest[n:]
 
-		// Unmarshalling data ServerName
-		serverName, offset := utils.GetNullTerminatedUnicodeString(rawDataContent)
+		// Unmarshalling data ServerName (null-terminated UTF-16LE)
+		serverName, m := utils.GetNullTerminatedUnicodeString(rest)
 		c.ServerName = []types.UCHAR(serverName)
-		// rawDataContent = rawDataContent[offset:]
+		if m > len(rest) {
+			m = len(rest)
+		}
+		offset += m
 	}
 
 	return offset, nil
