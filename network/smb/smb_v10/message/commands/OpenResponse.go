@@ -27,7 +27,8 @@ type OpenResponse struct {
 	FileAttrs types.SMB_FILE_ATTRIBUTES
 
 	// LastModified (4 bytes): The time of the last modification to the opened file.
-	LastModified types.FILETIME
+	// Per [MS-CIFS] this is a 4-byte UTIME, not an 8-byte FILETIME.
+	LastModified types.ULONG
 
 	// FileSize (4 bytes): The current size of the opened file, in bytes.
 	FileSize types.ULONG
@@ -46,7 +47,7 @@ func NewOpenResponse() *OpenResponse {
 		// Parameters
 		FID:          types.USHORT(0),
 		FileAttrs:    types.SMB_FILE_ATTRIBUTES{},
-		LastModified: types.FILETIME{},
+		LastModified: types.ULONG(0),
 		FileSize:     types.ULONG(0),
 		AccessMode:   types.USHORT(0),
 	}
@@ -95,7 +96,7 @@ func (c *OpenResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter FileAttrs
@@ -105,21 +106,19 @@ func (c *OpenResponse) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, byteStream...)
 
-	// Marshalling parameter LastModified
-	bytesStream, err := c.LastModified.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter LastModified (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LastModified))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter FileSize
-	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileSize))
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter AccessMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AccessMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.AccessMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -176,7 +175,7 @@ func (c *OpenResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter FileAttrs
@@ -189,28 +188,25 @@ func (c *OpenResponse) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter LastModified
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastModified (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastModified")
 	}
-	bytesRead, err = c.LastModified.Unmarshal(rawParametersContent[offset : offset+8])
-	if err != nil {
-		return 0, err
-	}
-	offset += bytesRead
+	c.LastModified = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter FileSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileSize")
 	}
-	c.FileSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter AccessMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
 	}
-	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.AccessMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
