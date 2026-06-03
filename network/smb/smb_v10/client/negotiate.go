@@ -32,64 +32,64 @@ func (c *Client) Negotiate() error {
 		return fmt.Errorf("transport is not connected")
 	}
 
-	request_msg := message.NewMessage()
+	requestMsg := message.NewMessage()
 
-	request_msg.Header.SetFlags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
-	request_msg.Header.SetFlags2(flags2.FLAGS2_UNICODE | flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_EXTENDED_SECURITY | flags2.FLAGS2_LONG_NAMES_ALLOWED)
+	requestMsg.Header.SetFlags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
+	requestMsg.Header.SetFlags2(flags2.FLAGS2_UNICODE | flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_EXTENDED_SECURITY | flags2.FLAGS2_LONG_NAMES_ALLOWED)
 
-	negotiate_cmd := commands.NewNegotiateRequest()
-	negotiate_cmd.Dialects.AddDialect(dialects.DIALECT_NT_LM_0_12)
+	negotiateCmd := commands.NewNegotiateRequest()
+	negotiateCmd.Dialects.AddDialect(dialects.DIALECT_NT_LM_0_12)
 
-	request_msg.AddCommand(negotiate_cmd)
+	requestMsg.AddCommand(negotiateCmd)
 
-	marshalled_message, err := request_msg.Marshal()
+	marshalledMessage, err := requestMsg.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal negotiate message: %v", err)
 	}
 
 	// Send the message
-	_, err = c.Transport.Send(marshalled_message)
+	_, err = c.Transport.Send(marshalledMessage)
 	if err != nil {
 		return fmt.Errorf("failed to send negotiate message: %v", err)
 	}
 
 	// Receive the response
-	raw_response_message, err := c.Transport.Receive()
+	rawResponseMessage, err := c.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive response message: %v", err)
 	}
 
-	response_msg := message.NewMessage()
-	response_msg.AddCommand(negotiate_cmd)
-	err = response_msg.Unmarshal(raw_response_message)
+	responseMsg := message.NewMessage()
+	responseMsg.AddCommand(negotiateCmd)
+	err = responseMsg.Unmarshal(rawResponseMessage)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal response message: %v", err)
 	}
 
-	if response_msg.Header.Command != codes.SMB_COM_NEGOTIATE {
-		return fmt.Errorf("unexpected response command: %d", response_msg.Header.Command)
+	if responseMsg.Header.Command != codes.SMB_COM_NEGOTIATE {
+		return fmt.Errorf("unexpected response command: %d", responseMsg.Header.Command)
 	}
 
-	negotiate_response := response_msg.Command.(*commands.NegotiateResponse)
+	negotiateResponse := responseMsg.Command.(*commands.NegotiateResponse)
 
-	selected_dialect, err := negotiate_response.GetSelectedDialect(negotiate_cmd.Dialects)
+	selectedDialect, err := negotiateResponse.GetSelectedDialect(negotiateCmd.Dialects)
 	if err != nil {
 		return fmt.Errorf("failed to get selected dialect: %v", err)
 	}
 
-	c.Connection.SelectedDialect = selected_dialect
+	c.Connection.SelectedDialect = selectedDialect
 
-	c.Connection.Server.Capabilities = negotiate_response.Capabilities
-	c.Connection.Server.SessionKey = negotiate_response.SessionKey
-	c.Connection.Server.SystemTime = negotiate_response.SystemTime
-	c.Connection.Server.TimeZone = negotiate_response.ServerTimeZone
-	c.Connection.Server.MaxBufferSize = negotiate_response.MaxBufferSize
-	c.Connection.MaxMpxCount = negotiate_response.MaxMpxCount
+	c.Connection.Server.Capabilities = negotiateResponse.Capabilities
+	c.Connection.Server.SessionKey = negotiateResponse.SessionKey
+	c.Connection.Server.SystemTime = negotiateResponse.SystemTime
+	c.Connection.Server.TimeZone = negotiateResponse.ServerTimeZone
+	c.Connection.Server.MaxBufferSize = negotiateResponse.MaxBufferSize
+	c.Connection.MaxMpxCount = negotiateResponse.MaxMpxCount
 
-	c.Connection.Server.DomainName = string(negotiate_response.DomainName)
-	c.Connection.Server.Name = string(negotiate_response.ServerName)
-	c.Connection.Server.SecurityMode = negotiate_response.SecurityMode
-	c.Connection.Server.ServerGUID = negotiate_response.ServerGUID
+	c.Connection.Server.DomainName = string(negotiateResponse.DomainName)
+	c.Connection.Server.Name = string(negotiateResponse.ServerName)
+	c.Connection.Server.SecurityMode = negotiateResponse.SecurityMode
+	c.Connection.Server.ServerGUID = negotiateResponse.ServerGUID
 
 	return nil
 }
