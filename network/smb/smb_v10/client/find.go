@@ -175,49 +175,154 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, response.Header.Status)
 	}
 
-	return parseTrans2Response(raw)
+	// Reassemble the response, which the server may split across several SMB
+	// messages for a large parameter/data payload. The first message has already
+	// been received; further fragments are read directly from the transport.
+	return reassembleTrans2(raw, func() ([]byte, error) {
+		next, err := c.Transport.Receive()
+		if err != nil {
+			return nil, err
+		}
+		fileIODump("Transaction2 response (continuation)", next)
+		return next, nil
+	})
 }
 
-// parseTrans2Response extracts the transaction parameter and data buffers from a
-// raw SMB_COM_TRANSACTION2 response, using the response ParameterOffset/DataOffset
-// (which are measured from the start of the SMB header) to locate them.
-func parseTrans2Response(raw []byte) ([]byte, []byte, error) {
+// trans2Fragment holds the decoded contents of a single SMB_COM_TRANSACTION2
+// response message: the total transaction sizes, the parameter/data runs carried
+// by this message, and the displacement of each run within the full transaction.
+type trans2Fragment struct {
+	totalParameterCount   int
+	totalDataCount        int
+	parameters            []byte
+	parameterDisplacement int
+	data                  []byte
+	dataDisplacement      int
+}
+
+// parseTrans2Fragment decodes one SMB_COM_TRANSACTION2 response message. The
+// ParameterOffset/DataOffset fields locate the payload runs and are measured from
+// the start of the SMB header. A short/interim response (WordCount < 10) decodes
+// to an empty fragment.
+func parseTrans2Fragment(raw []byte) (*trans2Fragment, error) {
 	hdr := header.SMB_HEADER_SIZE
 	if len(raw) < hdr+1 {
-		return nil, nil, fmt.Errorf("Transaction2 response too short")
+		return nil, fmt.Errorf("Transaction2 response too short")
 	}
 
 	wordCount := int(raw[hdr])
 	wordsStart := hdr + 1
 	if len(raw) < wordsStart+2*wordCount {
-		return nil, nil, fmt.Errorf("Transaction2 response parameter words truncated")
+		return nil, fmt.Errorf("Transaction2 response parameter words truncated")
 	}
 	// The standard response has WordCount 0x0A (10 words) before any setup words.
 	if wordCount < 10 {
-		return []byte{}, []byte{}, nil
+		return &trans2Fragment{}, nil
 	}
 
 	w := raw[wordsStart:]
+	frag := &trans2Fragment{
+		totalParameterCount:   int(binary.LittleEndian.Uint16(w[0:2])),
+		totalDataCount:        int(binary.LittleEndian.Uint16(w[2:4])),
+		parameterDisplacement: int(binary.LittleEndian.Uint16(w[10:12])),
+		dataDisplacement:      int(binary.LittleEndian.Uint16(w[16:18])),
+	}
 	paramCount := int(binary.LittleEndian.Uint16(w[6:8]))
 	paramOffset := int(binary.LittleEndian.Uint16(w[8:10]))
 	dataCount := int(binary.LittleEndian.Uint16(w[12:14]))
 	dataOffset := int(binary.LittleEndian.Uint16(w[14:16]))
 
-	var params, data []byte
 	if paramCount > 0 {
 		if paramOffset < 0 || paramOffset+paramCount > len(raw) {
-			return nil, nil, fmt.Errorf("Transaction2 parameter window [%d:%d] out of bounds (%d bytes)", paramOffset, paramOffset+paramCount, len(raw))
+			return nil, fmt.Errorf("Transaction2 parameter window [%d:%d] out of bounds (%d bytes)", paramOffset, paramOffset+paramCount, len(raw))
 		}
-		params = raw[paramOffset : paramOffset+paramCount]
+		frag.parameters = raw[paramOffset : paramOffset+paramCount]
 	}
 	if dataCount > 0 {
 		if dataOffset < 0 || dataOffset+dataCount > len(raw) {
-			return nil, nil, fmt.Errorf("Transaction2 data window [%d:%d] out of bounds (%d bytes)", dataOffset, dataOffset+dataCount, len(raw))
+			return nil, fmt.Errorf("Transaction2 data window [%d:%d] out of bounds (%d bytes)", dataOffset, dataOffset+dataCount, len(raw))
 		}
-		data = raw[dataOffset : dataOffset+dataCount]
+		frag.data = raw[dataOffset : dataOffset+dataCount]
+	}
+
+	return frag, nil
+}
+
+// parseTrans2Response extracts the parameter and data buffers from a single,
+// unfragmented SMB_COM_TRANSACTION2 response.
+func parseTrans2Response(raw []byte) ([]byte, []byte, error) {
+	frag, err := parseTrans2Fragment(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return frag.parameters, frag.data, nil
+}
+
+// reassembleTrans2 reassembles an SMB_COM_TRANSACTION2 response that the server
+// may split across multiple SMB messages. first is the already-received first
+// response message; recvNext returns each subsequent raw message. Fragments are
+// placed into the full parameter/data buffers by their displacements, and reading
+// stops once TotalParameterCount/TotalDataCount bytes have been collected.
+func reassembleTrans2(first []byte, recvNext func() ([]byte, error)) ([]byte, []byte, error) {
+	frag, err := parseTrans2Fragment(first)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	totalParams := frag.totalParameterCount
+	totalData := frag.totalDataCount
+	params := make([]byte, totalParams)
+	data := make([]byte, totalData)
+
+	gotParams, err := placeTrans2Fragment(params, frag.parameters, frag.parameterDisplacement, "parameter")
+	if err != nil {
+		return nil, nil, err
+	}
+	gotData, err := placeTrans2Fragment(data, frag.data, frag.dataDisplacement, "data")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for gotParams < totalParams || gotData < totalData {
+		next, err := recvNext()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to receive Transaction2 continuation: %v", err)
+		}
+		nf, err := parseTrans2Fragment(next)
+		if err != nil {
+			return nil, nil, err
+		}
+		// A continuation that advances neither run means the server will not
+		// complete the transaction; stop rather than loop forever.
+		if len(nf.parameters) == 0 && len(nf.data) == 0 {
+			break
+		}
+		np, err := placeTrans2Fragment(params, nf.parameters, nf.parameterDisplacement, "parameter")
+		if err != nil {
+			return nil, nil, err
+		}
+		nd, err := placeTrans2Fragment(data, nf.data, nf.dataDisplacement, "data")
+		if err != nil {
+			return nil, nil, err
+		}
+		gotParams += np
+		gotData += nd
 	}
 
 	return params, data, nil
+}
+
+// placeTrans2Fragment copies a fragment run into dst at displacement, bounds-checking
+// the destination window, and returns the number of bytes copied.
+func placeTrans2Fragment(dst, run []byte, displacement int, label string) (int, error) {
+	if len(run) == 0 {
+		return 0, nil
+	}
+	if displacement < 0 || displacement+len(run) > len(dst) {
+		return 0, fmt.Errorf("Transaction2 %s fragment [%d:%d] exceeds total length %d", label, displacement, displacement+len(run), len(dst))
+	}
+	copy(dst[displacement:], run)
+	return len(run), nil
 }
 
 // parseBothDirInfo decodes a buffer of consecutive SMB_FIND_FILE_BOTH_DIRECTORY_INFO
