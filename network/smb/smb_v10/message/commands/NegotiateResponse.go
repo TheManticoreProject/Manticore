@@ -205,17 +205,21 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
-	if c.SecurityMode.SupportsChallengeResponseAuth() {
+	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
+		// Extended Security Response: SMB_Data.Bytes = ServerGUID + SecurityBlob
+		// When CAP_EXTENDED_SECURITY is set, ChallengeLength MUST be zero.
+		c.ChallengeLength = types.UCHAR(0)
+		// Marshalling data ServerGUID
+		rawDataContent = append(rawDataContent, c.ServerGUID.ToBytes()...)
+		// Marshalling data SecurityBlob
+		rawDataContent = append(rawDataContent, c.SecurityBlob...)
+	} else {
+		// Non-Extended Security Response: SMB_Data.Bytes = Challenge + DomainName
 		// Marshalling data Challenge
 		c.ChallengeLength = types.UCHAR(len(c.Challenge))
 		rawDataContent = append(rawDataContent, c.Challenge...)
 		// Marshalling data DomainName
 		rawDataContent = append(rawDataContent, c.DomainName...)
-	} else {
-		// Marshalling data ServerGUID
-		rawDataContent = append(rawDataContent, c.ServerGUID.ToBytes()...)
-		// Marshalling data SecurityBlob
-		rawDataContent = append(rawDataContent, c.SecurityBlob...)
 	}
 
 	// Then marshal the parameters
@@ -392,7 +396,8 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 
 	// Then unmarshal the data
 	offset = 0
-	if c.SecurityMode.SupportsChallengeResponseAuth() {
+	if c.Capabilities.HasCapability(capabilities.CAP_EXTENDED_SECURITY) {
+		// Extended Security Response: SMB_Data.Bytes = ServerGUID + SecurityBlob
 		// Unmarshalling data ServerGUID
 		if len(rawDataContent) < offset+16 {
 			return offset, fmt.Errorf("rawDataContent too short for ServerGUID")
