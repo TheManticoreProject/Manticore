@@ -202,42 +202,42 @@ func (c *NtTransactResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter TotalParameterCount
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter TotalDataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.TotalDataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.TotalDataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter ParameterDisplacement
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.ParameterDisplacement))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.ParameterDisplacement))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataCount
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataCount))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataCount))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataOffset
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataOffset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter DataDisplacement
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.DataDisplacement))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.DataDisplacement))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter SetupCount
@@ -246,7 +246,7 @@ func (c *NtTransactResponse) Marshal() ([]byte, error) {
 	// Marshalling parameter Setup
 	for _, setupWord := range c.Setup {
 		buf2 := make([]byte, 2)
-		binary.BigEndian.PutUint16(buf2, uint16(setupWord))
+		binary.LittleEndian.PutUint16(buf2, uint16(setupWord))
 		rawParametersContent = append(rawParametersContent, buf2...)
 	}
 
@@ -325,56 +325,56 @@ func (c *NtTransactResponse) Unmarshal(rawData []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalParameterCount")
 	}
-	c.TotalParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter TotalDataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for TotalDataCount")
 	}
-	c.TotalDataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.TotalDataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterCount")
 	}
-	c.ParameterCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterOffset")
 	}
-	c.ParameterOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter ParameterDisplacement
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for ParameterDisplacement")
 	}
-	c.ParameterDisplacement = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.ParameterDisplacement = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataCount
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataCount")
 	}
-	c.DataCount = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataCount = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataOffset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
-	c.DataOffset = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataOffset = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter DataDisplacement
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for DataDisplacement")
 	}
-	c.DataDisplacement = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.DataDisplacement = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter SetupCount
@@ -390,7 +390,7 @@ func (c *NtTransactResponse) Unmarshal(rawData []byte) (int, error) {
 	}
 	c.Setup = make([]types.USHORT, c.SetupCount)
 	for i := 0; i < int(c.SetupCount); i++ {
-		c.Setup[i] = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+		c.Setup[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 		offset += 2
 	}
 
