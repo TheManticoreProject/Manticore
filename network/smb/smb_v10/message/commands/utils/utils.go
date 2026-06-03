@@ -11,7 +11,7 @@ package utils
 // - The offset of the next byte after the null terminator
 func GetNullTerminatedUnicodeString(data []byte) (string, int) {
 	bytesString := []byte{}
-	for i := 0; i < len(data); i += 2 {
+	for i := 0; i+1 < len(data); i += 2 {
 		if data[i] == 0 && data[i+1] == 0 {
 			break
 		} else {

@@ -19,6 +19,10 @@ type TreeConnect struct {
 }
 
 func (c *Client) TreeConnect(shareName string) error {
+	if c.Session == nil {
+		return fmt.Errorf("no session established")
+	}
+
 	requestMsg := message.NewMessage()
 	requestMsg.Header.Command = codes.SMB_COM_TREE_CONNECT_ANDX
 	requestMsg.Header.Flags = 0x0000
