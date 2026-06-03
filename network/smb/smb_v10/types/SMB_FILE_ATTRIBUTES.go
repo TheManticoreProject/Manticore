@@ -31,7 +31,7 @@ func (s *SMB_FILE_ATTRIBUTES) SetAttributes(attributes uint16) {
 // - An error if the marshaling fails
 func (s *SMB_FILE_ATTRIBUTES) Marshal() ([]byte, error) {
 	buf := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf, s.Attributes)
+	binary.LittleEndian.PutUint16(buf, s.Attributes)
 	return buf, nil
 }
 
@@ -43,6 +43,6 @@ func (s *SMB_FILE_ATTRIBUTES) Marshal() ([]byte, error) {
 // Returns:
 // - The number of bytes unmarshalled
 func (s *SMB_FILE_ATTRIBUTES) Unmarshal(data []byte) (int, error) {
-	s.Attributes = binary.BigEndian.Uint16(data)
+	s.Attributes = binary.LittleEndian.Uint16(data)
 	return 2, nil
 }

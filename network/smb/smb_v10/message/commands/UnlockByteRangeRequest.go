@@ -90,17 +90,17 @@ func (c *UnlockByteRangeRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter CountOfBytesToUnlock
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.CountOfBytesToUnlock))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.CountOfBytesToUnlock))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter UnlockOffsetInBytes
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.UnlockOffsetInBytes))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.UnlockOffsetInBytes))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -157,21 +157,21 @@ func (c *UnlockByteRangeRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.SHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.SHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter CountOfBytesToUnlock
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesToUnlock")
 	}
-	c.CountOfBytesToUnlock = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CountOfBytesToUnlock = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter UnlockOffsetInBytes
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for UnlockOffsetInBytes")
 	}
-	c.UnlockOffsetInBytes = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.UnlockOffsetInBytes = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data

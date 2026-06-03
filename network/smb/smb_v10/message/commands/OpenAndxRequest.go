@@ -37,9 +37,9 @@ type OpenAndxRequest struct {
 	// MUST refer to a regular file.
 	FileAttrs types.SMB_FILE_ATTRIBUTES
 
-	// CreationTime (4 bytes): A 32-bit integer time value to be assigned to the file
-	// as the time of creation if the file is created.
-	CreationTime types.FILETIME
+	// CreationTime (4 bytes): A 32-bit integer time value (UTIME) to be assigned to the
+	// file as the time of creation if the file is created.
+	CreationTime types.ULONG
 
 	// OpenMode (2 bytes): A 16-bit field that controls the way a file SHOULD be
 	// treated when it is opened for use by certain extended SMB requests.
@@ -74,7 +74,7 @@ func NewOpenAndxRequest() *OpenAndxRequest {
 		AccessMode:     types.USHORT(0),
 		SearchAttrs:    types.SMB_FILE_ATTRIBUTES{},
 		FileAttrs:      types.SMB_FILE_ATTRIBUTES{},
-		CreationTime:   types.FILETIME{},
+		CreationTime:   types.ULONG(0),
 		OpenMode:       types.USHORT(0),
 		AllocationSize: types.ULONG(0),
 		Timeout:        types.ULONG(0),
@@ -140,12 +140,12 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Flags
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Flags))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Flags))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter AccessMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AccessMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.AccessMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter SearchAttrs
@@ -162,32 +162,30 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter CreationTime
-	bytesStream, err = c.CreationTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter CreationTime (4-byte UTIME)
+	bufCreationTime := make([]byte, 4)
+	binary.BigEndian.PutUint32(bufCreationTime, uint32(c.CreationTime))
+	rawParametersContent = append(rawParametersContent, bufCreationTime...)
 
 	// Marshalling parameter OpenMode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.OpenMode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.OpenMode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter AllocationSize
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.AllocationSize))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.AllocationSize))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Timeout
 	buf4 = make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Timeout))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Timeout))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameter Reserved
 	buf2 = make([]byte, 2)
 	for i := range c.Reserved {
-		binary.BigEndian.PutUint16(buf2, uint16(c.Reserved[i]))
+		binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved[i]))
 		rawParametersContent = append(rawParametersContent, buf2...)
 	}
 
@@ -248,14 +246,14 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Flags")
 	}
-	c.Flags = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Flags = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter AccessMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for AccessMode")
 	}
-	c.AccessMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.AccessMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter SearchAttrs
@@ -272,35 +270,32 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter CreationTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter CreationTime (4-byte UTIME)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for CreationTime")
 	}
-	bytesRead, err = c.CreationTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.CreationTime = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter OpenMode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for OpenMode")
 	}
-	c.OpenMode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.OpenMode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter AllocationSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for AllocationSize")
 	}
-	c.AllocationSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.AllocationSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Timeout
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Timeout")
 	}
-	c.Timeout = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Timeout = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter Reserved
@@ -308,7 +303,7 @@ func (c *OpenAndxRequest) Unmarshal(data []byte) (int, error) {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
 	for i := range c.Reserved {
-		c.Reserved[i] = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+		c.Reserved[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 		offset += 2
 	}
 

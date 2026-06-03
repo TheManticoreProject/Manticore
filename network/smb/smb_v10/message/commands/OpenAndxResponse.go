@@ -26,9 +26,9 @@ type OpenAndxResponse struct {
 	// the attribute bytes is set, the file attributes refer to a regular file.
 	FileAttrs types.SMB_FILE_ATTRIBUTES
 
-	// LastWriteTime (4 bytes): A 32-bit integer time value of the last modification to
-	// the file.
-	LastWriteTime types.FILETIME
+	// LastWriteTime (4 bytes): A 32-bit integer time value (UTIME) of the last
+	// modification to the file.
+	LastWriteTime types.ULONG
 
 	// FileDataSize (4 bytes): The number of bytes in the file. This field is advisory
 	// and MAY be used.
@@ -61,7 +61,7 @@ func NewOpenAndxResponse() *OpenAndxResponse {
 		// Parameters
 		FID:           types.USHORT(0),
 		FileAttrs:     types.SMB_FILE_ATTRIBUTES{},
-		LastWriteTime: types.FILETIME{},
+		LastWriteTime: types.ULONG(0),
 		FileDataSize:  types.ULONG(0),
 		AccessRights:  types.USHORT(0),
 		ResourceType:  types.USHORT(0),
@@ -119,7 +119,7 @@ func (c *OpenAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter FileAttrs
@@ -129,34 +129,44 @@ func (c *OpenAndxResponse) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter LastWriteTime
-	bytesStream, err = c.LastWriteTime.Marshal()
+	// Marshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LastWriteTime))
+	rawParametersContent = append(rawParametersContent, buf4...)
+
+	// Marshalling parameter FileDataSize
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.FileDataSize))
+	rawParametersContent = append(rawParametersContent, buf4...)
+
+	// Marshalling parameter AccessRights
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, uint16(c.AccessRights))
+	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter ResourceType
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, uint16(c.ResourceType))
+	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter NMPipeStatus
+	bytesStream, err = c.NMPipeStatus.Marshal()
 	if err != nil {
 		return nil, err
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter FileDataSize
-	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.FileDataSize))
-	rawParametersContent = append(rawParametersContent, buf4...)
-
-	// Marshalling parameter AccessRights
-	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.AccessRights))
-	rawParametersContent = append(rawParametersContent, buf2...)
-
-	// Marshalling parameter ResourceType
-	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.ResourceType))
-	rawParametersContent = append(rawParametersContent, buf2...)
-
-	// Marshalling parameter NMPipeStatus
-
 	// Marshalling parameter OpenResults
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.OpenResults))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.OpenResults))
 	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter Reserved (3 USHORTs, 6 bytes, little-endian)
+	for i := 0; i < 3; i++ {
+		buf2 = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf2, uint16(c.Reserved[i]))
+		rawParametersContent = append(rawParametersContent, buf2...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -215,7 +225,7 @@ func (c *OpenAndxResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter FileAttrs
@@ -228,45 +238,59 @@ func (c *OpenAndxResponse) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter LastWriteTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.LastWriteTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter FileDataSize
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for FileDataSize")
 	}
-	c.FileDataSize = types.ULONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.FileDataSize = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Unmarshalling parameter AccessRights
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for AccessRights")
 	}
-	c.AccessRights = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.AccessRights = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter ResourceType
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for ResourceType")
 	}
-	c.ResourceType = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.ResourceType = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter NMPipeStatus
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for NMPipeStatus")
+	}
+	bytesRead, err = c.NMPipeStatus.Unmarshal(rawParametersContent[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += bytesRead
 
 	// Unmarshalling parameter OpenResults
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for OpenResults")
 	}
-	c.OpenResults = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.OpenResults = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter Reserved (3 USHORTs, 6 bytes, little-endian)
+	for i := 0; i < 3; i++ {
+		if len(rawParametersContent) < offset+2 {
+			return offset, fmt.Errorf("rawParametersContent too short for Reserved[%d]", i)
+		}
+		c.Reserved[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0

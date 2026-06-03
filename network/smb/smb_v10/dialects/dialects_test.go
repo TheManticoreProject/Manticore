@@ -1,11 +1,45 @@
 package dialects_test
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/dialects"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
+
+// TestMarshalWireFormat verifies that Marshal emits one BufferFormat byte (0x02)
+// before each dialect string, as required by MS-CIFS section 2.2.4.52.1, rather
+// than a single leading byte for the whole list.
+func TestMarshalWireFormat(t *testing.T) {
+	d := dialects.NewDialects()
+	d.AddDialect("NT LM 0.12")
+	d.AddDialect("LANMAN2.1")
+
+	marshalled, err := d.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	expected := []byte{}
+	expected = append(expected, types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
+	expected = append(expected, []byte("NT LM 0.12")...)
+	expected = append(expected, 0x00)
+	expected = append(expected, types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING)
+	expected = append(expected, []byte("LANMAN2.1")...)
+	expected = append(expected, 0x00)
+
+	if !bytes.Equal(marshalled, expected) {
+		t.Errorf("Marshalled wire format mismatch.\nExpected: %v\nGot:      %v", expected, marshalled)
+	}
+
+	// There MUST be one BufferFormat byte per dialect.
+	count := bytes.Count(marshalled, []byte{types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_OEM_STRING})
+	if count != 2 {
+		t.Errorf("Expected 2 BufferFormat bytes (one per dialect), got %d", count)
+	}
+}
 
 func TestNewDialects(t *testing.T) {
 	d := dialects.NewDialects()

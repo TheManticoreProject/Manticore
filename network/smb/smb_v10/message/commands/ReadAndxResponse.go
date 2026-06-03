@@ -38,6 +38,11 @@ type ReadAndxResponse struct {
 
 	// DataOffset (2 bytes): The offset in bytes from the header of the read data.
 	DataOffset types.USHORT
+
+	// Reserved2 (10 bytes): Reserved. All entries MUST be 0x0000. The last 5 words are
+	// reserved in order to make the SMB_COM_READ_ANDX Response the same size as the
+	// SMB_COM_WRITE_ANDX Response.
+	Reserved2 [5]types.USHORT
 }
 
 // NewReadAndxResponse creates a new ReadAndxResponse structure
@@ -127,6 +132,13 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
+	// Marshalling parameter Reserved2
+	for _, reserved := range c.Reserved2 {
+		buf2 = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf2, uint16(reserved))
+		rawParametersContent = append(rawParametersContent, buf2...)
+	}
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -214,6 +226,15 @@ func (c *ReadAndxResponse) Unmarshal(data []byte) (int, error) {
 	}
 	c.DataOffset = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter Reserved2
+	for i := range c.Reserved2 {
+		if len(rawParametersContent) < offset+2 {
+			return offset, fmt.Errorf("rawParametersContent too short for Reserved2")
+		}
+		c.Reserved2[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0

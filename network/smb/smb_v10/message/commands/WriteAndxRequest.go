@@ -325,7 +325,11 @@ func (c *WriteAndxRequest) Unmarshal(data []byte) (int, error) {
 	offset++
 
 	// Unmarshalling data Data
+	if len(rawDataContent) < offset+int(c.DataLength) {
+		return offset, fmt.Errorf("rawDataContent too short for Data")
+	}
 	c.Data = rawDataContent[offset : offset+int(c.DataLength)]
+	offset += int(c.DataLength)
 
 	return offset, nil
 }

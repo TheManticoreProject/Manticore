@@ -25,8 +25,8 @@ type ReadResponse struct {
 	// at or beyond the end of file.
 	CountOfBytesReturned types.USHORT
 
-	// Reserved (4 bytes): Reserved. MUST be 0x00000000.
-	Reserved types.USHORT
+	// Reserved (8 bytes): Reserved. All bytes MUST be 0x00.
+	Reserved [4]types.USHORT
 
 	// Data
 
@@ -45,6 +45,7 @@ func NewReadResponse() *ReadResponse {
 	c := &ReadResponse{
 		// Parameters
 		CountOfBytesReturned: types.USHORT(0),
+		Reserved:             [4]types.USHORT{},
 
 		// Data
 		Bytes: types.SMB_STRING{},
@@ -101,8 +102,15 @@ func (c *ReadResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter CountOfBytesReturned
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.CountOfBytesReturned))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.CountOfBytesReturned))
 	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter Reserved (4 USHORT = 8 bytes, all MUST be 0x00)
+	for _, reservedWord := range c.Reserved {
+		bufReserved := make([]byte, 2)
+		binary.LittleEndian.PutUint16(bufReserved, uint16(reservedWord))
+		rawParametersContent = append(rawParametersContent, bufReserved...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -158,8 +166,17 @@ func (c *ReadResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for CountOfBytesReturned")
 	}
-	c.CountOfBytesReturned = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.CountOfBytesReturned = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter Reserved (4 USHORT = 8 bytes)
+	for i := range c.Reserved {
+		if len(rawParametersContent) < offset+2 {
+			return offset, fmt.Errorf("rawParametersContent too short for Reserved")
+		}
+		c.Reserved[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0

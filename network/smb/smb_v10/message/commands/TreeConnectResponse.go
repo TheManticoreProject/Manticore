@@ -89,12 +89,12 @@ func (c *TreeConnectResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter MaxBufferSize
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.MaxBufferSize))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.MaxBufferSize))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter TID
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.TID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.TID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -151,14 +151,14 @@ func (c *TreeConnectResponse) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for MaxBufferSize")
 	}
-	c.MaxBufferSize = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.MaxBufferSize = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter TID
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for TID")
 	}
-	c.TID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.TID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
@@ -22,11 +23,13 @@ type SetInformationRequest struct {
 	// SMB_FILE_ATTRIBUTES (section 2.2.4.10.1)
 	FileAttributes types.SMB_FILE_ATTRIBUTES
 
-	// LastWriteTime (4 bytes): The time of the last write to the file.
-	LastWriteTime types.FILETIME
+	// LastWriteTime (4 bytes): The time of the last write to the file, encoded as a
+	// 4-byte UTIME (number of seconds since January 1, 1970 00:00:00.0).
+	LastWriteTime types.ULONG
 
-	// Reserved (5 bytes): This field MUST be 0x0000000000000000.
-	Reserved [5]types.UCHAR
+	// Reserved (10 bytes): This field is reserved, and all bytes MUST be set to 0x00
+	// (USHORT Reserved[5]).
+	Reserved [10]types.UCHAR
 
 	// Data
 
@@ -45,8 +48,8 @@ func NewSetInformationRequest() *SetInformationRequest {
 	c := &SetInformationRequest{
 		// Parameters
 		FileAttributes: types.SMB_FILE_ATTRIBUTES{},
-		LastWriteTime:  types.FILETIME{},
-		Reserved:       [5]types.UCHAR{0, 0, 0, 0, 0},
+		LastWriteTime:  types.ULONG(0),
+		Reserved:       [10]types.UCHAR{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 
 		// Data
 		FileName: types.SMB_STRING{},
@@ -109,14 +112,12 @@ func (c *SetInformationRequest) Marshal() ([]byte, error) {
 	}
 	rawParametersContent = append(rawParametersContent, bytesStream...)
 
-	// Marshalling parameter LastWriteTime
-	bytesStream, err = c.LastWriteTime.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawParametersContent = append(rawParametersContent, bytesStream...)
+	// Marshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(c.LastWriteTime))
+	rawParametersContent = append(rawParametersContent, buf4...)
 
-	// Marshalling parameter Reserved
+	// Marshalling parameter Reserved (10 bytes)
 	rawParametersContent = append(rawParametersContent, c.Reserved[:]...)
 
 	// Marshalling parameters
@@ -176,15 +177,12 @@ func (c *SetInformationRequest) Unmarshal(data []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling parameter LastWriteTime
-	if len(rawParametersContent) < offset+8 {
+	// Unmarshalling parameter LastWriteTime (4-byte UTIME, little-endian)
+	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for LastWriteTime")
 	}
-	bytesRead, err = c.LastWriteTime.Unmarshal(rawParametersContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	c.LastWriteTime = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	offset += 4
 
 	// Unmarshalling parameter Reserved
 	if len(rawParametersContent) < offset+10 {

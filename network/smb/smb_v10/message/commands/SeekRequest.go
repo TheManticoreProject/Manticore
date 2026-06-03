@@ -88,17 +88,17 @@ func (c *SeekRequest) Marshal() ([]byte, error) {
 
 	// Marshalling parameter FID
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.FID))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.FID))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Mode
 	buf2 = make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.Mode))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.Mode))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameter Offset
 	buf4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf4, uint32(c.Offset))
+	binary.LittleEndian.PutUint32(buf4, uint32(c.Offset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -155,21 +155,21 @@ func (c *SeekRequest) Unmarshal(data []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for FID")
 	}
-	c.FID = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.FID = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Mode
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for Mode")
 	}
-	c.Mode = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Mode = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Offset
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Offset")
 	}
-	c.Offset = types.LONG(binary.BigEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.Offset = types.LONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data
