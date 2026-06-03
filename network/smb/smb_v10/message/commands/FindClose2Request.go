@@ -77,7 +77,7 @@ func (c *FindClose2Request) Marshal() ([]byte, error) {
 
 	// Marshalling parameter SearchHandle
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, uint16(c.SearchHandle))
+	binary.LittleEndian.PutUint16(buf2, uint16(c.SearchHandle))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
 	// Marshalling parameters
@@ -143,7 +143,7 @@ func (c *FindClose2Request) Unmarshal(rawData []byte) (int, error) {
 	if len(rawParametersContent) < offset+2 {
 		return offset, fmt.Errorf("rawParametersContent too short for SearchHandle")
 	}
-	c.SearchHandle = types.USHORT(binary.BigEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.SearchHandle = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Then unmarshal the data
