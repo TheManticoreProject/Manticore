@@ -263,7 +263,8 @@ func TestCallPingsWhileAwaitingResponseFragments(t *testing.T) {
 	}}
 	c := newTestClient(conn)
 
-	got, err := c.Call(CallRequest{Interface: guid.GUID{A: 1}, InterfaceVersion: 1, Idempotent: true})
+	iface := guid.GUID{A: 1}
+	got, err := c.Call(CallRequest{Interface: iface, InterfaceVersion: 1, OpNum: 9, Idempotent: true})
 	if err != nil {
 		t.Fatalf("Call: %v", err)
 	}
@@ -272,6 +273,42 @@ func TestCallPingsWhileAwaitingResponseFragments(t *testing.T) {
 	}
 	if pings := countSent(t, conn, pdu.PacketTypePing); pings != 1 {
 		t.Fatalf("expected 1 ping while awaiting fragments, sent %d", pings)
+	}
+	// The ping must identify the call: activity, sequence number, interface, and opnum.
+	for _, raw := range conn.sent {
+		p := decodeSent(t, raw)
+		if p.Header.PacketType != pdu.PacketTypePing {
+			continue
+		}
+		if !p.Header.InterfaceID.Equal(&iface) || p.Header.OpNum != 9 || p.Header.SequenceNumber != 0 {
+			t.Errorf("ping does not carry the call identity: iface=%s op=%d seq=%d",
+				p.Header.InterfaceID.ToFormatD(), p.Header.OpNum, p.Header.SequenceNumber)
+		}
+	}
+}
+
+// repeatConn always returns the same PDU, simulating a server that floods
+// non-terminal PDUs forever.
+type repeatConn struct{ pdu []byte }
+
+func (m *repeatConn) Connect() error              { return nil }
+func (m *repeatConn) Send([]byte) (int, error)    { return 0, nil }
+func (m *repeatConn) Recv() ([]byte, error)       { return append([]byte(nil), m.pdu...), nil }
+func (m *repeatConn) SetDeadline(time.Time) error { return nil }
+func (m *repeatConn) MaxPDUSize() int             { return transport.MaxPDUSizeDefault }
+func (m *repeatConn) RemoteAddr() net.Addr        { return nil }
+func (m *repeatConn) IsConnected() bool           { return true }
+func (m *repeatConn) Close() error                { return nil }
+
+func TestCallBoundsFloodOfNonTerminalPDUs(t *testing.T) {
+	// A server that endlessly sends "working" never trips the retransmission or ping
+	// limits (working resets requests and arrives before any timeout), so without the
+	// receive backstop the loop would never terminate.
+	conn := &repeatConn{pdu: serverPDU(t, pdu.PacketTypeWorking, 0, 0, 0, nil)}
+	c := New(conn, WithActivityID(testActivity), WithMaxReceives(16))
+
+	if _, err := c.Call(CallRequest{Interface: guid.GUID{A: 1}, InterfaceVersion: 1, Idempotent: true}); !errors.Is(err, ErrNoResponse) {
+		t.Fatalf("expected ErrNoResponse from the receive backstop, got %v", err)
 	}
 }
 

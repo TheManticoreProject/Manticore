@@ -54,6 +54,12 @@ const (
 	// DefaultFackWindow is the receive window, in fragments, advertised in the facks
 	// the client sends for inbound response fragments.
 	DefaultFackWindow = 8
+	// DefaultMaxReceives bounds the total number of PDUs a single call will process
+	// before giving up. It is a backstop against a server that floods non-terminal
+	// PDUs (endless working/fack/ping or PDUs for other conversations), which would
+	// otherwise spin the receive loop forever since such PDUs do not trip the
+	// retransmission or ping limits. It is set far above any plausible fragment count.
+	DefaultMaxReceives = 1 << 20
 )
 
 // ErrNoResponse is returned when the server never produces a response within the
@@ -84,6 +90,7 @@ type Client struct {
 
 	maxRequests int
 	maxPings    int
+	maxReceives int
 	fackWindow  uint16
 }
 
@@ -100,6 +107,10 @@ func WithMaxRequests(n int) Option { return func(c *Client) { c.maxRequests = n 
 // WithMaxPings overrides the ping limit.
 func WithMaxPings(n int) Option { return func(c *Client) { c.maxPings = n } }
 
+// WithMaxReceives overrides the per-call cap on the total number of PDUs processed
+// before giving up (the flood backstop).
+func WithMaxReceives(n int) Option { return func(c *Client) { c.maxReceives = n } }
+
 // New returns a connectionless client bound to the given datagram transport. Unless
 // WithActivityID is supplied, a fresh random activity UUID is generated.
 func New(t transport.Transport, opts ...Option) *Client {
@@ -108,6 +119,7 @@ func New(t transport.Transport, opts ...Option) *Client {
 		activityID:  *guid.NewGUID(),
 		maxRequests: DefaultMaxRequests,
 		maxPings:    DefaultMaxPings,
+		maxReceives: DefaultMaxReceives,
 		fackWindow:  DefaultFackWindow,
 	}
 	for _, opt := range opts {
@@ -193,6 +205,7 @@ func (c *Client) awaitResponse(seq uint32, reqFrags []pdu.PDU) ([]byte, error) {
 	gotResponseFrag := false
 	requests := 0
 	pings := 0
+	received := 0
 
 	for {
 		raw, err := c.transport.Recv()
@@ -208,7 +221,7 @@ func (c *Client) awaitResponse(seq uint32, reqFrags []pdu.PDU) ([]byte, error) {
 					return nil, ErrNoResponse
 				}
 				pings++
-				if err := c.sendPing(seq); err != nil {
+				if err := c.sendPing(reqFrags[0].Header); err != nil {
 					return nil, err
 				}
 			} else {
@@ -221,6 +234,14 @@ func (c *Client) awaitResponse(seq uint32, reqFrags []pdu.PDU) ([]byte, error) {
 				}
 			}
 			continue
+		}
+
+		// Bound the total PDUs processed so a server that floods non-terminal PDUs
+		// (which do not trip the retransmission or ping limits) cannot spin this loop
+		// forever.
+		received++
+		if received > c.maxReceives {
+			return nil, ErrNoResponse
 		}
 
 		var p pdu.PDU
@@ -296,9 +317,11 @@ func (c *Client) replyHeader(pt pdu.PacketType, seq uint32, object, iface guid.G
 	return h
 }
 
-// sendPing transmits a ping PDU to poll the server for an outstanding call.
-func (c *Client) sendPing(seq uint32) error {
-	h := c.replyHeader(pdu.PacketTypePing, seq, guid.GUID{}, guid.GUID{}, 0, 0)
+// sendPing transmits a ping PDU to poll the server for the outstanding call
+// identified by req (the request header), carrying its activity, sequence number,
+// object, interface, and opnum so the server can match it to the call.
+func (c *Client) sendPing(req pdu.Header) error {
+	h := c.replyHeader(pdu.PacketTypePing, req.SequenceNumber, req.ObjectID, req.InterfaceID, req.InterfaceVersion, req.OpNum)
 	p := pdu.PDU{Header: h}
 	raw, err := p.Marshal()
 	if err != nil {
