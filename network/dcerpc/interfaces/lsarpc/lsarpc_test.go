@@ -152,9 +152,14 @@ func TestClose_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseHandleResponse_TooShort(t *testing.T) {
-	if _, _, err := parseHandleResponse(make([]byte, 23)); err == nil {
-		t.Fatal("parseHandleResponse of short buffer: error = nil, want non-nil")
+func TestOpenPolicy2_ShortResponseErrors(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+	// A response stub shorter than the 24-byte handle+status must error rather than
+	// return garbage (the NDR decoder rejects the truncated read).
+	ft.queue(responsePDU(t, 2, make([]byte, 23)))
+	if _, err := OpenPolicy2(c, MaximumAllowed); err == nil {
+		t.Fatal("OpenPolicy2 with a truncated response: error = nil, want non-nil")
 	}
 }
 

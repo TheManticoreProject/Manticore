@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -319,5 +320,82 @@ func TestCall_CallIDMismatch(t *testing.T) {
 	ft.queue(responseBytes(t, 3, pdu.PFCFirstFrag|pdu.PFCLastFrag, []byte{0x01}))
 	if _, err := c.Call(1, nil); err == nil {
 		t.Fatal("Call() with mismatched response call_id: error = nil, want non-nil")
+	}
+}
+
+// invokeReq/invokeResp are minimal NDR structures for exercising Client.Invoke.
+type invokeReq struct {
+	A ndr.DWORD
+	B ndr.DWORD
+}
+
+func (*invokeReq) Opnum() uint16 { return 7 }
+
+type invokeResp struct {
+	X ndr.DWORD
+}
+
+func TestInvoke_MarshalsRequestAndUnmarshalsResponse(t *testing.T) {
+	ft := &fakeTransport{maxXmit: 4280, maxRecv: 4280}
+	ft.queue(bindAckBytes(t, 4280, 4280))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	// First call uses call_id 2; response carries one DWORD.
+	ft.queue(responseBytes(t, 2, pdu.PFCFirstFrag|pdu.PFCLastFrag, []byte{0xBE, 0xBA, 0xFE, 0xCA}))
+
+	var out invokeResp
+	if err := c.Invoke(&invokeReq{A: 0x11, B: 0x22}, &out); err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if out.X != 0xCAFEBABE {
+		t.Errorf("out.X = %#x, want 0xcafebabe", out.X)
+	}
+
+	// The request PDU (after the bind) must carry opnum 7 and the NDR-marshalled fields.
+	var req pdu.Request
+	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
+		t.Fatalf("sent request does not parse: %v", err)
+	}
+	if req.Opnum != 7 {
+		t.Errorf("opnum = %d, want 7", req.Opnum)
+	}
+	want := []byte{0x11, 0, 0, 0, 0x22, 0, 0, 0}
+	if !bytes.Equal(req.Stub, want) {
+		t.Errorf("request stub = %x, want %x", req.Stub, want)
+	}
+}
+
+func TestInvoke_NilOutSkipsResponseDecode(t *testing.T) {
+	ft := &fakeTransport{maxXmit: 4280, maxRecv: 4280}
+	ft.queue(bindAckBytes(t, 4280, 4280))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	ft.queue(responseBytes(t, 2, pdu.PFCFirstFrag|pdu.PFCLastFrag, nil))
+	if err := c.Invoke(&invokeReq{A: 1, B: 2}, nil); err != nil {
+		t.Fatalf("Invoke() with nil out: error = %v", err)
+	}
+}
+
+func TestInvoke_FaultIsReturned(t *testing.T) {
+	ft := &fakeTransport{maxXmit: 4280, maxRecv: 4280}
+	ft.queue(bindAckBytes(t, 4280, 4280))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	fault := &pdu.Fault{Status: pdu.NCASOpRngError}
+	fault.Header = pdu.NewHeader(pdu.PacketTypeFault, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2)
+	ft.queue(mustMarshal(t, fault))
+
+	var out invokeResp
+	err := c.Invoke(&invokeReq{}, &out)
+	var fe *pdu.Fault
+	if !errors.As(err, &fe) {
+		t.Fatalf("Invoke() error = %v, want *pdu.Fault", err)
 	}
 }

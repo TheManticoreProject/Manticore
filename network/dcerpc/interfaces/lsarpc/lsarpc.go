@@ -21,10 +21,10 @@
 package lsarpc
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -85,67 +85,68 @@ func (h PolicyHandle) IsZero() bool {
 	return true
 }
 
-// OpenPolicy2 calls LsarOpenPolicy2 (opnum 44) and returns a policy handle.
-//
-// The request stub is hand-marshalled NDR:
-//   - SystemName ([in, unique, string] wchar_t*): a NULL unique pointer (4 zero
-//     bytes). The server ignores it ([MS-LSAD] 3.1.4.4.1).
-//   - ObjectAttributes (PLSAPR_OBJECT_ATTRIBUTES, a top-level reference pointer so the
-//     struct is inline): six 4-byte fields, all zero (Length, RootDirectory,
-//     ObjectName, Attributes, SecurityDescriptor, SecurityQualityOfService). All are
-//     ignored except RootDirectory, which must be NULL.
-//   - DesiredAccess (ACCESS_MASK): the requested access, little-endian.
-func OpenPolicy2(rpc *client.Client, desiredAccess uint32) (PolicyHandle, error) {
-	stub := make([]byte, 0, 32)
-	stub = append(stub, 0, 0, 0, 0)          // SystemName: NULL unique pointer
-	stub = append(stub, make([]byte, 24)...) // ObjectAttributes: all-zero inline struct
-	stub = binary.LittleEndian.AppendUint32(stub, desiredAccess)
+// objectAttributes models LSAPR_OBJECT_ATTRIBUTES ([MS-LSAD] 2.2.2.3). All fields are
+// ignored by the server except RootDirectory, which must be NULL, so each is modeled
+// as a 4-octet zero field (the four pointer members as NULL referents).
+type objectAttributes struct {
+	Length                   ndr.DWORD
+	RootDirectory            ndr.DWORD // [unique] NULL
+	ObjectName               ndr.DWORD // [unique] NULL
+	Attributes               ndr.DWORD
+	SecurityDescriptor       ndr.DWORD // [unique] NULL
+	SecurityQualityOfService ndr.DWORD // [unique] NULL
+}
 
-	resp, err := rpc.Call(OpnumOpenPolicy2, stub)
-	if err != nil {
+// openPolicy2Request is the [in] parameter set of LsarOpenPolicy2: a NULL unique
+// SystemName pointer, an inline ObjectAttributes (a top-level [ref] struct), and the
+// desired access mask.
+type openPolicy2Request struct {
+	SystemName    *ndr.WSTR `ndr:"unique"`
+	Attributes    objectAttributes
+	DesiredAccess ndr.DWORD
+}
+
+func (*openPolicy2Request) Opnum() uint16 { return OpnumOpenPolicy2 }
+
+// closeRequest is the [in,out] parameter of LsarClose: the context handle.
+type closeRequest struct {
+	Handle PolicyHandle
+}
+
+func (*closeRequest) Opnum() uint16 { return OpnumClose }
+
+// handleResponse is the common reply shape: a 20-byte context handle followed by the
+// NTSTATUS return value.
+type handleResponse struct {
+	Handle PolicyHandle
+	Status ndr.DWORD
+}
+
+// OpenPolicy2 calls LsarOpenPolicy2 (opnum 44) and returns a policy handle.
+func OpenPolicy2(rpc *client.Client, desiredAccess uint32) (PolicyHandle, error) {
+	req := &openPolicy2Request{DesiredAccess: ndr.DWORD(desiredAccess)}
+	var resp handleResponse
+	if err := rpc.Invoke(req, &resp); err != nil {
 		return PolicyHandle{}, fmt.Errorf("LsarOpenPolicy2: %w", err)
 	}
-	handle, status, err := parseHandleResponse(resp)
-	if err != nil {
-		return PolicyHandle{}, fmt.Errorf("LsarOpenPolicy2: %w", err)
+	if uint32(resp.Status) != StatusSuccess {
+		return resp.Handle, fmt.Errorf("LsarOpenPolicy2 failed: %s", StatusString(uint32(resp.Status)))
 	}
-	if status != StatusSuccess {
-		return handle, fmt.Errorf("LsarOpenPolicy2 failed: %s", StatusString(status))
-	}
-	return handle, nil
+	return resp.Handle, nil
 }
 
 // Close calls LsarClose (opnum 0) on a handle. On success the server returns a zeroed
 // handle, which is returned to the caller.
-//
-// LsarClose([in, out] LSAPR_HANDLE* ObjectHandle) -> NTSTATUS. The request stub is the
-// 20-byte handle; the response is the (zeroed) handle followed by the NTSTATUS.
 func Close(rpc *client.Client, handle PolicyHandle) (PolicyHandle, error) {
-	resp, err := rpc.Call(OpnumClose, handle[:])
-	if err != nil {
+	req := &closeRequest{Handle: handle}
+	var resp handleResponse
+	if err := rpc.Invoke(req, &resp); err != nil {
 		return PolicyHandle{}, fmt.Errorf("LsarClose: %w", err)
 	}
-	out, status, err := parseHandleResponse(resp)
-	if err != nil {
-		return PolicyHandle{}, fmt.Errorf("LsarClose: %w", err)
+	if uint32(resp.Status) != StatusSuccess {
+		return resp.Handle, fmt.Errorf("LsarClose failed: %s", StatusString(uint32(resp.Status)))
 	}
-	if status != StatusSuccess {
-		return out, fmt.Errorf("LsarClose failed: %s", StatusString(status))
-	}
-	return out, nil
-}
-
-// parseHandleResponse decodes a response consisting of a 20-byte context handle
-// followed by a 4-byte NTSTATUS return value.
-func parseHandleResponse(resp []byte) (PolicyHandle, uint32, error) {
-	const want = 24
-	if len(resp) < want {
-		return PolicyHandle{}, 0, fmt.Errorf("response too short: have %d bytes, need %d", len(resp), want)
-	}
-	var h PolicyHandle
-	copy(h[:], resp[0:20])
-	status := binary.LittleEndian.Uint32(resp[20:24])
-	return h, status, nil
+	return resp.Handle, nil
 }
 
 // StatusString returns a mnemonic for the documented status codes, otherwise the hex
