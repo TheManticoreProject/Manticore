@@ -242,3 +242,33 @@ func TestAlignTag_Applied(t *testing.T) {
 		t.Errorf("round trip: got %+v", out)
 	}
 }
+
+// TestEmbeddedConformantArray_Hoisted verifies that a conformant array embedded
+// directly in a struct has its maximum_count hoisted to the start (issue #395).
+func TestEmbeddedConformantArray_Hoisted(t *testing.T) {
+	type rec struct {
+		N    uint32
+		Data []byte `ndr:"conformant"`
+	}
+	in := &rec{N: 0xAABBCCDD, Data: []byte{0x01, 0x02, 0x03}}
+	raw, err := Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := []byte{
+		0x03, 0x00, 0x00, 0x00, // hoisted maximum_count
+		0xDD, 0xCC, 0xBB, 0xAA, // N
+		0x01, 0x02, 0x03, // elements, in place at the end
+	}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("hoisted conformant array:\n got %x\nwant %x", raw, want)
+	}
+
+	var out rec
+	if err := Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.N != in.N || !bytes.Equal(out.Data, in.Data) {
+		t.Errorf("round trip: got %+v want %+v", out, in)
+	}
+}

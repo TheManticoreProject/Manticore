@@ -56,8 +56,17 @@ func structValue(rv reflect.Value) (reflect.Value, error) {
 
 // marshalStruct marshals a struct as an NDR construction: all inline field
 // representations first, then the deferred referent bodies in field order.
+//
+// If the struct embeds a conformant array directly (a non-pointer byte slice), its
+// maximum_count is hoisted to the start of the struct and only the elements are
+// emitted in place, per [MS-RPCE] "Structure Containing a Conformant Varying Array":
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/7bae54af-8b6a-4672-a6a3-6bcdf131730a
 func marshalStruct(e *Encoder, rv reflect.Value) error {
 	rt := rv.Type()
+	confIdx := embeddedConformantIndex(rt, rv)
+	if confIdx >= 0 {
+		e.WriteUint32(uint32(rv.Field(confIdx).Len())) // hoisted maximum_count
+	}
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -66,6 +75,11 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 		}
 		tag := parseTag(f.Tag.Get("ndr"))
 		if tag.skip {
+			continue
+		}
+		if i == confIdx {
+			// The maximum_count was hoisted above; emit only the elements in place.
+			e.WriteBytes(rv.Field(i).Bytes())
 			continue
 		}
 		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred); err != nil {
@@ -200,6 +214,15 @@ func marshalScalar(e *Encoder, fv reflect.Value) error {
 
 func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 	rt := rv.Type()
+	confIdx := embeddedConformantIndex(rt, rv)
+	var confCount uint32
+	if confIdx >= 0 {
+		c, err := d.ReadUint32() // hoisted maximum_count
+		if err != nil {
+			return err
+		}
+		confCount = c
+	}
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -208,6 +231,16 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 		}
 		tag := parseTag(f.Tag.Get("ndr"))
 		if tag.skip {
+			continue
+		}
+		if i == confIdx {
+			b, err := d.ReadBytes(int(confCount))
+			if err != nil {
+				return err
+			}
+			out := make([]byte, len(b))
+			copy(out, b)
+			rv.Field(i).SetBytes(out)
 			continue
 		}
 		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred); err != nil {
@@ -376,6 +409,36 @@ func unmarshalScalar(d *Decoder, fv reflect.Value) error {
 }
 
 // ---- helpers --------------------------------------------------------------------
+
+// embeddedConformantIndex returns the field index of an embedded (non-pointer)
+// conformant array member, or -1 if there is none. NDR permits at most one such
+// member per structure (the last one); if several match, the last is used.
+func embeddedConformantIndex(rt reflect.Type, rv reflect.Value) int {
+	idx := -1
+	for i := 0; i < rt.NumField(); i++ {
+		f := rt.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		tag := parseTag(f.Tag.Get("ndr"))
+		if tag.skip {
+			continue
+		}
+		if isEmbeddedConformantArray(rv.Field(i), tag) {
+			idx = i
+		}
+	}
+	return idx
+}
+
+// isEmbeddedConformantArray reports whether fv is an inline (non-pointer) conformant
+// byte array, i.e. a byte slice that is not itself behind a pointer. A byte slice
+// behind a pointer is a referent, not an embedded array, and is not hoisted.
+func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
+	return fv.Kind() == reflect.Slice &&
+		fv.Type().Elem().Kind() == reflect.Uint8 &&
+		!isPointerLike(fv, tag)
+}
 
 func isPointerLike(fv reflect.Value, tag fieldTag) bool {
 	if fv.Kind() == reflect.Pointer {
