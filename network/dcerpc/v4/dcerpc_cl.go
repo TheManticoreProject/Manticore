@@ -29,11 +29,11 @@
 //	request 0   ping 1   response 2   fault 3   working 4   nocall 5
 //	reject 6    ack 7    cl_cancel 8  fack 9    cancel_ack 10
 //
-// NOTE: This package is a placeholder. No PDU encoding, transport, or client logic
-// is implemented yet. See the implementation plan before adding code here. v4 is
-// effectively dead against modern Windows, which removed ncadg_ip_udp server
-// support starting with Windows Vista / Server 2008; it remains relevant only for
-// legacy and non-Windows DCE targets.
+// STATUS: The connectionless PDU codec is implemented in network/dcerpc/v4/pdu
+// (Phase 1). The datagram transport, protocol machine, and client are not yet
+// implemented. v4 is effectively dead against modern Windows, which removed
+// ncadg_ip_udp server support starting with Windows Vista / Server 2008; it remains
+// relevant only for legacy and non-Windows DCE targets.
 //
 // References:
 //   - [C706] DCE 1.1: Remote Procedure Call (The Open Group, 1997):
