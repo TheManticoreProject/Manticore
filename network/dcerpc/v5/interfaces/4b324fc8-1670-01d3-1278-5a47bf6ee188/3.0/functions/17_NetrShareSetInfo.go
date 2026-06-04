@@ -1,0 +1,54 @@
+package functions
+
+import (
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
+)
+
+// netrShareSetInfoRequest is the [in] parameter set of NetrShareSetInfo: the optional
+// server name, the [in,string] (ref) share name, the info level, the inline
+// [in, switch_is(Level)] SHARE_INFO union (its Tag is set to Level before marshalling),
+// and the optional [in,out,unique] ParmErr pointer.
+type netrShareSetInfoRequest struct {
+	ServerName *ndr.WSTR `ndr:"unique"`
+	NetName    ndr.WSTR
+	Level      ndr.DWORD
+	ShareInfo  structures.SHARE_INFO
+	ParmErr    *ndr.DWORD `ndr:"unique"`
+}
+
+func (*netrShareSetInfoRequest) Opnum() uint16 {
+	return srvsvc.OpnumNetrShareSetInfo
+}
+
+// netrShareSetInfoResponse is the reply: the [in,out,unique] ParmErr pointer and the
+// NET_API_STATUS return value.
+type netrShareSetInfoResponse struct {
+	ParmErr *ndr.DWORD `ndr:"unique"`
+	Status  ndr.DWORD  `ndr:"retval"`
+}
+
+// NetrShareSetInfo calls NetrShareSetInfo (opnum 17), setting information about a share
+// ([MS-SRVS] 3.1.4.11). The union discriminant is set to level before marshalling.
+func NetrShareSetInfo(rpc *client.Client, serverName string, netName string, level ndr.DWORD, shareInfo structures.SHARE_INFO, parmErr *ndr.DWORD) (*ndr.DWORD, error) {
+	shareInfo.Tag = level
+	req := &netrShareSetInfoRequest{
+		ServerName: optWStr(serverName),
+		NetName:    ndr.WSTR(netName),
+		Level:      level,
+		ShareInfo:  shareInfo,
+		ParmErr:    parmErr,
+	}
+	var resp netrShareSetInfoResponse
+	if err := rpc.Invoke(req, &resp); err != nil {
+		return nil, fmt.Errorf("NetrShareSetInfo: %w", err)
+	}
+	if uint32(resp.Status) != srvsvc.NERR_Success && uint32(resp.Status) != srvsvc.ERROR_MORE_DATA {
+		return resp.ParmErr, fmt.Errorf("NetrShareSetInfo failed: %s", srvsvc.StatusString(uint32(resp.Status)))
+	}
+	return resp.ParmErr, nil
+}

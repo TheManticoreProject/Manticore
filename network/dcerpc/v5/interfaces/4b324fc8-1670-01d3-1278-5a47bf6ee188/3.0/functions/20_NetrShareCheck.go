@@ -1,0 +1,44 @@
+package functions
+
+import (
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
+)
+
+// netrShareCheckRequest is the [in] parameter set of NetrShareCheck: the optional server
+// name and the [in,string] (ref) device name to test.
+type netrShareCheckRequest struct {
+	ServerName *ndr.WSTR `ndr:"unique"`
+	Device     ndr.WSTR
+}
+
+func (*netrShareCheckRequest) Opnum() uint16 {
+	return srvsvc.OpnumNetrShareCheck
+}
+
+// netrShareCheckResponse is the reply: the share type ([out] DWORD) and the NET_API_STATUS
+// return value.
+type netrShareCheckResponse struct {
+	Type   ndr.DWORD
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// NetrShareCheck calls NetrShareCheck (opnum 20), checking whether a device is shared
+// ([MS-SRVS] 3.1.4.14).
+func NetrShareCheck(rpc *client.Client, serverName string, device string) (ndr.DWORD, error) {
+	req := &netrShareCheckRequest{
+		ServerName: optWStr(serverName),
+		Device:     ndr.WSTR(device),
+	}
+	var resp netrShareCheckResponse
+	if err := rpc.Invoke(req, &resp); err != nil {
+		return 0, fmt.Errorf("NetrShareCheck: %w", err)
+	}
+	if uint32(resp.Status) != srvsvc.NERR_Success && uint32(resp.Status) != srvsvc.ERROR_MORE_DATA {
+		return resp.Type, fmt.Errorf("NetrShareCheck failed: %s", srvsvc.StatusString(uint32(resp.Status)))
+	}
+	return resp.Type, nil
+}
