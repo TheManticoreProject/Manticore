@@ -175,3 +175,45 @@ func TestMarshaler_EscapeHatch(t *testing.T) {
 		t.Errorf("round trip: got %+v want %+v", out, in)
 	}
 }
+
+// TestBOOL_IsFourOctets verifies the Windows BOOL alias encodes as a 4-octet
+// integer, not a 1-octet NDR boolean (issue #393).
+func TestBOOL_IsFourOctets(t *testing.T) {
+	type withBool struct {
+		Lead uint8
+		Flag BOOL // Windows BOOL: 4 octets
+	}
+	raw, err := Marshal(&withBool{Lead: 0x01, Flag: 1})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// uint8 then a 4-aligned 4-octet BOOL value of 1.
+	want := []byte{0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("BOOL encoding:\n got %x\nwant %x", raw, want)
+	}
+
+	var out withBool
+	if err := Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.Flag != 1 || out.Lead != 1 {
+		t.Errorf("round trip: got %+v", out)
+	}
+}
+
+// TestBOOLEAN_IsOneOctet verifies the NDR boolean (Go bool) stays a single octet.
+func TestBOOLEAN_IsOneOctet(t *testing.T) {
+	type withBoolean struct {
+		A BOOLEAN
+		B uint8
+	}
+	raw, err := Marshal(&withBoolean{A: true, B: 0x7f})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := []byte{0x01, 0x7f}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("BOOLEAN encoding:\n got %x\nwant %x", raw, want)
+	}
+}
