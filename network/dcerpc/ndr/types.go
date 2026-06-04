@@ -78,10 +78,11 @@ type fieldTag struct {
 	ascii      bool   // [string] ASCII
 	conformant bool   // conformant array (size_is)
 	varying    bool   // conformant-varying array (offset + actual_count framing)
-	sizeIs     string // sibling field naming the maximum element count
-	lengthIs   string // sibling field naming the actual element count
-	align      int    // explicit alignment override (0 = default)
-	retval     bool   // RPC return value: encoded after the struct's deferred referents
+	sizeIs     string  // sibling field naming the maximum element count
+	lengthIs   string  // sibling field naming the actual element count
+	align      int     // explicit alignment override (0 = default)
+	retval     bool    // RPC return value: encoded after the struct's deferred referents
+	elemPtr    ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
 }
 
 // parseTag parses an `ndr:"..."` tag value.
@@ -118,6 +119,12 @@ func parseTag(raw string) fieldTag {
 			t.conformant = true
 			t.varying = true
 			t.lengthIs = strings.TrimPrefix(opt, "length_is=")
+		case opt == "elem=ref":
+			t.elemPtr = ptrRef
+		case opt == "elem=unique":
+			t.elemPtr = ptrUnique
+		case opt == "elem=ptr", opt == "elem=full":
+			t.elemPtr = ptrFull
 		case strings.HasPrefix(opt, "align="):
 			switch strings.TrimPrefix(opt, "align=") {
 			case "1":
