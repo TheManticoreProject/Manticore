@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/internal/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/transport"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -81,24 +82,24 @@ func TestMarshalEptMapRequestWithObject(t *testing.T) {
 // buildEptMapResponse builds a spec-shaped ept_map response stub carrying the given
 // towers and status, so the parser can be exercised against the documented layout.
 func buildEptMapResponse(towers []Tower, status uint32) []byte {
-	w := &ndrWriter{}
-	w.bytes(make([]byte, contextHandleSize)) // entry_handle
-	w.u32(uint32(len(towers)))               // num_towers
-	w.u32(uint32(len(towers)))               // array maximum_count
-	w.u32(0)                                 // array offset
-	w.u32(uint32(len(towers)))               // array actual_count
+	w := &ndr.Writer{}
+	w.Put(make([]byte, contextHandleSize)) // entry_handle
+	w.U32(uint32(len(towers)))             // num_towers
+	w.U32(uint32(len(towers)))             // array maximum_count
+	w.U32(0)                               // array offset
+	w.U32(uint32(len(towers)))             // array actual_count
 	for i := range towers {
-		w.u32(uint32(0x00030000 + i)) // non-null referent id per element
+		w.U32(uint32(0x00030000 + i)) // non-null referent id per element
 	}
 	for _, tw := range towers {
 		tb := tw.Marshal()
-		w.u32(uint32(len(tb))) // hoisted conformant maximum_count
-		w.u32(uint32(len(tb))) // tower_length
-		w.bytes(tb)
-		w.align(4)
+		w.U32(uint32(len(tb))) // hoisted conformant maximum_count
+		w.U32(uint32(len(tb))) // tower_length
+		w.Put(tb)
+		w.Align(4)
 	}
-	w.u32(status)
-	return w.buf
+	w.U32(status)
+	return w.Bytes()
 }
 
 func fullTower(port uint16, ip net.IP) Tower {
@@ -137,13 +138,13 @@ func TestParseEptMapResponseRoundTrip(t *testing.T) {
 }
 
 func TestParseEptMapResponseRejectsHugeCount(t *testing.T) {
-	w := &ndrWriter{}
-	w.bytes(make([]byte, contextHandleSize))
-	w.u32(0)          // num_towers
-	w.u32(0xffffffff) // maximum_count
-	w.u32(0)          // offset
-	w.u32(0xffffffff) // actual_count -> implausible
-	if _, _, err := parseEptMapResponse(w.buf); err == nil {
+	w := &ndr.Writer{}
+	w.Put(make([]byte, contextHandleSize))
+	w.U32(0)          // num_towers
+	w.U32(0xffffffff) // maximum_count
+	w.U32(0)          // offset
+	w.U32(0xffffffff) // actual_count -> implausible
+	if _, _, err := parseEptMapResponse(w.Bytes()); err == nil {
 		t.Fatal("expected error on implausible tower count")
 	}
 }

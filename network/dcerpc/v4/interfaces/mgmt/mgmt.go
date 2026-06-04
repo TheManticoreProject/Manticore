@@ -14,11 +14,11 @@
 package mgmt
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/interfaces"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/internal/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -78,10 +78,10 @@ func (c *Client) IsServerListening() (bool, error) {
 	}
 	// Response stub: [out] error_status_t status, then the boolean32 return value
 	// (the return value is marshalled after the out parameters).
-	r := newReader(resp)
-	status := r.u32()
-	listening := r.u32()
-	if err := r.err(); err != nil {
+	r := ndr.NewReader(resp)
+	status := r.U32()
+	listening := r.U32()
+	if err := r.Err(); err != nil {
 		return false, err
 	}
 	if status != 0 {
@@ -117,99 +117,37 @@ func (c *Client) InqIfIds() ([]IfID, error) {
 // elements are full pointers (referent ids), and each rpc_if_id_t pointee is
 // { uuid_t uuid; unsigned16 vers_major; unsigned16 vers_minor } (20 octets).
 func parseInqIfIdsResponse(data []byte) ([]IfID, uint32, error) {
-	r := newReader(data)
+	r := ndr.NewReader(data)
 
 	var ids []IfID
-	if vecRef := r.u32(); vecRef != 0 {
-		_ = r.u32() // hoisted conformant maximum_count
-		count := r.u32()
-		if r.err() != nil {
-			return nil, 0, r.err()
+	if vecRef := r.U32(); vecRef != 0 {
+		_ = r.U32() // hoisted conformant maximum_count
+		count := r.U32()
+		if r.Err() != nil {
+			return nil, 0, r.Err()
 		}
 		if count > maxIfIds {
 			return nil, 0, fmt.Errorf("mgmt: inq_if_ids returned implausible count %d", count)
 		}
 		refs := make([]uint32, count)
 		for i := range refs {
-			refs[i] = r.u32()
+			refs[i] = r.U32()
 		}
 		for _, ref := range refs {
 			if ref == 0 {
 				continue
 			}
-			id := IfID{UUID: r.uuid()}
-			id.VersionMajor = r.u16()
-			id.VersionMinor = r.u16()
-			r.align(4)
+			id := IfID{UUID: r.UUID()}
+			id.VersionMajor = r.U16()
+			id.VersionMinor = r.U16()
+			r.Align(4)
 			ids = append(ids, id)
 		}
 	}
 
-	status := r.u32()
-	if r.err() != nil {
-		return nil, 0, r.err()
+	status := r.U32()
+	if r.Err() != nil {
+		return nil, 0, r.Err()
 	}
 	return ids, status, nil
-}
-
-// reader is a minimal bounds-checked little-endian NDR cursor; the first error is
-// sticky and reported by err().
-type reader struct {
-	data []byte
-	off  int
-	fail error
-}
-
-func newReader(b []byte) *reader { return &reader{data: b} }
-
-func (r *reader) err() error { return r.fail }
-
-func (r *reader) take(n int) []byte {
-	if r.fail != nil {
-		return nil
-	}
-	if n < 0 || r.off+n > len(r.data) {
-		r.fail = fmt.Errorf("mgmt: NDR underrun reading %d bytes at offset %d", n, r.off)
-		return nil
-	}
-	b := r.data[r.off : r.off+n]
-	r.off += n
-	return b
-}
-
-func (r *reader) u16() uint16 {
-	b := r.take(2)
-	if b == nil {
-		return 0
-	}
-	return binary.LittleEndian.Uint16(b)
-}
-
-func (r *reader) u32() uint32 {
-	b := r.take(4)
-	if b == nil {
-		return 0
-	}
-	return binary.LittleEndian.Uint32(b)
-}
-
-func (r *reader) uuid() guid.GUID {
-	var g guid.GUID
-	if b := r.take(16); b != nil {
-		g.FromRawBytes(b)
-	}
-	return g
-}
-
-func (r *reader) align(n int) {
-	if r.fail != nil {
-		return
-	}
-	for r.off%n != 0 {
-		if r.off >= len(r.data) {
-			r.fail = fmt.Errorf("mgmt: NDR underrun aligning to %d at offset %d", n, r.off)
-			return
-		}
-		r.off++
-	}
 }

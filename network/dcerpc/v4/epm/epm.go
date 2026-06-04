@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v4/internal/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -96,31 +97,31 @@ func (c *Client) Map(iface guid.GUID, ifMajor, ifMinor uint16) ([]Endpoint, erro
 // The twr_t pointee is { unsigned32 tower_length; [size_is] byte tower[] }; as a
 // conformant struct its array maximum_count is hoisted to the front of the struct.
 func marshalEptMapRequest(object *guid.GUID, mapTower Tower, maxTowers uint32) []byte {
-	w := &ndrWriter{}
+	w := &ndr.Writer{}
 
 	// object: full pointer, null unless provided.
 	if object == nil {
-		w.u32(0)
+		w.U32(0)
 	} else {
-		w.u32(refObject)
-		w.bytes(object.ToBytes())
+		w.U32(refObject)
+		w.Put(object.ToBytes())
 	}
 
 	// map_tower: non-null full pointer to a twr_t.
-	w.u32(refMapTower)
+	w.U32(refMapTower)
 	towerBytes := mapTower.Marshal()
-	w.u32(uint32(len(towerBytes))) // hoisted conformant maximum_count
-	w.u32(uint32(len(towerBytes))) // tower_length
-	w.bytes(towerBytes)
-	w.align(4)
+	w.U32(uint32(len(towerBytes))) // hoisted conformant maximum_count
+	w.U32(uint32(len(towerBytes))) // tower_length
+	w.Put(towerBytes)
+	w.Align(4)
 
 	// entry_handle: null context handle (all zero).
-	w.bytes(make([]byte, contextHandleSize))
+	w.Put(make([]byte, contextHandleSize))
 
 	// max_towers.
-	w.u32(maxTowers)
+	w.U32(maxTowers)
 
-	return w.buf
+	return w.Bytes()
 }
 
 // maxResponseTowers bounds how many tower referents parseEptMapResponse will accept,
@@ -136,17 +137,17 @@ const maxResponseTowers = 4096
 //
 // It returns the successfully decoded towers and the status code.
 func parseEptMapResponse(data []byte) ([]Tower, uint32, error) {
-	r := &ndrReader{data: data}
+	r := ndr.NewReader(data)
 
-	r.skip(contextHandleSize) // entry_handle
-	_ = r.u32()               // num_towers (the array's actual_count below is authoritative)
+	r.Skip(contextHandleSize) // entry_handle
+	_ = r.U32()               // num_towers (the array's actual_count below is authoritative)
 
 	// towers[]: conformant+varying array header.
-	_ = r.u32() // maximum_count
-	_ = r.u32() // offset
-	actualCount := r.u32()
-	if r.err() != nil {
-		return nil, 0, r.err()
+	_ = r.U32() // maximum_count
+	_ = r.U32() // offset
+	actualCount := r.U32()
+	if r.Err() != nil {
+		return nil, 0, r.Err()
 	}
 	if actualCount > maxResponseTowers {
 		return nil, 0, fmt.Errorf("epm: ept_map returned implausible tower count %d", actualCount)
@@ -155,10 +156,10 @@ func parseEptMapResponse(data []byte) ([]Tower, uint32, error) {
 	// Referent IDs for each array element, in order.
 	refs := make([]uint32, actualCount)
 	for i := range refs {
-		refs[i] = r.u32()
+		refs[i] = r.U32()
 	}
-	if r.err() != nil {
-		return nil, 0, r.err()
+	if r.Err() != nil {
+		return nil, 0, r.Err()
 	}
 
 	// Deferred twr_t pointees, one per non-null referent.
@@ -167,12 +168,12 @@ func parseEptMapResponse(data []byte) ([]Tower, uint32, error) {
 		if ref == 0 {
 			continue
 		}
-		_ = r.u32() // hoisted conformant maximum_count
-		towerLen := r.u32()
-		raw := r.take(int(towerLen))
-		r.align(4)
-		if r.err() != nil {
-			return nil, 0, r.err()
+		_ = r.U32() // hoisted conformant maximum_count
+		towerLen := r.U32()
+		raw := r.Take(int(towerLen))
+		r.Align(4)
+		if r.Err() != nil {
+			return nil, 0, r.Err()
 		}
 		t, err := UnmarshalTower(raw)
 		if err != nil {
@@ -181,9 +182,9 @@ func parseEptMapResponse(data []byte) ([]Tower, uint32, error) {
 		towers = append(towers, t)
 	}
 
-	status := r.u32()
-	if r.err() != nil {
-		return nil, 0, r.err()
+	status := r.U32()
+	if r.Err() != nil {
+		return nil, 0, r.Err()
 	}
 	return towers, status, nil
 }
