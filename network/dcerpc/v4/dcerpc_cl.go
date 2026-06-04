@@ -29,13 +29,16 @@
 //	request 0   ping 1   response 2   fault 3   working 4   nocall 5
 //	reject 6    ack 7    cl_cancel 8  fack 9    cancel_ack 10
 //
-// STATUS: The connectionless PDU codec (network/dcerpc/v4/pdu, Phase 1), the
-// ncadg_ip_udp datagram transport (network/dcerpc/v4/transport, Phase 2), the
-// client-side protocol machine (network/dcerpc/v4/client, Phase 3), and the endpoint
-// mapper over UDP (network/dcerpc/v4/epm, Phase 4) are implemented. Concrete
-// interface bindings are not yet implemented. v4 is effectively dead against modern
-// Windows, which removed ncadg_ip_udp server support starting with Windows Vista /
-// Server 2008; it remains relevant only for legacy and non-Windows DCE targets.
+// STATUS: The connectionless stack is implemented end to end — the PDU codec
+// (network/dcerpc/v4/pdu), the ncadg_ip_udp datagram transport
+// (network/dcerpc/v4/transport), the client-side protocol machine
+// (network/dcerpc/v4/client), the endpoint mapper over UDP (network/dcerpc/v4/epm),
+// and the interface binding pattern with the remote management interface as a
+// worked example (network/dcerpc/v4/interfaces and interfaces/mgmt). v4 is
+// effectively dead against modern Windows, which removed ncadg_ip_udp server support
+// starting with Windows Vista / Server 2008; it remains relevant only for legacy and
+// non-Windows DCE targets, and the higher layers are verified by unit tests rather
+// than against a live connectionless server.
 //
 // References:
 //   - [C706] DCE 1.1: Remote Procedure Call (The Open Group, 1997):
