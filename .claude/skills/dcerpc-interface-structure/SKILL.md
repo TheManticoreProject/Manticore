@@ -122,10 +122,11 @@ If a needed base type is missing from `dtyp`, add it there (with a round-trip te
 
 Mapping IDL parameters/fields to Go fields hinges on pointer depth:
 
-- A **single** top-level pointer `P<TYPE> X` is `[ref]` (NDR transmits no referent id; the referent is in place) → model as the **inline value** `structures.<TYPE>` (no pointer, no tag).
-- A **double** pointer `P<TYPE> *X` (or a `[unique]`-marked single pointer) → model the inner as `*structures.<TYPE> \`ndr:"unique"\``.
+- A **single** top-level pointer `P<TYPE> X` is `[ref]` (NDR transmits no referent id; the referent is in place) → model as the **inline value** `structures.<TYPE>` (no pointer, no tag). This includes top-level `[in] PRPC_UNICODE_STRING Name` → inline `dtyp.RPC_UNICODE_STRING`. Modeling it `[unique]` sends a spurious referent id and the server faults `nca_s_fault_ndr` (live-verified).
+- A **double** pointer `P<TYPE> *X` (or a `[unique]`/`[in,unique]`-marked pointer) → model the inner as `*structures.<TYPE> \`ndr:"unique"\``.
 - A top-level `[out] scalar *X` (e.g. `unsigned long *`) → inline scalar in the response.
 - `PLUID Value` at top level → inline `dtyp.LUID`.
+- A top-level `[in, size_is(Count)] PFOO Names` (a `[ref]` pointer to a *conformant array*) → `Names []FOO \`ndr:"ref,size_is=Count"\``. **Do not** use a bare `conformant` slice here: that is treated as an array embedded directly in the parameter struct, so its `maximum_count` is hoisted to the *front* of the request (before the policy handle), desyncing the whole stub and faulting `nca_s_fault_context_mismatch` (live-verified). The `ref` tag keeps it pointer-like so the count travels with the referent body.
 
 ### Arrays
 
@@ -152,12 +153,14 @@ type LSAPR_POLICY_INFORMATION struct {
 - `case=N` takes the **numeric** discriminant value (compute it from the enum order). If two case labels map to one arm, give each its own field with its own `case=`.
 - Arms are **value** fields (the IDL arms are values like `POLICY_AUDIT_LOG_INFO Foo`), not pointers, unless the IDL declares a pointer arm.
 - In a request, set the union's discriminant field to match the method's info-class argument before marshalling. See `network/dcerpc/ndr/union.go` for the full model.
+- Alignment is handled by the codec and needs no tags, but for reference (wire-verified): the discriminant aligns to its own type, then the selected arm aligns to the **largest alignment among all arms** (so the arm's offset is fixed before the receiver knows which arm). E.g. `LSAPR_POLICY_INFORMATION`'s 2-byte server-role arm still starts 8-aligned because sibling arms carry `LARGE_INTEGER`.
 
 ### Response-shape conventions
 
-- **NTSTATUS only** (Set/Add/Remove/Delete) → use shared `statusResponse{ Status ndr.DWORD }`; Go func returns `error`.
-- **`[out] LSAPR_HANDLE *X`** (Open/Create) → use shared `handleResponse{ Handle, Status }`; func returns `(structures.LSAPR_HANDLE, error)`.
-- **Other `[out]`/`[in,out]`** → a per-method `<method>Response{ <out/inout fields in IDL order>; Status ndr.DWORD }` with `Status` last.
+- **The trailing NTSTATUS is the RPC return value — always tag it `ndr:"retval"`.** The retval is transmitted after *all* `[out]` parameters and their deferred referents; an untagged `Status` decodes too early (it reads a referent id / mid-struct bytes) the moment any `[out]` parameter carries a pointer. This is wire-verified and was the core of the `RPC_UNICODE_STRING` bug. It is harmless where there are no deferred referents (e.g. a bare handle), so apply it to every response.
+- **NTSTATUS only** (Set/Add/Remove/Delete) → use shared `statusResponse{ Status ndr.DWORD \`ndr:"retval"\` }`; Go func returns `error`.
+- **`[out] LSAPR_HANDLE *X`** (Open/Create) → use shared `handleResponse{ Handle, Status }` (its `Status` is `ndr:"retval"`); func returns `(structures.LSAPR_HANDLE, error)`.
+- **Other `[out]`/`[in,out]`** → a per-method `<method>Response{ <out/inout fields in IDL order>; Status ndr.DWORD \`ndr:"retval"\` }`.
 - An `[in,out]` parameter appears in **both** the request and response structs.
 - A `[in] handle_t RpcHandle` (the explicit binding handle, e.g. `LsarLookupSids3`/`Names4`) is **not** marshalled — omit it from the request struct entirely; the Go func still takes only `rpc *client.Client`.
 
@@ -250,8 +253,14 @@ import (
     "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/<UUID>/<maj>.<min>/structures"
 )
 
-type handleResponse struct { Handle structures.LSAPR_HANDLE; Status ndr.DWORD }
-type statusResponse struct { Status ndr.DWORD }
+// Status is the RPC return value -> always `ndr:"retval"` (decoded after deferred referents).
+type handleResponse struct {
+    Handle structures.LSAPR_HANDLE
+    Status ndr.DWORD `ndr:"retval"`
+}
+type statusResponse struct {
+    Status ndr.DWORD `ndr:"retval"`
+}
 ```
 
 ### `functions/<NN>_<Method>.go` (one per opnum)
