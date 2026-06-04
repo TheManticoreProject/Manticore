@@ -64,6 +64,36 @@ func structValue(rv reflect.Value) (reflect.Value, error) {
 // embedded is true when rv is not the top-level call/parameter struct, which governs
 // how [ref] pointer members are encoded ([C706] section 14.3.10).
 func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
+	var deferred []func() error
+	retvalIdx, err := marshalStructFields(e, rv, embedded, &deferred)
+	if err != nil {
+		return err
+	}
+	if err := runDeferred(deferred); err != nil {
+		return err
+	}
+	// The RPC return value follows all [out] parameters and their deferred referents.
+	if retvalIdx >= 0 {
+		rt := rv.Type()
+		f := rt.Field(retvalIdx)
+		var rdef []func() error
+		if err := marshalFieldInline(e, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
+			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		}
+		if err := runDeferred(rdef); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// marshalStructFields writes a struct's inline representation, appending each deferred
+// referent body to *deferred rather than flushing it. The caller owns the flush, which
+// is what lets an enclosing array emit every element's referents after the whole array
+// body, per [C706] section 14.3.10. It returns the index of the `retval` field (or -1),
+// which the caller emits last; array elements never carry a retval, so callers other
+// than marshalStruct ignore it.
+func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
@@ -75,7 +105,6 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	// disagree and the caller need not set it explicitly.
 	counts := countTargets(rt, rv)
 	retvalIdx := retvalIndex(rt)
-	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
 		if f.PkgPath != "" { // unexported
@@ -95,7 +124,7 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 			tmp := reflect.New(f.Type).Elem()
 			tmp.SetUint(c)
 			if err := marshalScalar(e, tmp); err != nil {
-				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
 		}
@@ -106,31 +135,26 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 				e.WriteUint32(0)                         // offset
 				e.WriteUint32(uint32(rv.Field(i).Len())) // actual_count
 			}
-			if err := marshalElements(e, rv.Field(i)); err != nil {
-				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+			if err := marshalElements(e, rv.Field(i), elementTag(tag)); err != nil {
+				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
 		}
-		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred, embedded); err != nil {
-			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		if err := marshalFieldInline(e, rv.Field(i), tag, deferred, embedded); err != nil {
+			return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
-	for _, fn := range deferred {
-		if err := fn(); err != nil {
+	return retvalIdx, nil
+}
+
+// runDeferred executes each deferred referent body in order. An index loop is used so
+// that a referent body which itself defers further referents (a pointer reached through
+// another pointer) is processed in the same pass, matching NDR's depth-first referent
+// traversal ([C706] section 14.3.10).
+func runDeferred(deferred []func() error) error {
+	for i := 0; i < len(deferred); i++ {
+		if err := deferred[i](); err != nil {
 			return err
-		}
-	}
-	// The RPC return value follows all [out] parameters and their deferred referents.
-	if retvalIdx >= 0 {
-		f := rt.Field(retvalIdx)
-		var rdef []func() error
-		if err := marshalFieldInline(e, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
-			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
-		}
-		for _, fn := range rdef {
-			if err := fn(); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -212,9 +236,9 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		return marshalStruct(e, fv, true) // members of any value reached here are embedded
 	case reflect.Slice:
 		if tag.varying {
-			return marshalConformantVaryingArray(e, fv)
+			return marshalConformantVaryingArray(e, fv, elementTag(tag))
 		}
-		return marshalConformantArray(e, fv)
+		return marshalConformantArray(e, fv, elementTag(tag))
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
 			b := make([]byte, fv.Len())
@@ -262,6 +286,33 @@ func marshalScalar(e *Encoder, fv reflect.Value) error {
 // ---- unmarshalling --------------------------------------------------------------
 
 func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
+	var deferred []func() error
+	retvalIdx, err := unmarshalStructFields(d, rv, embedded, &deferred)
+	if err != nil {
+		return err
+	}
+	if err := runDeferred(deferred); err != nil {
+		return err
+	}
+	// The RPC return value follows all [out] parameters and their deferred referents.
+	if retvalIdx >= 0 {
+		rt := rv.Type()
+		f := rt.Field(retvalIdx)
+		var rdef []func() error
+		if err := unmarshalFieldInline(d, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
+			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		}
+		if err := runDeferred(rdef); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// unmarshalStructFields reads a struct's inline representation, appending each deferred
+// referent body to *deferred rather than reading it. The caller owns the flush; see
+// marshalStructFields for why arrays need this. Returns the `retval` field index or -1.
+func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint32
@@ -269,12 +320,11 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 		d.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
 		c, err := d.ReadUint32() // hoisted maximum_count
 		if err != nil {
-			return err
+			return -1, err
 		}
 		confCount = c
 	}
 	retvalIdx := retvalIndex(rt)
-	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
 		if f.PkgPath != "" {
@@ -291,42 +341,24 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 			n := int(confCount)
 			if tag.varying {
 				if _, err := d.ReadUint32(); err != nil { // offset
-					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+					return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 				}
 				actual, err := d.ReadUint32() // actual_count
 				if err != nil {
-					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+					return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 				}
 				n = int(actual)
 			}
-			if err := unmarshalElements(d, rv.Field(i), n); err != nil {
-				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+			if err := unmarshalElements(d, rv.Field(i), n, elementTag(tag)); err != nil {
+				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
 		}
-		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred, embedded); err != nil {
-			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		if err := unmarshalFieldInline(d, rv.Field(i), tag, deferred, embedded); err != nil {
+			return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
-	for _, fn := range deferred {
-		if err := fn(); err != nil {
-			return err
-		}
-	}
-	// The RPC return value follows all [out] parameters and their deferred referents.
-	if retvalIdx >= 0 {
-		f := rt.Field(retvalIdx)
-		var rdef []func() error
-		if err := unmarshalFieldInline(d, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
-			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
-		}
-		for _, fn := range rdef {
-			if err := fn(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return retvalIdx, nil
 }
 
 func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
@@ -407,9 +439,9 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 		return unmarshalStruct(d, fv, true)
 	case reflect.Slice:
 		if tag.varying {
-			return unmarshalConformantVaryingArray(d, fv)
+			return unmarshalConformantVaryingArray(d, fv, elementTag(tag))
 		}
-		return unmarshalConformantArray(d, fv)
+		return unmarshalConformantArray(d, fv, elementTag(tag))
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
 			b, err := d.ReadBytes(fv.Len())
@@ -611,38 +643,38 @@ func conformantArrayAlignment(elemType reflect.Type) int {
 // marshalConformantArray writes a conformant array: a maximum_count followed by the
 // elements, per [MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
-func marshalConformantArray(e *Encoder, slice reflect.Value) error {
+func marshalConformantArray(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
 	e.Align(conformantArrayAlignment(slice.Type().Elem()))
 	e.WriteUint32(uint32(slice.Len()))
-	return marshalElements(e, slice)
+	return marshalElements(e, slice, elemTag)
 }
 
 // unmarshalConformantArray reads a maximum_count-prefixed array into slice.
-func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
+func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
 	d.Align(conformantArrayAlignment(slice.Type().Elem()))
 	n, err := d.ReadUint32()
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, int(n))
+	return unmarshalElements(d, slice, int(n), elemTag)
 }
 
 // marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
 // offset, actual_count, then the elements, per [MS-RPCE] Conformant Varying Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
 // The full slice is transmitted (offset 0, actual_count == maximum_count == len).
-func marshalConformantVaryingArray(e *Encoder, slice reflect.Value) error {
+func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
 	e.Align(conformantArrayAlignment(slice.Type().Elem()))
 	n := uint32(slice.Len())
 	e.WriteUint32(n) // maximum_count
 	e.WriteUint32(0) // offset
 	e.WriteUint32(n) // actual_count
-	return marshalElements(e, slice)
+	return marshalElements(e, slice, elemTag)
 }
 
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the
 // actual_count to size the result.
-func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value) error {
+func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
 	d.Align(conformantArrayAlignment(slice.Type().Elem()))
 	if _, err := d.ReadUint32(); err != nil { // maximum_count
 		return err
@@ -654,27 +686,73 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value) error {
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, int(actual))
+	return unmarshalElements(d, slice, int(actual), elemTag)
 }
 
-// marshalElements writes the elements of a slice with no count prefix. Each element
-// is marshalled via the inline-value path, so any supported element type (scalars,
-// structs, Marshaler types) is handled with its natural alignment.
-func marshalElements(e *Encoder, slice reflect.Value) error {
+// marshalElements writes the elements of a slice with no count prefix, in two passes:
+// every element's fixed (inline) part first, then every element's deferred referents,
+// both in element order. NDR defers the referents of pointers embedded in an array to
+// a position after the entire array body, so an array of pointers, or of structs that
+// themselves contain pointers, cannot be encoded by recursing fully into each element
+// in turn ([C706] section 14.3.10).
+func marshalElements(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
 	if slice.Type().Elem().Kind() == reflect.Uint8 {
 		e.WriteBytes(slice.Bytes()) // fast path for byte arrays
 		return nil
 	}
+	var deferred []func() error
 	for i := 0; i < slice.Len(); i++ {
-		if err := marshalInlineValue(e, slice.Index(i), fieldTag{}, nil); err != nil {
+		if err := marshalElement(e, slice.Index(i), elemTag, &deferred); err != nil {
 			return fmt.Errorf("element %d: %w", i, err)
 		}
 	}
-	return nil
+	return runDeferred(deferred)
 }
 
-// unmarshalElements reads n elements into slice (allocating a fresh backing array).
-func unmarshalElements(d *Decoder, slice reflect.Value, n int) error {
+// marshalElement writes one array element's inline part, appending its deferred
+// referents (if any) to *deferred. Pointer elements and struct elements that contain
+// pointers route their referents up to the array's shared queue so they land after the
+// whole array; pointer-free elements have no deferral and are written in place.
+func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func() error) error {
+	if isPointerLike(ev, tag) {
+		kind := tag.ptr
+		if kind == ptrNone {
+			kind = ptrUnique // a bare Go pointer element defaults to [unique]
+		}
+		// An array of [ref] pointers transmits no referent id per element ([C706]
+		// section 14.3.10: "the special case of an array of reference pointers ... has
+		// no NDR representation"); only the referent bodies are deferred. [unique]/[ptr]
+		// elements carry a referent id (0 for NULL) inline, body deferred.
+		if kind == ptrRef {
+			if isNilReferent(ev) {
+				return fmt.Errorf("ndr: nil [ref] array element")
+			}
+		} else {
+			if isNilReferent(ev) {
+				e.WriteUint32(0) // NULL referent
+				return nil
+			}
+			e.WriteUint32(e.nextReferent())
+		}
+		body := ev
+		*deferred = append(*deferred, func() error { return marshalReferentBody(e, body, tag) })
+		return nil
+	}
+	// A struct element defers its own embedded pointers into the array's queue rather
+	// than flushing them after itself, so they too land after the whole array.
+	if ev.Kind() == reflect.Struct {
+		if _, ok := asMarshaler(ev); !ok {
+			_, err := marshalStructFields(e, ev, true, deferred)
+			return err
+		}
+	}
+	return marshalInlineValue(e, ev, tag, nil)
+}
+
+// unmarshalElements reads n elements into slice (allocating a fresh backing array), in
+// two passes mirroring marshalElements: every element's fixed part first, then every
+// element's deferred referents, both in element order ([C706] section 14.3.10).
+func unmarshalElements(d *Decoder, slice reflect.Value, n int, elemTag fieldTag) error {
 	if n < 0 {
 		return fmt.Errorf("ndr: negative element count %d", n)
 	}
@@ -695,13 +773,57 @@ func unmarshalElements(d *Decoder, slice reflect.Value, n int) error {
 		return nil
 	}
 	out := reflect.MakeSlice(slice.Type(), n, n)
+	var deferred []func() error
 	for i := 0; i < n; i++ {
-		if err := unmarshalInlineValue(d, out.Index(i), fieldTag{}); err != nil {
+		if err := unmarshalElement(d, out.Index(i), elemTag, &deferred); err != nil {
 			return fmt.Errorf("element %d: %w", i, err)
 		}
 	}
+	if err := runDeferred(deferred); err != nil {
+		return err
+	}
 	slice.Set(out)
 	return nil
+}
+
+// unmarshalElement reads one array element's inline part, appending its deferred
+// referent reads (if any) to *deferred. It mirrors marshalElement: pointer elements
+// read a referent id (none for a [ref] array) and defer the body; struct elements defer
+// their embedded pointers into the array's queue; pointer-free elements read in place.
+func unmarshalElement(d *Decoder, ev reflect.Value, tag fieldTag, deferred *[]func() error) error {
+	if isPointerLike(ev, tag) {
+		kind := tag.ptr
+		if kind == ptrNone {
+			kind = ptrUnique
+		}
+		if kind != ptrRef {
+			refid, err := d.ReadUint32()
+			if err != nil {
+				return err
+			}
+			if refid == 0 {
+				return nil // NULL: leave the zero value
+			}
+		}
+		target := ev
+		*deferred = append(*deferred, func() error { return unmarshalReferentBody(d, target, tag) })
+		return nil
+	}
+	if ev.Kind() == reflect.Struct {
+		if _, ok := asMarshalerAddr(ev); !ok {
+			_, err := unmarshalStructFields(d, ev, true, deferred)
+			return err
+		}
+	}
+	return unmarshalInlineValue(d, ev, tag)
+}
+
+// elementTag derives the tag applied to each element of an array from the array
+// field's own tag. Only the element pointer attribute (`elem=ref|unique|ptr`) carries
+// over; the array-level attributes (size_is, varying, …) describe the array, not its
+// elements.
+func elementTag(tag fieldTag) fieldTag {
+	return fieldTag{ptr: tag.elemPtr}
 }
 
 func isPointerLike(fv reflect.Value, tag fieldTag) bool {
