@@ -78,7 +78,12 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 			continue
 		}
 		if i == confIdx {
-			// The maximum_count was hoisted above; emit only the elements in place.
+			// The maximum_count was hoisted above. For a conformant-varying array the
+			// offset and actual_count stay here, ahead of the elements.
+			if tag.varying {
+				e.WriteUint32(0)                         // offset
+				e.WriteUint32(uint32(rv.Field(i).Len())) // actual_count
+			}
 			if err := marshalElements(e, rv.Field(i)); err != nil {
 				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
@@ -163,6 +168,9 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 	case reflect.Struct:
 		return marshalStruct(e, fv)
 	case reflect.Slice:
+		if tag.varying {
+			return marshalConformantVaryingArray(e, fv)
+		}
 		return marshalConformantArray(e, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
@@ -232,7 +240,18 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 			continue
 		}
 		if i == confIdx {
-			if err := unmarshalElements(d, rv.Field(i), int(confCount)); err != nil {
+			n := int(confCount)
+			if tag.varying {
+				if _, err := d.ReadUint32(); err != nil { // offset
+					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+				}
+				actual, err := d.ReadUint32() // actual_count
+				if err != nil {
+					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+				}
+				n = int(actual)
+			}
+			if err := unmarshalElements(d, rv.Field(i), n); err != nil {
 				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
@@ -316,6 +335,9 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 	case reflect.Struct:
 		return unmarshalStruct(d, fv)
 	case reflect.Slice:
+		if tag.varying {
+			return unmarshalConformantVaryingArray(d, fv)
+		}
 		return unmarshalConformantArray(d, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
@@ -439,6 +461,34 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
 		return err
 	}
 	return unmarshalElements(d, slice, int(n))
+}
+
+// marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
+// offset, actual_count, then the elements, per [MS-RPCE] Conformant Varying Arrays:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
+// The full slice is transmitted (offset 0, actual_count == maximum_count == len).
+func marshalConformantVaryingArray(e *Encoder, slice reflect.Value) error {
+	n := uint32(slice.Len())
+	e.WriteUint32(n) // maximum_count
+	e.WriteUint32(0) // offset
+	e.WriteUint32(n) // actual_count
+	return marshalElements(e, slice)
+}
+
+// unmarshalConformantVaryingArray reads a conformant-varying array, using the
+// actual_count to size the result.
+func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value) error {
+	if _, err := d.ReadUint32(); err != nil { // maximum_count
+		return err
+	}
+	if _, err := d.ReadUint32(); err != nil { // offset
+		return err
+	}
+	actual, err := d.ReadUint32() // actual_count
+	if err != nil {
+		return err
+	}
+	return unmarshalElements(d, slice, int(actual))
 }
 
 // marshalElements writes the elements of a slice with no count prefix. Each element
