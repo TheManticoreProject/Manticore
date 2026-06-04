@@ -18,7 +18,7 @@ func Marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 	e := NewEncoder()
-	if err := marshalStruct(e, rv); err != nil {
+	if err := marshalStruct(e, rv, false); err != nil {
 		return nil, err
 	}
 	return e.Bytes(), nil
@@ -35,7 +35,7 @@ func Unmarshal(data []byte, v any) error {
 	if err != nil {
 		return err
 	}
-	return unmarshalStruct(NewDecoder(data), sv)
+	return unmarshalStruct(NewDecoder(data), sv, false)
 }
 
 // structValue dereferences pointers/interfaces to reach a struct value.
@@ -61,7 +61,9 @@ func structValue(rv reflect.Value) (reflect.Value, error) {
 // maximum_count is hoisted to the start of the struct and only the elements are
 // emitted in place, per [MS-RPCE] "Structure Containing a Conformant Varying Array":
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/7bae54af-8b6a-4672-a6a3-6bcdf131730a
-func marshalStruct(e *Encoder, rv reflect.Value) error {
+// embedded is true when rv is not the top-level call/parameter struct, which governs
+// how [ref] pointer members are encoded ([C706] section 14.3.10).
+func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
@@ -104,7 +106,7 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 			}
 			continue
 		}
-		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred); err != nil {
+		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred, embedded); err != nil {
 			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
@@ -118,7 +120,7 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 
 // marshalFieldInline writes a field's inline representation, enqueueing the referent
 // body for pointers.
-func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if tag.align > 0 {
 		e.Align(tag.align)
 	}
@@ -133,12 +135,20 @@ func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			kind = ptrUnique // a bare Go pointer defaults to [unique]
 		}
 		if kind == ptrRef {
-			// Reference pointers carry no referent id at the top level; the referent
-			// is marshalled inline.
 			if isNilReferent(fv) {
 				return fmt.Errorf("ndr: nil [ref] pointer")
 			}
-			return marshalReferentBody(e, fv, tag)
+			// A top-level [ref] parameter has no referent id and its referent is
+			// marshalled in place. An embedded [ref] pointer is represented by a
+			// 4-octet placeholder with its referent deferred, like other embedded
+			// pointers ([C706] section 14.3.10).
+			if !embedded {
+				return marshalReferentBody(e, fv, tag)
+			}
+			e.WriteUint32(e.nextReferent())
+			body := fv
+			*deferred = append(*deferred, func() error { return marshalReferentBody(e, body, tag) })
+			return nil
 		}
 		if isNilReferent(fv) {
 			e.WriteUint32(0) // NULL referent
@@ -181,7 +191,7 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 
 	switch fv.Kind() {
 	case reflect.Struct:
-		return marshalStruct(e, fv)
+		return marshalStruct(e, fv, true) // members of any value reached here are embedded
 	case reflect.Slice:
 		if tag.varying {
 			return marshalConformantVaryingArray(e, fv)
@@ -233,7 +243,7 @@ func marshalScalar(e *Encoder, fv reflect.Value) error {
 
 // ---- unmarshalling --------------------------------------------------------------
 
-func unmarshalStruct(d *Decoder, rv reflect.Value) error {
+func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint32
@@ -271,7 +281,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 			}
 			continue
 		}
-		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred); err != nil {
+		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred, embedded); err != nil {
 			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
@@ -283,7 +293,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 	return nil
 }
 
-func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if tag.align > 0 {
 		d.Align(tag.align)
 	}
@@ -298,7 +308,17 @@ func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 			kind = ptrUnique
 		}
 		if kind == ptrRef {
-			return unmarshalReferentBody(d, fv, tag)
+			// Top-level [ref]: referent in place. Embedded [ref]: 4-octet placeholder
+			// then a deferred referent.
+			if !embedded {
+				return unmarshalReferentBody(d, fv, tag)
+			}
+			if _, err := d.ReadUint32(); err != nil {
+				return err
+			}
+			target := fv
+			*deferred = append(*deferred, func() error { return unmarshalReferentBody(d, target, tag) })
+			return nil
 		}
 		refid, err := d.ReadUint32()
 		if err != nil {
@@ -348,7 +368,7 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 
 	switch fv.Kind() {
 	case reflect.Struct:
-		return unmarshalStruct(d, fv)
+		return unmarshalStruct(d, fv, true)
 	case reflect.Slice:
 		if tag.varying {
 			return unmarshalConformantVaryingArray(d, fv)
