@@ -175,6 +175,11 @@ func marshalReferentBody(e *Encoder, fv reflect.Value, tag fieldTag) error {
 // the value is itself a referent body (its own pointers create a fresh construction
 // scope via marshalStruct).
 func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+	if u, ok := asUnion(fv); ok {
+		sw := u.SwitchValue()
+		e.WriteUint32(sw) // encapsulated discriminant (4-octet, 4-aligned)
+		return u.MarshalArm(e, sw)
+	}
 	if m, ok := asMarshaler(fv); ok {
 		e.Align(m.AlignmentNDR())
 		return m.MarshalNDR(e)
@@ -346,6 +351,13 @@ func unmarshalReferentBody(d *Decoder, fv reflect.Value, tag fieldTag) error {
 }
 
 func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
+	if u, ok := asUnion(fv); ok {
+		sw, err := d.ReadUint32()
+		if err != nil {
+			return err
+		}
+		return u.UnmarshalArm(d, sw)
+	}
 	if m, ok := asMarshalerAddr(fv); ok {
 		d.Align(m.AlignmentNDR())
 		return m.UnmarshalNDR(d)
