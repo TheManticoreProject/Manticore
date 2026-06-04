@@ -79,7 +79,9 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 		}
 		if i == confIdx {
 			// The maximum_count was hoisted above; emit only the elements in place.
-			e.WriteBytes(rv.Field(i).Bytes())
+			if err := marshalElements(e, rv.Field(i)); err != nil {
+				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+			}
 			continue
 		}
 		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred); err != nil {
@@ -161,11 +163,7 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 	case reflect.Struct:
 		return marshalStruct(e, fv)
 	case reflect.Slice:
-		if fv.Type().Elem().Kind() == reflect.Uint8 {
-			e.writeConformantBytes(fv.Bytes())
-			return nil
-		}
-		return fmt.Errorf("ndr: unsupported slice element %s", fv.Type().Elem().Kind())
+		return marshalConformantArray(e, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
 			b := make([]byte, fv.Len())
@@ -234,13 +232,9 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 			continue
 		}
 		if i == confIdx {
-			b, err := d.ReadBytes(int(confCount))
-			if err != nil {
-				return err
+			if err := unmarshalElements(d, rv.Field(i), int(confCount)); err != nil {
+				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
-			out := make([]byte, len(b))
-			copy(out, b)
-			rv.Field(i).SetBytes(out)
 			continue
 		}
 		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred); err != nil {
@@ -322,15 +316,7 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 	case reflect.Struct:
 		return unmarshalStruct(d, fv)
 	case reflect.Slice:
-		if fv.Type().Elem().Kind() == reflect.Uint8 {
-			b, err := d.readConformantBytes()
-			if err != nil {
-				return err
-			}
-			fv.SetBytes(b)
-			return nil
-		}
-		return fmt.Errorf("ndr: unsupported slice element %s", fv.Type().Elem().Kind())
+		return unmarshalConformantArray(d, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
 			b, err := d.ReadBytes(fv.Len())
@@ -432,12 +418,68 @@ func embeddedConformantIndex(rt reflect.Type, rv reflect.Value) int {
 }
 
 // isEmbeddedConformantArray reports whether fv is an inline (non-pointer) conformant
-// byte array, i.e. a byte slice that is not itself behind a pointer. A byte slice
-// behind a pointer is a referent, not an embedded array, and is not hoisted.
+// array, i.e. a slice that is not itself behind a pointer. A slice behind a pointer is
+// a referent, not an embedded array, and is not hoisted.
 func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
-	return fv.Kind() == reflect.Slice &&
-		fv.Type().Elem().Kind() == reflect.Uint8 &&
-		!isPointerLike(fv, tag)
+	return fv.Kind() == reflect.Slice && !isPointerLike(fv, tag)
+}
+
+// marshalConformantArray writes a conformant array: a maximum_count followed by the
+// elements, per [MS-RPCE] Conformant Arrays:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
+func marshalConformantArray(e *Encoder, slice reflect.Value) error {
+	e.WriteUint32(uint32(slice.Len()))
+	return marshalElements(e, slice)
+}
+
+// unmarshalConformantArray reads a maximum_count-prefixed array into slice.
+func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
+	n, err := d.ReadUint32()
+	if err != nil {
+		return err
+	}
+	return unmarshalElements(d, slice, int(n))
+}
+
+// marshalElements writes the elements of a slice with no count prefix. Each element
+// is marshalled via the inline-value path, so any supported element type (scalars,
+// structs, Marshaler types) is handled with its natural alignment.
+func marshalElements(e *Encoder, slice reflect.Value) error {
+	if slice.Type().Elem().Kind() == reflect.Uint8 {
+		e.WriteBytes(slice.Bytes()) // fast path for byte arrays
+		return nil
+	}
+	for i := 0; i < slice.Len(); i++ {
+		if err := marshalInlineValue(e, slice.Index(i), fieldTag{}, nil); err != nil {
+			return fmt.Errorf("element %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// unmarshalElements reads n elements into slice (allocating a fresh backing array).
+func unmarshalElements(d *Decoder, slice reflect.Value, n int) error {
+	if n < 0 {
+		return fmt.Errorf("ndr: negative element count %d", n)
+	}
+	if slice.Type().Elem().Kind() == reflect.Uint8 {
+		b, err := d.ReadBytes(n)
+		if err != nil {
+			return err
+		}
+		out := make([]byte, n)
+		copy(out, b)
+		slice.SetBytes(out)
+		return nil
+	}
+	out := reflect.MakeSlice(slice.Type(), n, n)
+	for i := 0; i < n; i++ {
+		if err := unmarshalInlineValue(d, out.Index(i), fieldTag{}); err != nil {
+			return fmt.Errorf("element %d: %w", i, err)
+		}
+	}
+	slice.Set(out)
+	return nil
 }
 
 func isPointerLike(fv reflect.Value, tag fieldTag) bool {
