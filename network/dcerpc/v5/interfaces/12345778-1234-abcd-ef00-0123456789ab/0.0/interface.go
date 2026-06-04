@@ -209,3 +209,77 @@ func StatusString(status uint32) string {
 		return fmt.Sprintf("0x%08x", status)
 	}
 }
+
+// OpnumToName maps each on-the-wire opnum to its [MS-LSAD]/[MS-LSAT] method name.
+// Opnums that are "not used on the wire" in the IDL are absent. It is the single source
+// of truth; NameToOpnum is derived from it.
+var OpnumToName = map[uint16]string{
+	OpnumLsarClose:                          "LsarClose",
+	OpnumLsarEnumeratePrivileges:            "LsarEnumeratePrivileges",
+	OpnumLsarQuerySecurityObject:            "LsarQuerySecurityObject",
+	OpnumLsarSetSecurityObject:              "LsarSetSecurityObject",
+	OpnumLsarOpenPolicy:                     "LsarOpenPolicy",
+	OpnumLsarQueryInformationPolicy:         "LsarQueryInformationPolicy",
+	OpnumLsarSetInformationPolicy:           "LsarSetInformationPolicy",
+	OpnumLsarCreateAccount:                  "LsarCreateAccount",
+	OpnumLsarEnumerateAccounts:              "LsarEnumerateAccounts",
+	OpnumLsarCreateTrustedDomain:            "LsarCreateTrustedDomain",
+	OpnumLsarEnumerateTrustedDomains:        "LsarEnumerateTrustedDomains",
+	OpnumLsarLookupNames:                    "LsarLookupNames",
+	OpnumLsarLookupSids:                     "LsarLookupSids",
+	OpnumLsarCreateSecret:                   "LsarCreateSecret",
+	OpnumLsarOpenAccount:                    "LsarOpenAccount",
+	OpnumLsarEnumeratePrivilegesAccount:     "LsarEnumeratePrivilegesAccount",
+	OpnumLsarAddPrivilegesToAccount:         "LsarAddPrivilegesToAccount",
+	OpnumLsarRemovePrivilegesFromAccount:    "LsarRemovePrivilegesFromAccount",
+	OpnumLsarGetSystemAccessAccount:         "LsarGetSystemAccessAccount",
+	OpnumLsarSetSystemAccessAccount:         "LsarSetSystemAccessAccount",
+	OpnumLsarOpenTrustedDomain:              "LsarOpenTrustedDomain",
+	OpnumLsarQueryInfoTrustedDomain:         "LsarQueryInfoTrustedDomain",
+	OpnumLsarSetInformationTrustedDomain:    "LsarSetInformationTrustedDomain",
+	OpnumLsarOpenSecret:                     "LsarOpenSecret",
+	OpnumLsarSetSecret:                      "LsarSetSecret",
+	OpnumLsarQuerySecret:                    "LsarQuerySecret",
+	OpnumLsarLookupPrivilegeValue:           "LsarLookupPrivilegeValue",
+	OpnumLsarLookupPrivilegeName:            "LsarLookupPrivilegeName",
+	OpnumLsarLookupPrivilegeDisplayName:     "LsarLookupPrivilegeDisplayName",
+	OpnumLsarDeleteObject:                   "LsarDeleteObject",
+	OpnumLsarEnumerateAccountsWithUserRight: "LsarEnumerateAccountsWithUserRight",
+	OpnumLsarEnumerateAccountRights:         "LsarEnumerateAccountRights",
+	OpnumLsarAddAccountRights:               "LsarAddAccountRights",
+	OpnumLsarRemoveAccountRights:            "LsarRemoveAccountRights",
+	OpnumLsarQueryTrustedDomainInfo:         "LsarQueryTrustedDomainInfo",
+	OpnumLsarSetTrustedDomainInfo:           "LsarSetTrustedDomainInfo",
+	OpnumLsarDeleteTrustedDomain:            "LsarDeleteTrustedDomain",
+	OpnumLsarStorePrivateData:               "LsarStorePrivateData",
+	OpnumLsarRetrievePrivateData:            "LsarRetrievePrivateData",
+	OpnumLsarOpenPolicy2:                    "LsarOpenPolicy2",
+	OpnumLsarGetUserName:                    "LsarGetUserName",
+	OpnumLsarQueryInformationPolicy2:        "LsarQueryInformationPolicy2",
+	OpnumLsarSetInformationPolicy2:          "LsarSetInformationPolicy2",
+	OpnumLsarQueryTrustedDomainInfoByName:   "LsarQueryTrustedDomainInfoByName",
+	OpnumLsarSetTrustedDomainInfoByName:     "LsarSetTrustedDomainInfoByName",
+	OpnumLsarEnumerateTrustedDomainsEx:      "LsarEnumerateTrustedDomainsEx",
+	OpnumLsarCreateTrustedDomainEx:          "LsarCreateTrustedDomainEx",
+	OpnumLsarQueryDomainInformationPolicy:   "LsarQueryDomainInformationPolicy",
+	OpnumLsarSetDomainInformationPolicy:     "LsarSetDomainInformationPolicy",
+	OpnumLsarOpenTrustedDomainByName:        "LsarOpenTrustedDomainByName",
+	OpnumLsarLookupSids2:                    "LsarLookupSids2",
+	OpnumLsarLookupNames2:                   "LsarLookupNames2",
+	OpnumLsarCreateTrustedDomainEx2:         "LsarCreateTrustedDomainEx2",
+	OpnumLsarLookupNames3:                   "LsarLookupNames3",
+	OpnumLsarQueryForestTrustInformation:    "LsarQueryForestTrustInformation",
+	OpnumLsarSetForestTrustInformation:      "LsarSetForestTrustInformation",
+	OpnumLsarLookupSids3:                    "LsarLookupSids3",
+	OpnumLsarLookupNames4:                   "LsarLookupNames4",
+}
+
+// NameToOpnum is the reverse of OpnumToName: method name to opnum. It is built from
+// OpnumToName at init so the two never drift.
+var NameToOpnum = func() map[string]uint16 {
+	m := make(map[string]uint16, len(OpnumToName))
+	for op, name := range OpnumToName {
+		m[name] = op
+	}
+	return m
+}()

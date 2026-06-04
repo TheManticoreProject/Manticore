@@ -11,6 +11,28 @@ func TestStatusString(t *testing.T) {
 	}
 }
 
+func TestOpnumNameMapsRoundTrip(t *testing.T) {
+	if len(OpnumToName) != 58 {
+		t.Errorf("OpnumToName has %d entries, want 58 on-the-wire methods", len(OpnumToName))
+	}
+	if len(NameToOpnum) != len(OpnumToName) {
+		t.Errorf("NameToOpnum has %d entries, OpnumToName has %d (a duplicate name collapsed an entry)",
+			len(NameToOpnum), len(OpnumToName))
+	}
+	for op, name := range OpnumToName {
+		if got, ok := NameToOpnum[name]; !ok || got != op {
+			t.Errorf("NameToOpnum[%q] = %d, %v; want %d", name, got, ok, op)
+		}
+	}
+	// Spot-check both directions.
+	if OpnumToName[OpnumLsarOpenPolicy2] != "LsarOpenPolicy2" {
+		t.Errorf("OpnumToName[44] = %q, want LsarOpenPolicy2", OpnumToName[OpnumLsarOpenPolicy2])
+	}
+	if NameToOpnum["LsarClose"] != OpnumLsarClose {
+		t.Errorf("NameToOpnum[LsarClose] = %d, want %d", NameToOpnum["LsarClose"], OpnumLsarClose)
+	}
+}
+
 func TestSyntaxID(t *testing.T) {
 	id := SyntaxID()
 	// 12345778-1234-abcd-ef00-0123456789ab, version 0.0.
