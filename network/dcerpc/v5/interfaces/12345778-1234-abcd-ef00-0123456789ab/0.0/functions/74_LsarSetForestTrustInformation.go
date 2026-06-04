@@ -31,7 +31,7 @@ func (*lsarSetForestTrustInformationRequest) Opnum() uint16 {
 // describing any conflicts with existing trusts followed by the NTSTATUS return value.
 type lsarSetForestTrustInformationResponse struct {
 	CollisionInfo *structures.LSA_FOREST_TRUST_COLLISION_INFORMATION `ndr:"unique"`
-	Status        ndr.DWORD
+	Status        ndr.DWORD                                          `ndr:"retval"`
 }
 
 // LsarSetForestTrustInformation calls LsarSetForestTrustInformation (opnum 74), establishing

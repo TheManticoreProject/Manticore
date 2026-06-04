@@ -18,11 +18,11 @@ import (
 // Open*/Create* methods).
 type handleResponse struct {
 	Handle structures.LSAPR_HANDLE
-	Status ndr.DWORD
+	Status ndr.DWORD `ndr:"retval"`
 }
 
 // statusResponse is the reply shape for methods with no [out] parameters beyond the
 // NTSTATUS return value (the Set*/Add*/Remove*/Delete* methods).
 type statusResponse struct {
-	Status ndr.DWORD
+	Status ndr.DWORD `ndr:"retval"`
 }

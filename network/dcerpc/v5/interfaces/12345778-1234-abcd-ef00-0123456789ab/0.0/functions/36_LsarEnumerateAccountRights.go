@@ -25,7 +25,7 @@ func (*lsarEnumerateAccountRightsRequest) Opnum() uint16 {
 // the account (an inline [ref] struct) followed by the NTSTATUS return value.
 type lsarEnumerateAccountRightsResponse struct {
 	UserRights structures.LSAPR_USER_RIGHT_SET
-	Status     ndr.DWORD
+	Status     ndr.DWORD `ndr:"retval"`
 }
 
 // LsarEnumerateAccountRights calls LsarEnumerateAccountRights (opnum 36), returning the set

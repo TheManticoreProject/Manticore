@@ -95,6 +95,11 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 // than marshalStruct ignore it.
 func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
+	// A structure is aligned to the largest alignment of any of its members before its
+	// representation ([C706] section 14.2.2). The first member self-aligns to its own
+	// size, which is insufficient when a later member is wider (e.g. RPC_UNICODE_STRING,
+	// whose Buffer pointer makes it 4-aligned, following a 2-byte discriminant).
+	e.Align(ndrAlignment(rt))
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
 		e.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
@@ -197,12 +202,19 @@ func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			return nil
 		}
 		e.WriteUint32(e.nextReferent())
+		// A top-level [unique]/[full] pointer parameter marshals its referent in place,
+		// immediately after the referent id; only an embedded pointer defers the body to
+		// the end of the enclosing construction ([C706] section 14.3.10, and observed on
+		// the wire for LSA [out] parameters such as LsarLookupSids ReferencedDomains).
+		if !embedded {
+			return marshalReferentBody(e, fv, tag)
+		}
 		body := fv
 		*deferred = append(*deferred, func() error { return marshalReferentBody(e, body, tag) })
 		return nil
 	}
 
-	return marshalInlineValue(e, fv, tag, deferred)
+	return marshalInlineValue(e, fv, tag, deferred, embedded)
 }
 
 // marshalReferentBody marshals the representation a pointer refers to.
@@ -210,13 +222,14 @@ func marshalReferentBody(e *Encoder, fv reflect.Value, tag fieldTag) error {
 	if fv.Kind() == reflect.Pointer {
 		fv = fv.Elem()
 	}
-	return marshalInlineValue(e, fv, tag, nil)
+	return marshalInlineValue(e, fv, tag, nil, true)
 }
 
 // marshalInlineValue marshals a non-pointer value in place. deferred may be nil when
 // the value is itself a referent body (its own pointers create a fresh construction
-// scope via marshalStruct).
-func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+// scope via marshalStruct). embedded is true when the value is nested inside another
+// construction rather than being a top-level parameter.
+func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if m, ok := asMarshaler(fv); ok {
 		e.Align(m.AlignmentNDR())
 		return m.MarshalNDR(e)
@@ -236,7 +249,16 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
 			return marshalUnion(e, fv, swIdx)
 		}
-		return marshalStruct(e, fv, true) // members of any value reached here are embedded
+		// A struct value nested inside another construction (embedded) is part of that
+		// construction: its pointers defer to the enclosing flush point, not the end of
+		// this struct ([C706] 14.3.12.3 — deferral iterates to the outermost construction).
+		// A top-level parameter struct, or a referent body (deferred == nil), is its own
+		// construction with its own deferral scope.
+		if embedded && deferred != nil {
+			_, err := marshalStructFields(e, fv, true, deferred)
+			return err
+		}
+		return marshalStruct(e, fv, true)
 	case reflect.Slice:
 		if tag.varying {
 			return marshalConformantVaryingArray(e, fv, elementTag(tag))
@@ -317,6 +339,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 // marshalStructFields for why arrays need this. Returns the `retval` field index or -1.
 func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
+	d.Align(ndrAlignment(rt)) // a structure is aligned to its largest member ([C706] 14.2.2)
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint32
 	if confIdx >= 0 {
@@ -398,12 +421,18 @@ func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 		if refid == 0 {
 			return nil // NULL: leave the zero value
 		}
+		// Symmetric with marshal: a top-level [unique]/[full] pointer's referent is read
+		// in place, right after the referent id; only an embedded pointer's body is
+		// deferred to the end of the enclosing construction.
+		if !embedded {
+			return unmarshalReferentBody(d, fv, tag)
+		}
 		target := fv
 		*deferred = append(*deferred, func() error { return unmarshalReferentBody(d, target, tag) })
 		return nil
 	}
 
-	return unmarshalInlineValue(d, fv, tag)
+	return unmarshalInlineValue(d, fv, tag, deferred, embedded)
 }
 
 func unmarshalReferentBody(d *Decoder, fv reflect.Value, tag fieldTag) error {
@@ -413,10 +442,10 @@ func unmarshalReferentBody(d *Decoder, fv reflect.Value, tag fieldTag) error {
 		}
 		fv = fv.Elem()
 	}
-	return unmarshalInlineValue(d, fv, tag)
+	return unmarshalInlineValue(d, fv, tag, nil, true) // a referent body is a fresh construction
 }
 
-func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
+func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if m, ok := asMarshalerAddr(fv); ok {
 		d.Align(m.AlignmentNDR())
 		return m.UnmarshalNDR(d)
@@ -441,6 +470,13 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 	case reflect.Struct:
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
 			return unmarshalUnion(d, fv, swIdx)
+		}
+		// Symmetric with marshal: a struct value nested inside another construction threads
+		// the enclosing deferred queue; a top-level parameter struct or a referent body
+		// (deferred == nil) starts its own construction.
+		if embedded && deferred != nil {
+			_, err := unmarshalStructFields(d, fv, true, deferred)
+			return err
 		}
 		return unmarshalStruct(d, fv, true)
 	case reflect.Slice:
@@ -755,7 +791,7 @@ func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func
 			return err
 		}
 	}
-	return marshalInlineValue(e, ev, tag, nil)
+	return marshalInlineValue(e, ev, tag, nil, true)
 }
 
 // unmarshalElements reads n elements into slice (allocating a fresh backing array), in
@@ -827,7 +863,7 @@ func unmarshalElement(d *Decoder, ev reflect.Value, tag fieldTag, deferred *[]fu
 			return err
 		}
 	}
-	return unmarshalInlineValue(d, ev, tag)
+	return unmarshalInlineValue(d, ev, tag, nil, true)
 }
 
 // elementTag derives the tag applied to each element of an array from the array

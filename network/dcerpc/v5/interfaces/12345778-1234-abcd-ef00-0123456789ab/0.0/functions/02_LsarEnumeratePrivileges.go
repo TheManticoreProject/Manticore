@@ -28,7 +28,7 @@ func (*lsarEnumeratePrivilegesRequest) Opnum() uint16 {
 type lsarEnumeratePrivilegesResponse struct {
 	EnumerationContext ndr.DWORD
 	EnumerationBuffer  structures.LSAPR_PRIVILEGE_ENUM_BUFFER
-	Status             ndr.DWORD
+	Status             ndr.DWORD `ndr:"retval"`
 }
 
 // LsarEnumeratePrivileges calls LsarEnumeratePrivileges (opnum 2), enumerating the

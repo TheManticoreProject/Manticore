@@ -25,7 +25,7 @@ func (*lsarEnumerateAccountsRequest) Opnum() uint16 { return lsarpc.OpnumLsarEnu
 type lsarEnumerateAccountsResponse struct {
 	EnumerationContext ndr.DWORD
 	EnumerationBuffer  structures.LSAPR_ACCOUNT_ENUM_BUFFER
-	Status             ndr.DWORD
+	Status             ndr.DWORD `ndr:"retval"`
 }
 
 // LsarEnumerateAccounts calls LsarEnumerateAccounts (opnum 11), returning a page of account

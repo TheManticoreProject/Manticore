@@ -25,7 +25,7 @@ func (*lsarQueryInfoTrustedDomainRequest) Opnum() uint16 {
 // pointer in the IDL, so a [unique] pointer on the wire) and the NTSTATUS return value.
 type lsarQueryInfoTrustedDomainResponse struct {
 	TrustedDomainInformation *structures.LSAPR_TRUSTED_DOMAIN_INFO `ndr:"unique"`
-	Status                   ndr.DWORD
+	Status                   ndr.DWORD                             `ndr:"retval"`
 }
 
 // LsarQueryInfoTrustedDomain calls LsarQueryInfoTrustedDomain (opnum 26), returning the

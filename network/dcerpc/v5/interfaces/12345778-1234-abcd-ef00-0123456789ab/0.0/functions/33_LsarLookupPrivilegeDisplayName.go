@@ -15,7 +15,7 @@ import (
 // pointer to an RPC_UNICODE_STRING), and the client's language identifiers.
 type lsarLookupPrivilegeDisplayNameRequest struct {
 	PolicyHandle                structures.LSAPR_HANDLE
-	Name                        *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Name                        dtyp.RPC_UNICODE_STRING
 	ClientLanguage              int16
 	ClientSystemDefaultLanguage int16
 }
@@ -31,7 +31,7 @@ func (*lsarLookupPrivilegeDisplayNameRequest) Opnum() uint16 {
 type lsarLookupPrivilegeDisplayNameResponse struct {
 	DisplayName      *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
 	LanguageReturned uint16
-	Status           ndr.DWORD
+	Status           ndr.DWORD `ndr:"retval"`
 }
 
 // LsarLookupPrivilegeDisplayName calls LsarLookupPrivilegeDisplayName (opnum 33), mapping a
@@ -41,7 +41,7 @@ func LsarLookupPrivilegeDisplayName(rpc *client.Client, policyHandle structures.
 	rpcName := dtyp.NewUnicodeString(name)
 	req := &lsarLookupPrivilegeDisplayNameRequest{
 		PolicyHandle:                policyHandle,
-		Name:                        &rpcName,
+		Name:                        rpcName,
 		ClientLanguage:              clientLanguage,
 		ClientSystemDefaultLanguage: clientSystemDefaultLanguage,
 	}

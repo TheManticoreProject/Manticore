@@ -128,12 +128,14 @@ func TestUnion_Alignment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
+	// The union is aligned to its discriminant (uint32 -> 4), not to the largest arm:
+	// Windows does not pre-align the union to an 8-byte arm before the tag (verified on
+	// the wire for LSAPR_POLICY_INFORMATION). The uint64 arm then self-aligns to 8 after
+	// the tag — here it already lands at offset 8, so no padding is emitted.
 	want := []byte{
 		0xAA, 0, 0, 0, // Pre
-		0x00, 0, 0, 0, // pad: union aligned to 8 before the discriminant
-		0x01, 0, 0, 0, // discriminant Sel = 1
-		0x00, 0, 0, 0, // pad: uint64 arm aligned to 8
-		0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // arm Big
+		0x01, 0, 0, 0, // discriminant Sel = 1 (offset 4, no pre-pad)
+		0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // arm Big (offset 8, 8-aligned)
 	}
 	if !bytes.Equal(raw, want) {
 		t.Errorf("union alignment:\n got %x\nwant %x", raw, want)

@@ -27,7 +27,7 @@ func (*lsarLookupPrivilegeNameRequest) Opnum() uint16 {
 // return value.
 type lsarLookupPrivilegeNameResponse struct {
 	Name   *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	Status ndr.DWORD
+	Status ndr.DWORD                `ndr:"retval"`
 }
 
 // LsarLookupPrivilegeName calls LsarLookupPrivilegeName (opnum 32), mapping a privilege

@@ -25,7 +25,7 @@ func (*lsarGetUserNameRequest) Opnum() uint16 { return lsarpc.OpnumLsarGetUserNa
 type lsarGetUserNameResponse struct {
 	UserName   *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
 	DomainName *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	Status     ndr.DWORD
+	Status     ndr.DWORD                `ndr:"retval"`
 }
 
 // LsarGetUserName calls LsarGetUserName (opnum 45) to retrieve the name (and domain) of

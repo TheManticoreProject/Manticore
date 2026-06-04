@@ -35,24 +35,28 @@ func TestMarshal_DeferredOrdering_GoldenBytes(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
+	// Each top-level pointer PARAMETER is its own NDR construction: its referent id is
+	// followed immediately by the referent body (only pointers EMBEDDED in a struct defer
+	// their bodies to the end of that struct). Verified against a live Windows server: an
+	// LSA [out] parameter such as LsarLookupSids' ReferencedDomains places its body in
+	// place, not deferred past the later parameters.
 	want := []byte{
-		// --- top-level inline ---
 		0x11, 0x00, 0x00, 0x00, // Flags
 		0x00, 0x00, 0x02, 0x00, // Reserved referent id (0x00020000)
-		0x04, 0x00, 0x02, 0x00, // FileName referent id (0x00020004)
-		0x22, 0x00, 0x00, 0x00, // InfoClass
-		// --- deferred[0]: Reserved (efsBlob) construction ---
+		// Reserved (efsBlob) body, in place:
 		0x02, 0x00, 0x00, 0x00, // CbData
-		0x08, 0x00, 0x02, 0x00, // BData referent id (0x00020008)
+		0x04, 0x00, 0x02, 0x00, // BData referent id (0x00020004)
 		0x02, 0x00, 0x00, 0x00, // BData conformant maximum_count
 		0xaa, 0xbb, // BData elements
-		// --- deferred[1]: FileName wstring ("A") ---
-		0x00, 0x00, // 2-byte pad to 4-align the count
+		0x00, 0x00, // 2-byte pad to 4-align the next referent
+		0x08, 0x00, 0x02, 0x00, // FileName referent id (0x00020008)
+		// FileName wstring ("A") body, in place:
 		0x02, 0x00, 0x00, 0x00, // maximum_count (incl NUL)
 		0x00, 0x00, 0x00, 0x00, // offset
 		0x02, 0x00, 0x00, 0x00, // actual_count
 		0x41, 0x00, // "A"
 		0x00, 0x00, // terminator
+		0x22, 0x00, 0x00, 0x00, // InfoClass
 	}
 	if !bytes.Equal(got, want) {
 		t.Errorf("EFSR-style marshal:\n got %x\nwant %x", got, want)

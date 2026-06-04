@@ -25,7 +25,7 @@ func (*lsarQueryInformationPolicy2Request) Opnum() uint16 {
 // pointer in the IDL, so a [unique] pointer on the wire) and the NTSTATUS return value.
 type lsarQueryInformationPolicy2Response struct {
 	PolicyInformation *structures.LSAPR_POLICY_INFORMATION `ndr:"unique"`
-	Status            ndr.DWORD
+	Status            ndr.DWORD                            `ndr:"retval"`
 }
 
 // LsarQueryInformationPolicy2 calls LsarQueryInformationPolicy2 (opnum 46), returning the

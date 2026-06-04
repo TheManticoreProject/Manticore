@@ -11,13 +11,16 @@ import (
 )
 
 // lsarLookupNamesRequest is the [in]/[in,out] parameter set of LsarLookupNames: a policy
-// handle, the count of names, a conformant array of names to translate, the [in,out]
-// TranslatedSids (a single, inline value), the lookup level, and the [in,out] mapped
-// count.
+// handle, the count of names, the names to translate, the [in,out] TranslatedSids (a
+// single, inline value), the lookup level, and the [in,out] mapped count. Names is a
+// top-level [in, size_is(Count)] PRPC_UNICODE_STRING — a [ref] pointer to a conformant
+// array, so its maximum_count belongs with the referent body, NOT hoisted to the front
+// of the request (a bare conformant slice would hoist it before PolicyHandle and desync
+// the whole stub). The "ref" tag keeps it pointer-like so it is emitted as a referent.
 type lsarLookupNamesRequest struct {
 	PolicyHandle   structures.LSAPR_HANDLE
 	Count          ndr.DWORD
-	Names          []dtyp.RPC_UNICODE_STRING `ndr:"conformant,size_is=Count"`
+	Names          []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
 	TranslatedSids structures.LSAPR_TRANSLATED_SIDS
 	LookupLevel    structures.LSAP_LOOKUP_LEVEL
 	MappedCount    ndr.DWORD
@@ -31,7 +34,7 @@ type lsarLookupNamesResponse struct {
 	ReferencedDomains *structures.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
 	TranslatedSids    structures.LSAPR_TRANSLATED_SIDS
 	MappedCount       ndr.DWORD
-	Status            ndr.DWORD
+	Status            ndr.DWORD `ndr:"retval"`
 }
 
 // LsarLookupNames calls LsarLookupNames (opnum 14) to translate a set of account names

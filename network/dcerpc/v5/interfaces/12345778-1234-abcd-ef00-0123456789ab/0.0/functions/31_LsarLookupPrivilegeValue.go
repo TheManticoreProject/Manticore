@@ -11,10 +11,13 @@ import (
 )
 
 // lsarLookupPrivilegeValueRequest is the [in] parameter set of LsarLookupPrivilegeValue:
-// the policy handle and the privilege name (a [unique] pointer to an RPC_UNICODE_STRING).
+// the policy handle and the privilege name. Name is a top-level [in] PRPC_UNICODE_STRING,
+// i.e. a [ref] pointer ([C706]: a top-level parameter pointer with no explicit attribute
+// is a reference pointer), so its referent is transmitted in place with no referent id —
+// modeled as an inline value, not a [unique] pointer.
 type lsarLookupPrivilegeValueRequest struct {
 	PolicyHandle structures.LSAPR_HANDLE
-	Name         *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Name         dtyp.RPC_UNICODE_STRING
 }
 
 func (*lsarLookupPrivilegeValueRequest) Opnum() uint16 {
@@ -25,16 +28,15 @@ func (*lsarLookupPrivilegeValueRequest) Opnum() uint16 {
 // (a top-level [ref] pointer, so its value is inline) and the NTSTATUS return value.
 type lsarLookupPrivilegeValueResponse struct {
 	Value  dtyp.LUID
-	Status ndr.DWORD
+	Status ndr.DWORD `ndr:"retval"`
 }
 
 // LsarLookupPrivilegeValue calls LsarLookupPrivilegeValue (opnum 31), mapping a privilege
 // name to its locally unique identifier ([MS-LSAD] 3.1.4.5.13).
 func LsarLookupPrivilegeValue(rpc *client.Client, policyHandle structures.LSAPR_HANDLE, name string) (dtyp.LUID, error) {
-	rpcName := dtyp.NewUnicodeString(name)
 	req := &lsarLookupPrivilegeValueRequest{
 		PolicyHandle: policyHandle,
-		Name:         &rpcName,
+		Name:         dtyp.NewUnicodeString(name),
 	}
 	var resp lsarLookupPrivilegeValueResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

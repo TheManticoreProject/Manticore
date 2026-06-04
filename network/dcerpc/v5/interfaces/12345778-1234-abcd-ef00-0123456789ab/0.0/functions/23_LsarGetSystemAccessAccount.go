@@ -23,7 +23,7 @@ func (*lsarGetSystemAccessAccountRequest) Opnum() uint16 {
 // followed by the NTSTATUS return value.
 type lsarGetSystemAccessAccountResponse struct {
 	SystemAccess ndr.DWORD
-	Status       ndr.DWORD
+	Status       ndr.DWORD `ndr:"retval"`
 }
 
 // LsarGetSystemAccessAccount calls LsarGetSystemAccessAccount (opnum 23) and returns the
