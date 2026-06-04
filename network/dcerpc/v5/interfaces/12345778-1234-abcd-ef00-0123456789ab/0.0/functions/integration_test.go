@@ -7,10 +7,10 @@
 //
 //	DCERPC_TEST_HOST=192.168.1.27 \
 //	DCERPC_TEST_USER=user DCERPC_TEST_PASS=user \
-//	go test -tags integration -v ./network/dcerpc/interfaces/lsarpc/
+//	go test -tags integration -v ./network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions/
 //
 // Optional: DCERPC_TEST_DOMAIN, DCERPC_TEST_PORT (default 445).
-package lsarpc
+package functions_test
 
 import (
 	"net"
@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
@@ -71,26 +73,26 @@ func TestIntegration_OpenAndClosePolicy(t *testing.T) {
 	defer smb.TreeDisconnect()
 
 	// Bind DCE/RPC to lsarpc over the named pipe.
-	pipe := dcerpcsmb.New(smb, PipeName)
+	pipe := dcerpcsmb.New(smb, lsarpc.PipeName)
 	rpc := client.NewClient(pipe)
 	defer rpc.Close()
-	if err := rpc.Bind(SyntaxID()); err != nil {
+	if err := rpc.Bind(lsarpc.SyntaxID()); err != nil {
 		t.Fatalf("DCE/RPC Bind(lsarpc): %v", err)
 	}
 	t.Log("bound to lsarpc")
 
 	// LsarOpenPolicy2 -> handle, then LsarClose.
-	handle, err := OpenPolicy2(rpc, MaximumAllowed)
+	handle, err := functions.LsarOpenPolicy2(rpc, lsarpc.MaximumAllowed)
 	if err != nil {
-		t.Fatalf("OpenPolicy2: %v", err)
+		t.Fatalf("LsarOpenPolicy2: %v", err)
 	}
-	t.Logf("OpenPolicy2 returned handle %x", handle)
+	t.Logf("LsarOpenPolicy2 returned handle %x", handle)
 	if handle.IsZero() {
-		t.Error("OpenPolicy2 returned a zero handle on success")
+		t.Error("LsarOpenPolicy2 returned a zero handle on success")
 	}
 
-	if _, err := Close(rpc, handle); err != nil {
-		t.Fatalf("Close: %v", err)
+	if _, err := functions.LsarClose(rpc, handle); err != nil {
+		t.Fatalf("LsarClose: %v", err)
 	}
 	t.Log("policy handle closed")
 }

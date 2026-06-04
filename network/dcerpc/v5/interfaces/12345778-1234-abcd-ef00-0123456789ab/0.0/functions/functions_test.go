@@ -1,13 +1,16 @@
-package lsarpc
+package functions_test
 
 import (
 	"bytes"
 	"errors"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 )
 
 // fakeTransport is an in-memory transport.Transport for driving the client without a
@@ -66,24 +69,24 @@ func boundClient(t *testing.T, ft *fakeTransport) *client.Client {
 	t.Helper()
 	ft.queue(bindAck(t))
 	c := client.NewClient(ft)
-	if err := c.Bind(SyntaxID()); err != nil {
+	if err := c.Bind(lsarpc.SyntaxID()); err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
 	return c
 }
 
-func TestOpenPolicy2_RequestMarshalling(t *testing.T) {
+func TestLsarOpenPolicy2_RequestMarshalling(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
 	// Canned success response: 20-byte handle + STATUS_SUCCESS. First call is call_id 2.
-	wantHandle := PolicyHandle{0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	wantHandle := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 	respStub := append(append([]byte(nil), wantHandle[:]...), 0x00, 0x00, 0x00, 0x00)
 	ft.queue(responsePDU(t, 2, respStub))
 
-	h, err := OpenPolicy2(c, MaximumAllowed)
+	h, err := functions.LsarOpenPolicy2(c, lsarpc.MaximumAllowed)
 	if err != nil {
-		t.Fatalf("OpenPolicy2() error = %v", err)
+		t.Fatalf("LsarOpenPolicy2() error = %v", err)
 	}
 	if h != wantHandle {
 		t.Errorf("handle = %x, want %x", h, wantHandle)
@@ -98,8 +101,8 @@ func TestOpenPolicy2_RequestMarshalling(t *testing.T) {
 	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
 		t.Fatalf("request does not parse: %v", err)
 	}
-	if req.Opnum != OpnumOpenPolicy2 {
-		t.Errorf("opnum = %d, want %d", req.Opnum, OpnumOpenPolicy2)
+	if req.Opnum != lsarpc.OpnumLsarOpenPolicy2 {
+		t.Errorf("opnum = %d, want %d", req.Opnum, lsarpc.OpnumLsarOpenPolicy2)
 	}
 	wantStub := make([]byte, 0, 32)
 	wantStub = append(wantStub, 0, 0, 0, 0)
@@ -110,33 +113,33 @@ func TestOpenPolicy2_RequestMarshalling(t *testing.T) {
 	}
 }
 
-func TestOpenPolicy2_AccessDenied(t *testing.T) {
+func TestLsarOpenPolicy2_AccessDenied(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
 	respStub := append(make([]byte, 20), 0x22, 0x00, 0x00, 0xc0) // STATUS_ACCESS_DENIED
 	ft.queue(responsePDU(t, 2, respStub))
 
-	_, err := OpenPolicy2(c, PolicyViewLocalInformation)
+	_, err := functions.LsarOpenPolicy2(c, lsarpc.PolicyViewLocalInformation)
 	if err == nil {
-		t.Fatal("OpenPolicy2() with access denied: error = nil, want non-nil")
+		t.Fatal("LsarOpenPolicy2() with access denied: error = nil, want non-nil")
 	}
 }
 
-func TestClose_RoundTrip(t *testing.T) {
+func TestLsarClose_RoundTrip(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
 	// LsarClose returns a zeroed handle + STATUS_SUCCESS.
 	ft.queue(responsePDU(t, 2, make([]byte, 24)))
 
-	in := PolicyHandle{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
-	out, err := Close(c, in)
+	in := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
+	out, err := functions.LsarClose(c, in)
 	if err != nil {
-		t.Fatalf("Close() error = %v", err)
+		t.Fatalf("LsarClose() error = %v", err)
 	}
 	if !out.IsZero() {
-		t.Errorf("handle after Close = %x, want zeroed", out)
+		t.Errorf("handle after LsarClose = %x, want zeroed", out)
 	}
 
 	// The request stub is exactly the 20-byte handle.
@@ -144,30 +147,21 @@ func TestClose_RoundTrip(t *testing.T) {
 	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
 		t.Fatalf("request does not parse: %v", err)
 	}
-	if req.Opnum != OpnumClose {
-		t.Errorf("opnum = %d, want %d", req.Opnum, OpnumClose)
+	if req.Opnum != lsarpc.OpnumLsarClose {
+		t.Errorf("opnum = %d, want %d", req.Opnum, lsarpc.OpnumLsarClose)
 	}
 	if !bytes.Equal(req.Stub, in[:]) {
 		t.Errorf("close request stub = %x, want %x", req.Stub, in[:])
 	}
 }
 
-func TestOpenPolicy2_ShortResponseErrors(t *testing.T) {
+func TestLsarOpenPolicy2_ShortResponseErrors(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 	// A response stub shorter than the 24-byte handle+status must error rather than
 	// return garbage (the NDR decoder rejects the truncated read).
 	ft.queue(responsePDU(t, 2, make([]byte, 23)))
-	if _, err := OpenPolicy2(c, MaximumAllowed); err == nil {
-		t.Fatal("OpenPolicy2 with a truncated response: error = nil, want non-nil")
-	}
-}
-
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusAccessDenied); got != "STATUS_ACCESS_DENIED" {
-		t.Errorf("StatusString(0xC0000022) = %q", got)
-	}
-	if got := StatusString(0x12345678); got != "0x12345678" {
-		t.Errorf("StatusString(unknown) = %q", got)
+	if _, err := functions.LsarOpenPolicy2(c, lsarpc.MaximumAllowed); err == nil {
+		t.Fatal("LsarOpenPolicy2 with a truncated response: error = nil, want non-nil")
 	}
 }
