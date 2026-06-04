@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/client"
-	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/transport/smb"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )

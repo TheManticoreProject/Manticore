@@ -28,9 +28,9 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/pdu"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/transport"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 )
 
 // requestHeaderOverhead is the fixed size of a request PDU before the stub data: the

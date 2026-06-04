@@ -13,7 +13,7 @@ package smb
 import (
 	"fmt"
 
-	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/transport"
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 )
 

@@ -15,7 +15,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5"
 )
 
 // HeaderSize is the size, in bytes, of the connection-oriented common header.
