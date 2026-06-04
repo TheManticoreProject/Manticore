@@ -13,14 +13,16 @@ import (
 // samrLookupNamesInDomainRequest is the [in] parameter set of SamrLookupNamesInDomain: a
 // domain handle, the Count of names, and the names themselves.
 //
-// WIRE RISK: the IDL declares Names as [in, size_is(1000), length_is(Count)]
-// RPC_UNICODE_STRING Names[*] — a fixed maximum (1000) but a varying actual length tied to
-// Count. It is modeled here as a conformant,varying slice; the conformance bound on the
-// wire may need to be the constant 1000 rather than Count. Verify against a live server.
+// Names is the IDL's [in, size_is(1000), length_is(Count)] RPC_UNICODE_STRING Names[*],
+// modeled as a [ref] pointer to a conformant array (ndr:"ref,size_is=Count"), matching the
+// live-validated lsarpc LsarLookupNames pattern. A bare conformant array field hoists its
+// maximum_count to the front of the request — ahead of the context handle — which the
+// server rejects as nca_s_fault_context_mismatch; the [ref] form emits no referent id and
+// defers the array (with its count) to after the handle. Live-validated against Windows XP.
 type samrLookupNamesInDomainRequest struct {
 	DomainHandle structures.SAMPR_HANDLE
 	Count        ndr.DWORD
-	Names        []dtyp.RPC_UNICODE_STRING `ndr:"conformant,varying"`
+	Names        []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=1000,varying"`
 }
 
 func (*samrLookupNamesInDomainRequest) Opnum() uint16 { return samr.OpnumSamrLookupNamesInDomain }

@@ -11,21 +11,27 @@ import (
 
 // samrConnect5Request carries the [in] parameters of SamrConnect5: the [unique]
 // server name (NULL for the local server), the desired access mask, the requested
-// input version, and the [unique, switch_is(InVersion)] revision-info union.
+// input version, and the switch_is(InVersion) revision-info union.
+//
+// InRevisionInfo is the IDL's [switch_is(InVersion)] SAMPR_REVISION_INFO* parameter.
+// A switch_is union argument is transmitted inline (its own discriminant followed by
+// the selected arm), NOT wrapped behind a pointer referent — emitting a referent id
+// here is rejected by the server as nca_s_fault_ndr.
 type samrConnect5Request struct {
 	ServerName     *ndr.WSTR `ndr:"unique"`
 	DesiredAccess  ndr.DWORD
 	InVersion      ndr.DWORD
-	InRevisionInfo *structures.SAMPR_REVISION_INFO `ndr:"unique"`
+	InRevisionInfo structures.SAMPR_REVISION_INFO
 }
 
 func (*samrConnect5Request) Opnum() uint16 { return samr.OpnumSamrConnect5 }
 
-// samrConnect5Response carries the [out] negotiated output version, the [unique,
-// switch_is(*OutVersion)] revision-info union, the server handle, and the NTSTATUS.
+// samrConnect5Response carries the [out] negotiated output version, the
+// switch_is(*OutVersion) revision-info union (transmitted inline), the server handle,
+// and the NTSTATUS.
 type samrConnect5Response struct {
 	OutVersion      ndr.DWORD
-	OutRevisionInfo *structures.SAMPR_REVISION_INFO `ndr:"unique"`
+	OutRevisionInfo structures.SAMPR_REVISION_INFO
 	ServerHandle    structures.SAMPR_HANDLE
 	Status          ndr.DWORD `ndr:"retval"`
 }
@@ -39,7 +45,7 @@ func SamrConnect5(rpc *client.Client, serverName string, desiredAccess uint32) (
 		ServerName:    optWStr(serverName),
 		DesiredAccess: ndr.DWORD(desiredAccess),
 		InVersion:     ndr.DWORD(inVersion),
-		InRevisionInfo: &structures.SAMPR_REVISION_INFO{
+		InRevisionInfo: structures.SAMPR_REVISION_INFO{
 			Tag: ndr.DWORD(inVersion),
 			V1:  structures.SAMPR_REVISION_INFO_V1{Revision: 3},
 		},
@@ -48,8 +54,9 @@ func SamrConnect5(rpc *client.Client, serverName string, desiredAccess uint32) (
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return structures.SAMPR_HANDLE{}, 0, nil, fmt.Errorf("SamrConnect5: %w", err)
 	}
+	outInfo := resp.OutRevisionInfo
 	if uint32(resp.Status) != samr.StatusSuccess {
-		return resp.ServerHandle, uint32(resp.OutVersion), resp.OutRevisionInfo, fmt.Errorf("SamrConnect5 failed: %s", samr.StatusString(uint32(resp.Status)))
+		return resp.ServerHandle, uint32(resp.OutVersion), &outInfo, fmt.Errorf("SamrConnect5 failed: %s", samr.StatusString(uint32(resp.Status)))
 	}
-	return resp.ServerHandle, uint32(resp.OutVersion), resp.OutRevisionInfo, nil
+	return resp.ServerHandle, uint32(resp.OutVersion), &outInfo, nil
 }

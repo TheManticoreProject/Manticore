@@ -12,14 +12,15 @@ import (
 // samrLookupIdsInDomainRequest is the [in] parameter set of SamrLookupIdsInDomain: a domain
 // handle, the Count of RIDs, and the RIDs themselves.
 //
-// WIRE RISK: the IDL declares RelativeIds as [in, size_is(1000), length_is(Count)]
-// unsigned long *RelativeIds — a fixed maximum (1000) but a varying actual length tied to
-// Count. It is modeled here as a conformant,varying slice; the conformance bound on the
-// wire may need to be the constant 1000 rather than Count. Verify against a live server.
+// RelativeIds is the IDL's [in, size_is(1000), length_is(Count)] unsigned long*
+// RelativeIds, modeled as a [ref] pointer to a conformant array (ndr:"ref,size_is=Count")
+// like SamrLookupNamesInDomain: a bare conformant array field would hoist its maximum_count
+// ahead of the context handle (nca_s_fault_context_mismatch). The [ref] form defers the
+// array past the handle.
 type samrLookupIdsInDomainRequest struct {
 	DomainHandle structures.SAMPR_HANDLE
 	Count        ndr.DWORD
-	RelativeIds  []ndr.DWORD `ndr:"conformant,varying"`
+	RelativeIds  []ndr.DWORD `ndr:"ref,size_is=1000,varying"`
 }
 
 func (*samrLookupIdsInDomainRequest) Opnum() uint16 { return samr.OpnumSamrLookupIdsInDomain }
