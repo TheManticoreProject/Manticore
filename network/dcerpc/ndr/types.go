@@ -73,17 +73,19 @@ const (
 
 // fieldTag is the parsed `ndr:"..."` struct tag.
 type fieldTag struct {
-	skip       bool
-	ptr        ptrKind
-	wide       bool    // [string] wide (UTF-16)
-	ascii      bool    // [string] ASCII
-	conformant bool    // conformant array (size_is)
-	varying    bool    // conformant-varying array (offset + actual_count framing)
-	sizeIs     string  // sibling field naming the maximum element count
-	lengthIs   string  // sibling field naming the actual element count
-	align      int     // explicit alignment override (0 = default)
-	retval     bool    // RPC return value: encoded after the struct's deferred referents
-	elemPtr    ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
+	skip         bool
+	ptr          ptrKind
+	wide         bool    // [string] wide (UTF-16)
+	ascii        bool    // [string] ASCII
+	conformant   bool    // conformant array (size_is)
+	varying      bool    // conformant-varying array (offset + actual_count framing)
+	sizeIs       string  // sibling field naming the maximum element count
+	lengthIs     string  // sibling field naming the actual element count
+	sizeConst    uint32  // literal maximum_count (size_is(<N>)); used when sizeConstSet
+	sizeConstSet bool    // size_is was a numeric literal rather than a sibling field name
+	align        int     // explicit alignment override (0 = default)
+	retval       bool    // RPC return value: encoded after the struct's deferred referents
+	elemPtr      ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
 
 	// Union (discriminated by an inline switch value, [C706] section 14.3.8) tags.
 	isSwitch  bool  // the union discriminant field (`switch`)
@@ -121,7 +123,15 @@ func parseTag(raw string) fieldTag {
 			t.retval = true
 		case strings.HasPrefix(opt, "size_is="):
 			t.conformant = true
-			t.sizeIs = strings.TrimPrefix(opt, "size_is=")
+			v := strings.TrimPrefix(opt, "size_is=")
+			// size_is(<constant>) — a literal maximum_count, e.g. [size_is(1000)] in
+			// MS-SAMR. Distinguished from a sibling field name by parsing as a number.
+			if n, err := strconv.ParseUint(v, 10, 32); err == nil {
+				t.sizeConst = uint32(n)
+				t.sizeConstSet = true
+			} else {
+				t.sizeIs = v
+			}
 		case strings.HasPrefix(opt, "length_is="):
 			t.conformant = true
 			t.varying = true

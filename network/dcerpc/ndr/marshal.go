@@ -260,10 +260,17 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		}
 		return marshalStruct(e, fv, true)
 	case reflect.Slice:
-		if tag.varying {
-			return marshalConformantVaryingArray(e, fv, elementTag(tag))
+		// maximum_count is the element count, unless size_is names a literal bound
+		// (e.g. MS-SAMR [size_is(1000)]), in which case the server requires that exact
+		// constant on the wire even when fewer elements are actually sent.
+		maxCount := uint32(fv.Len())
+		if tag.sizeConstSet {
+			maxCount = tag.sizeConst
 		}
-		return marshalConformantArray(e, fv, elementTag(tag))
+		if tag.varying {
+			return marshalConformantVaryingArray(e, fv, maxCount, elementTag(tag))
+		}
+		return marshalConformantArray(e, fv, maxCount, elementTag(tag))
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
 			b := make([]byte, fv.Len())
@@ -685,9 +692,9 @@ func conformantArrayAlignment(elemType reflect.Type) int {
 // marshalConformantArray writes a conformant array: a maximum_count followed by the
 // elements, per [MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
-func marshalConformantArray(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
+func marshalConformantArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
 	e.Align(conformantArrayAlignment(slice.Type().Elem()))
-	e.WriteUint32(uint32(slice.Len()))
+	e.WriteUint32(maxCount)
 	return marshalElements(e, slice, elemTag)
 }
 
@@ -704,13 +711,14 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag)
 // marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
 // offset, actual_count, then the elements, per [MS-RPCE] Conformant Varying Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
-// The full slice is transmitted (offset 0, actual_count == maximum_count == len).
-func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
+// The whole slice is transmitted (offset 0, actual_count == len). maximum_count is the
+// length unless a literal size_is bound was given, in which case the constant is sent
+// while actual_count still reflects the elements actually present.
+func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
 	e.Align(conformantArrayAlignment(slice.Type().Elem()))
-	n := uint32(slice.Len())
-	e.WriteUint32(n) // maximum_count
-	e.WriteUint32(0) // offset
-	e.WriteUint32(n) // actual_count
+	e.WriteUint32(maxCount)            // maximum_count
+	e.WriteUint32(0)                   // offset
+	e.WriteUint32(uint32(slice.Len())) // actual_count
 	return marshalElements(e, slice, elemTag)
 }
 
