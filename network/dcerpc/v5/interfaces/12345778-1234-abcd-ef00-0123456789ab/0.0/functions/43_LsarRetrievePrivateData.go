@@ -27,7 +27,7 @@ func (*lsarRetrievePrivateDataRequest) Opnum() uint16 { return lsarpc.OpnumLsarR
 // the server followed by the NTSTATUS return value.
 type lsarRetrievePrivateDataResponse struct {
 	EncryptedData *structures.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
-	Status        ndr.DWORD
+	Status        ndr.DWORD                         `ndr:"retval"`
 }
 
 // LsarRetrievePrivateData calls LsarRetrievePrivateData (opnum 43) and returns the

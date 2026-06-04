@@ -30,7 +30,7 @@ type lsarLookupSids3Response struct {
 	ReferencedDomains *structures.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
 	TranslatedNames   structures.LSAPR_TRANSLATED_NAMES_EX
 	MappedCount       ndr.DWORD
-	Status            ndr.DWORD
+	Status            ndr.DWORD `ndr:"retval"`
 }
 
 // LsarLookupSids3 calls LsarLookupSids3 (opnum 76) to translate a set of SIDs into account

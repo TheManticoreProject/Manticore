@@ -28,7 +28,7 @@ func (*lsarEnumerateTrustedDomainsExRequest) Opnum() uint16 {
 type lsarEnumerateTrustedDomainsExResponse struct {
 	EnumerationContext ndr.DWORD
 	EnumerationBuffer  structures.LSAPR_TRUSTED_ENUM_BUFFER_EX
-	Status             ndr.DWORD
+	Status             ndr.DWORD `ndr:"retval"`
 }
 
 // LsarEnumerateTrustedDomainsEx calls LsarEnumerateTrustedDomainsEx (opnum 50), returning a

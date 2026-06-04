@@ -23,7 +23,7 @@ func (*lsarEnumeratePrivilegesAccountRequest) Opnum() uint16 {
 // the account (a [unique] double pointer) followed by the NTSTATUS return value.
 type lsarEnumeratePrivilegesAccountResponse struct {
 	Privileges *structures.LSAPR_PRIVILEGE_SET `ndr:"unique"`
-	Status     ndr.DWORD
+	Status     ndr.DWORD                       `ndr:"retval"`
 }
 
 // LsarEnumeratePrivilegesAccount calls LsarEnumeratePrivilegesAccount (opnum 18), returning

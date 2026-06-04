@@ -15,7 +15,7 @@ import (
 // and the information class selecting which union arm is returned.
 type lsarQueryTrustedDomainInfoByNameRequest struct {
 	PolicyHandle      structures.LSAPR_HANDLE
-	TrustedDomainName *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	TrustedDomainName dtyp.RPC_UNICODE_STRING
 	InformationClass  structures.TRUSTED_INFORMATION_CLASS
 }
 
@@ -27,7 +27,7 @@ func (*lsarQueryTrustedDomainInfoByNameRequest) Opnum() uint16 {
 // pointer in the IDL, so a [unique] pointer on the wire) and the NTSTATUS return value.
 type lsarQueryTrustedDomainInfoByNameResponse struct {
 	TrustedDomainInformation *structures.LSAPR_TRUSTED_DOMAIN_INFO `ndr:"unique"`
-	Status                   ndr.DWORD
+	Status                   ndr.DWORD                             `ndr:"retval"`
 }
 
 // LsarQueryTrustedDomainInfoByName calls LsarQueryTrustedDomainInfoByName (opnum 48),
@@ -37,7 +37,7 @@ func LsarQueryTrustedDomainInfoByName(rpc *client.Client, policyHandle structure
 	name := dtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarQueryTrustedDomainInfoByNameRequest{
 		PolicyHandle:      policyHandle,
-		TrustedDomainName: &name,
+		TrustedDomainName: name,
 		InformationClass:  infoClass,
 	}
 	var resp lsarQueryTrustedDomainInfoByNameResponse

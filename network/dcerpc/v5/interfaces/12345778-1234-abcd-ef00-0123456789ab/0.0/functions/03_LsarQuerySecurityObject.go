@@ -23,7 +23,7 @@ func (*lsarQuerySecurityObjectRequest) Opnum() uint16 { return lsarpc.OpnumLsarQ
 // descriptor (a double pointer) followed by the NTSTATUS return value.
 type lsarQuerySecurityObjectResponse struct {
 	SecurityDescriptor *structures.LSAPR_SR_SECURITY_DESCRIPTOR `ndr:"unique"`
-	Status             ndr.DWORD
+	Status             ndr.DWORD                                `ndr:"retval"`
 }
 
 // LsarQuerySecurityObject calls LsarQuerySecurityObject (opnum 3) to retrieve the security

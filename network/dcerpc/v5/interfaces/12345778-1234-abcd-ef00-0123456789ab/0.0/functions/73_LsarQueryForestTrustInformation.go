@@ -27,7 +27,7 @@ func (*lsarQueryForestTrustInformationRequest) Opnum() uint16 {
 // information returned by the server followed by the NTSTATUS return value.
 type lsarQueryForestTrustInformationResponse struct {
 	ForestTrustInfo *structures.LSA_FOREST_TRUST_INFORMATION `ndr:"unique"`
-	Status          ndr.DWORD
+	Status          ndr.DWORD                                `ndr:"retval"`
 }
 
 // LsarQueryForestTrustInformation calls LsarQueryForestTrustInformation (opnum 73) and

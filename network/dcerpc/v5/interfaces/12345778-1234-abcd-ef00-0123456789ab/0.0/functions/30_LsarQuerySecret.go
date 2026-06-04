@@ -32,7 +32,7 @@ type lsarQuerySecretResponse struct {
 	CurrentValueSetTime   *dtyp.LARGE_INTEGER               `ndr:"unique"`
 	EncryptedOldValue     *structures.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
 	OldValueSetTime       *dtyp.LARGE_INTEGER               `ndr:"unique"`
-	Status                ndr.DWORD
+	Status                ndr.DWORD                         `ndr:"retval"`
 }
 
 // LsarQuerySecret calls LsarQuerySecret (opnum 30) and returns the current and old

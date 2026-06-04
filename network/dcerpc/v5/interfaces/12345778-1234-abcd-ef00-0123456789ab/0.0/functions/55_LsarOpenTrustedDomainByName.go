@@ -15,7 +15,7 @@ import (
 // domain to open, and the desired access mask for the returned handle.
 type lsarOpenTrustedDomainByNameRequest struct {
 	PolicyHandle      structures.LSAPR_HANDLE
-	TrustedDomainName *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	TrustedDomainName dtyp.RPC_UNICODE_STRING
 	DesiredAccess     ndr.DWORD
 }
 
@@ -29,7 +29,7 @@ func LsarOpenTrustedDomainByName(rpc *client.Client, policyHandle structures.LSA
 	name := dtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarOpenTrustedDomainByNameRequest{
 		PolicyHandle:      policyHandle,
-		TrustedDomainName: &name,
+		TrustedDomainName: name,
 		DesiredAccess:     ndr.DWORD(desiredAccess),
 	}
 	var resp handleResponse

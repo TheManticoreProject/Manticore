@@ -16,7 +16,7 @@ import (
 type lsarLookupNames2Request struct {
 	PolicyHandle   structures.LSAPR_HANDLE
 	Count          ndr.DWORD
-	Names          []dtyp.RPC_UNICODE_STRING `ndr:"conformant,size_is=Count"`
+	Names          []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
 	TranslatedSids structures.LSAPR_TRANSLATED_SIDS_EX
 	LookupLevel    structures.LSAP_LOOKUP_LEVEL
 	MappedCount    ndr.DWORD
@@ -32,7 +32,7 @@ type lsarLookupNames2Response struct {
 	ReferencedDomains *structures.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
 	TranslatedSids    structures.LSAPR_TRANSLATED_SIDS_EX
 	MappedCount       ndr.DWORD
-	Status            ndr.DWORD
+	Status            ndr.DWORD `ndr:"retval"`
 }
 
 // LsarLookupNames2 calls LsarLookupNames2 (opnum 58) to translate a set of account names

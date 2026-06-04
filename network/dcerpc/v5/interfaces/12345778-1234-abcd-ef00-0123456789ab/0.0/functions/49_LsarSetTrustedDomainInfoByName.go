@@ -15,7 +15,7 @@ import (
 // information.
 type lsarSetTrustedDomainInfoByNameRequest struct {
 	PolicyHandle             structures.LSAPR_HANDLE
-	TrustedDomainName        *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	TrustedDomainName        dtyp.RPC_UNICODE_STRING
 	InformationClass         structures.TRUSTED_INFORMATION_CLASS
 	TrustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFO
 }
@@ -32,7 +32,7 @@ func LsarSetTrustedDomainInfoByName(rpc *client.Client, policyHandle structures.
 	name := dtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarSetTrustedDomainInfoByNameRequest{
 		PolicyHandle:             policyHandle,
-		TrustedDomainName:        &name,
+		TrustedDomainName:        name,
 		InformationClass:         infoClass,
 		TrustedDomainInformation: info,
 	}
