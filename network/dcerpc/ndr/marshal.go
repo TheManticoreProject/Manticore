@@ -67,6 +67,10 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 	if confIdx >= 0 {
 		e.WriteUint32(uint32(rv.Field(confIdx).Len())) // hoisted maximum_count
 	}
+	// A field named by another field's size_is/length_is is the array's count; its
+	// value is derived from the array length so the count and the elements cannot
+	// disagree and the caller need not set it explicitly.
+	counts := countTargets(rt, rv)
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -75,6 +79,17 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 		}
 		tag := parseTag(f.Tag.Get("ndr"))
 		if tag.skip {
+			continue
+		}
+		if c, ok := counts[f.Name]; ok && isUintKind(rv.Field(i).Kind()) {
+			if tag.align > 0 {
+				e.Align(tag.align)
+			}
+			tmp := reflect.New(f.Type).Elem()
+			tmp.SetUint(c)
+			if err := marshalScalar(e, tmp); err != nil {
+				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+			}
 			continue
 		}
 		if i == confIdx {
@@ -437,6 +452,41 @@ func embeddedConformantIndex(rt reflect.Type, rv reflect.Value) int {
 		}
 	}
 	return idx
+}
+
+// countTargets maps the name of each field that is named by another field's
+// size_is/length_is to the element count of that array. The count is derived from the
+// array's length so the transmitted count field always matches the elements ([C706]
+// section 14.3.3.1; [MS-RPCE] Conformant Arrays).
+func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
+	m := map[string]uint64{}
+	for j := 0; j < rt.NumField(); j++ {
+		f := rt.Field(j)
+		if f.PkgPath != "" {
+			continue
+		}
+		tag := parseTag(f.Tag.Get("ndr"))
+		if tag.skip || rv.Field(j).Kind() != reflect.Slice {
+			continue
+		}
+		n := uint64(rv.Field(j).Len())
+		if tag.sizeIs != "" {
+			m[tag.sizeIs] = n
+		}
+		if tag.lengthIs != "" {
+			m[tag.lengthIs] = n
+		}
+	}
+	return m
+}
+
+func isUintKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
+	default:
+		return false
+	}
 }
 
 // isEmbeddedConformantArray reports whether fv is an inline (non-pointer) conformant
