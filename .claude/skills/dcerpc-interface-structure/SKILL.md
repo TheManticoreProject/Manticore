@@ -99,6 +99,7 @@ Translating an IDL to Go is mostly about getting the `ndr` struct tags right. Th
 | `conformant` | conformant array (has `maximum_count`) |
 | `varying` | conformant-varying array (`max`, `offset`, `actual_count`) |
 | `size_is=Field` | array max count comes from sibling `Field` (implies conformant) |
+| `size_is=N` | array max count is the **literal constant `N`** (e.g. `size_is(1000)`); transmitted as `maximum_count` even when fewer elements are sent |
 | `length_is=Field` | array actual count from sibling `Field` (implies varying) |
 | `elem=ref` / `elem=unique` / `elem=ptr` | pointer attribute of **array elements** (array of pointers) |
 | `switch` / `case=N` / `default` | discriminated union (see below) |
@@ -134,6 +135,7 @@ Canonical patterns (see `network/dcerpc/ndr/array_referents_test.go`):
 - Array of `[unique]` pointers: `[]*T \`ndr:"conformant"\``; of `[ref]` pointers: `[]*T \`ndr:"conformant,elem=ref"\``.
 - **`[unique]` pointer to a conformant array** (the enum/lookup-buffer shape `[size_is(n)] PFOO Field`): `Field []FOO \`ndr:"unique,size_is=n"\`` (the walker emits a referent id, then defers the array body). Use `[]*FOO` only if the IDL element is itself a pointer (`PFOO *`).
 - Counted byte blob `[size_is(M),length_is(L)] uchar *Buf` → `[]byte \`ndr:"unique,varying,size_is=M,length_is=L"\``.
+- **Top-level `[in, size_is(N_literal), length_is(Count)] TYPE Name[*]`** (the SAMR Lookup* shape, e.g. `Names[*]` with `size_is(1000)`) → `[]TYPE \`ndr:"ref,size_is=1000,varying"\``. Three things at once: (1) `ref` (a pointer-to-conformant-array) so the `maximum_count` is **not hoisted ahead of the preceding context handle** — a bare `conformant` field hoists it and the server faults `nca_s_fault_context_mismatch`; (2) the **literal** `size_is=1000` because the server requires that exact constant as `maximum_count` (deriving it from the element count faults `nca_s_fault_ndr`); (3) `varying` for the `offset`/`actual_count` words. `actual_count` is the live element count.
 
 ### Discriminated unions (`switch_is` / `switch_type`)
 
@@ -152,6 +154,8 @@ type LSAPR_POLICY_INFORMATION struct {
 - `case=N` takes the **numeric** discriminant value (compute it from the enum order). If two case labels map to one arm, give each its own field with its own `case=`.
 - Arms are **value** fields (the IDL arms are values like `POLICY_AUDIT_LOG_INFO Foo`), not pointers, unless the IDL declares a pointer arm.
 - In a request, set the union's discriminant field to match the method's info-class argument before marshalling. See `network/dcerpc/ndr/union.go` for the full model.
+- **A `switch_is` union passed as a method argument by pointer** (`[in][switch_is(V)] UNION *Arg`, e.g. SamrConnect5's `SAMPR_REVISION_INFO *InRevisionInfo`) is transmitted **inline** (its own discriminant + arm) — model it as the **inline value** `structures.UNION` (no `*`, no `unique`), and set its `switch` field to the discriminant argument `V`. Wrapping it in `*UNION \`ndr:"unique"\`` emits a stray referent id → `nca_s_fault_ndr`. (Same for the matching `[out] UNION *` parameter.)
+- Discriminant **width**: an enum `switch_type` is 16-bit (named `uint16`); a `switch_type(unsigned long)` is 4-byte `ndr.DWORD` (e.g. SAMPR_REVISION_INFO). Within one interface both can coexist.
 
 ### Response-shape conventions
 
@@ -294,6 +298,8 @@ The request type implements `ndr.Call` (a single `Opnum() uint16` method); `clie
 - **Integration tests** in `functions/integration_test.go` behind `//go:build integration`, package `functions_test`. SMB → IPC$ → bind → call against a live host via `DCERPC_TEST_HOST` / `DCERPC_TEST_USER` / `DCERPC_TEST_PASS` (optional `DCERPC_TEST_DOMAIN`, `DCERPC_TEST_PORT`). Skip when `DCERPC_TEST_HOST` is unset.
 
 Live-test note: set `smb.NativeOS`/`smb.NativeLanMan` before `SessionSetup`, and open pipes by their IPC$-relative name (`\lsarpc`, not `\pipe\lsarpc`).
+
+**Context-handle scope — per-bind isolation vs. handle chains.** For interfaces where each call is independent (lsarpc/srvsvc), bind a **fresh pipe per method** so a fault can't desync the next call. But context handles are bound to the RPC **association**: an interface whose handles *chain* (SAMR `server→domain→account`, any Open*→use→Close pattern) must run the whole chain on **one** pipe/bind — a handle from a different pipe faults `nca_s_fault_context_mismatch`. Isolate only the fault-prone probes onto their own pipes. The SMB transport also intermittently returns `STATUS_PIPE_EMPTY` (0xc00000d9) on a read; it is transient (retry), not a wire bug, and affects all interfaces.
 
 **Go-level round-trip ≠ wire-correct.** Tags can round-trip in Go yet be wrong against Windows (e.g. discriminant width, `[in,out]` buffers sent empty on request). Treat live integration testing as the real acceptance gate and call out the unverified spots.
 
