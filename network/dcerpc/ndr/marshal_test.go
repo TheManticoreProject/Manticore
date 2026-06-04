@@ -217,3 +217,28 @@ func TestBOOLEAN_IsOneOctet(t *testing.T) {
 		t.Errorf("BOOLEAN encoding:\n got %x\nwant %x", raw, want)
 	}
 }
+
+// TestAlignTag_Applied verifies the align=N struct tag inserts padding (issue #394).
+func TestAlignTag_Applied(t *testing.T) {
+	type withAlign struct {
+		A uint8
+		B uint32 `ndr:"align=8"`
+	}
+	raw, err := Marshal(&withAlign{A: 1, B: 2})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// A at offset 0; align=8 pads to offset 8; B (4 octets) at offset 8.
+	want := []byte{0x01, 0, 0, 0, 0, 0, 0, 0, 0x02, 0, 0, 0}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("align=8:\n got %x\nwant %x", raw, want)
+	}
+
+	var out withAlign
+	if err := Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out != (withAlign{A: 1, B: 2}) {
+		t.Errorf("round trip: got %+v", out)
+	}
+}

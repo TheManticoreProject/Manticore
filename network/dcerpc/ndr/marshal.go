@@ -83,6 +83,9 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 // marshalFieldInline writes a field's inline representation, enqueueing the referent
 // body for pointers.
 func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+	if tag.align > 0 {
+		e.Align(tag.align)
+	}
 	if m, ok := asMarshaler(fv); ok {
 		e.Align(m.AlignmentNDR())
 		return m.MarshalNDR(e)
@@ -220,6 +223,9 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 }
 
 func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+	if tag.align > 0 {
+		d.Align(tag.align)
+	}
 	if m, ok := asMarshalerAddr(fv); ok {
 		d.Align(m.AlignmentNDR())
 		return m.UnmarshalNDR(d)
