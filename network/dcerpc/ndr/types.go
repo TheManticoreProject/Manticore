@@ -2,6 +2,7 @@ package ndr
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -74,15 +75,21 @@ const (
 type fieldTag struct {
 	skip       bool
 	ptr        ptrKind
-	wide       bool   // [string] wide (UTF-16)
-	ascii      bool   // [string] ASCII
-	conformant bool   // conformant array (size_is)
-	varying    bool   // conformant-varying array (offset + actual_count framing)
+	wide       bool    // [string] wide (UTF-16)
+	ascii      bool    // [string] ASCII
+	conformant bool    // conformant array (size_is)
+	varying    bool    // conformant-varying array (offset + actual_count framing)
 	sizeIs     string  // sibling field naming the maximum element count
 	lengthIs   string  // sibling field naming the actual element count
 	align      int     // explicit alignment override (0 = default)
 	retval     bool    // RPC return value: encoded after the struct's deferred referents
 	elemPtr    ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
+
+	// Union (discriminated by an inline switch value, [C706] section 14.3.8) tags.
+	isSwitch  bool  // the union discriminant field (`switch`)
+	hasCase   bool  // this field is a union arm selected by `case=<value>`
+	caseVal   int64 // the discriminant value that selects this arm
+	isDefault bool  // the union's default arm (`default`)
 }
 
 // parseTag parses an `ndr:"..."` tag value.
@@ -119,6 +126,15 @@ func parseTag(raw string) fieldTag {
 			t.conformant = true
 			t.varying = true
 			t.lengthIs = strings.TrimPrefix(opt, "length_is=")
+		case opt == "switch":
+			t.isSwitch = true
+		case opt == "default":
+			t.isDefault = true
+		case strings.HasPrefix(opt, "case="):
+			if v, err := strconv.ParseInt(strings.TrimPrefix(opt, "case="), 0, 64); err == nil {
+				t.hasCase = true
+				t.caseVal = v
+			}
 		case opt == "elem=ref":
 			t.elemPtr = ptrRef
 		case opt == "elem=unique":

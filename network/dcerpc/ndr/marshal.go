@@ -233,6 +233,9 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 
 	switch fv.Kind() {
 	case reflect.Struct:
+		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
+			return marshalUnion(e, fv, swIdx)
+		}
 		return marshalStruct(e, fv, true) // members of any value reached here are embedded
 	case reflect.Slice:
 		if tag.varying {
@@ -436,6 +439,9 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 
 	switch fv.Kind() {
 	case reflect.Struct:
+		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
+			return unmarshalUnion(d, fv, swIdx)
+		}
 		return unmarshalStruct(d, fv, true)
 	case reflect.Slice:
 		if tag.varying {
@@ -742,6 +748,9 @@ func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func
 	// than flushing them after itself, so they too land after the whole array.
 	if ev.Kind() == reflect.Struct {
 		if _, ok := asMarshaler(ev); !ok {
+			if swIdx := unionSwitchIndex(ev.Type()); swIdx >= 0 {
+				return marshalUnion(e, ev, swIdx)
+			}
 			_, err := marshalStructFields(e, ev, true, deferred)
 			return err
 		}
@@ -811,6 +820,9 @@ func unmarshalElement(d *Decoder, ev reflect.Value, tag fieldTag, deferred *[]fu
 	}
 	if ev.Kind() == reflect.Struct {
 		if _, ok := asMarshalerAddr(ev); !ok {
+			if swIdx := unionSwitchIndex(ev.Type()); swIdx >= 0 {
+				return unmarshalUnion(d, ev, swIdx)
+			}
 			_, err := unmarshalStructFields(d, ev, true, deferred)
 			return err
 		}
