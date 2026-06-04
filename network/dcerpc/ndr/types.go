@@ -15,7 +15,12 @@ type (
 	DWORD   = uint32
 	DWORD64 = uint64
 	LONG    = int32
-	BOOL    = bool
+
+	// BOOL is the Windows BOOL data type, a 4-octet integer ([MS-DTYP] 2.2.3). It is
+	// distinct from the 1-octet NDR boolean: for the latter, use Go bool (or BOOLEAN).
+	BOOL = int32
+	// BOOLEAN is the 1-octet NDR boolean ([C706] section 14.2.4).
+	BOOLEAN = bool
 
 	// WSTR is a wchar_t string ([string] wide). A field of this type marshals as a
 	// conformant+varying UTF-16LE array without needing an explicit "wstr" tag.
