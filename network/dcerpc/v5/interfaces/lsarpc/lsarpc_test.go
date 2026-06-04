@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/client"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/pdu"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 )
 

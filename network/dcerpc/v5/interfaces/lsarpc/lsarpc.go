@@ -23,7 +23,7 @@ package lsarpc
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"

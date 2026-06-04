@@ -9,7 +9,7 @@
 // as named pipe writes and reads.
 //
 // Concrete implementations:
-//   - network/dcerpc/transport/smb: ncacn_np, DCE/RPC over an SMB named pipe.
+//   - network/dcerpc/v5/transport/smb: ncacn_np, DCE/RPC over an SMB named pipe.
 package transport
 
 // Transport carries DCE/RPC PDUs between the client and the server.

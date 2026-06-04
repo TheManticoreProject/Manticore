@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/pdu"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
