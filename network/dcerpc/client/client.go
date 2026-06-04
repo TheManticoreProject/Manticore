@@ -27,6 +27,7 @@ package client
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/transport"
@@ -146,6 +147,29 @@ func (c *Client) Call(opnum uint16, stub []byte) ([]byte, error) {
 		return nil, fmt.Errorf("dcerpc call (opnum %d): %w", opnum, err)
 	}
 	return result, nil
+}
+
+// Invoke is the declarative counterpart to Call: it marshals the NDR request
+// structure in (whose Opnum selects the method and whose exported fields are the [in]
+// parameters), issues the call, and unmarshals the response into out (a pointer to
+// the [out] parameter structure). out may be nil when the response carries no data.
+// A fault PDU is returned as a *pdu.Fault error, as with Call.
+func (c *Client) Invoke(in ndr.Call, out any) error {
+	stub, err := ndr.Request(in)
+	if err != nil {
+		return fmt.Errorf("dcerpc invoke (opnum %d): marshal request: %w", in.Opnum(), err)
+	}
+	resp, err := c.Call(in.Opnum(), stub)
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return nil
+	}
+	if err := ndr.Response(resp, out); err != nil {
+		return fmt.Errorf("dcerpc invoke (opnum %d): unmarshal response: %w", in.Opnum(), err)
+	}
+	return nil
 }
 
 // sendRequest fragments stub into request PDUs no larger than the negotiated send
