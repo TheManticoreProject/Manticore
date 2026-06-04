@@ -30,12 +30,12 @@
 //	reject 6    ack 7    cl_cancel 8  fack 9    cancel_ack 10
 //
 // STATUS: The connectionless PDU codec (network/dcerpc/v4/pdu, Phase 1), the
-// ncadg_ip_udp datagram transport (network/dcerpc/v4/transport, Phase 2), and the
-// client-side protocol machine (network/dcerpc/v4/client, Phase 3) are implemented.
-// The endpoint mapper over UDP and concrete interface bindings are not yet
-// implemented. v4 is effectively dead against modern Windows, which removed
-// ncadg_ip_udp server support starting with Windows Vista / Server 2008; it remains
-// relevant only for legacy and non-Windows DCE targets.
+// ncadg_ip_udp datagram transport (network/dcerpc/v4/transport, Phase 2), the
+// client-side protocol machine (network/dcerpc/v4/client, Phase 3), and the endpoint
+// mapper over UDP (network/dcerpc/v4/epm, Phase 4) are implemented. Concrete
+// interface bindings are not yet implemented. v4 is effectively dead against modern
+// Windows, which removed ncadg_ip_udp server support starting with Windows Vista /
+// Server 2008; it remains relevant only for legacy and non-Windows DCE targets.
 //
 // References:
 //   - [C706] DCE 1.1: Remote Procedure Call (The Open Group, 1997):
