@@ -74,6 +74,7 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	// value is derived from the array length so the count and the elements cannot
 	// disagree and the caller need not set it explicitly.
 	counts := countTargets(rt, rv)
+	retvalIdx := retvalIndex(rt)
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -83,6 +84,9 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 		tag := parseTag(f.Tag.Get("ndr"))
 		if tag.skip {
 			continue
+		}
+		if i == retvalIdx {
+			continue // the RPC return value is encoded last, after deferred referents
 		}
 		if c, ok := counts[f.Name]; ok && isUintKind(rv.Field(i).Kind()) {
 			if tag.align > 0 {
@@ -114,6 +118,19 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	for _, fn := range deferred {
 		if err := fn(); err != nil {
 			return err
+		}
+	}
+	// The RPC return value follows all [out] parameters and their deferred referents.
+	if retvalIdx >= 0 {
+		f := rt.Field(retvalIdx)
+		var rdef []func() error
+		if err := marshalFieldInline(e, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
+			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		}
+		for _, fn := range rdef {
+			if err := fn(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -256,6 +273,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 		}
 		confCount = c
 	}
+	retvalIdx := retvalIndex(rt)
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -265,6 +283,9 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 		tag := parseTag(f.Tag.Get("ndr"))
 		if tag.skip {
 			continue
+		}
+		if i == retvalIdx {
+			continue // the RPC return value is decoded last, after deferred referents
 		}
 		if i == confIdx {
 			n := int(confCount)
@@ -290,6 +311,19 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 	for _, fn := range deferred {
 		if err := fn(); err != nil {
 			return err
+		}
+	}
+	// The RPC return value follows all [out] parameters and their deferred referents.
+	if retvalIdx >= 0 {
+		f := rt.Field(retvalIdx)
+		var rdef []func() error
+		if err := unmarshalFieldInline(d, rv.Field(retvalIdx), parseTag(f.Tag.Get("ndr")), &rdef, embedded); err != nil {
+			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+		}
+		for _, fn := range rdef {
+			if err := fn(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -500,6 +534,22 @@ func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
 		}
 	}
 	return m
+}
+
+// retvalIndex returns the field index tagged `ndr:"retval"` (the RPC return value),
+// or -1. NDR places the return value after all [out] parameters and their deferred
+// referents, so the walker handles it separately from the inline fields.
+func retvalIndex(rt reflect.Type) int {
+	for i := 0; i < rt.NumField(); i++ {
+		f := rt.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		if parseTag(f.Tag.Get("ndr")).retval {
+			return i
+		}
+	}
+	return -1
 }
 
 func isUintKind(k reflect.Kind) bool {

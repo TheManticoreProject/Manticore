@@ -81,6 +81,7 @@ type fieldTag struct {
 	sizeIs     string // sibling field naming the maximum element count
 	lengthIs   string // sibling field naming the actual element count
 	align      int    // explicit alignment override (0 = default)
+	retval     bool   // RPC return value: encoded after the struct's deferred referents
 }
 
 // parseTag parses an `ndr:"..."` tag value.
@@ -108,6 +109,8 @@ func parseTag(raw string) fieldTag {
 			t.conformant = true
 		case opt == "varying":
 			t.varying = true
+		case opt == "retval":
+			t.retval = true
 		case strings.HasPrefix(opt, "size_is="):
 			t.conformant = true
 			t.sizeIs = strings.TrimPrefix(opt, "size_is=")
