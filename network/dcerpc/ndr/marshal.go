@@ -67,6 +67,7 @@ func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
+		e.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
 		e.WriteUint32(uint32(rv.Field(confIdx).Len())) // hoisted maximum_count
 	}
 	// A field named by another field's size_is/length_is is the array's count; its
@@ -248,6 +249,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint32
 	if confIdx >= 0 {
+		d.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
 		c, err := d.ReadUint32() // hoisted maximum_count
 		if err != nil {
 			return err
@@ -516,16 +518,58 @@ func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
 	return fv.Kind() == reflect.Slice && !isPointerLike(fv, tag)
 }
 
+// ndrAlignment returns the NDR alignment, in octets, of a value of type t.
+func ndrAlignment(t reflect.Type) int {
+	if reflect.PointerTo(t).Implements(marshalerType) {
+		return reflect.New(t).Interface().(Marshaler).AlignmentNDR()
+	}
+	switch t.Kind() {
+	case reflect.Bool, reflect.Uint8, reflect.Int8:
+		return 1
+	case reflect.Uint16, reflect.Int16:
+		return 2
+	case reflect.Uint32, reflect.Int32, reflect.Uint, reflect.Int, reflect.String, reflect.Pointer:
+		return 4
+	case reflect.Uint64, reflect.Int64:
+		return 8
+	case reflect.Struct:
+		a := 1
+		for i := 0; i < t.NumField(); i++ {
+			if t.Field(i).PkgPath != "" {
+				continue
+			}
+			if fa := ndrAlignment(t.Field(i).Type); fa > a {
+				a = fa
+			}
+		}
+		return a
+	default:
+		return 4
+	}
+}
+
+// conformantArrayAlignment returns the alignment of a conformant array of the given
+// element type: the larger of the size determinant's alignment (4) and the element
+// alignment ([C706] section 14.3.3.1).
+func conformantArrayAlignment(elemType reflect.Type) int {
+	if a := ndrAlignment(elemType); a > 4 {
+		return a
+	}
+	return 4
+}
+
 // marshalConformantArray writes a conformant array: a maximum_count followed by the
 // elements, per [MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
 func marshalConformantArray(e *Encoder, slice reflect.Value) error {
+	e.Align(conformantArrayAlignment(slice.Type().Elem()))
 	e.WriteUint32(uint32(slice.Len()))
 	return marshalElements(e, slice)
 }
 
 // unmarshalConformantArray reads a maximum_count-prefixed array into slice.
 func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
+	d.Align(conformantArrayAlignment(slice.Type().Elem()))
 	n, err := d.ReadUint32()
 	if err != nil {
 		return err
@@ -538,6 +582,7 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
 // The full slice is transmitted (offset 0, actual_count == maximum_count == len).
 func marshalConformantVaryingArray(e *Encoder, slice reflect.Value) error {
+	e.Align(conformantArrayAlignment(slice.Type().Elem()))
 	n := uint32(slice.Len())
 	e.WriteUint32(n) // maximum_count
 	e.WriteUint32(0) // offset
@@ -548,6 +593,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value) error {
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the
 // actual_count to size the result.
 func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value) error {
+	d.Align(conformantArrayAlignment(slice.Type().Elem()))
 	if _, err := d.ReadUint32(); err != nil { // maximum_count
 		return err
 	}
