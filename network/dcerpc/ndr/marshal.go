@@ -18,7 +18,7 @@ func Marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 	e := NewEncoder()
-	if err := marshalStruct(e, rv); err != nil {
+	if err := marshalStruct(e, rv, false); err != nil {
 		return nil, err
 	}
 	return e.Bytes(), nil
@@ -35,7 +35,7 @@ func Unmarshal(data []byte, v any) error {
 	if err != nil {
 		return err
 	}
-	return unmarshalStruct(NewDecoder(data), sv)
+	return unmarshalStruct(NewDecoder(data), sv, false)
 }
 
 // structValue dereferences pointers/interfaces to reach a struct value.
@@ -61,12 +61,18 @@ func structValue(rv reflect.Value) (reflect.Value, error) {
 // maximum_count is hoisted to the start of the struct and only the elements are
 // emitted in place, per [MS-RPCE] "Structure Containing a Conformant Varying Array":
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/7bae54af-8b6a-4672-a6a3-6bcdf131730a
-func marshalStruct(e *Encoder, rv reflect.Value) error {
+// embedded is true when rv is not the top-level call/parameter struct, which governs
+// how [ref] pointer members are encoded ([C706] section 14.3.10).
+func marshalStruct(e *Encoder, rv reflect.Value, embedded bool) error {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
 		e.WriteUint32(uint32(rv.Field(confIdx).Len())) // hoisted maximum_count
 	}
+	// A field named by another field's size_is/length_is is the array's count; its
+	// value is derived from the array length so the count and the elements cannot
+	// disagree and the caller need not set it explicitly.
+	counts := countTargets(rt, rv)
 	var deferred []func() error
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -77,14 +83,30 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 		if tag.skip {
 			continue
 		}
+		if c, ok := counts[f.Name]; ok && isUintKind(rv.Field(i).Kind()) {
+			if tag.align > 0 {
+				e.Align(tag.align)
+			}
+			tmp := reflect.New(f.Type).Elem()
+			tmp.SetUint(c)
+			if err := marshalScalar(e, tmp); err != nil {
+				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+			}
+			continue
+		}
 		if i == confIdx {
-			// The maximum_count was hoisted above; emit only the elements in place.
+			// The maximum_count was hoisted above. For a conformant-varying array the
+			// offset and actual_count stay here, ahead of the elements.
+			if tag.varying {
+				e.WriteUint32(0)                         // offset
+				e.WriteUint32(uint32(rv.Field(i).Len())) // actual_count
+			}
 			if err := marshalElements(e, rv.Field(i)); err != nil {
 				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
 		}
-		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred); err != nil {
+		if err := marshalFieldInline(e, rv.Field(i), tag, &deferred, embedded); err != nil {
 			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
@@ -98,7 +120,7 @@ func marshalStruct(e *Encoder, rv reflect.Value) error {
 
 // marshalFieldInline writes a field's inline representation, enqueueing the referent
 // body for pointers.
-func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if tag.align > 0 {
 		e.Align(tag.align)
 	}
@@ -113,12 +135,20 @@ func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			kind = ptrUnique // a bare Go pointer defaults to [unique]
 		}
 		if kind == ptrRef {
-			// Reference pointers carry no referent id at the top level; the referent
-			// is marshalled inline.
 			if isNilReferent(fv) {
 				return fmt.Errorf("ndr: nil [ref] pointer")
 			}
-			return marshalReferentBody(e, fv, tag)
+			// A top-level [ref] parameter has no referent id and its referent is
+			// marshalled in place. An embedded [ref] pointer is represented by a
+			// 4-octet placeholder with its referent deferred, like other embedded
+			// pointers ([C706] section 14.3.10).
+			if !embedded {
+				return marshalReferentBody(e, fv, tag)
+			}
+			e.WriteUint32(e.nextReferent())
+			body := fv
+			*deferred = append(*deferred, func() error { return marshalReferentBody(e, body, tag) })
+			return nil
 		}
 		if isNilReferent(fv) {
 			e.WriteUint32(0) // NULL referent
@@ -161,8 +191,11 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 
 	switch fv.Kind() {
 	case reflect.Struct:
-		return marshalStruct(e, fv)
+		return marshalStruct(e, fv, true) // members of any value reached here are embedded
 	case reflect.Slice:
+		if tag.varying {
+			return marshalConformantVaryingArray(e, fv)
+		}
 		return marshalConformantArray(e, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
@@ -210,7 +243,7 @@ func marshalScalar(e *Encoder, fv reflect.Value) error {
 
 // ---- unmarshalling --------------------------------------------------------------
 
-func unmarshalStruct(d *Decoder, rv reflect.Value) error {
+func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 	rt := rv.Type()
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint32
@@ -232,12 +265,23 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 			continue
 		}
 		if i == confIdx {
-			if err := unmarshalElements(d, rv.Field(i), int(confCount)); err != nil {
+			n := int(confCount)
+			if tag.varying {
+				if _, err := d.ReadUint32(); err != nil { // offset
+					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+				}
+				actual, err := d.ReadUint32() // actual_count
+				if err != nil {
+					return fmt.Errorf("ndr: field %s: %w", f.Name, err)
+				}
+				n = int(actual)
+			}
+			if err := unmarshalElements(d, rv.Field(i), n); err != nil {
 				return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
 		}
-		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred); err != nil {
+		if err := unmarshalFieldInline(d, rv.Field(i), tag, &deferred, embedded); err != nil {
 			return fmt.Errorf("ndr: field %s: %w", f.Name, err)
 		}
 	}
@@ -249,7 +293,7 @@ func unmarshalStruct(d *Decoder, rv reflect.Value) error {
 	return nil
 }
 
-func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error) error {
+func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *[]func() error, embedded bool) error {
 	if tag.align > 0 {
 		d.Align(tag.align)
 	}
@@ -264,7 +308,17 @@ func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 			kind = ptrUnique
 		}
 		if kind == ptrRef {
-			return unmarshalReferentBody(d, fv, tag)
+			// Top-level [ref]: referent in place. Embedded [ref]: 4-octet placeholder
+			// then a deferred referent.
+			if !embedded {
+				return unmarshalReferentBody(d, fv, tag)
+			}
+			if _, err := d.ReadUint32(); err != nil {
+				return err
+			}
+			target := fv
+			*deferred = append(*deferred, func() error { return unmarshalReferentBody(d, target, tag) })
+			return nil
 		}
 		refid, err := d.ReadUint32()
 		if err != nil {
@@ -314,8 +368,11 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag) error {
 
 	switch fv.Kind() {
 	case reflect.Struct:
-		return unmarshalStruct(d, fv)
+		return unmarshalStruct(d, fv, true)
 	case reflect.Slice:
+		if tag.varying {
+			return unmarshalConformantVaryingArray(d, fv)
+		}
 		return unmarshalConformantArray(d, fv)
 	case reflect.Array:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
@@ -417,6 +474,41 @@ func embeddedConformantIndex(rt reflect.Type, rv reflect.Value) int {
 	return idx
 }
 
+// countTargets maps the name of each field that is named by another field's
+// size_is/length_is to the element count of that array. The count is derived from the
+// array's length so the transmitted count field always matches the elements ([C706]
+// section 14.3.3.1; [MS-RPCE] Conformant Arrays).
+func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
+	m := map[string]uint64{}
+	for j := 0; j < rt.NumField(); j++ {
+		f := rt.Field(j)
+		if f.PkgPath != "" {
+			continue
+		}
+		tag := parseTag(f.Tag.Get("ndr"))
+		if tag.skip || rv.Field(j).Kind() != reflect.Slice {
+			continue
+		}
+		n := uint64(rv.Field(j).Len())
+		if tag.sizeIs != "" {
+			m[tag.sizeIs] = n
+		}
+		if tag.lengthIs != "" {
+			m[tag.lengthIs] = n
+		}
+	}
+	return m
+}
+
+func isUintKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
+	default:
+		return false
+	}
+}
+
 // isEmbeddedConformantArray reports whether fv is an inline (non-pointer) conformant
 // array, i.e. a slice that is not itself behind a pointer. A slice behind a pointer is
 // a referent, not an embedded array, and is not hoisted.
@@ -439,6 +531,34 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value) error {
 		return err
 	}
 	return unmarshalElements(d, slice, int(n))
+}
+
+// marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
+// offset, actual_count, then the elements, per [MS-RPCE] Conformant Varying Arrays:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
+// The full slice is transmitted (offset 0, actual_count == maximum_count == len).
+func marshalConformantVaryingArray(e *Encoder, slice reflect.Value) error {
+	n := uint32(slice.Len())
+	e.WriteUint32(n) // maximum_count
+	e.WriteUint32(0) // offset
+	e.WriteUint32(n) // actual_count
+	return marshalElements(e, slice)
+}
+
+// unmarshalConformantVaryingArray reads a conformant-varying array, using the
+// actual_count to size the result.
+func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value) error {
+	if _, err := d.ReadUint32(); err != nil { // maximum_count
+		return err
+	}
+	if _, err := d.ReadUint32(); err != nil { // offset
+		return err
+	}
+	actual, err := d.ReadUint32() // actual_count
+	if err != nil {
+		return err
+	}
+	return unmarshalElements(d, slice, int(actual))
 }
 
 // marshalElements writes the elements of a slice with no count prefix. Each element
