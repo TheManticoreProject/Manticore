@@ -24,9 +24,15 @@ type (
 
 	// WSTR is a wchar_t string ([string] wide). A field of this type marshals as a
 	// conformant+varying UTF-16LE array without needing an explicit "wstr" tag.
+	//
+	// Pointer semantics are explicit and controlled by the tag: a bare WSTR/STR/string
+	// field is encoded inline with no referent id (matching a top-level [ref] string
+	// parameter), while one tagged "unique" or "ptr" is encoded as a referent id with
+	// its body deferred (matching an embedded [unique,string] wchar_t*). Embedded
+	// strings in MS-RPC structures are almost always [unique]; tag them accordingly.
 	WSTR string
 	// STR is a char string ([string]). A field of this type marshals as a
-	// conformant+varying ASCII array.
+	// conformant+varying ASCII array. See WSTR for pointer semantics.
 	STR string
 )
 
