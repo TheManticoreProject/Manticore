@@ -582,6 +582,12 @@ func unmarshalElements(d *Decoder, slice reflect.Value, n int) error {
 	if n < 0 {
 		return fmt.Errorf("ndr: negative element count %d", n)
 	}
+	// Every NDR element occupies at least one octet, so a count larger than the
+	// remaining input cannot be valid. Reject it before allocating, otherwise an
+	// attacker-controlled count would size an arbitrary allocation (OOM/panic).
+	if n > d.Remaining() {
+		return fmt.Errorf("ndr: element count %d exceeds %d remaining bytes", n, d.Remaining())
+	}
 	if slice.Type().Elem().Kind() == reflect.Uint8 {
 		b, err := d.ReadBytes(n)
 		if err != nil {
