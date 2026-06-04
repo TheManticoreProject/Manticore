@@ -9,5 +9,5 @@ import (
 // LSAPR_TRUST_INFORMATION sized by EntriesRead.
 type LSAPR_TRUSTED_ENUM_BUFFER struct {
 	EntriesRead ndr.DWORD
-	Information  []LSAPR_TRUST_INFORMATION `ndr:"unique,size_is=EntriesRead"`
+	Information []LSAPR_TRUST_INFORMATION `ndr:"unique,size_is=EntriesRead"`
 }

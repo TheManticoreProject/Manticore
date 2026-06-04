@@ -6,11 +6,11 @@ package structures
 type LSAP_LOOKUP_LEVEL uint16
 
 const (
-	LsapLookupWksta             LSAP_LOOKUP_LEVEL = 1
-	LsapLookupPDC               LSAP_LOOKUP_LEVEL = 2
-	LsapLookupTDL               LSAP_LOOKUP_LEVEL = 3
-	LsapLookupGC                LSAP_LOOKUP_LEVEL = 4
-	LsapLookupXForestReferral   LSAP_LOOKUP_LEVEL = 5
-	LsapLookupXForestResolve    LSAP_LOOKUP_LEVEL = 6
+	LsapLookupWksta                LSAP_LOOKUP_LEVEL = 1
+	LsapLookupPDC                  LSAP_LOOKUP_LEVEL = 2
+	LsapLookupTDL                  LSAP_LOOKUP_LEVEL = 3
+	LsapLookupGC                   LSAP_LOOKUP_LEVEL = 4
+	LsapLookupXForestReferral      LSAP_LOOKUP_LEVEL = 5
+	LsapLookupXForestResolve       LSAP_LOOKUP_LEVEL = 6
 	LsapLookupRODCReferralToFullDC LSAP_LOOKUP_LEVEL = 7
 )

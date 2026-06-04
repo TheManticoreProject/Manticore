@@ -9,5 +9,5 @@ import (
 // LSAPR_ACCOUNT_INFORMATION sized by EntriesRead.
 type LSAPR_ACCOUNT_ENUM_BUFFER struct {
 	EntriesRead ndr.DWORD
-	Information  []LSAPR_ACCOUNT_INFORMATION `ndr:"unique,size_is=EntriesRead"`
+	Information []LSAPR_ACCOUNT_INFORMATION `ndr:"unique,size_is=EntriesRead"`
 }
