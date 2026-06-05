@@ -1,4 +1,4 @@
-// Package rpcinterface_4b324fc816701d312785a47bf6ee188_3_0 is the descriptor for the
+// Package rpcinterface_4b324fc8167001d312785a47bf6ee188_3_0 is the descriptor for the
 // Server Service Remote Protocol (srvsvc) RPC interface, abstract syntax
 // 4b324fc8-1670-01d3-1278-5a47bf6ee188 version 3.0 ([MS-SRVS]).
 //
@@ -15,7 +15,7 @@
 // References:
 //   - [MS-SRVS] Server Service Remote Protocol:
 //     https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/accf23b0-0f57-441c-9185-43041f1b0ee9
-package rpcinterface_4b324fc816701d312785a47bf6ee188_3_0
+package rpcinterface_4b324fc8167001d312785a47bf6ee188_3_0
 
 import (
 	"fmt"
