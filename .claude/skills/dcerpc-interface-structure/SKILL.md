@@ -1,11 +1,13 @@
 ---
 name: dcerpc-interface-structure
-description: Scaffold and organize DCE/RPC interface code in the Manticore project using the UUID-versioned directory layout (interfaces/<uuid>/<major>.<minor>/ with structures/ and functions/ subpackages). Use this skill whenever creating a new RPC interface, adding a method (opnum) or NDR structure to an existing one, splitting a monolithic interface file, translating an IDL to Go, or wiring an MS-protocol package to the interfaces it composes. Triggers include "add an RPC interface", "scaffold lsarpc/srvsvc/efsr", "add an opnum/function", "add an NDR structure", "implement the methods from this IDL", "organize the dcerpc interface", or "create an ms-protocols package".
+description: Scaffold and organize DCE/RPC interface code in the Manticore project using the UUID-versioned directory layout (interfaces/<uuid>/<major>.<minor>/ with structures/ and functions/ subpackages). Translating an IDL to a whole interface is automated by the tools/idlgen generator — run it first, then review with this skill. Use this skill whenever creating a new RPC interface, adding a method (opnum) or NDR structure to an existing one, splitting a monolithic interface file, translating an IDL to Go, or wiring an MS-protocol package to the interfaces it composes. Triggers include "add an RPC interface", "scaffold lsarpc/srvsvc/efsr", "add an opnum/function", "add an NDR structure", "implement the methods from this IDL", "organize the dcerpc interface", or "create an ms-protocols package".
 ---
 
 # DCE/RPC Interface Code Structure
 
 How to lay out and implement DCE/RPC interface code in the Manticore repo. An *interface* is a single RPC abstract syntax (a UUID + version); a *protocol* (MS-LSAD, MS-EFSR, …) composes one or more interfaces into higher-level workflows. Interfaces are the reusable building blocks; protocols sit above them.
+
+**Translating an IDL to a whole interface is automated by `tools/idlgen` — run it first (see [Implementing a whole interface from an IDL](#implementing-a-whole-interface-from-an-idl)), then use the rest of this document to review and refine the generated skeleton.** The generator is the single source of truth for the conventions below, so they stay consistent across every interface.
 
 ## Core principle
 
@@ -316,31 +318,50 @@ Live-test note: set `smb.NativeOS`/`smb.NativeLanMan` before `SessionSetup`, and
 
 ## Implementing a whole interface from an IDL
 
-Order of work that scales and stays collision-free:
+**Generate the skeleton with `tools/idlgen` first — do not hand-write the tree.** The generator (`tools/idlgen/idlgen.py`; see `tools/idlgen/README.md`) encodes every convention in this document — package naming, the single-vs-double pointer rule, `dtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
 
-1. **Descriptor first** (`interface.go`): all opnum constants (skip `OpnumNNNotUsedOnWire`), `OpnumToName`/`NameToOpnum`, access masks, status codes, `SyntaxID`. Build it.
-2. **Tier the methods by the NDR feature they need** and check the codec supports each before generating code:
-   - handles + scalars + simple strings — always available;
-   - `dtyp` base types (`RPC_SID`/`RPC_UNICODE_STRING`/`LUID`);
-   - conformant-varying arrays and **arrays of pointer-bearing structs**;
-   - **discriminated unions**.
-   If the codec lacks a feature, file an enhancement issue against `network/dcerpc/ndr` (or `dtyp`) and defer those methods rather than emitting code that can't be correct.
-3. **Structures next** (`structures/`), as one coherent unit (interdependent; keep internally consistent), with round-trip tests. Build + test before touching functions.
-4. **Fan out functions** one file per opnum. Files are disjoint, so this parallelizes well; if delegating, the strict contract is: don't touch `interface.go`/`functions.go`/`structures/`/other `NN_*.go`, follow the pointer/response rules above, and let the orchestrator run the single authoritative `gofmt` + build/vet/test.
-
-### Verifying completeness (do this at the end)
-
-Cross-check the IDL against what you built — count parity is not enough; verify each opnum number:
+### 1. Generate the tree
 
 ```sh
-# every real method in the IDL (excludes OpnumNNNotUsedOnWire):
-grep -aoE '\b[A-Z][A-Za-z0-9]+\(' <iface>.idl   # then filter to the interface's method prefix
-# vs. exported funcs and file prefixes in functions/
+python3 tools/idlgen/idlgen.py generate <iface>.idl \
+    --out-root network/dcerpc/interfaces --spec MS-XXX --pipe '\<pipe>'
 ```
 
-Confirm: (a) every IDL method has exactly one `functions/<NN>_<Name>.go` and exported func; (b) no extras; (c) the file prefix `NN` == the IDL `// Opnum NN` == the `Opnum<Name>` constant; (d) `NotUsedOnWire` opnums are absent. A quick script comparing the three sources (IDL opnum, file prefix, constant value) catches mis-numbered files.
+This writes `interface.go`, `structures/*.go`, and `functions/<NN>_<Method>.go` under `network/dcerpc/interfaces/<uuid>/<maj>.<min>/` (opnums skip `OpnumNNotUsedOnWire`; the import path is derived from `go.mod`), runs `gofmt`, and prints the count of `TODO(idlgen)` markers. Drive the layers individually when needed: `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`.
 
-Finish with: `gofmt -w`, then `go build`, `go vet`, `go test ./<path>/...`, and `go build -tags integration ./<path>/...`.
+### 2. Review what the IDL cannot carry (`TODO(idlgen)` markers + known hard cases)
+
+Grep for `TODO(idlgen)` and reconcile each against the rules above:
+
+- **`interface.go`** — `PipeName` (set via `--pipe`; verify it), the **status / NTSTATUS code table** (not in the IDL — add the interface's codes from [MS-ERREF]/[MS-XXX] and extend `StatusString`), and doc comments.
+- **NDR tags the generator can't infer** — verify against this skill: fixed encrypted-password buffers, `SAMPR_LOGON_HOURS`' literal `size_is(1260)` bound, and **per-method tolerance of `STATUS_MORE_ENTRIES`/`SOME_NOT_MAPPED`** (a generated stub accepts only `StatusSuccess`; relax it for `Enumerate*`/`Lookup*`/`QueryDisplay*`).
+- **Exported-function ergonomics** — stubs mirror the request fields and use named returns; refine to friendly `string`/`uint32` parameters with conversions where it reads better.
+- **Types referenced but absent from the IDL** get a `type X struct{}` placeholder with a `TODO(idlgen)` (e.g. MS-SRVS `SERVER_INFO_100/101`); fill in their fields by hand.
+
+If the codec genuinely lacks a feature a type needs (rather than the generator mis-modeling it), file an enhancement issue against `network/dcerpc/ndr` (or `dtyp`) and defer those methods rather than shipping code that can't be correct.
+
+### 3. Verify
+
+`gofmt -w`, then `go build`, `go vet`, `go test ./<path>/...`, and `go build -tags integration ./<path>/...`. Then **live-validate** — the real acceptance gate (see Tests). Cross-check completeness (count parity is not enough — verify each opnum number):
+
+```sh
+grep -aoE '\b[A-Z][A-Za-z0-9]+\(' <iface>.idl   # real methods (filter to the interface prefix)
+```
+
+Confirm: (a) every IDL method has exactly one `functions/<NN>_<Name>.go` and exported func; (b) no extras; (c) the file prefix `NN` == the IDL `// Opnum NN` == the `Opnum<Name>` constant; (d) `NotUsedOnWire` opnums are absent.
+
+### 4. Keep regenerations and edits reconcilable: `check`
+
+```sh
+python3 tools/idlgen/idlgen.py check <iface>.idl \
+    --out-root network/dcerpc/interfaces --spec MS-XXX --pipe '\<pipe>'
+```
+
+`check` does a code-only diff (ignoring comments) of a freshly generated tree against the committed one and reports **code-identical / differing / generated-only / committed-only** counts plus the differing files. Use it to see what your hand-edits changed, to catch accidental drift, and as a regression guard when `idlgen` itself changes (`--strict` exits non-zero on any code difference). Hand-added files (`functions/functions.go`, `*_test.go`) show up as *committed-only* and are expected.
+
+### Editing by hand (no IDL, or surgical changes)
+
+When there is no IDL or you are adding a single opnum/type, the manual order still applies: **descriptor → structures (one coherent unit, with round-trip tests) → one file per opnum**. Function files are disjoint and parallelize well; the contract when fanning out is: don't touch `interface.go`/`functions.go`/`structures/`/other `NN_*.go`, follow the pointer/response rules above, and run a single authoritative `gofmt` + build/vet/test at the end.
 
 ---
 
