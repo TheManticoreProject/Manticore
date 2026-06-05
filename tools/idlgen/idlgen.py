@@ -867,6 +867,7 @@ class TypeResolver:
         self.palias: dict[str, tuple[str, int]] = {}  # PFOO -> (canonical, depth)
         self.scalar_alias: dict[str, str] = {}        # alias -> Go scalar
         self.ctx_handles: set[str] = set()
+        self.str_handles: set[str] = set()            # [handle] wchar_t* string handles
         self.extra_names: dict[str, list[str]] = {}   # primary -> [extra non-ptr aliases]
         self.unresolved: set[str] = set()             # type names referenced but not defined
         self.enum_values: dict[str, int] = {}         # enumerator name -> numeric value
@@ -903,6 +904,9 @@ class TypeResolver:
                 if "context_handle" in td.attrs and td.base == "void":
                     if canon:
                         self.ctx_handles.add(canon)
+                elif td.base == "wchar_t" and not has_value_decl:
+                    if canon:
+                        self.str_handles.add(canon)  # [handle] wchar_t* string handle
                 elif canon and td.base and has_value_decl:
                     # Only a by-value scalar alias; a pointer-only alias
                     # (e.g. [handle] wchar_t *PSAMPR_SERVER_NAME) is a string
@@ -921,7 +925,7 @@ class TypeResolver:
             return base, 0, ""  # guard against any pathological alias cycle
         if base == "GUID":
             return "guid.GUID", 0, "guid"
-        if base in _STR_TYPES:
+        if base in _STR_TYPES or base in self.str_handles:
             return "ndr.WSTR", 1, ""
         if base in _DTYP_STRUCT:
             return f"dtyp.{base}", 0, "dtyp"
@@ -1213,6 +1217,167 @@ def gen_structures(iface: Interface, spec: str) -> dict[str, str]:
     return files
 
 
+# --------------------------------------------------------------------------- #
+# Phase 4: functions generator (functions/<NN>_<Method>.go)
+# --------------------------------------------------------------------------- #
+
+def _param_field(res: TypeResolver, p: Param) -> tuple[str, str, set]:
+    """Map a method parameter to a (go_type, ndr_tag, imports) request/response
+    field. Applies the top-level pointer rule: a single pointer ([ref]) is the
+    inline value; [unique] or a double pointer is a `*T` referent. Top-level
+    array parameters use `ref` (not `unique`) so the count is not hoisted ahead
+    of a preceding context handle."""
+    go, extra_ptr, imp = res.resolve_base(p.type.base)
+    imports = {imp} if imp else set()
+    # Local interface types live in the structures package and must be qualified
+    # when referenced from the functions package (unlike inside structures/).
+    if go and "." not in go and not go[0].islower() and (
+            res.is_local(go) or go in res.ctx_handles):
+        go = "structures." + go
+    ptr = p.type.ptr + extra_ptr
+    size = p.attrs.get("size_is")
+    length = p.attrs.get("length_is")
+    arr = p.type.array
+    is_unique = "unique" in p.attrs
+
+    if "string" in p.attrs and arr is None:
+        return "*ndr.WSTR", "unique", set()
+
+    ptr_array = (arr is None) and isinstance(size, str) and ptr >= 1
+    if arr is not None or ptr_array:
+        if arr is not None and arr not in ("*", "") and not isinstance(size, str):
+            n = _eval_const(arr)
+            if n is not None:
+                return f"[{n}]{'*' * ptr}{go}", "", imports
+        elem_ptr = ptr if arr is not None else ptr - 1
+        tags: list[str] = []
+        if elem_ptr >= 1:
+            tags.append("elem=unique")
+        tags.append("ref")  # pointer-to-array, no count hoisting before the handle
+        sized = False
+        if isinstance(size, str):
+            sn = _norm_attr(size)
+            if re.fullmatch(r"\d+|0[xX][0-9A-Fa-f]+|[A-Za-z_]\w*", sn):
+                tags.append(f"size_is={sn}")
+                sized = True
+        varying = False
+        if isinstance(length, str):
+            tags.append("varying")
+            varying = True
+            ln = _norm_attr(length)
+            if re.fullmatch(r"[A-Za-z_]\w*", ln):
+                tags.append(f"length_is={ln}")
+        if not sized and not varying:
+            tags.append("conformant")
+        return f"[]{'*' * elem_ptr}{go}", ",".join(tags), imports
+
+    if ptr == 0:
+        return go, "", imports
+    if ptr == 1 and not is_unique:
+        return go, "", imports             # single top-level [ref] -> inline value
+    return "*" + go, "unique", imports     # [unique] or double pointer -> referent
+
+
+_GO_KEYWORDS = {
+    "break", "case", "chan", "const", "continue", "default", "defer", "else",
+    "fallthrough", "for", "func", "go", "goto", "if", "import", "interface",
+    "map", "package", "range", "return", "select", "struct", "switch", "type",
+    "var",
+}
+
+
+def _lower_first(s: str) -> str:
+    name = (s[0].lower() + s[1:]) if s else "arg"
+    return name + "_" if name in _GO_KEYWORDS else name
+
+
+# Status names allowed (besides success) before a method is treated as failed.
+_ENUM_OK = {"StatusMoreEntries", "StatusSomeNotMapped", "StatusNoneMapped"}
+
+
+def gen_functions(iface: Interface, spec: str, import_base: str) -> dict[str, str]:
+    res = TypeResolver(iface)
+    short = iface.name
+    files: dict[str, str] = {}
+    for m in iface.methods:
+        if not is_on_the_wire(m):
+            continue
+        req_fields: list[tuple[str, str, str, Param]] = []   # (FieldName, go, tag, param)
+        resp_fields: list[tuple[str, str, str]] = []
+        imports: set = set()
+        for p in m.params:
+            if p.type.base == "handle_t":
+                continue  # implicit binding handle, not marshalled
+            go, tag, imp = _param_field(res, p)
+            imports |= imp
+            fname = _go_field_name(p.name)
+            if "in" in p.attrs:
+                req_fields.append((fname, go, tag, p))
+            if "out" in p.attrs:
+                resp_fields.append((fname, go, tag))
+        lname = m.name[0].lower() + m.name[1:]
+        out: list[str] = []
+        w = out.append
+        # request
+        w(f"// {lname}Request carries the [in] parameters of {m.name}.")
+        w(f"type {lname}Request struct {{")
+        for fname, go, tag, _ in req_fields:
+            w(f'\t{fname} {go}' + (f' `ndr:"{tag}"`' if tag else ""))
+        w("}")
+        w("")
+        w(f"func (*{lname}Request) Opnum() uint16 {{ return {short}.Opnum{m.name} }}")
+        w("")
+        # response
+        w(f"// {lname}Response carries the [out] parameters and return value of {m.name}.")
+        w(f"type {lname}Response struct {{")
+        for fname, go, tag in resp_fields:
+            w(f'\t{fname} {go}' + (f' `ndr:"{tag}"`' if tag else ""))
+        w('\tStatus ndr.DWORD `ndr:"retval"`')
+        w("}")
+        w("")
+        # exported wrapper with named returns (zero values handled automatically)
+        params = ", ".join(f"{_lower_first(fn)} {go}" for fn, go, _, _ in req_fields)
+        rets = ", ".join(f"{fn} {go}" for fn, go, _ in resp_fields)
+        sig_rets = (rets + ", " if rets else "") + "err error"
+        w(f"// {m.name} calls {m.name} (opnum {m.opnum}) ([{spec}] — verify the parameter")
+        w("// modeling and status handling).")
+        w(f"func {m.name}(rpc ndr.Invoker{', ' + params if params else ''}) ({sig_rets}) {{")
+        w(f"\treq := &{lname}Request{{")
+        for fn, _, _, _ in req_fields:
+            w(f"\t\t{fn}: {_lower_first(fn)},")
+        w("\t}")
+        w(f"\tvar resp {lname}Response")
+        w("\tif err = rpc.Invoke(req, &resp); err != nil {")
+        w(f'\t\terr = fmt.Errorf("{m.name}: %w", err)')
+        w("\t\treturn")
+        w("\t}")
+        for fn, _, _ in resp_fields:
+            w(f"\t{fn} = resp.{fn}")
+        w(f"\tif uint32(resp.Status) != {short}.StatusSuccess {{")
+        w(f'\t\terr = fmt.Errorf("{m.name} failed: %s", {short}.StatusString(uint32(resp.Status)))')
+        w("\t}")
+        w("\treturn")
+        w("}")
+        w("")
+        body = "\n".join(out)
+
+        header = ["package functions", "", "import ("]
+        header.append('\t"fmt"')
+        header.append("")
+        header.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"')
+        if "dtyp." in body:
+            header.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"')
+        if "guid." in body:
+            header.append('\t"github.com/TheManticoreProject/Manticore/windows/guid"')
+        header.append(f'\t{short} "{import_base}"')
+        if "structures." in body:
+            header.append(f'\t"{import_base}/structures"')
+        header.append(")")
+        header.append("")
+        files[f"{m.opnum:02d}_{m.name}.go"] = "\n".join(header) + "\n" + body
+    return files
+
+
 def _gofmt(src: str) -> str:
     """Run gofmt on a Go source string; return the original on any failure."""
     import shutil
@@ -1247,6 +1412,14 @@ def main(argv: list[str]) -> int:
     st.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments")
     st.add_argument("--out", required=True, help="output directory for the structures package")
     st.add_argument("--interface", default=None, help="interface name if the IDL has several")
+
+    fn = sub.add_parser("gen-functions", help="generate functions/*.go from an .idl")
+    fn.add_argument("idl", help="path to the .idl file")
+    fn.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments")
+    fn.add_argument("--out", required=True, help="output directory for the functions package")
+    fn.add_argument("--import-base", required=True, dest="import_base",
+                    help="module import path of the interface (the descriptor package)")
+    fn.add_argument("--interface", default=None, help="interface name if the IDL has several")
 
     args = ap.parse_args(argv)
 
@@ -1302,6 +1475,26 @@ def main(argv: list[str]) -> int:
             print("no matching interface found", file=sys.stderr)
             return 1
         files = gen_structures(ifaces[0], args.spec)
+        os.makedirs(args.out, exist_ok=True)
+        for fname, src in files.items():
+            with open(os.path.join(args.out, fname), "w") as fh:
+                fh.write(_gofmt(src))
+        print(f"wrote {len(files)} files to {args.out}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "gen-functions":
+        import os
+        try:
+            ifaces = parse_file(args.idl)
+        except (LexError, ParseError) as e:
+            print(f"PARSE ERROR: {e}", file=sys.stderr)
+            return 1
+        if args.interface:
+            ifaces = [i for i in ifaces if i.name == args.interface]
+        if not ifaces:
+            print("no matching interface found", file=sys.stderr)
+            return 1
+        files = gen_functions(ifaces[0], args.spec, args.import_base)
         os.makedirs(args.out, exist_ok=True)
         for fname, src in files.items():
             with open(os.path.join(args.out, fname), "w") as fh:
