@@ -1,4 +1,4 @@
-package rpcinterface_4b324fc816701d312785a47bf6ee188_3_0
+package rpcinterface_4b324fc8167001d312785a47bf6ee188_3_0
 
 import "testing"
 
