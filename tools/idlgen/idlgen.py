@@ -820,6 +820,399 @@ def gen_descriptor(iface: Interface, pipe: Optional[str], spec_tag: str) -> str:
     return "\n".join(out)
 
 
+# --------------------------------------------------------------------------- #
+# Phase 3: structures generator (structures/<TYPE>.go)
+# --------------------------------------------------------------------------- #
+
+# Base C / MIDL scalars (multi-word spellings) -> Go type.
+_SCALAR = {
+    "unsigned long": "ndr.DWORD", "long": "int32",
+    "unsigned short": "uint16", "short": "int16",
+    "unsigned int": "uint32", "int": "int32",
+    "unsigned char": "uint8", "char": "byte", "byte": "uint8",
+    "unsigned hyper": "uint64", "hyper": "int64",
+    "wchar_t": "uint16", "boolean": "bool",
+    "float": "float32", "double": "float64",
+}
+# [MS-DTYP] scalar typedef names (imported) -> Go type.
+_DTYP_SCALAR = {
+    "DWORD": "ndr.DWORD", "ULONG": "ndr.DWORD", "LONG": "int32",
+    "UINT": "uint32", "INT": "int32", "USHORT": "uint16", "SHORT": "int16",
+    "WORD": "uint16", "UCHAR": "uint8", "BYTE": "uint8", "CHAR": "int8",
+    "BOOL": "ndr.BOOL", "BOOLEAN": "bool", "ULONG64": "uint64",
+    "ULONGLONG": "uint64", "DWORD64": "uint64", "LONGLONG": "int64",
+    "HYPER": "int64", "WCHAR": "uint16", "NTSTATUS": "ndr.DWORD",
+    "NET_API_STATUS": "ndr.DWORD", "LCID": "ndr.DWORD",
+    "ACCESS_MASK": "ndr.DWORD", "SECURITY_INFORMATION": "ndr.DWORD",
+    "RPC_STATUS": "int32",
+}
+# [MS-DTYP] aggregate types provided by network/dcerpc/dtyp (reuse, don't emit).
+_DTYP_STRUCT = {"RPC_SID", "RPC_UNICODE_STRING", "LARGE_INTEGER",
+                "ULARGE_INTEGER", "LUID"}
+# Built-in [MS-DTYP] pointer aliases -> canonical dtyp type.
+_DTYP_PALIAS = {
+    "PRPC_SID": "RPC_SID", "PRPC_UNICODE_STRING": "RPC_UNICODE_STRING",
+    "PLARGE_INTEGER": "LARGE_INTEGER", "PLUID": "LUID",
+}
+# Wide-string typedefs ([string] wchar_t*): modeled as a [unique] *ndr.WSTR.
+_STR_TYPES = {"LMSTR", "LMCSTR", "LPWSTR", "PWSTR", "LPCWSTR", "PWCHAR"}
+
+
+class TypeResolver:
+    """Catalogs an interface's typedefs so field/param types can be resolved to
+    Go types and pointer aliases expanded."""
+
+    def __init__(self, iface: Interface):
+        self.kinds: dict[str, str] = {}               # canonical name -> kind
+        self.palias: dict[str, tuple[str, int]] = {}  # PFOO -> (canonical, depth)
+        self.scalar_alias: dict[str, str] = {}        # alias -> Go scalar
+        self.ctx_handles: set[str] = set()
+        self.extra_names: dict[str, list[str]] = {}   # primary -> [extra non-ptr aliases]
+        self.unresolved: set[str] = set()             # type names referenced but not defined
+        self.enum_values: dict[str, int] = {}         # enumerator name -> numeric value
+        for td in iface.typedefs:
+            if td.kind == "enum":
+                nv = 0
+                for en, ev in td.enumerators:
+                    v = _eval_const(_norm_attr(ev)) if (ev and str(ev).strip()) else nv
+                    if v is None:
+                        nv += 1
+                        continue
+                    self.enum_values[en] = v
+                    nv = v + 1
+        for td in iface.typedefs:
+            canon = td.name
+            if canon:
+                self.kinds[canon] = td.kind
+            # The first declarator is always the primary (canonical) type and is
+            # never a pointer alias of itself. Later pointer declarators are
+            # pointer aliases of the primary; later non-pointer declarators are
+            # plain Go aliases of it.
+            for idx, d in enumerate(td.names):
+                if idx == 0:
+                    primary = d.name
+                    continue
+                if d.ptr >= 1:
+                    if d.name != primary:
+                        self.palias[d.name] = (primary, d.ptr)
+                else:
+                    self.extra_names.setdefault(canon, []).append(d.name)
+                    self.kinds[d.name] = td.kind
+            if td.kind == "alias":
+                has_value_decl = any(d.ptr == 0 for d in td.names)
+                if "context_handle" in td.attrs and td.base == "void":
+                    if canon:
+                        self.ctx_handles.add(canon)
+                elif canon and td.base and has_value_decl:
+                    # Only a by-value scalar alias; a pointer-only alias
+                    # (e.g. [handle] wchar_t *PSAMPR_SERVER_NAME) is a string
+                    # handle resolved at use sites, not a scalar type.
+                    go = _SCALAR.get(td.base) or _DTYP_SCALAR.get(td.base)
+                    if go:
+                        self.scalar_alias[canon] = go
+
+    def is_local(self, name: str) -> bool:
+        return name in self.kinds and name not in _DTYP_STRUCT
+
+    def resolve_base(self, base: str, _depth: int = 0) -> tuple[str, int, str]:
+        """Return (go_type, extra_ptr, import) for a base type spelling;
+        import is "" or "dtyp"."""
+        if _depth > 16:
+            return base, 0, ""  # guard against any pathological alias cycle
+        if base == "GUID":
+            return "guid.GUID", 0, "guid"
+        if base in _STR_TYPES:
+            return "ndr.WSTR", 1, ""
+        if base in _DTYP_STRUCT:
+            return f"dtyp.{base}", 0, "dtyp"
+        if base in _DTYP_PALIAS:
+            return f"dtyp.{_DTYP_PALIAS[base]}", 1, "dtyp"
+        if base in self.palias:
+            canon, depth = self.palias[base]
+            go, _, imp = self.resolve_base(canon, _depth + 1)
+            return go, depth, imp
+        if base in self.scalar_alias:
+            return self.scalar_alias[base], 0, ""
+        if base in _SCALAR:
+            return _SCALAR[base], 0, ""
+        if base in _DTYP_SCALAR:
+            return _DTYP_SCALAR[base], 0, ""
+        if base in self.ctx_handles or self.is_local(base):
+            return base, 0, ""
+        if base.startswith(("struct ", "union ", "enum ")):
+            return base.split()[-1], 0, ""
+        # MS pointer prefix convention: P<X> / LP<X> is a pointer to X when X
+        # resolves to a known type.
+        for pfx in ("LP", "P"):
+            if base.startswith(pfx) and len(base) > len(pfx):
+                inner = base[len(pfx):]
+                if (inner in _DTYP_STRUCT or inner in _DTYP_SCALAR or inner in _SCALAR
+                        or inner == "GUID" or inner in self.ctx_handles
+                        or self.is_local(inner)):
+                    go, _, imp = self.resolve_base(inner, _depth + 1)
+                    return go, 1, imp
+        # Unknown: a type-like name referenced but not defined in this IDL.
+        if base[:1].isupper() and " " not in base:
+            self.unresolved.add(base)
+        return base, 0, ""
+
+    def case_value(self, label: str) -> Optional[int]:
+        """Resolve a union case label (a number or an enumerator name) to its
+        numeric discriminant value."""
+        label = label.strip()
+        if re.fullmatch(r"\d+|0[xX][0-9A-Fa-f]+", label):
+            return int(label, 0)
+        return self.enum_values.get(label)
+
+
+def _go_field_name(name: str) -> str:
+    # Exported (capitalized) so the NDR codec, which skips unexported fields,
+    # marshals it. MS-IDL fields are usually PascalCase already; this fixes the
+    # occasional lowercase member such as `char data[16]`.
+    if not name:
+        return "Field"
+    return name[0].upper() + name[1:]
+
+
+def _eval_const(expr: str) -> Optional[int]:
+    """Evaluate a constant integer array bound such as `16` or `(256*2)+4`.
+    Returns None if the expression references an identifier (e.g. a size_is
+    field) or otherwise isn't a pure integer constant."""
+    s = (expr or "").strip()
+    if not s or not re.fullmatch(r"[0-9xXa-fA-F+\-*/() ]+", s):
+        return None
+    try:
+        v = eval(s, {"__builtins__": {}}, {})  # guarded: digits/operators only
+        return int(v)
+    except Exception:
+        return None
+
+
+def _field_decl(res: TypeResolver, f: Field) -> tuple[str, str, str]:
+    """Return (go_type, ndr_tag, import) for a struct field (embedded context:
+    pointers default to [unique])."""
+    go, extra_ptr, imp = res.resolve_base(f.type.base)
+    ptr = f.type.ptr + extra_ptr
+    size = f.attrs.get("size_is")
+    length = f.attrs.get("length_is")
+    arr = f.type.array
+    # Fixed-size array: a numeric `[N]`/`[(256*2)+4]` suffix with no size_is.
+    if arr is not None and arr not in ("*", "") and not isinstance(size, str):
+        n = _eval_const(arr)
+        if n is not None:
+            return f"[{n}]{'*' * ptr}{go}", "", imp
+    # An array is either a `[...]`/`[*]` suffix, or a sized pointer (one pointer
+    # level is the array indirection and is consumed by the slice).
+    suffix_array = arr is not None
+    ptr_array = (not suffix_array) and isinstance(size, str) and ptr >= 1
+    if suffix_array or ptr_array:
+        elem_ptr = ptr if suffix_array else ptr - 1
+        tags: list[str] = []
+        if elem_ptr >= 1:
+            tags.append("elem=unique")
+        tags.append("unique")
+        # size_is: a literal constant or a sibling field name is usable directly;
+        # an arithmetic expression (e.g. MaximumLength/2) is not a field, so fall
+        # back to a bare conformant array (the count derives from the slice).
+        sized = False
+        if isinstance(size, str):
+            sn = _norm_attr(size)
+            if re.fullmatch(r"\d+|0[xX][0-9A-Fa-f]+|[A-Za-z_]\w*", sn):
+                tags.append(f"size_is={sn}")
+                sized = True
+        varying = False
+        if isinstance(length, str):
+            tags.append("varying")
+            varying = True
+            ln = _norm_attr(length)
+            if re.fullmatch(r"[A-Za-z_]\w*", ln):
+                tags.append(f"length_is={ln}")
+        if not sized and not varying:
+            tags.append("conformant")
+        elem = ("*" * elem_ptr) + go
+        return f"[]{elem}", ",".join(tags), imp
+    if ptr == 0:
+        return go, "", imp
+    if "string" in f.attrs:
+        return "*ndr.WSTR", "unique", ""
+    return "*" * ptr + go, "unique", imp
+
+
+def gen_enum(td: Typedef, spec: str) -> str:
+    name = td.name
+    out: list[str] = []
+    w = out.append
+    w(f"// {name} is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [{spec}]).")
+    w(f"type {name} uint16")
+    w("")
+    w("const (")
+    next_val = 0
+    for ename, eval in td.enumerators:
+        if eval is not None and str(eval).strip():
+            v = _norm_attr(eval)
+            w(f"\t{ename} {name} = {v}")
+            try:
+                next_val = int(v, 0) + 1
+            except ValueError:
+                next_val += 1
+        else:
+            w(f"\t{ename} {name} = {next_val}")
+            next_val += 1
+    w(")")
+    w("")
+    return "\n".join(out)
+
+
+def gen_ctx_handle(name: str, spec: str) -> str:
+    return (f"// {name} is an RPC context handle: 20 bytes ([MS-RPCE] 2.3.2.2, "
+            f"[{spec}]).\ntype {name} [20]byte\n")
+
+
+def gen_scalar_alias(name: str, go: str, spec: str) -> str:
+    return f"// {name} is a scalar typedef ([{spec}]).\ntype {name} {go}\n"
+
+
+def gen_struct(res: TypeResolver, td: Typedef, spec: str) -> tuple[str, set]:
+    name = td.name
+    imports: set = set()
+    # Hoist inline (nested/anonymous) struct/union/enum members into their own
+    # generated sibling types and rewrite the member to reference them.
+    nested_defs: list[Typedef] = []
+    for f in td.fields:
+        if f.nested is not None:
+            nname = (f.nested.tag or "").lstrip("_") or f"{name}_{_go_field_name(f.name)}"
+            res.kinds[nname] = f.nested.kind
+            f.nested.names = [Declarator(name=nname)]
+            f.type = TypeRef(base=nname, ptr=f.type.ptr, array=f.type.array)
+            nested_defs.append(f.nested)
+    out: list[str] = []
+    w = out.append
+    w(f"// {name} ([{spec}]). Generated by tools/idlgen; verify pointer/array tags.")
+    w(f"type {name} struct {{")
+    for f in td.fields:
+        go, tag, imp = _field_decl(res, f)
+        if imp:
+            imports.add(imp)
+        if tag:
+            w(f'\t{_go_field_name(f.name)} {go} `ndr:"{tag}"`')
+        else:
+            w(f"\t{_go_field_name(f.name)} {go}")
+    w("}")
+    w("")
+    body = "\n".join(out)
+    for nd in nested_defs:
+        if nd.kind == "union":
+            sub, simp = gen_union(res, nd, spec)
+        elif nd.kind == "enum":
+            sub, simp = gen_enum(nd, spec), set()
+        else:
+            sub, simp = gen_struct(res, nd, spec)
+        body += "\n" + sub
+        imports |= simp
+    return body, imports
+
+
+def gen_union(res: TypeResolver, td: Typedef, spec: str) -> tuple[str, set]:
+    name = td.name
+    imports: set = set()
+    out: list[str] = []
+    w = out.append
+    sw = (td.switch_type or "").strip()
+    if sw and sw not in ("unsigned long", "DWORD", "ULONG"):
+        disc_go, _, dimp = res.resolve_base(sw)
+        if dimp:
+            imports.add(dimp)
+    else:
+        disc_go = "ndr.DWORD"
+    w(f"// {name} is a discriminated union ([{spec}]); the discriminant precedes the")
+    w("// selected arm ([C706] 14.3.8). Generated by tools/idlgen — verify case values.")
+    w(f"type {name} struct {{")
+    w(f'\tTag {disc_go} `ndr:"switch"`')
+    for f in td.fields:
+        go, _, imp = res.resolve_base(f.type.base)
+        if imp:
+            imports.add(imp)
+        typ = ("*" + go) if f.type.ptr >= 1 else go
+        if "default" in f.attrs:
+            ctag = "default"
+        elif isinstance(f.attrs.get("case"), str):
+            # The IDL case label may be a number or an enumerator name, and there
+            # may be several labels for one arm; resolve the first to its numeric
+            # discriminant value (the codec's case= expects a number).
+            first = _norm_attr(f.attrs["case"]).split(",")[0]
+            num = res.case_value(first)
+            ctag = f"case={num}" if num is not None else f"case={first}"
+        else:
+            ctag = "case=TODO"
+        tag = ctag + (",unique" if f.type.ptr >= 1 else "")
+        w(f'\t{_go_field_name(f.name)} {typ} `ndr:"{tag}"`')
+    w("}")
+    w("")
+    return "\n".join(out), imports
+
+
+def gen_structures(iface: Interface, spec: str) -> dict[str, str]:
+    """Return {filename: Go source} for each generated structure type."""
+    res = TypeResolver(iface)
+    files: dict[str, str] = {}
+    for td in iface.typedefs:
+        name = td.name
+        if not name or name in _DTYP_STRUCT:
+            continue
+        imports: set = set()
+        if td.kind == "enum":
+            body = gen_enum(td, spec)
+        elif td.kind == "alias":
+            if name in res.ctx_handles:
+                body = gen_ctx_handle(name, spec)
+            elif name in res.scalar_alias:
+                body = gen_scalar_alias(name, res.scalar_alias[name], spec)
+            elif td.base and (res.is_local(td.base) or td.base in _DTYP_STRUCT):
+                # typedef <aggregate-or-dtyp> NewName; -> a Go type alias.
+                tgt, _, timp = res.resolve_base(td.base)
+                if timp:
+                    imports.add(timp)
+                body = (f"// {name} is an alias for {td.base} ([{spec}]).\n"
+                        f"type {name} = {tgt}\n")
+            else:
+                continue  # pointer-only alias: resolved at use sites
+        elif td.kind == "struct":
+            body, imports = gen_struct(res, td, spec)
+        elif td.kind == "union":
+            body, imports = gen_union(res, td, spec)
+        else:
+            continue
+        # Additional non-pointer declarators on the same typedef are Go aliases.
+        for extra in res.extra_names.get(name, []):
+            body += f"\n// {extra} is an alias for {name} (same IDL typedef).\n" \
+                    f"type {extra} = {name}\n"
+        header = ["package structures", ""]
+        imps = []
+        if "ndr." in body:  # struct tags are strings; only ndr.<Type> needs the import
+            imps.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"')
+        if "dtyp" in imports or "dtyp." in body:
+            imps.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"')
+        if "guid." in body:
+            imps.append('\t"github.com/TheManticoreProject/Manticore/windows/guid"')
+        if imps:
+            header += ["import ("] + sorted(imps) + [")", ""]
+        files[f"{name}.go"] = "\n".join(header) + "\n" + body
+    # Emit TODO placeholders for type-like names referenced but never defined in
+    # this IDL (e.g. MS-SRVS's SERVER_INFO_100/101, which the spec defines in a
+    # different document). This keeps the package compiling with a clear marker.
+    defined = set(res.kinds)
+    for u in sorted(res.unresolved):
+        fname = f"{u}.go"
+        if u in defined or fname in files:
+            continue
+        files[fname] = (
+            "package structures\n\n"
+            f"// TODO(idlgen): {u} is referenced by this interface but not defined in "
+            f"the IDL\n// ([{spec}] may define it elsewhere); fill in its fields by hand.\n"
+            f"type {u} struct{{}}\n")
+    return files
+
+
 def _gofmt(src: str) -> str:
     """Run gofmt on a Go source string; return the original on any failure."""
     import shutil
@@ -848,6 +1241,12 @@ def main(argv: list[str]) -> int:
     g.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments, e.g. MS-SAMR")
     g.add_argument("--out", default=None, help="output file (default: stdout)")
     g.add_argument("--interface", default=None, help="interface name if the IDL has several")
+
+    st = sub.add_parser("gen-structures", help="generate structures/*.go from an .idl")
+    st.add_argument("idl", help="path to the .idl file")
+    st.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments")
+    st.add_argument("--out", required=True, help="output directory for the structures package")
+    st.add_argument("--interface", default=None, help="interface name if the IDL has several")
 
     args = ap.parse_args(argv)
 
@@ -888,6 +1287,26 @@ def main(argv: list[str]) -> int:
             print(f"wrote {args.out}", file=sys.stderr)
         else:
             sys.stdout.write(src)
+        return 0
+
+    if args.cmd == "gen-structures":
+        import os
+        try:
+            ifaces = parse_file(args.idl)
+        except (LexError, ParseError) as e:
+            print(f"PARSE ERROR: {e}", file=sys.stderr)
+            return 1
+        if args.interface:
+            ifaces = [i for i in ifaces if i.name == args.interface]
+        if not ifaces:
+            print("no matching interface found", file=sys.stderr)
+            return 1
+        files = gen_structures(ifaces[0], args.spec)
+        os.makedirs(args.out, exist_ok=True)
+        for fname, src in files.items():
+            with open(os.path.join(args.out, fname), "w") as fh:
+                fh.write(_gofmt(src))
+        print(f"wrote {len(files)} files to {args.out}", file=sys.stderr)
         return 0
     return 2
 
