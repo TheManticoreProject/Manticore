@@ -320,9 +320,21 @@ Live-test note: set `smb.NativeOS`/`smb.NativeLanMan` before `SessionSetup`, and
 
 **Generate the skeleton with the bundled `idlgen.py` first — do not hand-write the tree.** The generator (`idlgen.py`, in this skill directory) encodes every convention in this document — package naming, the single-vs-double pointer rule, `dtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
 
-It is a stdlib-only Python script; run it from the repo root (it resolves the Go import path from the nearest `go.mod` above `--out-root`) with `gofmt` on `PATH`. Subcommands: `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`, `generate` (whole tree), `check` (drift report).
+It is a stdlib-only Python script; run it from the repo root (it resolves the Go import path from the nearest `go.mod` above `--out-root`) with `gofmt` on `PATH`. Subcommands: `fetch` (download the IDL from the spec), `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`, `generate` (whole tree), `check` (drift report).
 
-### 1. Generate the tree
+### 1. Get the IDL
+
+Each interface's IDL is published on its Microsoft Open Specifications **"Appendix A: Full IDL"** page. Fetch it straight from there:
+
+```sh
+python3 .claude/skills/dcerpc-interface-structure/idlgen.py fetch \
+    https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-efsr/4a25b8e1-fd90-41b6-9301-62ed71334436 \
+    --out ms-efsr.idl
+```
+
+`fetch` downloads the page, concatenates its `<pre>` IDL blocks in order, normalizes the HTML entities and `&nbsp;` indentation, writes the `.idl`, sanity-parses it (printing the interface name + method/typedef counts), and prints a suggested `generate` command. It needs network access and honours the standard `HTTP(S)_PROXY` env vars. (If you already have the `.idl` on disk, skip this step.)
+
+### 2. Generate the tree
 
 ```sh
 python3 .claude/skills/dcerpc-interface-structure/idlgen.py generate <iface>.idl \
@@ -331,7 +343,7 @@ python3 .claude/skills/dcerpc-interface-structure/idlgen.py generate <iface>.idl
 
 This writes `interface.go`, `structures/*.go`, and `functions/<NN>_<Method>.go` under `network/dcerpc/interfaces/<uuid>/<maj>.<min>/` (opnums skip `OpnumNNotUsedOnWire`; the import path is derived from `go.mod`), runs `gofmt`, and prints the count of `TODO(idlgen)` markers. Drive the layers individually when needed: `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`.
 
-### 2. Review what the IDL cannot carry (`TODO(idlgen)` markers + known hard cases)
+### 3. Review what the IDL cannot carry (`TODO(idlgen)` markers + known hard cases)
 
 Grep for `TODO(idlgen)` and reconcile each against the rules above:
 
@@ -339,10 +351,11 @@ Grep for `TODO(idlgen)` and reconcile each against the rules above:
 - **NDR tags the generator can't infer** — verify against this skill: fixed encrypted-password buffers, `SAMPR_LOGON_HOURS`' literal `size_is(1260)` bound, and **per-method tolerance of `STATUS_MORE_ENTRIES`/`SOME_NOT_MAPPED`** (a generated stub accepts only `StatusSuccess`; relax it for `Enumerate*`/`Lookup*`/`QueryDisplay*`).
 - **Exported-function ergonomics** — stubs mirror the request fields and use named returns; refine to friendly `string`/`uint32` parameters with conversions where it reads better.
 - **Types referenced but absent from the IDL** get a `type X struct{}` placeholder with a `TODO(idlgen)` (e.g. MS-SRVS `SERVER_INFO_100/101`); fill in their fields by hand.
+- **NDR `pipe` types** (`typedef pipe …`, e.g. MS-EFSR's `EFS_EXIM_PIPE` raw-file streaming) are parsed as their element type so the tree compiles, but pipe *streaming* is not modeled — the methods that use them need manual work.
 
 If the codec genuinely lacks a feature a type needs (rather than the generator mis-modeling it), file an enhancement issue against `network/dcerpc/ndr` (or `dtyp`) and defer those methods rather than shipping code that can't be correct.
 
-### 3. Verify
+### 4. Verify
 
 `gofmt -w`, then `go build`, `go vet`, `go test ./<path>/...`, and `go build -tags integration ./<path>/...`. Then **live-validate** — the real acceptance gate (see Tests). Cross-check completeness (count parity is not enough — verify each opnum number):
 
@@ -352,7 +365,7 @@ grep -aoE '\b[A-Z][A-Za-z0-9]+\(' <iface>.idl   # real methods (filter to the in
 
 Confirm: (a) every IDL method has exactly one `functions/<NN>_<Name>.go` and exported func; (b) no extras; (c) the file prefix `NN` == the IDL `// Opnum NN` == the `Opnum<Name>` constant; (d) `NotUsedOnWire` opnums are absent.
 
-### 4. Keep regenerations and edits reconcilable: `check`
+### 5. Keep regenerations and edits reconcilable: `check`
 
 ```sh
 python3 .claude/skills/dcerpc-interface-structure/idlgen.py check <iface>.idl \
