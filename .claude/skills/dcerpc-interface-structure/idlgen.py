@@ -52,6 +52,37 @@ def read_idl(path: str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def fetch_idl(url: str) -> str:
+    """Download a Microsoft Open Specifications "Appendix A: Full IDL" page and
+    return the IDL text. The IDL is rendered as one or more <pre> code blocks; we
+    concatenate them in document order, strip any inner markup, and unescape HTML
+    entities. Needs network access (honours the standard HTTP(S)_PROXY env vars).
+
+    Example:
+        https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-efsr/4a25b8e1-fd90-41b6-9301-62ed71334436
+    """
+    import html as _html
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (idlgen)"})
+    doc = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+    blocks = re.findall(r"<pre[^>]*>(.*?)</pre>", doc, re.S)
+    if not blocks:
+        raise ParseError(f"no <pre> code blocks found at {url} (is it an "
+                         f"'Appendix A: Full IDL' page?)")
+    parts = [_html.unescape(re.sub(r"<[^>]+>", "", b)) for b in blocks]
+    # MS Learn renders indentation with &nbsp; (U+00A0) and may use Unicode
+    # spaces/zero-width chars; normalize to plain ASCII whitespace.
+    text = "\n".join(parts)
+    return text.replace("\xa0", " ").replace("​", "").replace("﻿", "")
+
+
+def spec_tag_from_url(url: str) -> Optional[str]:
+    """Best-effort [MS-XXX] spec tag from an openspecs URL (.../ms-efsr/... -> MS-EFSR)."""
+    m = re.search(r"/(ms-[a-z0-9]+)/", url)
+    return m.group(1).upper() if m else None
+
+
 # --------------------------------------------------------------------------- #
 # Tokenizer
 # --------------------------------------------------------------------------- #
@@ -90,7 +121,7 @@ def tokenize(src: str) -> list[Token]:
             i += 1
             at_line_start = True
             continue
-        if c in " \t\r":
+        if c in " \t\r\xa0":  # \xa0 = non-breaking space, common in pasted/HTML IDL
             i += 1
             continue
         # Preprocessor line: from `#` to end of line, emitted whole.
@@ -350,6 +381,11 @@ class Parser:
         Handles `unsigned long`, `wchar_t`, `void`, struct/union/enum tag refs,
         and plain typedef names."""
         words: list[str] = []
+        # NDR `pipe` modifier (a streaming type, e.g. `typedef pipe unsigned char T`):
+        # skip it and parse the element type. Pipe streaming is not modeled — the
+        # methods that use the pipe type need manual review.
+        if self.peek().value == "pipe":
+            self.next()
         # struct/union/enum used inline as a type reference: `struct _FOO`
         if self.peek().value in ("struct", "union", "enum"):
             words.append(self.next().value)
@@ -1462,6 +1498,10 @@ def main(argv: list[str]) -> int:
     p.add_argument("--json", action="store_true", help="dump the full AST as JSON")
     p.add_argument("--quiet", action="store_true", help="only report parse errors")
 
+    ft = sub.add_parser("fetch", help="download the IDL from an MS Open Specs 'Appendix A: Full IDL' page")
+    ft.add_argument("url", help="learn.microsoft.com 'Appendix A: Full IDL' page URL")
+    ft.add_argument("--out", default=None, help="output .idl file (default: stdout)")
+
     g = sub.add_parser("gen-descriptor", help="generate interface.go from an .idl")
     g.add_argument("idl", help="path to the .idl file")
     g.add_argument("--pipe", default=None, help="named pipe (default: \\<interface>)")
@@ -1516,6 +1556,34 @@ def main(argv: list[str]) -> int:
                 print("no interfaces found", file=sys.stderr)
                 return 1
             print(summarize(ifaces))
+        return 0
+
+    if args.cmd == "fetch":
+        try:
+            idl = fetch_idl(args.url)
+        except (ParseError, OSError) as e:
+            print(f"FETCH ERROR: {e}", file=sys.stderr)
+            return 1
+        if args.out:
+            with open(args.out, "w") as fh:
+                fh.write(idl)
+            print(f"wrote {args.out}", file=sys.stderr)
+        else:
+            sys.stdout.write(idl)
+        # Best-effort sanity parse + a suggested generate command.
+        try:
+            ifaces = Parser(tokenize(idl), filename=args.url).parse()
+            spec = spec_tag_from_url(args.url) or "MS-XXX"
+            for iface in ifaces:
+                wire = sum(1 for m in iface.methods if is_on_the_wire(m))
+                print(f"  parsed interface {iface.name}: {wire} on-the-wire methods, "
+                      f"{len(iface.typedefs)} typedefs", file=sys.stderr)
+            if args.out and ifaces:
+                print(f"  next: python3 {sys.argv[0]} generate {args.out} "
+                      f"--out-root network/dcerpc/interfaces --spec {spec} "
+                      f"--pipe '\\<pipe>'", file=sys.stderr)
+        except (LexError, ParseError) as e:
+            print(f"  warning: fetched IDL did not parse cleanly: {e}", file=sys.stderr)
         return 0
 
     if args.cmd == "gen-descriptor":
