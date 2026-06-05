@@ -1391,6 +1391,68 @@ def _gofmt(src: str) -> str:
         return src
 
 
+# --------------------------------------------------------------------------- #
+# Phase 5: whole-interface generation + regression check
+# --------------------------------------------------------------------------- #
+
+def gen_interface_tree(iface: Interface, spec: str, pipe: Optional[str],
+                       import_base: str) -> dict[str, str]:
+    """Build the whole UUID-versioned interface tree as {relpath: gofmt'd source}:
+    interface.go, structures/<T>.go, functions/<NN>_<M>.go."""
+    files: dict[str, str] = {"interface.go": _gofmt(gen_descriptor(iface, pipe, spec))}
+    for n, s in gen_structures(iface, spec).items():
+        files[f"structures/{n}"] = _gofmt(s)
+    for n, s in gen_functions(iface, spec, import_base).items():
+        files[f"functions/{n}"] = _gofmt(s)
+    return files
+
+
+def find_module(start: str) -> tuple[Optional[str], Optional[str]]:
+    """Walk up from `start` to the nearest go.mod; return (module path, root dir)."""
+    import os
+    d = os.path.abspath(start)
+    while True:
+        gomod = os.path.join(d, "go.mod")
+        if os.path.isfile(gomod):
+            with open(gomod) as fh:
+                for line in fh:
+                    if line.startswith("module "):
+                        return line.split()[1], d
+            return None, None
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None, None
+        d = parent
+
+
+def interface_paths(iface: Interface, out_root: str) -> tuple[str, str]:
+    """Return (target_dir, import_base) for an interface under out_root."""
+    import os
+    parts = parse_uuid(iface.attrs.get("uuid", ""))
+    if parts is None:
+        raise ParseError(f"interface {iface.name}: missing/invalid uuid")
+    maj, min = parse_version(iface.attrs.get("version", "0.0"))
+    target = os.path.join(out_root, "-".join(parts), f"{maj}.{min}")
+    module, root = find_module(out_root)
+    if module and root:
+        rel = os.path.relpath(os.path.abspath(target), root).replace(os.sep, "/")
+        import_base = f"{module}/{rel}"
+    else:
+        import_base = "/".join(["MODULE", "-".join(parts), f"{maj}.{min}"])  # TODO: set module
+    return target, import_base
+
+
+def _code_only(text: str) -> list[str]:
+    """Strip comments and blank lines and normalize whitespace for comparison."""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("//"):
+            continue
+        out.append(re.sub(r"\s+", " ", s))
+    return out
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="idlgen", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1420,6 +1482,24 @@ def main(argv: list[str]) -> int:
     fn.add_argument("--import-base", required=True, dest="import_base",
                     help="module import path of the interface (the descriptor package)")
     fn.add_argument("--interface", default=None, help="interface name if the IDL has several")
+
+    ge = sub.add_parser("generate", help="generate the whole interface tree from an .idl")
+    ge.add_argument("idl", help="path to the .idl file")
+    ge.add_argument("--out-root", required=True, dest="out_root",
+                    help="interfaces root dir, e.g. network/dcerpc/interfaces")
+    ge.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments")
+    ge.add_argument("--pipe", default=None, help="named pipe (default: \\<interface>)")
+    ge.add_argument("--interface", default=None, help="interface name if the IDL has several")
+
+    ck = sub.add_parser("check", help="diff the generated tree against the committed one")
+    ck.add_argument("idl", help="path to the .idl file")
+    ck.add_argument("--out-root", required=True, dest="out_root",
+                    help="interfaces root dir the committed tree lives under")
+    ck.add_argument("--spec", default="MS-XXX", help="spec tag for doc comments")
+    ck.add_argument("--pipe", default=None, help="named pipe (default: \\<interface>)")
+    ck.add_argument("--interface", default=None, help="interface name if the IDL has several")
+    ck.add_argument("--strict", action="store_true",
+                    help="exit non-zero if any code differs (not just on missing files)")
 
     args = ap.parse_args(argv)
 
@@ -1500,6 +1580,75 @@ def main(argv: list[str]) -> int:
             with open(os.path.join(args.out, fname), "w") as fh:
                 fh.write(_gofmt(src))
         print(f"wrote {len(files)} files to {args.out}", file=sys.stderr)
+        return 0
+
+    if args.cmd in ("generate", "check"):
+        import os
+        try:
+            ifaces = parse_file(args.idl)
+        except (LexError, ParseError) as e:
+            print(f"PARSE ERROR: {e}", file=sys.stderr)
+            return 1
+        if args.interface:
+            ifaces = [i for i in ifaces if i.name == args.interface]
+        if not ifaces:
+            print("no matching interface found", file=sys.stderr)
+            return 1
+        iface = ifaces[0]
+        try:
+            target, import_base = interface_paths(iface, args.out_root)
+            files = gen_interface_tree(iface, args.spec, args.pipe, import_base)
+        except ParseError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+
+        if args.cmd == "generate":
+            for rel, src in files.items():
+                path = os.path.join(target, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as fh:
+                    fh.write(src)
+            todos = sum(src.count("TODO(idlgen)") for src in files.values())
+            print(f"generated {len(files)} files under {target}", file=sys.stderr)
+            print(f"import base: {import_base}", file=sys.stderr)
+            print(f"{todos} TODO(idlgen) markers to review", file=sys.stderr)
+            return 0
+
+        # check: code-only diff of generated vs committed tree.
+        same = differ = gen_only = 0
+        differing: list[str] = []
+        for rel, src in sorted(files.items()):
+            path = os.path.join(target, rel)
+            if not os.path.isfile(path):
+                gen_only += 1
+                differing.append(f"{rel} (generated-only)")
+                continue
+            with open(path) as fh:
+                committed = fh.read()
+            if _code_only(committed) == _code_only(src):
+                same += 1
+            else:
+                differ += 1
+                differing.append(rel)
+        committed_only = 0
+        for dirpath, _, names in os.walk(target):
+            for nm in names:
+                if not nm.endswith(".go") or nm.endswith("_test.go"):
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, nm), target).replace(os.sep, "/")
+                if rel not in files:
+                    committed_only += 1
+        print(f"check {iface.name} against {target}:")
+        print(f"  code-identical: {same}")
+        print(f"  differing:      {differ}")
+        print(f"  generated-only: {gen_only}")
+        print(f"  committed-only: {committed_only} (hand-added; not generated)")
+        if differing:
+            print("  files differing/new:")
+            for f in differing:
+                print(f"    - {f}")
+        if gen_only or (args.strict and differ):
+            return 1
         return 0
     return 2
 
