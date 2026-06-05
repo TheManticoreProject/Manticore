@@ -14,7 +14,7 @@ An RPC interface is identified by its **UUID and version, never by the named pip
 ## Directory layout
 
 ```
-network/dcerpc/v5/interfaces/<UUID-with-dashes>/<major>.<minor>/
+network/dcerpc/interfaces/<UUID-with-dashes>/<major>.<minor>/
   interface.go        package rpcinterface_<UUID-no-dashes>_<major>_<minor>
   interface_test.go
   structures/         package structures
@@ -42,9 +42,9 @@ Because the root package name is unwieldy, **importers always alias it** — by 
 
 ```go
 import (
-    lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+    lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+    "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
+    "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 )
 ```
 
@@ -54,7 +54,7 @@ import (
 dtyp (shared [MS-DTYP] base types)   structures  →  import ndr (+ dtyp, guid)
                           ▲                ▲
                           └────────────────┤
-functions   →  imports client, ndr, structures, dtyp, and the root descriptor (aliased)
+functions   →  imports ndr, structures, dtyp, and the root descriptor (aliased)
    ▲
 callers / ms-protocols  →  import the descriptor (to bind) + functions (to call)
 
@@ -62,6 +62,16 @@ interface.go (descriptor)  →  imports only syntax, guid, fmt   (depends on not
 ```
 
 The descriptor never imports `functions` or `structures`. `functions` imports the descriptor for opnums + status. No cycles.
+
+## Transport neutrality: stubs take `ndr.Invoker`, not a concrete client
+
+The interface tree lives at `network/dcerpc/interfaces/` (NOT under `v5/`), because an interface's abstract syntax and NDR types are independent of the RPC wire-protocol version. A method stub therefore depends only on the small `ndr.Invoker` interface (`Invoke(in ndr.Call, out any) error`), which the connection-oriented `network/dcerpc/v5/client.Client` satisfies (and a future connectionless v4 client can too):
+
+```go
+func <Method>(rpc ndr.Invoker, /* args */) (..., error) { ... rpc.Invoke(req, &resp) ... }
+```
+
+No `functions` file imports a concrete client or transport. Only the integration/unit **tests** (package `functions_test`) import `v5/client` + transport to build a real client and pass it in (a `*client.Client` is an `ndr.Invoker`).
 
 ## What goes where
 
@@ -159,7 +169,7 @@ type LSAPR_POLICY_INFORMATION struct {
 - **`[out] LSAPR_HANDLE *X`** (Open/Create) → use shared `handleResponse{ Handle, Status }`; func returns `(structures.LSAPR_HANDLE, error)`.
 - **Other `[out]`/`[in,out]`** → a per-method `<method>Response{ <out/inout fields in IDL order>; Status ndr.DWORD }` with `Status` last.
 - An `[in,out]` parameter appears in **both** the request and response structs.
-- A `[in] handle_t RpcHandle` (the explicit binding handle, e.g. `LsarLookupSids3`/`Names4`) is **not** marshalled — omit it from the request struct entirely; the Go func still takes only `rpc *client.Client`.
+- A `[in] handle_t RpcHandle` (the explicit binding handle, e.g. `LsarLookupSids3`/`Names4`) is **not** marshalled — omit it from the request struct entirely; the Go func still takes only `rpc ndr.Invoker`.
 
 ---
 
@@ -247,7 +257,7 @@ package functions
 
 import (
     "github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/<UUID>/<maj>.<min>/structures"
+    "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/<UUID>/<maj>.<min>/structures"
 )
 
 type handleResponse struct { Handle structures.LSAPR_HANDLE; Status ndr.DWORD }
@@ -261,17 +271,16 @@ package functions
 
 import (
     "fmt"
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"   // omit if the file uses no ndr.* directly
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
-    lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/<UUID>/<maj>.<min>"
-    "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/interfaces/<UUID>/<maj>.<min>/structures"
+    "github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+    lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/<UUID>/<maj>.<min>"
+    "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/<UUID>/<maj>.<min>/structures"
 )
 
 type <method>Request struct { /* [in] + [in,out] params in IDL order */ }
 func (*<method>Request) Opnum() uint16 { return lsarpc.Opnum<Method> }
 
 // <Method> calls <Method> (opnum <NN>) ([MS-XXX] 3.x.y).
-func <Method>(rpc *client.Client, /* args */) (structures.LSAPR_HANDLE, error) {
+func <Method>(rpc ndr.Invoker, /* args */) (structures.LSAPR_HANDLE, error) {
     req := &<method>Request{ /* ... */ }
     var resp handleResponse
     if err := rpc.Invoke(req, &resp); err != nil {

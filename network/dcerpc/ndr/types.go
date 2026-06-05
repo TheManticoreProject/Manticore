@@ -49,6 +49,16 @@ type Call interface {
 	Opnum() uint16
 }
 
+// Invoker executes an RPC call: it marshals in (an ndr.Call) to a request stub,
+// transmits it on opnum in.Opnum(), and unmarshals the response stub into out. It is the
+// transport-version-neutral surface that interface method stubs depend on, so the stubs
+// stay independent of any concrete client or wire-protocol version. Both the
+// connection-oriented (network/dcerpc/v5/client) and, in future, connectionless
+// (network/dcerpc/v4) DCE/RPC clients satisfy it.
+type Invoker interface {
+	Invoke(in Call, out any) error
+}
+
 // Request marshals an RPC call's [in] parameters into a stub buffer suitable for
 // network/dcerpc/client.Client.Call(call.Opnum(), stub).
 func Request(call Call) ([]byte, error) {

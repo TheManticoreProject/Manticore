@@ -1,0 +1,167 @@
+package functions_test
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+
+	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+)
+
+// fakeTransport is an in-memory transport.Transport for driving the client without a
+// network.
+type fakeTransport struct {
+	sent      [][]byte
+	recvQueue [][]byte
+}
+
+func (f *fakeTransport) Connect() error { return nil }
+func (f *fakeTransport) Send(pdu []byte) error {
+	f.sent = append(f.sent, append([]byte(nil), pdu...))
+	return nil
+}
+func (f *fakeTransport) Recv() ([]byte, error) {
+	if len(f.recvQueue) == 0 {
+		return nil, errors.New("recv queue empty")
+	}
+	c := f.recvQueue[0]
+	f.recvQueue = f.recvQueue[1:]
+	return c, nil
+}
+func (f *fakeTransport) Close() error        { return nil }
+func (f *fakeTransport) MaxXmitFrag() uint16 { return 4280 }
+func (f *fakeTransport) MaxRecvFrag() uint16 { return 4280 }
+
+func (f *fakeTransport) queue(b []byte) { f.recvQueue = append(f.recvQueue, b) }
+
+func bindAck(t *testing.T) []byte {
+	t.Helper()
+	ack := &pdu.BindAck{
+		MaxXmitFrag: 4280,
+		MaxRecvFrag: 4280,
+		Results:     []pdu.PresentationResult{{Result: pdu.ResultAcceptance, TransferSyntax: syntax.NDRTransferSyntax()}},
+	}
+	b, err := ack.Marshal()
+	if err != nil {
+		t.Fatalf("bind_ack marshal: %v", err)
+	}
+	return b
+}
+
+func responsePDU(t *testing.T, callID uint32, stub []byte) []byte {
+	t.Helper()
+	resp := &pdu.Response{Stub: stub}
+	resp.Header = pdu.NewHeader(pdu.PacketTypeResponse, pdu.PFCFirstFrag|pdu.PFCLastFrag, callID)
+	b, err := resp.Marshal()
+	if err != nil {
+		t.Fatalf("response marshal: %v", err)
+	}
+	return b
+}
+
+// boundClient returns a client already bound to lsarpc over ft.
+func boundClient(t *testing.T, ft *fakeTransport) *client.Client {
+	t.Helper()
+	ft.queue(bindAck(t))
+	c := client.NewClient(ft)
+	if err := c.Bind(lsarpc.SyntaxID()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	return c
+}
+
+func TestLsarOpenPolicy2_RequestMarshalling(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	// Canned success response: 20-byte handle + STATUS_SUCCESS. First call is call_id 2.
+	wantHandle := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	respStub := append(append([]byte(nil), wantHandle[:]...), 0x00, 0x00, 0x00, 0x00)
+	ft.queue(responsePDU(t, 2, respStub))
+
+	h, err := functions.LsarOpenPolicy2(c, lsarpc.MaximumAllowed)
+	if err != nil {
+		t.Fatalf("LsarOpenPolicy2() error = %v", err)
+	}
+	if h != wantHandle {
+		t.Errorf("handle = %x, want %x", h, wantHandle)
+	}
+
+	// Verify the request stub: NULL SystemName ptr (4) + zero ObjectAttributes (24) +
+	// DesiredAccess (4, little-endian).
+	if len(ft.sent) != 2 {
+		t.Fatalf("sent %d PDUs, want 2 (bind + request)", len(ft.sent))
+	}
+	var req pdu.Request
+	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
+		t.Fatalf("request does not parse: %v", err)
+	}
+	if req.Opnum != lsarpc.OpnumLsarOpenPolicy2 {
+		t.Errorf("opnum = %d, want %d", req.Opnum, lsarpc.OpnumLsarOpenPolicy2)
+	}
+	wantStub := make([]byte, 0, 32)
+	wantStub = append(wantStub, 0, 0, 0, 0)
+	wantStub = append(wantStub, make([]byte, 24)...)
+	wantStub = append(wantStub, 0x00, 0x00, 0x00, 0x02) // MAXIMUM_ALLOWED 0x02000000 LE
+	if !bytes.Equal(req.Stub, wantStub) {
+		t.Errorf("request stub:\n got %x\nwant %x", req.Stub, wantStub)
+	}
+}
+
+func TestLsarOpenPolicy2_AccessDenied(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	respStub := append(make([]byte, 20), 0x22, 0x00, 0x00, 0xc0) // STATUS_ACCESS_DENIED
+	ft.queue(responsePDU(t, 2, respStub))
+
+	_, err := functions.LsarOpenPolicy2(c, lsarpc.PolicyViewLocalInformation)
+	if err == nil {
+		t.Fatal("LsarOpenPolicy2() with access denied: error = nil, want non-nil")
+	}
+}
+
+func TestLsarClose_RoundTrip(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	// LsarClose returns a zeroed handle + STATUS_SUCCESS.
+	ft.queue(responsePDU(t, 2, make([]byte, 24)))
+
+	in := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
+	out, err := functions.LsarClose(c, in)
+	if err != nil {
+		t.Fatalf("LsarClose() error = %v", err)
+	}
+	if !out.IsZero() {
+		t.Errorf("handle after LsarClose = %x, want zeroed", out)
+	}
+
+	// The request stub is exactly the 20-byte handle.
+	var req pdu.Request
+	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
+		t.Fatalf("request does not parse: %v", err)
+	}
+	if req.Opnum != lsarpc.OpnumLsarClose {
+		t.Errorf("opnum = %d, want %d", req.Opnum, lsarpc.OpnumLsarClose)
+	}
+	if !bytes.Equal(req.Stub, in[:]) {
+		t.Errorf("close request stub = %x, want %x", req.Stub, in[:])
+	}
+}
+
+func TestLsarOpenPolicy2_ShortResponseErrors(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+	// A response stub shorter than the 24-byte handle+status must error rather than
+	// return garbage (the NDR decoder rejects the truncated read).
+	ft.queue(responsePDU(t, 2, make([]byte, 23)))
+	if _, err := functions.LsarOpenPolicy2(c, lsarpc.MaximumAllowed); err == nil {
+		t.Fatal("LsarOpenPolicy2 with a truncated response: error = nil, want non-nil")
+	}
+}

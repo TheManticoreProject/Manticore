@@ -1,0 +1,37 @@
+package functions
+
+import (
+	"fmt"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+
+	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+)
+
+// samrSetInformationAliasRequest carries the [in] alias handle, the information class, and
+// the [in, switch_is] alias info buffer (the discriminated union, transmitted inline).
+type samrSetInformationAliasRequest struct {
+	AliasHandle           structures.SAMPR_HANDLE
+	AliasInformationClass structures.ALIAS_INFORMATION_CLASS
+	Buffer                structures.SAMPR_ALIAS_INFO_BUFFER
+}
+
+func (*samrSetInformationAliasRequest) Opnum() uint16 { return samr.OpnumSamrSetInformationAlias }
+
+// SamrSetInformationAlias calls SamrSetInformationAlias (opnum 29), updating attributes of
+// an alias for the supplied information class ([MS-SAMR] 3.1.5.6.4).
+func SamrSetInformationAlias(rpc ndr.Invoker, aliasHandle structures.SAMPR_HANDLE, aliasInformationClass structures.ALIAS_INFORMATION_CLASS, buffer structures.SAMPR_ALIAS_INFO_BUFFER) error {
+	req := &samrSetInformationAliasRequest{
+		AliasHandle:           aliasHandle,
+		AliasInformationClass: aliasInformationClass,
+		Buffer:                buffer,
+	}
+	var resp statusResponse
+	if err := rpc.Invoke(req, &resp); err != nil {
+		return fmt.Errorf("SamrSetInformationAlias: %w", err)
+	}
+	if uint32(resp.Status) != samr.StatusSuccess {
+		return fmt.Errorf("SamrSetInformationAlias failed: %s", samr.StatusString(uint32(resp.Status)))
+	}
+	return nil
+}
