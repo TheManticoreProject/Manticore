@@ -1014,6 +1014,14 @@ def _go_field_name(name: str) -> str:
     return name[0].upper() + name[1:]
 
 
+def _cap_ref(token: str) -> str:
+    """Capitalize a size_is/length_is reference the same way field names are
+    exported, so the tag points at the real Go field (the IDL may spell the
+    count field lowercase, e.g. size_is(cbData) -> CbData). Numbers and any
+    non-identifier expression pass through unchanged."""
+    return _go_field_name(token) if re.fullmatch(r"[A-Za-z_]\w*", token) else token
+
+
 def _eval_const(expr: str) -> Optional[int]:
     """Evaluate a constant integer array bound such as `16` or `(256*2)+4`.
     Returns None if the expression references an identifier (e.g. a size_is
@@ -1058,7 +1066,7 @@ def _field_decl(res: TypeResolver, f: Field) -> tuple[str, str, str]:
         if isinstance(size, str):
             sn = _norm_attr(size)
             if re.fullmatch(r"\d+|0[xX][0-9A-Fa-f]+|[A-Za-z_]\w*", sn):
-                tags.append(f"size_is={sn}")
+                tags.append(f"size_is={_cap_ref(sn)}")
                 sized = True
         varying = False
         if isinstance(length, str):
@@ -1066,7 +1074,7 @@ def _field_decl(res: TypeResolver, f: Field) -> tuple[str, str, str]:
             varying = True
             ln = _norm_attr(length)
             if re.fullmatch(r"[A-Za-z_]\w*", ln):
-                tags.append(f"length_is={ln}")
+                tags.append(f"length_is={_cap_ref(ln)}")
         if not sized and not varying:
             tags.append("conformant")
         elem = ("*" * elem_ptr) + go
@@ -1294,7 +1302,7 @@ def _param_field(res: TypeResolver, p: Param) -> tuple[str, str, set]:
         if isinstance(size, str):
             sn = _norm_attr(size)
             if re.fullmatch(r"\d+|0[xX][0-9A-Fa-f]+|[A-Za-z_]\w*", sn):
-                tags.append(f"size_is={sn}")
+                tags.append(f"size_is={_cap_ref(sn)}")
                 sized = True
         varying = False
         if isinstance(length, str):
@@ -1302,7 +1310,7 @@ def _param_field(res: TypeResolver, p: Param) -> tuple[str, str, set]:
             varying = True
             ln = _norm_attr(length)
             if re.fullmatch(r"[A-Za-z_]\w*", ln):
-                tags.append(f"length_is={ln}")
+                tags.append(f"length_is={_cap_ref(ln)}")
         if not sized and not varying:
             tags.append("conformant")
         return f"[]{'*' * elem_ptr}{go}", ",".join(tags), imports
