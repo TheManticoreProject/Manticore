@@ -1,13 +1,13 @@
 ---
 name: dcerpc-interface-structure
-description: Scaffold and organize DCE/RPC interface code in the Manticore project using the UUID-versioned directory layout (interfaces/<uuid>/<major>.<minor>/ with structures/ and functions/ subpackages). Translating an IDL to a whole interface is automated by the tools/idlgen generator — run it first, then review with this skill. Use this skill whenever creating a new RPC interface, adding a method (opnum) or NDR structure to an existing one, splitting a monolithic interface file, translating an IDL to Go, or wiring an MS-protocol package to the interfaces it composes. Triggers include "add an RPC interface", "scaffold lsarpc/srvsvc/efsr", "add an opnum/function", "add an NDR structure", "implement the methods from this IDL", "organize the dcerpc interface", or "create an ms-protocols package".
+description: Scaffold and organize DCE/RPC interface code in the Manticore project using the UUID-versioned directory layout (interfaces/<uuid>/<major>.<minor>/ with structures/ and functions/ subpackages). Translating an IDL to a whole interface is automated by the idlgen generator bundled with this skill (idlgen.py) — run it first, then review with this skill. Use this skill whenever creating a new RPC interface, adding a method (opnum) or NDR structure to an existing one, splitting a monolithic interface file, translating an IDL to Go, or wiring an MS-protocol package to the interfaces it composes. Triggers include "add an RPC interface", "scaffold lsarpc/srvsvc/efsr", "add an opnum/function", "add an NDR structure", "implement the methods from this IDL", "organize the dcerpc interface", or "create an ms-protocols package".
 ---
 
 # DCE/RPC Interface Code Structure
 
 How to lay out and implement DCE/RPC interface code in the Manticore repo. An *interface* is a single RPC abstract syntax (a UUID + version); a *protocol* (MS-LSAD, MS-EFSR, …) composes one or more interfaces into higher-level workflows. Interfaces are the reusable building blocks; protocols sit above them.
 
-**Translating an IDL to a whole interface is automated by `tools/idlgen` — run it first (see [Implementing a whole interface from an IDL](#implementing-a-whole-interface-from-an-idl)), then use the rest of this document to review and refine the generated skeleton.** The generator is the single source of truth for the conventions below, so they stay consistent across every interface.
+**Translating an IDL to a whole interface is automated by `idlgen.py`, bundled in this skill directory — run it first (see [Implementing a whole interface from an IDL](#implementing-a-whole-interface-from-an-idl)), then use the rest of this document to review and refine the generated skeleton.** The generator is the single source of truth for the conventions below, so they stay consistent across every interface.
 
 ## Core principle
 
@@ -318,12 +318,14 @@ Live-test note: set `smb.NativeOS`/`smb.NativeLanMan` before `SessionSetup`, and
 
 ## Implementing a whole interface from an IDL
 
-**Generate the skeleton with `tools/idlgen` first — do not hand-write the tree.** The generator (`tools/idlgen/idlgen.py`; see `tools/idlgen/README.md`) encodes every convention in this document — package naming, the single-vs-double pointer rule, `dtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
+**Generate the skeleton with the bundled `idlgen.py` first — do not hand-write the tree.** The generator (`idlgen.py`, in this skill directory) encodes every convention in this document — package naming, the single-vs-double pointer rule, `dtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
+
+It is a stdlib-only Python script; run it from the repo root (it resolves the Go import path from the nearest `go.mod` above `--out-root`) with `gofmt` on `PATH`. Subcommands: `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`, `generate` (whole tree), `check` (drift report).
 
 ### 1. Generate the tree
 
 ```sh
-python3 tools/idlgen/idlgen.py generate <iface>.idl \
+python3 .claude/skills/dcerpc-interface-structure/idlgen.py generate <iface>.idl \
     --out-root network/dcerpc/interfaces --spec MS-XXX --pipe '\<pipe>'
 ```
 
@@ -353,7 +355,7 @@ Confirm: (a) every IDL method has exactly one `functions/<NN>_<Name>.go` and exp
 ### 4. Keep regenerations and edits reconcilable: `check`
 
 ```sh
-python3 tools/idlgen/idlgen.py check <iface>.idl \
+python3 .claude/skills/dcerpc-interface-structure/idlgen.py check <iface>.idl \
     --out-root network/dcerpc/interfaces --spec MS-XXX --pipe '\<pipe>'
 ```
 
