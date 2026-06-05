@@ -176,6 +176,10 @@ func marshalFieldInline(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		return m.MarshalNDR(e)
 	}
 
+	if tag.pipe {
+		return marshalPipe(e, fv, tag)
+	}
+
 	if isPointerLike(fv, tag) {
 		kind := tag.ptr
 		if kind == ptrNone {
@@ -401,6 +405,10 @@ func unmarshalFieldInline(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 	if m, ok := asMarshalerAddr(fv); ok {
 		d.Align(m.AlignmentNDR())
 		return m.UnmarshalNDR(d)
+	}
+
+	if tag.pipe {
+		return unmarshalPipe(d, fv, tag)
 	}
 
 	if isPointerLike(fv, tag) {
@@ -646,7 +654,9 @@ func isUintKind(k reflect.Kind) bool {
 // array, i.e. a slice that is not itself behind a pointer. A slice behind a pointer is
 // a referent, not an embedded array, and is not hoisted.
 func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
-	return fv.Kind() == reflect.Slice && !isPointerLike(fv, tag)
+	// A pipe is a chunked stream, not a conformant array, so its count must not be
+	// hoisted to the front of the enclosing struct ([C706] 14.7).
+	return fv.Kind() == reflect.Slice && !tag.pipe && !isPointerLike(fv, tag)
 }
 
 // ndrAlignment returns the NDR alignment, in octets, of a value of type t.
@@ -745,6 +755,51 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fi
 // a position after the entire array body, so an array of pointers, or of structs that
 // themselves contain pointers, cannot be encoded by recursing fully into each element
 // in turn ([C706] section 14.3.10).
+// marshalPipe writes an NDR pipe ([C706] section 14.7): a sequence of chunks, each a
+// uint32 element count followed by that many element representations, terminated by an
+// empty chunk (a count of 0). The whole slice is transmitted as a single chunk. A pipe
+// of a scalar (e.g. EFS_EXIM_PIPE = pipe of bytes) goes through marshalElements, which
+// has a byte fast path.
+func marshalPipe(e *Encoder, fv reflect.Value, tag fieldTag) error {
+	if fv.Kind() != reflect.Slice {
+		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
+	}
+	if n := fv.Len(); n > 0 {
+		e.WriteUint32(uint32(n))
+		if err := marshalElements(e, fv, elementTag(tag)); err != nil {
+			return err
+		}
+	}
+	e.WriteUint32(0) // terminating empty chunk
+	return nil
+}
+
+// unmarshalPipe reads an NDR pipe: chunks of (uint32 count, count elements) until a
+// 0-count chunk, concatenating the chunks into the slice. unmarshalElements bounds each
+// chunk's count against the remaining input, so a hostile count cannot over-allocate.
+func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
+	if fv.Kind() != reflect.Slice {
+		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
+	}
+	acc := reflect.MakeSlice(fv.Type(), 0, 0)
+	for {
+		count, err := d.ReadUint32()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			break
+		}
+		chunk := reflect.New(fv.Type()).Elem()
+		if err := unmarshalElements(d, chunk, int(count), elementTag(tag)); err != nil {
+			return err
+		}
+		acc = reflect.AppendSlice(acc, chunk)
+	}
+	fv.Set(acc)
+	return nil
+}
+
 func marshalElements(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
 	if slice.Type().Elem().Kind() == reflect.Uint8 {
 		e.WriteBytes(slice.Bytes()) // fast path for byte arrays

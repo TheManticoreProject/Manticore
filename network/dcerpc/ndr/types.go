@@ -96,6 +96,7 @@ type fieldTag struct {
 	align        int     // explicit alignment override (0 = default)
 	retval       bool    // RPC return value: encoded after the struct's deferred referents
 	elemPtr      ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
+	pipe         bool    // NDR pipe: a chunked stream ([C706] 14.7), not a normal array
 
 	// Union (discriminated by an inline switch value, [C706] section 14.3.8) tags.
 	isSwitch  bool  // the union discriminant field (`switch`)
@@ -125,6 +126,8 @@ func parseTag(raw string) fieldTag {
 			t.wide = true
 		case opt == "str":
 			t.ascii = true
+		case opt == "pipe":
+			t.pipe = true
 		case opt == "conformant":
 			t.conformant = true
 		case opt == "varying":
