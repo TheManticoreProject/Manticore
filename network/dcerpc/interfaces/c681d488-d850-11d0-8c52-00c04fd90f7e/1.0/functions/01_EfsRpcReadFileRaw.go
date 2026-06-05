@@ -8,33 +8,32 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 )
 
-// efsRpcReadFileRawRequest carries the [in] parameters of EfsRpcReadFileRaw.
+// efsRpcReadFileRawRequest carries the [in] parameters of EfsRpcReadFileRaw: the
+// export context handle opened by EfsRpcOpenFileRaw.
 type efsRpcReadFileRawRequest struct {
 	HContext structures.PEXIMPORT_CONTEXT_HANDLE
 }
 
 func (*efsRpcReadFileRawRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcReadFileRaw }
 
-// efsRpcReadFileRawResponse carries the [out] parameters and return value of EfsRpcReadFileRaw.
+// efsRpcReadFileRawResponse carries the [out] EFS_EXIM_PIPE and the return value.
+// EfsOutPipe is an NDR pipe ([C706] 14.7) — the server streams the raw encrypted file
+// to the client as chunks ahead of the return value.
 type efsRpcReadFileRawResponse struct {
-	EfsOutPipe uint8
-	Status     ndr.DWORD `ndr:"retval"`
+	EfsOutPipe structures.EFS_EXIM_PIPE `ndr:"pipe"`
+	Status     ndr.DWORD                `ndr:"retval"`
 }
 
-// EfsRpcReadFileRaw calls EfsRpcReadFileRaw (opnum 1) ([MS-EFSR] — verify the parameter
-// modeling and status handling).
-func EfsRpcReadFileRaw(rpc ndr.Invoker, hContext structures.PEXIMPORT_CONTEXT_HANDLE) (EfsOutPipe uint8, err error) {
-	req := &efsRpcReadFileRawRequest{
-		HContext: hContext,
-	}
+// EfsRpcReadFileRaw calls EfsRpcReadFileRaw (opnum 1, [MS-EFSR] 3.1.4.2.2). It exports
+// the opened file as a raw encrypted stream, returning the full pipe contents.
+func EfsRpcReadFileRaw(rpc ndr.Invoker, hContext structures.PEXIMPORT_CONTEXT_HANDLE) (structures.EFS_EXIM_PIPE, error) {
+	req := &efsRpcReadFileRawRequest{HContext: hContext}
 	var resp efsRpcReadFileRawResponse
-	if err = rpc.Invoke(req, &resp); err != nil {
-		err = fmt.Errorf("EfsRpcReadFileRaw: %w", err)
-		return
+	if err := rpc.Invoke(req, &resp); err != nil {
+		return nil, fmt.Errorf("EfsRpcReadFileRaw: %w", err)
 	}
-	EfsOutPipe = resp.EfsOutPipe
 	if uint32(resp.Status) != efsrpc.StatusSuccess {
-		err = fmt.Errorf("EfsRpcReadFileRaw failed: %s", efsrpc.StatusString(uint32(resp.Status)))
+		return resp.EfsOutPipe, fmt.Errorf("EfsRpcReadFileRaw failed: %s", efsrpc.StatusString(uint32(resp.Status)))
 	}
-	return
+	return resp.EfsOutPipe, nil
 }
