@@ -69,6 +69,9 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 		return nil, fmt.Errorf("failed to create NTLM AUTHENTICATE message: %v", err)
 	}
 
+	// Retain the derived session key so callers can use it as the SMB signing MAC key.
+	ctx.SessionKey = ntlmAuth.SessionKey
+
 	ntlmAuthBytes, err := ntlmAuth.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal NTLM AUTHENTICATE message: %v", err)

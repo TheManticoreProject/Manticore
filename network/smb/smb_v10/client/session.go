@@ -64,7 +64,8 @@ func (s *Session) SessionSetup() error {
 	}
 
 	// Set message signing flags based on server security mode
-	if s.Client.Connection.Server.SecurityMode.IsSecuritySignatureEnabled() {
+	if s.Client.Connection.Server.SecurityMode.IsSecuritySignatureEnabled() ||
+		s.Client.Connection.Server.SecurityMode.IsSecuritySignatureRequired() {
 		requestStep1Msg.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE)
 	}
 
@@ -269,9 +270,25 @@ func (s *Session) SessionSetup() error {
 
 	requestStep2Msg.AddCommand(sessionSetupStep2Cmd)
 
+	// Determine whether to activate SMB message signing. Signing is activated only
+	// when the server requires it; the MAC key is the session key derived from the
+	// NTLM exchange above. The AUTHENTICATE request is the first signed message
+	// (sequence number 0) and bootstraps signing for the connection.
+	signingKey := authCtx.GetSessionKey()
+	signingRequired := s.Client.Connection.Server.SigningState == SigningStateRequired
+	if signingRequired && len(signingKey) == 0 {
+		return fmt.Errorf("server requires SMB signing but no session key was derived (signing requires the NTLMv2/extended-security path)")
+	}
+
 	marshalledStep2, err := requestStep2Msg.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal step 2 message: %v", err)
+	}
+
+	if signingRequired {
+		s.Client.Connection.SigningSessionKey = signingKey
+		s.Client.Connection.IsSigningActive = true
+		signSMBMessage(signingKey, marshalledStep2, 0)
 	}
 
 	// Send the message
@@ -308,6 +325,19 @@ func (s *Session) SessionSetup() error {
 		} else {
 			return fmt.Errorf("session setup failed: 0x%08x", authResponseMsg.Header.Status)
 		}
+	}
+
+	// Persist the derived session key and, when signing was activated, verify the
+	// signature on the (successful) AUTHENTICATE response (sequence number 1) before
+	// arming the per-message sequence counter for subsequent requests.
+	s.SessionKey = signingKey
+	if s.Client.Connection.IsSigningActive {
+		if !verifySMBSignature(signingKey, rawAuthResponse, 1) {
+			return fmt.Errorf("session setup response failed SMB signature verification")
+		}
+		// The AUTHENTICATE request used sequence 0 and its response sequence 1, so the
+		// next outbound request uses sequence 2.
+		s.Client.Connection.ClientNextSendSequenceNumber = 2
 	}
 
 	return nil

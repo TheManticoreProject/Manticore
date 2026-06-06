@@ -24,6 +24,21 @@ type AuthContext struct {
 
 	// NTLM specific fields
 	NTLMChallenge *challenge.ChallengeMessage
+
+	// SessionKey is the session key derived during the most recent successful
+	// CreateAuthenticateTokenFromChallengeToken call. It is not transmitted on the
+	// wire; callers use it as the MAC key for SMB message signing. It is nil until
+	// authentication has produced a key (and for auth paths that do not derive one).
+	SessionKey []byte
+}
+
+// GetSessionKey returns the session key derived during authentication, or nil if
+// none has been derived yet.
+//
+// Returns:
+//   - []byte: The session key (MAC key for SMB signing), or nil
+func (ctx *AuthContext) GetSessionKey() []byte {
+	return ctx.SessionKey
 }
 
 // NewAuthContext creates a new authentication context
