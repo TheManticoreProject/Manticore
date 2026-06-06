@@ -24,9 +24,8 @@ type SMB_INFO_SET_EAS struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_INFO_SET_EAS) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
-
-	return marshalled_struct, nil
+	// The structure is a single SMB_FEA_LIST.
+	return s.Extendedattributelist.Marshal()
 }
 
 // Unmarshal deserializes a byte slice into the SMB_INFO_SET_EAS structure.
@@ -43,5 +42,6 @@ func (s *SMB_INFO_SET_EAS) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_INFO_SET_EAS) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// The structure is a single SMB_FEA_LIST.
+	return s.Extendedattributelist.Unmarshal(data)
 }
