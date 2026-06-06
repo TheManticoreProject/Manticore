@@ -5,7 +5,11 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
+	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
 // connectedMockTransport is a transport.Transport stub that reports itself as
@@ -17,6 +21,61 @@ func (m *connectedMockTransport) Close() error                          { return
 func (m *connectedMockTransport) Send(data []byte) (int, error)         { return len(data), nil }
 func (m *connectedMockTransport) Receive() ([]byte, error)              { return nil, nil }
 func (m *connectedMockTransport) IsConnected() bool                     { return true }
+
+// scriptedTransport reports itself as connected, returns a preset payload from
+// Receive, and counts how many times Send is called so a test can assert how
+// many SMB messages were transmitted.
+type scriptedTransport struct {
+	response  []byte
+	sendCount int
+}
+
+func (m *scriptedTransport) Connect(ipaddr net.IP, port int) error { return nil }
+func (m *scriptedTransport) Close() error                          { return nil }
+func (m *scriptedTransport) Send(data []byte) (int, error)         { m.sendCount++; return len(data), nil }
+func (m *scriptedTransport) Receive() ([]byte, error)              { return m.response, nil }
+func (m *scriptedTransport) IsConnected() bool                     { return true }
+
+// TestSessionSetupShareLevelCompletesInOneRoundTrip verifies that, when the
+// server uses share-level access control, SessionSetup completes after the
+// single step-1 round trip and captures the UID, rather than falling through
+// into the NTLMSSP authenticate second step.
+func TestSessionSetupShareLevelCompletesInOneRoundTrip(t *testing.T) {
+	const wantUID = 0x0801
+
+	resp := message.NewMessage()
+	resp.Header.SetFlags(flags.FLAGS_REPLY)
+	resp.Header.UID = wantUID
+	resp.Header.Status = 0x00000000
+	resp.AddCommand(commands.NewSessionSetupAndxResponse())
+	raw, err := resp.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal mock response: %v", err)
+	}
+
+	tr := &scriptedTransport{response: raw}
+	c := &client.Client{
+		Transport: tr,
+		Connection: &client.Connection{
+			// SecurityMode 0 => share-level access control, no challenge/response,
+			// so SessionSetup must not attempt the NTLMSSP second step.
+			Server: &client.Server{SecurityMode: 0},
+		},
+	}
+
+	if err := c.SessionSetup(&credentials.Credentials{}); err != nil {
+		t.Fatalf("share-level SessionSetup returned error: %v", err)
+	}
+	if tr.sendCount != 1 {
+		t.Errorf("expected exactly 1 message sent (no NTLMSSP second step), got %d", tr.sendCount)
+	}
+	if c.Session == nil {
+		t.Fatal("expected a session after SessionSetup, got nil")
+	}
+	if c.Session.SessionUID != wantUID {
+		t.Errorf("expected SessionUID 0x%04x, got 0x%04x", wantUID, c.Session.SessionUID)
+	}
+}
 
 // TestConnectRecordsServerAddress verifies that Connect records its host/port
 // arguments in Connection.Server before connecting, so that later operations

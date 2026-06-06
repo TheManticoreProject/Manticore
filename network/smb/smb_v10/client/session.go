@@ -81,6 +81,11 @@ func (s *Session) SessionSetup() error {
 	sessionSetupCmd.NativeOS = s.Client.NativeOS
 	sessionSetupCmd.NativeLanMan = s.Client.NativeLanMan
 
+	// Track whether step 1 used the extended-security (NTLMSSP) challenge/response
+	// path. Only that path performs the second-step authenticate exchange below;
+	// the share-level and plaintext paths complete in a single round trip.
+	useExtendedSecurity := false
+
 	// Check if we're using share level access control
 	if s.Client.Connection.Server.SecurityMode.SupportsShareLevelAccessControl() {
 		// Share level access control is required by the server
@@ -105,6 +110,7 @@ func (s *Session) SessionSetup() error {
 		if s.Client.Connection.Server.SecurityMode.SupportsChallengeResponseAuth() {
 			// Server supports challenge/response authentication
 			// Determine authentication type based on policies
+			useExtendedSecurity = true
 
 			sessionSetupCmd.VcNumber = types.USHORT(0x0000)
 			sessionSetupCmd.SessionKey = s.Client.Connection.Server.SessionKey
@@ -204,6 +210,22 @@ func (s *Session) SessionSetup() error {
 	}
 
 	challengeResponse := responseMsg.Command.(*commands.SessionSetupAndxResponse)
+
+	// Share-level and plaintext authentication complete in a single round trip.
+	// Only the extended-security (NTLMSSP) path continues to the authenticate
+	// step below; for the other paths the step-1 response is the final response,
+	// so validate its status and finalize here instead of treating the response
+	// as an NTLMSSP challenge.
+	if !useExtendedSecurity {
+		if responseMsg.Header.Status != 0x00 {
+			if name, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(responseMsg.Header.Status)]; ok {
+				return fmt.Errorf("session setup failed: %s (0x%08x)", name, responseMsg.Header.Status)
+			}
+			return fmt.Errorf("session setup failed: 0x%08x", responseMsg.Header.Status)
+		}
+		s.SessionUID = responseMsg.Header.UID
+		return nil
+	}
 
 	// Prepare and send a NTLMSSP AUTH message ==================================================================================================
 
