@@ -43,7 +43,7 @@ func (a *AndX) Marshal() ([]byte, error) {
 	marshalled_andx = append(marshalled_andx, a.AndXReserved)
 
 	buf2 := make([]byte, 2)
-	binary.BigEndian.PutUint16(buf2, a.AndXOffset)
+	binary.LittleEndian.PutUint16(buf2, a.AndXOffset)
 	marshalled_andx = append(marshalled_andx, buf2...)
 
 	return marshalled_andx, nil
@@ -62,7 +62,7 @@ func (a *AndX) Unmarshal(data []byte) (int, error) {
 
 	a.AndXReserved = data[1]
 
-	a.AndXOffset = binary.BigEndian.Uint16(data[2:4])
+	a.AndXOffset = binary.LittleEndian.Uint16(data[2:4])
 
 	return 4, nil
 }
