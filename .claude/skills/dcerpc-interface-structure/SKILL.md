@@ -351,7 +351,7 @@ Grep for `TODO(idlgen)` and reconcile each against the rules above:
 - **NDR tags the generator can't infer** — verify against this skill: fixed encrypted-password buffers, `SAMPR_LOGON_HOURS`' literal `size_is(1260)` bound, and **per-method tolerance of `STATUS_MORE_ENTRIES`/`SOME_NOT_MAPPED`** (a generated stub accepts only `StatusSuccess`; relax it for `Enumerate*`/`Lookup*`/`QueryDisplay*`).
 - **Exported-function ergonomics** — stubs mirror the request fields and use named returns; refine to friendly `string`/`uint32` parameters with conversions where it reads better.
 - **Types referenced but absent from the IDL** get a `type X struct{}` placeholder with a `TODO(idlgen)` (e.g. MS-SRVS `SERVER_INFO_100/101`); fill in their fields by hand.
-- **NDR `pipe` types** (`typedef pipe …`, e.g. MS-EFSR's `EFS_EXIM_PIPE` raw-file streaming) are parsed as their element type so the tree compiles, but pipe *streaming* is not modeled — the methods that use them need manual work.
+- **NDR `pipe` types** (`typedef pipe …`, e.g. MS-EFSR's `EFS_EXIM_PIPE`) are generated as a slice type plus `ndr:"pipe"` on the parameter (the codec marshals the [C706] 14.7 chunked stream). The whole pipe is buffered in one chunk rather than streamed incrementally, and live validation of pipe methods needs the real service — review those.
 
 If the codec genuinely lacks a feature a type needs (rather than the generator mis-modeling it), file an enhancement issue against `network/dcerpc/ndr` (or `dtyp`) and defer those methods rather than shipping code that can't be correct.
 
