@@ -8,9 +8,20 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
+
+// readAndxResponseParameterWords is the fixed number of 2-byte parameter words in
+// an SMB_COM_READ_ANDX response: the 2-word AndX block plus Available,
+// DataCompactionMode, Reserved1, DataLength, DataOffset, and the 5-word Reserved2.
+const readAndxResponseParameterWords = 12
+
+// readAndxResponseDataOffset is the offset, in bytes from the start of the SMB
+// header, at which this response's data bytes begin when no pad is inserted:
+// header + WordCount(1) + parameter words + ByteCount(2).
+const readAndxResponseDataOffset = header.SMB_HEADER_SIZE + 1 + 2*readAndxResponseParameterWords + 2
 
 // ReadAndxResponse
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/89d6b552-5406-445c-85d5-54c80b94a20f
@@ -43,6 +54,13 @@ type ReadAndxResponse struct {
 	// reserved in order to make the SMB_COM_READ_ANDX Response the same size as the
 	// SMB_COM_WRITE_ANDX Response.
 	Reserved2 [5]types.USHORT
+
+	// Data
+
+	// Data (variable): The actual bytes read from the file. On the wire these are
+	// located at DataOffset (measured from the start of the SMB header) and are
+	// DataLength bytes long.
+	Data []types.UCHAR
 }
 
 // NewReadAndxResponse creates a new ReadAndxResponse structure
@@ -58,6 +76,9 @@ func NewReadAndxResponse() *ReadAndxResponse {
 		Reserved1:          types.USHORT(0),
 		DataLength:         types.USHORT(0),
 		DataOffset:         types.USHORT(0),
+
+		// Data
+		Data: []types.UCHAR{},
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_READ_ANDX)
@@ -102,7 +123,15 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	// First marshal the data and then the parameters
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
+
+	// Place the file data immediately after the data block's ByteCount (no pad)
+	// and advertise its length and its absolute offset from the start of the SMB
+	// header so the parameter fields below carry the matching values.
+	c.DataLength = types.USHORT(len(c.Data))
+	c.DataOffset = types.USHORT(readAndxResponseDataOffset)
+
 	rawDataContent := []byte{}
+	rawDataContent = append(rawDataContent, c.Data...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -187,7 +216,7 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	_ = c.GetData().GetBytes()
+	rawDataContent := c.GetData().GetBytes()
 
 	// If the parameters and data are empty, this is a response containing an error code in
 	// the SMB Header Status field
@@ -245,9 +274,18 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 		offset += 2
 	}
 
-	// Then unmarshal the data
+	// Then unmarshal the data. The file bytes are the trailing DataLength bytes of
+	// the data block; any pad inserted to align the data to DataOffset precedes them.
 	offset = 0
-	// No data is sent in this message
+	if c.DataLength > 0 {
+		if int(c.DataLength) > len(rawDataContent) {
+			return offset, fmt.Errorf("ReadAndx DataLength %d exceeds data block size %d", c.DataLength, len(rawDataContent))
+		}
+		c.Data = append([]types.UCHAR{}, rawDataContent[len(rawDataContent)-int(c.DataLength):]...)
+		offset = int(c.DataLength)
+	} else {
+		c.Data = []types.UCHAR{}
+	}
 
 	return offset, nil
 }
