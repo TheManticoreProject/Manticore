@@ -228,6 +228,7 @@ class Typedef:
     enumerators: list[tuple[str, Optional[str]]] = field(default_factory=list)
     base: Optional[str] = None     # for "alias": the aliased base type spelling
     switch_type: Optional[str] = None  # for unions: [switch_type(...)]
+    is_pipe: bool = False          # `typedef pipe <base> NAME` — an NDR pipe of <base>
 
     @property
     def name(self) -> Optional[str]:
@@ -632,10 +633,11 @@ class Parser:
         return td
 
     def _parse_alias_typedef(self, attrs: dict) -> Typedef:
+        is_pipe = self.peek().value == "pipe"  # `typedef pipe <base> NAME` (parse_base_type skips the keyword)
         base = self.parse_base_type()
         names = self._parse_declarators()
         self.expect(";")
-        return Typedef(kind="alias", names=names, attrs=attrs, base=base)
+        return Typedef(kind="alias", names=names, attrs=attrs, base=base, is_pipe=is_pipe)
 
     # -- methods ----------------------------------------------------------- #
     def parse_method(self) -> Method:
@@ -904,6 +906,7 @@ class TypeResolver:
         self.scalar_alias: dict[str, str] = {}        # alias -> Go scalar
         self.ctx_handles: set[str] = set()
         self.str_handles: set[str] = set()            # [handle] wchar_t* string handles
+        self.pipes: dict[str, str] = {}               # pipe type name -> Go element type
         self.extra_names: dict[str, list[str]] = {}   # primary -> [extra non-ptr aliases]
         self.unresolved: set[str] = set()             # type names referenced but not defined
         self.enum_values: dict[str, int] = {}         # enumerator name -> numeric value
@@ -937,7 +940,11 @@ class TypeResolver:
                     self.kinds[d.name] = td.kind
             if td.kind == "alias":
                 has_value_decl = any(d.ptr == 0 for d in td.names)
-                if "context_handle" in td.attrs and td.base == "void":
+                if td.is_pipe:
+                    # NDR pipe of <base>; model as a Go slice with the `pipe` tag.
+                    if canon:
+                        self.pipes[canon] = _SCALAR.get(td.base) or _DTYP_SCALAR.get(td.base) or "byte"
+                elif "context_handle" in td.attrs and td.base == "void":
                     if canon:
                         self.ctx_handles.add(canon)
                 elif td.base == "wchar_t" and not has_value_decl:
@@ -1211,7 +1218,13 @@ def gen_structures(iface: Interface, spec: str) -> dict[str, str]:
         if td.kind == "enum":
             body = gen_enum(td, spec)
         elif td.kind == "alias":
-            if name in res.ctx_handles:
+            if name in res.pipes:
+                # NDR pipe ([C706] 14.7): a chunked stream of the element type,
+                # marshalled with the `ndr:"pipe"` tag at the parameter site.
+                body = (f"// {name} is an NDR pipe of {res.pipes[name]} ([C706] 14.7, "
+                        f"[{spec}]); transmit with the `ndr:\"pipe\"` tag.\n"
+                        f"type {name} []{res.pipes[name]}\n")
+            elif name in res.ctx_handles:
                 body = gen_ctx_handle(name, spec)
             elif name in res.scalar_alias:
                 body = gen_scalar_alias(name, res.scalar_alias[name], spec)
@@ -1271,6 +1284,10 @@ def _param_field(res: TypeResolver, p: Param) -> tuple[str, str, set]:
     inline value; [unique] or a double pointer is a `*T` referent. Top-level
     array parameters use `ref` (not `unique`) so the count is not hoisted ahead
     of a preceding context handle."""
+    # An NDR pipe parameter (the IDL declares it as `PIPE_TYPE *`) is the slice
+    # type tagged `ndr:"pipe"`; the pointer is just MIDL's pipe-param convention.
+    if p.type.base in res.pipes:
+        return "structures." + p.type.base, "pipe", set()
     go, extra_ptr, imp = res.resolve_base(p.type.base)
     imports = {imp} if imp else set()
     # Local interface types live in the structures package and must be qualified
