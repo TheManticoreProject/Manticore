@@ -8,33 +8,31 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 )
 
-// efsRpcWriteFileRawRequest carries the [in] parameters of EfsRpcWriteFileRaw.
+// efsRpcWriteFileRawRequest carries the [in] parameters of EfsRpcWriteFileRaw: the
+// import context handle and the raw encrypted stream. EfsInPipe is an NDR pipe ([C706]
+// 14.7) sent as chunks after the handle.
 type efsRpcWriteFileRawRequest struct {
 	HContext  structures.PEXIMPORT_CONTEXT_HANDLE
-	EfsInPipe uint8
+	EfsInPipe structures.EFS_EXIM_PIPE `ndr:"pipe"`
 }
 
 func (*efsRpcWriteFileRawRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcWriteFileRaw }
 
-// efsRpcWriteFileRawResponse carries the [out] parameters and return value of EfsRpcWriteFileRaw.
+// efsRpcWriteFileRawResponse carries the return value of EfsRpcWriteFileRaw.
 type efsRpcWriteFileRawResponse struct {
 	Status ndr.DWORD `ndr:"retval"`
 }
 
-// EfsRpcWriteFileRaw calls EfsRpcWriteFileRaw (opnum 2) ([MS-EFSR] — verify the parameter
-// modeling and status handling).
-func EfsRpcWriteFileRaw(rpc ndr.Invoker, hContext structures.PEXIMPORT_CONTEXT_HANDLE, efsInPipe uint8) (err error) {
-	req := &efsRpcWriteFileRawRequest{
-		HContext:  hContext,
-		EfsInPipe: efsInPipe,
-	}
+// EfsRpcWriteFileRaw calls EfsRpcWriteFileRaw (opnum 2, [MS-EFSR] 3.1.4.2.3). It imports
+// a raw encrypted stream into the opened file.
+func EfsRpcWriteFileRaw(rpc ndr.Invoker, hContext structures.PEXIMPORT_CONTEXT_HANDLE, efsInPipe structures.EFS_EXIM_PIPE) error {
+	req := &efsRpcWriteFileRawRequest{HContext: hContext, EfsInPipe: efsInPipe}
 	var resp efsRpcWriteFileRawResponse
-	if err = rpc.Invoke(req, &resp); err != nil {
-		err = fmt.Errorf("EfsRpcWriteFileRaw: %w", err)
-		return
+	if err := rpc.Invoke(req, &resp); err != nil {
+		return fmt.Errorf("EfsRpcWriteFileRaw: %w", err)
 	}
 	if uint32(resp.Status) != efsrpc.StatusSuccess {
-		err = fmt.Errorf("EfsRpcWriteFileRaw failed: %s", efsrpc.StatusString(uint32(resp.Status)))
+		return fmt.Errorf("EfsRpcWriteFileRaw failed: %s", efsrpc.StatusString(uint32(resp.Status)))
 	}
-	return
+	return nil
 }
