@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -33,7 +36,15 @@ type SMB_QUERY_FS_SIZE_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_QUERY_FS_SIZE_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 24)
+
+	// TotalAllocationUnits (8) + TotalFreeAllocationUnits (8), LARGE_INTEGER.
+	binary.LittleEndian.PutUint64(marshalled_struct[0:8], uint64(s.Totalallocationunits.QuadPart))
+	binary.LittleEndian.PutUint64(marshalled_struct[8:16], uint64(s.Totalfreeallocationunits.QuadPart))
+
+	// SectorsPerAllocationUnit (4) + BytesPerSector (4).
+	binary.LittleEndian.PutUint32(marshalled_struct[16:20], uint32(s.Sectorsperallocationunit))
+	binary.LittleEndian.PutUint32(marshalled_struct[20:24], uint32(s.Bytespersector))
 
 	return marshalled_struct, nil
 }
@@ -52,5 +63,13 @@ func (s *SMB_QUERY_FS_SIZE_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FS_SIZE_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	if len(data) < 24 {
+		return 0, fmt.Errorf("data too short for SMB_QUERY_FS_SIZE_INFO (need 24 bytes, have %d)", len(data))
+	}
+	s.Totalallocationunits.QuadPart = binary.LittleEndian.Uint64(data[0:8])
+	s.Totalfreeallocationunits.QuadPart = binary.LittleEndian.Uint64(data[8:16])
+	s.Sectorsperallocationunit = types.ULONG(binary.LittleEndian.Uint32(data[16:20]))
+	s.Bytespersector = types.ULONG(binary.LittleEndian.Uint32(data[20:24]))
+
+	return 24, nil
 }
