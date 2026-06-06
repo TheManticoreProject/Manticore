@@ -1,9 +1,11 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
-
 
 // SMB_QUERY_FILE_BASIC_INFO
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/3da7df75-43ba-4498-a6b3-a68ba57ec922
@@ -28,13 +30,7 @@ type SMB_QUERY_FILE_BASIC_INFO struct {
 	Reserved types.ULONG
 }
 
-// Marshal serializes the SMB_QUERY_FILE_BASIC_INFO into a byte slice.
-//
-// This method marshals the information level structure according to the format
-// specified in MS-CIFS documentation. Information levels are used in various
-// SMB operations to determine the format of data being exchanged.
-//
-// The marshalled data follows the specific format required for this information level.
+// Marshal serializes the SMB_QUERY_FILE_BASIC_INFO into a byte slice (40 bytes).
 //
 // Returns:
 // - A byte slice containing the marshalled information level structure
@@ -42,22 +38,56 @@ type SMB_QUERY_FILE_BASIC_INFO struct {
 func (s *SMB_QUERY_FILE_BASIC_INFO) Marshal() ([]byte, error) {
 	marshalled_struct := []byte{}
 
+	// CreationTime, LastAccessTime, LastWriteTime, LastChangeTime (8 bytes each, FILETIME).
+	for _, ft := range []*types.FILETIME{&s.Creationtime, &s.Lastaccesstime, &s.Lastwritetime, &s.Lastchangetime} {
+		b, err := ft.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		marshalled_struct = append(marshalled_struct, b...)
+	}
+
+	// ExtFileAttributes (4 bytes).
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Extfileattributes))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
+	// Reserved (4 bytes).
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Reserved))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
 	return marshalled_struct, nil
 }
 
 // Unmarshal deserializes a byte slice into the SMB_QUERY_FILE_BASIC_INFO structure.
 //
-// This method unmarshals the information level structure according to the format
-// specified in MS-CIFS documentation. Information levels are used in various
-// SMB operations to determine the format of data being exchanged.
-//
-// The data is expected to follow the specific format required for this information level.
-//
 // Parameters:
 // - data: A byte slice containing the serialized SMB_QUERY_FILE_BASIC_INFO structure
 //
 // Returns:
+// - The number of bytes consumed
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FILE_BASIC_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	offset := 0
+
+	// CreationTime, LastAccessTime, LastWriteTime, LastChangeTime (8 bytes each, FILETIME).
+	for _, ft := range []*types.FILETIME{&s.Creationtime, &s.Lastaccesstime, &s.Lastwritetime, &s.Lastchangetime} {
+		n, err := ft.Unmarshal(data[offset:])
+		if err != nil {
+			return offset, err
+		}
+		offset += n
+	}
+
+	// ExtFileAttributes (4 bytes) and Reserved (4 bytes).
+	if len(data) < offset+8 {
+		return offset, fmt.Errorf("data too short for ExtFileAttributes and Reserved")
+	}
+	s.Extfileattributes = types.SMB_EXT_FILE_ATTR(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+	s.Reserved = types.ULONG(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+
+	return offset, nil
 }

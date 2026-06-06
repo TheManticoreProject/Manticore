@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -34,7 +37,23 @@ type SMB_QUERY_FILE_STANDARD_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_QUERY_FILE_STANDARD_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 0, 22)
+
+	// AllocationSize (8 bytes) and EndOfFile (8 bytes), LARGE_INTEGER.
+	buf8 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf8, uint64(s.Allocationsize.QuadPart))
+	marshalled_struct = append(marshalled_struct, buf8...)
+	buf8 = make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf8, uint64(s.Endoffile.QuadPart))
+	marshalled_struct = append(marshalled_struct, buf8...)
+
+	// NumberOfLinks (4 bytes).
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Numberoflinks))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
+	// DeletePending (1 byte) and Directory (1 byte).
+	marshalled_struct = append(marshalled_struct, byte(s.Deletepending), byte(s.Directory))
 
 	return marshalled_struct, nil
 }
@@ -53,5 +72,15 @@ func (s *SMB_QUERY_FILE_STANDARD_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FILE_STANDARD_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// AllocationSize(8) + EndOfFile(8) + NumberOfLinks(4) + DeletePending(1) + Directory(1) = 22 bytes.
+	if len(data) < 22 {
+		return 0, fmt.Errorf("data too short for SMB_QUERY_FILE_STANDARD_INFO (need 22 bytes, have %d)", len(data))
+	}
+	s.Allocationsize.QuadPart = binary.LittleEndian.Uint64(data[0:8])
+	s.Endoffile.QuadPart = binary.LittleEndian.Uint64(data[8:16])
+	s.Numberoflinks = types.ULONG(binary.LittleEndian.Uint32(data[16:20]))
+	s.Deletepending = types.UCHAR(data[20])
+	s.Directory = types.UCHAR(data[21])
+
+	return 22, nil
 }
