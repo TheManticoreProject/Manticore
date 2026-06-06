@@ -201,7 +201,11 @@ func (c *Command) SetData(data *data.Data) {
 // Returns:
 //   - CommandInterface: The next command in the chain
 func (c *Command) GetNextCommand() CommandInterface {
-	if c.AndX != nil && c.IsAndX() {
+	// A chained command is present only when an AndX block has been recorded.
+	// (The guard cannot also call c.IsAndX(): from this embedded base method that
+	// call resolves to the base IsAndX, not the concrete command's override, so it
+	// would always be false and hide a linked command.)
+	if c.AndX != nil {
 		return c.NextCommand
 	}
 	return nil
