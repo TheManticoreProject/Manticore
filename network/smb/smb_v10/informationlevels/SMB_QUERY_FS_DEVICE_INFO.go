@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -28,7 +31,11 @@ type SMB_QUERY_FS_DEVICE_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_QUERY_FS_DEVICE_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 8)
+
+	// DeviceType (4) + DeviceCharacteristics (4).
+	binary.LittleEndian.PutUint32(marshalled_struct[0:4], uint32(s.Devicetype))
+	binary.LittleEndian.PutUint32(marshalled_struct[4:8], uint32(s.Devicecharacteristics))
 
 	return marshalled_struct, nil
 }
@@ -47,5 +54,11 @@ func (s *SMB_QUERY_FS_DEVICE_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FS_DEVICE_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	if len(data) < 8 {
+		return 0, fmt.Errorf("data too short for SMB_QUERY_FS_DEVICE_INFO (need 8 bytes, have %d)", len(data))
+	}
+	s.Devicetype = types.ULONG(binary.LittleEndian.Uint32(data[0:4]))
+	s.Devicecharacteristics = types.ULONG(binary.LittleEndian.Uint32(data[4:8]))
+
+	return 8, nil
 }
