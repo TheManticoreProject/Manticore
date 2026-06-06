@@ -54,7 +54,7 @@ func TestAndX_Marshal(t *testing.T) {
 				AndXReserved: 0x00,
 				AndXOffset:   0x1234,
 			},
-			expected:    []byte{0x2A, 0x00, 0x12, 0x34},
+			expected:    []byte{0x2A, 0x00, 0x34, 0x12},
 			expectError: false,
 		},
 		{
@@ -99,7 +99,7 @@ func TestAndX_Unmarshal(t *testing.T) {
 	}{
 		{
 			name: "Valid data",
-			data: []byte{0x2A, 0x00, 0x12, 0x34},
+			data: []byte{0x2A, 0x00, 0x34, 0x12},
 			expected: &andx.AndX{
 				AndXCommand:  0x2A,
 				AndXReserved: 0x00,
