@@ -73,6 +73,10 @@ func (f Flags2) IsExtendedSecurity() bool {
 	return f&FLAGS2_EXTENDED_SECURITY != 0
 }
 
+func (f Flags2) IsUnicode() bool {
+	return f&FLAGS2_UNICODE != 0
+}
+
 func (f Flags2) IsDfs() bool {
 	return f&FLAGS2_DFS != 0
 }
@@ -83,10 +87,6 @@ func (f Flags2) IsPagingIO() bool {
 
 func (f Flags2) IsNTStatusErrorCodes() bool {
 	return f&FLAGS2_NT_STATUS_ERROR_CODES != 0
-}
-
-func (f Flags2) IsUnicode() bool {
-	return f&FLAGS2_UNICODE != 0
 }
 
 // String returns a string representation of the flags2 that are set,

@@ -128,6 +128,10 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 	// and that the parameters and data are not nil
 	c.Init()
 
+	// Propagate the message's Unicode setting (SMB_FLAGS2_UNICODE) so the command
+	// decodes string fields with the correct character encoding.
+	c.SetUnicode(m.Header.Flags2.IsUnicode())
+
 	// Unmarshal the command
 	_, err = c.Unmarshal(marshalledData)
 	if err != nil {

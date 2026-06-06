@@ -239,8 +239,10 @@ func (c *SessionSetupAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	// c.Pad = rawDataContent[offset : offset+padLen]
 	// offset += padLen
 
-	// TODO: Get the information from the SMB header
-	useUnicode := true
+	// Decode the NativeOS/NativeLanMan strings using the character encoding the
+	// enclosing message declared via the SMB_FLAGS2_UNICODE header flag, which the
+	// message layer propagates to this command before Unmarshal.
+	useUnicode := c.IsUnicode()
 
 	// Unmarshalling data NativeOS
 	if useUnicode {
