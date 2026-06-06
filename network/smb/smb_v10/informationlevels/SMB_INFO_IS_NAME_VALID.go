@@ -2,8 +2,12 @@ package informationlevels
 
 // SMB_INFO_IS_NAME_VALID
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/67188e6f-1d62-41d2-a9bd-d325e5f75cc1
+//
+// This information level tests whether the requested path has valid syntax. No
+// parameters or data are returned for this information level: success/failure is
+// conveyed entirely by the SMB Header Status field, so this structure carries no
+// fields and (de)serializes to an empty byte slice.
 type SMB_INFO_IS_NAME_VALID struct {
-	// TODO: Implement this struct
 }
 
 // Marshal serializes the SMB_INFO_IS_NAME_VALID into a byte slice.
