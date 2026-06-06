@@ -1,6 +1,8 @@
 package informationlevels
 
 import (
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -25,9 +27,8 @@ type SMB_SET_FILE_DISPOSITION_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_SET_FILE_DISPOSITION_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
-
-	return marshalled_struct, nil
+	// DeletePending (1 byte).
+	return []byte{byte(s.Deletepending)}, nil
 }
 
 // Unmarshal deserializes a byte slice into the SMB_SET_FILE_DISPOSITION_INFO structure.
@@ -44,5 +45,11 @@ func (s *SMB_SET_FILE_DISPOSITION_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_SET_FILE_DISPOSITION_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// DeletePending (1 byte).
+	if len(data) < 1 {
+		return 0, fmt.Errorf("data too short for DeletePending")
+	}
+	s.Deletepending = types.UCHAR(data[0])
+
+	return 1, nil
 }
