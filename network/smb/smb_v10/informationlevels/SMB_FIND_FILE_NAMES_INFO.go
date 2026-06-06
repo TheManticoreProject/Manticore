@@ -1,9 +1,11 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
-
 
 // SMB_FIND_FILE_NAMES_INFO
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/88b9968b-a36f-482a-bb30-c7a51a3e290d
@@ -18,15 +20,12 @@ type SMB_FIND_FILE_NAMES_INFO struct {
 	// FileNameLength: (4 bytes): This field MUST contain the length of the FileName
 	// field, in bytes.
 	Filenamelength types.ULONG
+	// FileName: (variable): This field contains the name of the file. It is
+	// FileNameLength bytes long; the raw bytes are stored as-is.
+	Filename []types.UCHAR
 }
 
 // Marshal serializes the SMB_FIND_FILE_NAMES_INFO into a byte slice.
-//
-// This method marshals the information level structure according to the format
-// specified in MS-CIFS documentation. Information levels are used in various
-// SMB operations to determine the format of data being exchanged.
-//
-// The marshalled data follows the specific format required for this information level.
 //
 // Returns:
 // - A byte slice containing the marshalled information level structure
@@ -34,22 +33,50 @@ type SMB_FIND_FILE_NAMES_INFO struct {
 func (s *SMB_FIND_FILE_NAMES_INFO) Marshal() ([]byte, error) {
 	marshalled_struct := []byte{}
 
+	// NextEntryOffset (4 bytes) and FileIndex (4 bytes).
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Nextentryoffset))
+	marshalled_struct = append(marshalled_struct, buf4...)
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Fileindex))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
+	// FileNameLength (4 bytes), derived from the FileName payload.
+	s.Filenamelength = types.ULONG(len(s.Filename))
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Filenamelength))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
+	// FileName (variable).
+	marshalled_struct = append(marshalled_struct, s.Filename...)
+
 	return marshalled_struct, nil
 }
 
 // Unmarshal deserializes a byte slice into the SMB_FIND_FILE_NAMES_INFO structure.
 //
-// This method unmarshals the information level structure according to the format
-// specified in MS-CIFS documentation. Information levels are used in various
-// SMB operations to determine the format of data being exchanged.
-//
-// The data is expected to follow the specific format required for this information level.
-//
 // Parameters:
 // - data: A byte slice containing the serialized SMB_FIND_FILE_NAMES_INFO structure
 //
 // Returns:
+// - The number of bytes consumed
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_FIND_FILE_NAMES_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// NextEntryOffset(4) + FileIndex(4) + FileNameLength(4) = 12 bytes.
+	if len(data) < 12 {
+		return 0, fmt.Errorf("data too short for SMB_FIND_FILE_NAMES_INFO fixed fields")
+	}
+	s.Nextentryoffset = types.ULONG(binary.LittleEndian.Uint32(data[0:4]))
+	s.Fileindex = types.ULONG(binary.LittleEndian.Uint32(data[4:8]))
+	s.Filenamelength = types.ULONG(binary.LittleEndian.Uint32(data[8:12]))
+	offset := 12
+
+	// FileName (FileNameLength bytes).
+	if len(data) < offset+int(s.Filenamelength) {
+		return offset, fmt.Errorf("data too short for FileName (need %d bytes, have %d)", s.Filenamelength, len(data)-offset)
+	}
+	s.Filename = append([]types.UCHAR{}, data[offset:offset+int(s.Filenamelength)]...)
+	offset += int(s.Filenamelength)
+
+	return offset, nil
 }
