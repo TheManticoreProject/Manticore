@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -29,7 +32,10 @@ type SMB_SET_FILE_END_OF_FILE_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_SET_FILE_END_OF_FILE_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 8)
+
+	// EndOfFile (8 bytes, LARGE_INTEGER).
+	binary.LittleEndian.PutUint64(marshalled_struct, uint64(s.Endoffile.QuadPart))
 
 	return marshalled_struct, nil
 }
@@ -48,5 +54,11 @@ func (s *SMB_SET_FILE_END_OF_FILE_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_SET_FILE_END_OF_FILE_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// EndOfFile (8 bytes, LARGE_INTEGER).
+	if len(data) < 8 {
+		return 0, fmt.Errorf("data too short for EndOfFile")
+	}
+	s.Endoffile.QuadPart = binary.LittleEndian.Uint64(data[0:8])
+
+	return 8, nil
 }

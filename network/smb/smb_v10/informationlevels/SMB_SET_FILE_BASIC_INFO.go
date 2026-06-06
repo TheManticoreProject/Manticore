@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -65,6 +68,25 @@ type SMB_SET_FILE_BASIC_INFO struct {
 func (s *SMB_SET_FILE_BASIC_INFO) Marshal() ([]byte, error) {
 	marshalled_struct := []byte{}
 
+	// CreationTime, LastAccessTime, LastWriteTime, ChangeTime (8 bytes each, FILETIME).
+	for _, ft := range []*types.FILETIME{&s.Creationtime, &s.Lastaccesstime, &s.Lastwritetime, &s.Changetime} {
+		b, err := ft.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		marshalled_struct = append(marshalled_struct, b...)
+	}
+
+	// ExtFileAttributes (4 bytes).
+	buf4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Extfileattributes))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
+	// Reserved (4 bytes).
+	buf4 = make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf4, uint32(s.Reserved))
+	marshalled_struct = append(marshalled_struct, buf4...)
+
 	return marshalled_struct, nil
 }
 
@@ -82,5 +104,25 @@ func (s *SMB_SET_FILE_BASIC_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_SET_FILE_BASIC_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	offset := 0
+
+	// CreationTime, LastAccessTime, LastWriteTime, ChangeTime (8 bytes each, FILETIME).
+	for _, ft := range []*types.FILETIME{&s.Creationtime, &s.Lastaccesstime, &s.Lastwritetime, &s.Changetime} {
+		n, err := ft.Unmarshal(data[offset:])
+		if err != nil {
+			return offset, err
+		}
+		offset += n
+	}
+
+	// ExtFileAttributes (4 bytes) and Reserved (4 bytes).
+	if len(data) < offset+8 {
+		return offset, fmt.Errorf("data too short for ExtFileAttributes and Reserved")
+	}
+	s.Extfileattributes = types.SMB_EXT_FILE_ATTR(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+	s.Reserved = types.ULONG(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+
+	return offset, nil
 }
