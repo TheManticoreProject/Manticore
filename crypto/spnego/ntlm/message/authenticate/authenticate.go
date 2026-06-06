@@ -70,6 +70,12 @@ type AuthenticateMessage struct {
 
 	// EncryptedRandomSessionKey (variable): A field containing EncryptedRandomSessionKey data.
 	EncryptedRandomSessionKey []byte
+
+	// SessionKey (16 bytes): The exported session key derived during authentication.
+	// This is not transmitted on the wire; it is retained so callers (e.g. SMB message
+	// signing) can use it as the MAC key. When no key exchange is negotiated it equals
+	// the NTLMv2 SessionBaseKey. It is nil for the NTLMv1 path.
+	SessionKey []byte
 }
 
 // CreateAuthenticateMessage creates an NTLM AUTHENTICATE message
@@ -121,11 +127,17 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 			binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
 		}
 
-		msg.NtChallengeResponse, _, err = ctx.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
+		var ntProofStr []byte
+		msg.NtChallengeResponse, ntProofStr, err = ctx.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
 		if err != nil {
 			return nil, err
 		}
 		msg.LmChallengeResponse = ctx.ComputeLMChallengeResponse(hasTimestamp)
+
+		// Derive the session key (SessionBaseKey). No key exchange is negotiated here,
+		// so the exported session key equals the SessionBaseKey; SMB signing uses it as
+		// the MAC key.
+		msg.SessionKey = ctx.ComputeSessionBaseKey(ntProofStr)
 	} else {
 		// Use NTLMv1
 		ntlmv1Ctx, err := ntlmv1.NewNTLMv1CtxWithPassword(domain, username, password, challenge.ServerChallenge)

@@ -52,6 +52,9 @@ func (c *Client) TreeConnect(shareName string) error {
 		return fmt.Errorf("failed to marshal tree connect message: %v", err)
 	}
 
+	// Sign the request in place when message signing is active for this connection.
+	responseSeq, _ := c.signOutgoing(marshalledMessage)
+
 	_, err = c.Transport.Send(marshalledMessage)
 	if err != nil {
 		return fmt.Errorf("failed to send tree connect message: %v", err)
@@ -60,6 +63,10 @@ func (c *Client) TreeConnect(shareName string) error {
 	rawResponseMessage, err := c.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive tree connect message: %v", err)
+	}
+
+	if err = c.verifyIncoming(rawResponseMessage, responseSeq); err != nil {
+		return fmt.Errorf("tree connect: %v", err)
 	}
 
 	responseMsg := message.NewMessage()

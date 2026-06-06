@@ -95,5 +95,16 @@ func (c *Client) Negotiate() error {
 	c.Connection.Server.SecurityMode = negotiateResponse.SecurityMode
 	c.Connection.Server.ServerGUID = negotiateResponse.ServerGUID
 
+	// Record the server's message-signing policy so session setup can decide whether
+	// to activate signing.
+	switch {
+	case negotiateResponse.SecurityMode.IsSecuritySignatureRequired():
+		c.Connection.Server.SigningState = SigningStateRequired
+	case negotiateResponse.SecurityMode.IsSecuritySignatureEnabled():
+		c.Connection.Server.SigningState = SigningStateEnabled
+	default:
+		c.Connection.Server.SigningState = SigningStateDisabled
+	}
+
 	return nil
 }

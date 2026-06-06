@@ -98,6 +98,10 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal %s: %v", label, err)
 	}
+
+	// Sign the request in place when message signing is active for this connection.
+	responseSeq, _ := c.signOutgoing(marshalled)
+
 	fileIODump(label+" request", marshalled)
 
 	if _, err = c.Transport.Send(marshalled); err != nil {
@@ -109,6 +113,10 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		return nil, nil, fmt.Errorf("failed to receive %s response: %v", label, err)
 	}
 	fileIODump(label+" response", raw)
+
+	if err = c.verifyIncoming(raw, responseSeq); err != nil {
+		return nil, nil, fmt.Errorf("%s: %v", label, err)
+	}
 
 	response := message.NewMessage()
 	if err = response.Unmarshal(raw); err != nil {
