@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -25,7 +28,10 @@ type SMB_QUERY_FILE_EA_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_QUERY_FILE_EA_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 4)
+
+	// EaSize (4 bytes).
+	binary.LittleEndian.PutUint32(marshalled_struct, uint32(s.Easize))
 
 	return marshalled_struct, nil
 }
@@ -44,5 +50,11 @@ func (s *SMB_QUERY_FILE_EA_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FILE_EA_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// EaSize (4 bytes).
+	if len(data) < 4 {
+		return 0, fmt.Errorf("data too short for EaSize")
+	}
+	s.Easize = types.ULONG(binary.LittleEndian.Uint32(data[0:4]))
+
+	return 4, nil
 }

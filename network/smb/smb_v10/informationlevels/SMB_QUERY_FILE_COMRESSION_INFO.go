@@ -1,6 +1,9 @@
 package informationlevels
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -40,6 +43,9 @@ type SMB_QUERY_FILE_COMRESSION_INFO struct {
 	// shift is the number of bits by which to left shift a 1 bit to arrive at the size
 	// of a cluster. This value is implementation-defined.
 	Clustershift types.UCHAR
+	// Reserved: (3 bytes): A 24-bit reserved value. This field SHOULD be set to
+	// 0x000000 and MUST be ignored.
+	Reserved [3]types.UCHAR
 }
 
 // Marshal serializes the SMB_QUERY_FILE_COMRESSION_INFO into a byte slice.
@@ -54,7 +60,23 @@ type SMB_QUERY_FILE_COMRESSION_INFO struct {
 // - A byte slice containing the marshalled information level structure
 // - An error if marshalling any component fails
 func (s *SMB_QUERY_FILE_COMRESSION_INFO) Marshal() ([]byte, error) {
-	marshalled_struct := []byte{}
+	marshalled_struct := make([]byte, 0, 16)
+
+	// CompressedFileSize (8 bytes, LARGE_INTEGER).
+	buf8 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf8, uint64(s.Compressedfilesize.QuadPart))
+	marshalled_struct = append(marshalled_struct, buf8...)
+
+	// CompressionFormat (2 bytes).
+	buf2 := make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, uint16(s.Compressionformat))
+	marshalled_struct = append(marshalled_struct, buf2...)
+
+	// CompressionUnitShift, ChunkShift, ClusterShift (1 byte each).
+	marshalled_struct = append(marshalled_struct, byte(s.Compressionunitshift), byte(s.Chunkshift), byte(s.Clustershift))
+
+	// Reserved (3 bytes).
+	marshalled_struct = append(marshalled_struct, byte(s.Reserved[0]), byte(s.Reserved[1]), byte(s.Reserved[2]))
 
 	return marshalled_struct, nil
 }
@@ -73,5 +95,18 @@ func (s *SMB_QUERY_FILE_COMRESSION_INFO) Marshal() ([]byte, error) {
 // Returns:
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_QUERY_FILE_COMRESSION_INFO) Unmarshal(data []byte) (int, error) {
-	return 0, nil
+	// CompressedFileSize(8) + CompressionFormat(2) + 3x shift(1) + Reserved(3) = 16 bytes.
+	if len(data) < 16 {
+		return 0, fmt.Errorf("data too short for SMB_QUERY_FILE_COMPRESSION_INFO (need 16 bytes, have %d)", len(data))
+	}
+	s.Compressedfilesize.QuadPart = binary.LittleEndian.Uint64(data[0:8])
+	s.Compressionformat = types.USHORT(binary.LittleEndian.Uint16(data[8:10]))
+	s.Compressionunitshift = types.UCHAR(data[10])
+	s.Chunkshift = types.UCHAR(data[11])
+	s.Clustershift = types.UCHAR(data[12])
+	s.Reserved[0] = types.UCHAR(data[13])
+	s.Reserved[1] = types.UCHAR(data[14])
+	s.Reserved[2] = types.UCHAR(data[15])
+
+	return 16, nil
 }
