@@ -56,6 +56,14 @@ type CommandInterface interface {
 
 	// Init initializes the command
 	Init()
+
+	// SetUnicode records whether the enclosing SMB message uses Unicode strings
+	// (the SMB_FLAGS2_UNICODE header flag), so that Unmarshal can decode
+	// string fields with the correct character encoding.
+	SetUnicode(bool)
+
+	// IsUnicode reports whether the enclosing SMB message uses Unicode strings.
+	IsUnicode() bool
 }
 
 // Command is a struct that implements the CommandInterface
@@ -74,6 +82,11 @@ type Command struct {
 
 	// Next command
 	NextCommand CommandInterface
+
+	// Unicode records whether the enclosing SMB message uses Unicode strings
+	// (the SMB_FLAGS2_UNICODE header flag). It is set by the message layer
+	// before Unmarshal so string fields are decoded with the right encoding.
+	Unicode bool
 }
 
 // Init initializes the command
@@ -92,6 +105,22 @@ func (c *Command) Init() {
 	}
 
 	c.NextCommand = nil
+}
+
+// SetUnicode records whether the enclosing SMB message uses Unicode strings.
+//
+// Parameters:
+//   - unicode: True if the SMB_FLAGS2_UNICODE header flag is set
+func (c *Command) SetUnicode(unicode bool) {
+	c.Unicode = unicode
+}
+
+// IsUnicode reports whether the enclosing SMB message uses Unicode strings.
+//
+// Returns:
+//   - bool: True if the SMB_FLAGS2_UNICODE header flag is set
+func (c *Command) IsUnicode() bool {
+	return c.Unicode
 }
 
 // GetCommandCode returns the command code
