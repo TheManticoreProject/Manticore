@@ -49,6 +49,13 @@ func NewClientUsingTCPTransport(host net.IP, port int) *Client {
 //
 // Returns:
 func (c *Client) Connect(ipaddr net.IP, port int) error {
+	// Record the connection address as the single source of truth so that later
+	// operations (e.g. TreeConnect, which builds the UNC path from
+	// Connection.Server.Host) target the same server this connection is made to,
+	// rather than a stale value left by the constructor.
+	c.Connection.Server.Host = ipaddr
+	c.Connection.Server.Port = port
+
 	err := c.Transport.Connect(ipaddr, port)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SMB server: %v", err)
