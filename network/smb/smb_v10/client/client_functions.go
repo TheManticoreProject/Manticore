@@ -73,16 +73,66 @@ func (c *Client) Connect(ipaddr net.IP, port int) error {
 //
 // Returns:
 //   - An error if the session setup fails
-func (c *Client) SessionSetup(credentials *credentials.Credentials) error {
+func (c *Client) SessionSetup(creds *credentials.Credentials) error {
+	// Reuse an already-authenticated session for the same credentials if one is
+	// registered on this connection, avoiding a redundant authentication exchange.
+	if existing := c.findSessionByCredentials(creds); existing != nil {
+		c.Session = existing
+		return nil
+	}
+
 	if c.Session == nil {
 		c.Session = &Session{
 			Client:      c,
-			Credentials: credentials,
+			Credentials: creds,
 		}
 	}
 	c.Session.Client = c
+	if c.Session.Credentials == nil {
+		c.Session.Credentials = creds
+	}
 
-	return c.Session.SessionSetup()
+	if err := c.Session.SessionSetup(); err != nil {
+		return err
+	}
+
+	// Register the established session in the connection's session table, keyed by
+	// the server-assigned UID, so it can be reused and is removed on Logoff.
+	if c.Connection != nil {
+		if c.Connection.SessionTable == nil {
+			c.Connection.SessionTable = make(map[uint16]*Session)
+		}
+		c.Connection.SessionTable[c.Session.SessionUID] = c.Session
+	}
+
+	return nil
+}
+
+// findSessionByCredentials returns a session already registered on the connection
+// whose credentials match creds, or nil if none is found. A nil creds (anonymous)
+// is never matched, so anonymous setups always perform a fresh exchange.
+func (c *Client) findSessionByCredentials(creds *credentials.Credentials) *Session {
+	if creds == nil || c.Connection == nil {
+		return nil
+	}
+	for _, session := range c.Connection.SessionTable {
+		if session != nil && sameCredentials(session.Credentials, creds) {
+			return session
+		}
+	}
+	return nil
+}
+
+// sameCredentials reports whether two credential sets identify the same principal.
+func sameCredentials(a, b *credentials.Credentials) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Domain == b.Domain &&
+		a.Username == b.Username &&
+		a.Password == b.Password &&
+		a.LMHash == b.LMHash &&
+		a.NTHash == b.NTHash
 }
 
 // SetHost sets the host IP address for the SMB client

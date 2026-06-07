@@ -103,9 +103,10 @@ func (s *Session) SessionSetup() error {
 		sessionSetupCmd.UnicodePassword = []types.UCHAR{}
 
 	} else {
-		// User level access control is required by the server
-		// TODO: Look up Session from Client.Connection.SessionTable where Session.UserCredentials matches
-		// the application-supplied UserCredentials and reuse if found
+		// User level access control is required by the server.
+		// Reuse of an existing session for the same credentials is handled by
+		// Client.SessionSetup, which consults Connection.SessionTable before
+		// reaching this authentication path.
 
 		// Handle authentication based on server capabilities
 		if s.Client.Connection.Server.SecurityMode.SupportsChallengeResponseAuth() {
