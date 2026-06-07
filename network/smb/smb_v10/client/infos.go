@@ -1,24 +1,30 @@
 package client
 
 import (
+	"fmt"
 	"time"
 )
 
-// GetRemoteServerTime retrieves the current time from the remote server.
+// GetRemoteServerTime returns the server's system clock as reported in the
+// SMB_COM_NEGOTIATE response.
 //
-// This function sends an SMB_COM_QUERY_TIME_REQUEST message to the server
-// and receives the server's current time in UTC.
-//
-// The query process:
-// 1. Creates and sends an SMB_COM_NEGOTIATE_REQUEST message
-// 2. Receives the SMB_COM_NEGOTIATE_RESPONSE from the server
-// 3. Validates the response command type
-// 4. Processes server capabilities and configuration
+// SMBv1 has no dedicated query-time command; the server's time is delivered in the
+// NEGOTIATE response and captured by Negotiate as Connection.Server.SystemTime (a
+// FILETIME, i.e. 100ns ticks since 1601-01-01 UTC). The returned time therefore
+// reflects the server's clock at the moment of negotiation, in UTC.
 //
 // Returns:
-//   - nil if negotiation is successful
-//   - An error if any step in the negotiation process fails (connection issues,
-//     message creation/marshalling errors, transport errors, or unexpected responses)
+//   - The server time in UTC.
+//   - An error if no connection exists or negotiation has not populated the time.
 func (c *Client) GetRemoteServerTime() (time.Time, error) {
-	return time.Time{}, nil
+	if c.Connection == nil || c.Connection.Server == nil {
+		return time.Time{}, fmt.Errorf("no connection established")
+	}
+
+	systemTime := c.Connection.Server.SystemTime
+	if systemTime.DwLowDateTime == 0 && systemTime.DwHighDateTime == 0 {
+		return time.Time{}, fmt.Errorf("server time not available; negotiate first")
+	}
+
+	return systemTime.GetTime().UTC(), nil
 }
