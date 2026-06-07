@@ -119,6 +119,7 @@ func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *
 		if tag.skip {
 			continue
 		}
+		resolveSiblingCounts(&tag, rt, rv)
 		if i == retvalIdx {
 			continue // the RPC return value is encoded last, after deferred referents
 		}
@@ -272,7 +273,14 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			maxCount = tag.sizeConst
 		}
 		if tag.varying {
-			return marshalConformantVaryingArray(e, fv, maxCount, elementTag(tag))
+			// actual_count is the slice length unless length_is fixes it (e.g.
+			// RPC_UNICODE_STRING's Length/2), in which case only that many leading
+			// elements are the valid, transmitted portion.
+			actualCount := uint32(fv.Len())
+			if tag.lengthConstSet {
+				actualCount = tag.lengthConst
+			}
+			return marshalConformantVaryingArray(e, fv, maxCount, actualCount, elementTag(tag))
 		}
 		return marshalConformantArray(e, fv, maxCount, elementTag(tag))
 	case reflect.Array:
@@ -615,14 +623,53 @@ func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
 			continue
 		}
 		n := uint64(rv.Field(j).Len())
-		if tag.sizeIs != "" {
+		// A divisor form (size_is(Field/N)) names a field in different units than the
+		// elements — its value is not the element count, so it is resolved separately by
+		// resolveSiblingCounts and must not be overwritten with the slice length here.
+		if tag.sizeIs != "" && tag.sizeDiv == 0 {
 			m[tag.sizeIs] = n
 		}
-		if tag.lengthIs != "" {
+		if tag.lengthIs != "" && tag.lengthDiv == 0 {
 			m[tag.lengthIs] = n
 		}
 	}
 	return m
+}
+
+// resolveSiblingCounts rewrites a field's size_is/length_is divisor form
+// (size_is(Field/N), length_is(Field/N)) into literal maximum_count/actual_count values
+// by reading the named sibling field from rv and dividing by N. This carries count
+// fields expressed in different units than the array elements — notably
+// RPC_UNICODE_STRING, whose Length/MaximumLength are byte counts driving a wchar array
+// ([MS-DTYP] 2.3.10). Plain sibling size_is/length_is (no divisor) are left untouched;
+// their counts are derived from the array length by countTargets.
+func resolveSiblingCounts(tag *fieldTag, rt reflect.Type, rv reflect.Value) {
+	if tag.sizeIs != "" && tag.sizeDiv > 0 {
+		if v, ok := siblingUint(rt, rv, tag.sizeIs); ok {
+			tag.sizeConst = uint32(v / uint64(tag.sizeDiv))
+			tag.sizeConstSet = true
+		}
+	}
+	if tag.lengthIs != "" && tag.lengthDiv > 0 {
+		if v, ok := siblingUint(rt, rv, tag.lengthIs); ok {
+			tag.lengthConst = uint32(v / uint64(tag.lengthDiv))
+			tag.lengthConstSet = true
+		}
+	}
+}
+
+// siblingUint reads the unsigned integer value of the named field of struct value rv,
+// reporting false if there is no such field or it is not an unsigned integer kind.
+func siblingUint(rt reflect.Type, rv reflect.Value, name string) (uint64, bool) {
+	f, ok := rt.FieldByName(name)
+	if !ok || len(f.Index) != 1 {
+		return 0, false
+	}
+	fv := rv.Field(f.Index[0])
+	if !isUintKind(fv.Kind()) {
+		return 0, false
+	}
+	return fv.Uint(), true
 }
 
 // retvalIndex returns the field index tagged `ndr:"retval"` (the RPC return value),
@@ -721,15 +768,19 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag)
 // marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
 // offset, actual_count, then the elements, per [MS-RPCE] Conformant Varying Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/3acb31b0-b873-4aaf-8503-9727ec40fbec
-// The whole slice is transmitted (offset 0, actual_count == len). maximum_count is the
-// length unless a literal size_is bound was given, in which case the constant is sent
-// while actual_count still reflects the elements actually present.
-func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
+// Only the first actualCount elements are transmitted (offset 0). actualCount is the
+// slice length unless length_is fixed it (RPC_UNICODE_STRING's Length/2), and maxCount
+// is the slice length unless a size_is bound was given, in which case those values are
+// sent while only the valid leading elements follow.
+func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, actualCount uint32, elemTag fieldTag) error {
+	if int(actualCount) > slice.Len() {
+		actualCount = uint32(slice.Len())
+	}
 	e.Align(conformantArrayAlignment(slice.Type().Elem()))
-	e.WriteUint32(maxCount)            // maximum_count
-	e.WriteUint32(0)                   // offset
-	e.WriteUint32(uint32(slice.Len())) // actual_count
-	return marshalElements(e, slice, elemTag)
+	e.WriteUint32(maxCount)    // maximum_count
+	e.WriteUint32(0)           // offset
+	e.WriteUint32(actualCount) // actual_count
+	return marshalElements(e, slice.Slice(0, int(actualCount)), elemTag)
 }
 
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the

@@ -56,8 +56,8 @@ func TestRPC_SID_GoldenAndRoundTrip(t *testing.T) {
 	}
 	want := []byte{
 		0x04, 0, 0, 0, // hoisted maximum_count (SubAuthorityCount)
-		0x01,                         // Revision
-		0x04,                         // SubAuthorityCount (derived from slice len)
+		0x01,                               // Revision
+		0x04,                               // SubAuthorityCount (derived from slice len)
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // IdentifierAuthority (6-octet big-endian = 5)
 		0x15, 0, 0, 0, // SubAuthority[0] = 21
 		0x01, 0, 0, 0, // SubAuthority[1] = 1
@@ -100,6 +100,42 @@ func TestRPC_UNICODE_STRING_GoldenAndRoundTrip(t *testing.T) {
 	var out RPC_UNICODE_STRING
 	if err := ndr.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
+	}
+	if got := out.String(); got != "Hi" {
+		t.Errorf("String: got %q want %q", got, "Hi")
+	}
+}
+
+// TestRPC_UNICODE_STRING_OverAllocated covers the spec-legal case where MaximumLength
+// (buffer capacity in bytes) exceeds Length (valid chars in bytes). Per [MS-DTYP] 2.3.10
+// the wchar array's maximum_count must be MaximumLength/2 and actual_count Length/2,
+// independent of len(Buffer); only the valid Length/2 chars are transmitted.
+func TestRPC_UNICODE_STRING_OverAllocated(t *testing.T) {
+	// "Hi" valid (Length=4), capacity for 5 wchars (MaximumLength=10), buffer carries
+	// the two valid chars plus reserved slots.
+	u := RPC_UNICODE_STRING{Length: 4, MaximumLength: 10, Buffer: []uint16{'H', 'i', 0, 0, 0}}
+	raw, err := ndr.Marshal(&u)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := []byte{
+		0x04, 0x00, // Length (bytes)
+		0x0a, 0x00, // MaximumLength (bytes)
+		0x00, 0x00, 0x02, 0x00, // Buffer referent id
+		0x05, 0, 0, 0, // maximum_count = MaximumLength/2 = 5
+		0x00, 0, 0, 0, // offset
+		0x02, 0, 0, 0, // actual_count = Length/2 = 2
+		0x48, 0x00, 0x69, 0x00, // 'H', 'i' — only the valid chars
+	}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("over-allocated RPC_UNICODE_STRING:\n got %x\nwant %x", raw, want)
+	}
+	var out RPC_UNICODE_STRING
+	if err := ndr.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.Length != 4 || out.MaximumLength != 10 {
+		t.Errorf("counts: got Length=%d MaximumLength=%d want 4/10", out.Length, out.MaximumLength)
 	}
 	if got := out.String(); got != "Hi" {
 		t.Errorf("String: got %q want %q", got, "Hi")

@@ -14,13 +14,18 @@ import "unicode/utf16"
 // [string]). Modeling Buffer as a []uint16 tagged "unique,varying" lets the walker emit
 // the referent id inline and the char-counted conformant-varying body deferred, so the
 // buffers of an array of RPC_UNICODE_STRING are correctly emitted after the whole array
-// (see issue #419). Use NewUnicodeString to set the byte counts and buffer together.
+// (see issue #419).
+//
+// The size_is/length_is divisor tags resolve the wchar array's maximum_count to
+// MaximumLength/2 and actual_count to Length/2, which differ from len(Buffer) whenever
+// the buffer is over-allocated (MaximumLength > Length, as a server may advertise). Use
+// NewUnicodeString to set the byte counts and buffer together.
 //
 // Reference: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/94a16bb6-c610-4cb9-8db6-26f15f560061
 type RPC_UNICODE_STRING struct {
-	Length        uint16 // length of the string in bytes, excluding any terminator
-	MaximumLength uint16 // size of Buffer in bytes
-	Buffer        []uint16 `ndr:"unique,varying"`
+	Length        uint16   // length of the string in bytes, excluding any terminator
+	MaximumLength uint16   // size of Buffer in bytes
+	Buffer        []uint16 `ndr:"unique,varying,size_is=MaximumLength/2,length_is=Length/2"`
 }
 
 // NewUnicodeString builds an RPC_UNICODE_STRING from a Go string, encoding it to UTF-16
