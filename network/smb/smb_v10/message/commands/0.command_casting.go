@@ -48,6 +48,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewFindClose2Request(), nil
 	case codes.SMB_COM_FIND_UNIQUE:
 		return NewFindUniqueRequest(), nil
+	case codes.SMB_COM_FIND_NOTIFY_CLOSE:
+		return NewFindNotifyCloseRequest(), nil
 	case codes.SMB_COM_LOGOFF_ANDX:
 		return NewLogoffAndxRequest(), nil
 	case codes.SMB_COM_NT_CANCEL:
@@ -164,6 +166,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewFindClose2Response(), nil
 	case codes.SMB_COM_FIND_UNIQUE:
 		return NewFindUniqueResponse(), nil
+	case codes.SMB_COM_FIND_NOTIFY_CLOSE:
+		return NewFindNotifyCloseResponse(), nil
 	case codes.SMB_COM_FLUSH:
 		return NewFlushResponse(), nil
 	case codes.SMB_COM_IOCTL:

@@ -24,6 +24,7 @@ var allCommandCodes = []codes.CommandCode{
 	codes.SMB_COM_FIND,
 	codes.SMB_COM_FIND_CLOSE,
 	codes.SMB_COM_FIND_CLOSE2,
+	codes.SMB_COM_FIND_NOTIFY_CLOSE,
 	codes.SMB_COM_FIND_UNIQUE,
 	codes.SMB_COM_FLUSH,
 	codes.SMB_COM_IOCTL,
