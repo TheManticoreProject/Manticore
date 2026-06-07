@@ -132,6 +132,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewNewFileSizeRequest(), nil
 	case codes.SMB_COM_QUERY_SERVER:
 		return NewQueryServerRequest(), nil
+	case codes.SMB_COM_IOCTL_SECONDARY:
+		return NewIoctlSecondaryRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
@@ -262,6 +264,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewNewFileSizeResponse(), nil
 	case codes.SMB_COM_QUERY_SERVER:
 		return NewQueryServerResponse(), nil
+	case codes.SMB_COM_IOCTL_SECONDARY:
+		return NewIoctlSecondaryResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
