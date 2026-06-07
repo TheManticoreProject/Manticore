@@ -32,6 +32,7 @@ var allCommandCodes = []codes.CommandCode{
 	codes.SMB_COM_LOCKING_ANDX,
 	codes.SMB_COM_LOGOFF_ANDX,
 	codes.SMB_COM_NEGOTIATE,
+	codes.SMB_COM_NEW_FILE_SIZE,
 	codes.SMB_COM_NT_CANCEL,
 	codes.SMB_COM_NT_CREATE_ANDX,
 	codes.SMB_COM_NT_RENAME,
