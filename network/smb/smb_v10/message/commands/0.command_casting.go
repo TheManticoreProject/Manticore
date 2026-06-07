@@ -140,6 +140,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewReadBulkRequest(), nil
 	case codes.SMB_COM_WRITE_BULK:
 		return NewWriteBulkRequest(), nil
+	case codes.SMB_COM_WRITE_BULK_DATA:
+		return NewWriteBulkDataRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
@@ -278,6 +280,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewReadBulkResponse(), nil
 	case codes.SMB_COM_WRITE_BULK:
 		return NewWriteBulkResponse(), nil
+	case codes.SMB_COM_WRITE_BULK_DATA:
+		return NewWriteBulkDataResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
