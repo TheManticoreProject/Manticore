@@ -136,6 +136,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewIoctlSecondaryRequest(), nil
 	case codes.SMB_COM_CLOSE_AND_TREE_DISC:
 		return NewCloseAndTreeDiscRequest(), nil
+	case codes.SMB_COM_READ_BULK:
+		return NewReadBulkRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
@@ -270,6 +272,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewIoctlSecondaryResponse(), nil
 	case codes.SMB_COM_CLOSE_AND_TREE_DISC:
 		return NewCloseAndTreeDiscResponse(), nil
+	case codes.SMB_COM_READ_BULK:
+		return NewReadBulkResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
