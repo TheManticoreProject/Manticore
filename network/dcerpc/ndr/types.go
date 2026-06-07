@@ -83,20 +83,24 @@ const (
 
 // fieldTag is the parsed `ndr:"..."` struct tag.
 type fieldTag struct {
-	skip         bool
-	ptr          ptrKind
-	wide         bool    // [string] wide (UTF-16)
-	ascii        bool    // [string] ASCII
-	conformant   bool    // conformant array (size_is)
-	varying      bool    // conformant-varying array (offset + actual_count framing)
-	sizeIs       string  // sibling field naming the maximum element count
-	lengthIs     string  // sibling field naming the actual element count
-	sizeConst    uint32  // literal maximum_count (size_is(<N>)); used when sizeConstSet
-	sizeConstSet bool    // size_is was a numeric literal rather than a sibling field name
-	align        int     // explicit alignment override (0 = default)
-	retval       bool    // RPC return value: encoded after the struct's deferred referents
-	elemPtr      ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
-	pipe         bool    // NDR pipe: a chunked stream ([C706] 14.7), not a normal array
+	skip           bool
+	ptr            ptrKind
+	wide           bool    // [string] wide (UTF-16)
+	ascii          bool    // [string] ASCII
+	conformant     bool    // conformant array (size_is)
+	varying        bool    // conformant-varying array (offset + actual_count framing)
+	sizeIs         string  // sibling field naming the maximum element count
+	lengthIs       string  // sibling field naming the actual element count
+	sizeDiv        int     // divisor applied to the size_is sibling (size_is(Field/N)); 0 = none
+	lengthDiv      int     // divisor applied to the length_is sibling (length_is(Field/N)); 0 = none
+	sizeConst      uint32  // literal maximum_count (size_is(<N>)); used when sizeConstSet
+	sizeConstSet   bool    // size_is was a numeric literal rather than a sibling field name
+	lengthConst    uint32  // literal actual_count (length_is(<N>) or resolved sibling/divisor)
+	lengthConstSet bool    // lengthConst holds a resolved actual_count
+	align          int     // explicit alignment override (0 = default)
+	retval         bool    // RPC return value: encoded after the struct's deferred referents
+	elemPtr        ptrKind // pointer attribute of array elements (`elem=ref|unique|ptr`)
+	pipe           bool    // NDR pipe: a chunked stream ([C706] 14.7), not a normal array
 
 	// Union (discriminated by an inline switch value, [C706] section 14.3.8) tags.
 	isSwitch  bool  // the union discriminant field (`switch`)
@@ -136,19 +140,33 @@ func parseTag(raw string) fieldTag {
 			t.retval = true
 		case strings.HasPrefix(opt, "size_is="):
 			t.conformant = true
-			v := strings.TrimPrefix(opt, "size_is=")
 			// size_is(<constant>) — a literal maximum_count, e.g. [size_is(1000)] in
-			// MS-SAMR. Distinguished from a sibling field name by parsing as a number.
-			if n, err := strconv.ParseUint(v, 10, 32); err == nil {
+			// MS-SAMR. size_is(Field) names a sibling holding the count. size_is(Field/N)
+			// names a sibling whose value is in different units than the elements (e.g.
+			// RPC_UNICODE_STRING's byte counts vs. wchar elements), divided by N.
+			name, div := splitDivisor(strings.TrimPrefix(opt, "size_is="))
+			if div > 0 {
+				t.sizeIs = name
+				t.sizeDiv = div
+			} else if n, err := strconv.ParseUint(name, 10, 32); err == nil {
 				t.sizeConst = uint32(n)
 				t.sizeConstSet = true
 			} else {
-				t.sizeIs = v
+				t.sizeIs = name
 			}
 		case strings.HasPrefix(opt, "length_is="):
 			t.conformant = true
 			t.varying = true
-			t.lengthIs = strings.TrimPrefix(opt, "length_is=")
+			name, div := splitDivisor(strings.TrimPrefix(opt, "length_is="))
+			if div > 0 {
+				t.lengthIs = name
+				t.lengthDiv = div
+			} else if n, err := strconv.ParseUint(name, 10, 32); err == nil {
+				t.lengthConst = uint32(n)
+				t.lengthConstSet = true
+			} else {
+				t.lengthIs = name
+			}
 		case opt == "switch":
 			t.isSwitch = true
 		case opt == "default":
@@ -181,4 +199,19 @@ func parseTag(raw string) fieldTag {
 		}
 	}
 	return t
+}
+
+// splitDivisor parses a "Field/N" size_is/length_is operand into the sibling field name
+// and the divisor N. A value with no "/N" (a plain field name or a literal constant)
+// returns a zero divisor, leaving the caller to interpret it as before.
+func splitDivisor(s string) (string, int) {
+	i := strings.IndexByte(s, '/')
+	if i < 0 {
+		return s, 0
+	}
+	d, err := strconv.Atoi(strings.TrimSpace(s[i+1:]))
+	if err != nil || d <= 0 {
+		return s, 0
+	}
+	return strings.TrimSpace(s[:i]), d
 }
