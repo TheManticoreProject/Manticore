@@ -130,6 +130,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewLockAndReadRequest(), nil
 	case codes.SMB_COM_NEW_FILE_SIZE:
 		return NewNewFileSizeRequest(), nil
+	case codes.SMB_COM_QUERY_SERVER:
+		return NewQueryServerRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
@@ -258,6 +260,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewClosePrintFileResponse(), nil
 	case codes.SMB_COM_NEW_FILE_SIZE:
 		return NewNewFileSizeResponse(), nil
+	case codes.SMB_COM_QUERY_SERVER:
+		return NewQueryServerResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: %d", commandCode)
 	}
