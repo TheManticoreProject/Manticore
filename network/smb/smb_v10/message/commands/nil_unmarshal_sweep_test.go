@@ -11,6 +11,7 @@ import (
 // allCommandCodes lists every command code handled by the request/response
 // casting registry.
 var allCommandCodes = []codes.CommandCode{
+	codes.SMB_COM_COPY,
 	codes.SMB_COM_WRITE_MPX_SECONDARY,
 	codes.SMB_COM_READ_MPX_SECONDARY,
 	codes.SMB_COM_WRITE_BULK_DATA,
