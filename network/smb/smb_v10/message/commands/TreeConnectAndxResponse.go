@@ -25,6 +25,22 @@ type TreeConnectAndxResponse struct {
 	// the client MUST ignore them.
 	OptionalSupport types.USHORT
 
+	// Extended selects the MS-SMB extended response form ([MS-SMB] section 2.2.4.7.2),
+	// returned when the client set TREE_CONNECT_ANDX_EXTENDED_RESPONSE in the request.
+	// When false, the base CIFS layout (WordCount 0x03) is produced and the two fields
+	// below are absent; when true, they are appended (WordCount 0x07).
+	Extended bool
+
+	// MaximalShareAccessRights (4 bytes): The maximal access rights (ACCESS_MASK) that the
+	// user who set up the tree connect has on the share. Present only in the extended
+	// response ([MS-SMB] section 2.2.4.7.2).
+	MaximalShareAccessRights types.ULONG
+
+	// GuestMaximalShareAccessRights (4 bytes): The maximal access rights (ACCESS_MASK) that
+	// the guest account has on the share, or zero if guest accounts are unsupported.
+	// Present only in the extended response.
+	GuestMaximalShareAccessRights types.ULONG
+
 	// Data
 
 	// Service (variable): The type of the shared resource to which the TID is connected.
@@ -114,6 +130,18 @@ func (c *TreeConnectAndxResponse) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf2, uint16(c.OptionalSupport))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
+	// MS-SMB extended response fields ([MS-SMB] section 2.2.4.7.2), appended only when the
+	// extended response form was selected.
+	if c.Extended {
+		buf4 := make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf4, uint32(c.MaximalShareAccessRights))
+		rawParametersContent = append(rawParametersContent, buf4...)
+
+		buf4 = make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf4, uint32(c.GuestMaximalShareAccessRights))
+		rawParametersContent = append(rawParametersContent, buf4...)
+	}
+
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
 	marshalledParameters, err := c.GetParameters().Marshal()
@@ -182,6 +210,17 @@ func (c *TreeConnectAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	}
 	c.OptionalSupport = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// MS-SMB extended response ([MS-SMB] section 2.2.4.7.2): if 8 more parameter octets
+	// follow OptionalSupport, this is the extended form carrying MaximalShareAccessRights (4)
+	// and GuestMaximalShareAccessRights (4).
+	if len(rawParametersContent) >= offset+8 {
+		c.Extended = true
+		c.MaximalShareAccessRights = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+		offset += 4
+		c.GuestMaximalShareAccessRights = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+		offset += 4
+	}
 
 	// Then unmarshal the data
 	offset = 0
