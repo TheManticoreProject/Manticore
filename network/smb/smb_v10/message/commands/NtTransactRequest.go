@@ -100,6 +100,13 @@ type NtTransactRequest struct {
 	// the operation to be performed by the server.
 	Function types.USHORT
 
+	// Setup (variable): An array of two-byte words that provides transaction context to
+	// the server. The size and content are subcommand-specific (for example the
+	// CompletionFilter/FID/WatchTree words of NT_TRANSACT_NOTIFY_CHANGE or the
+	// FunctionCode/FID/IsFsctl/IsFlags words of NT_TRANSACT_IOCTL). SetupCount is derived
+	// from the length of this slice on marshal. See [MS-CIFS] section 2.2.4.62.1.
+	Setup []types.USHORT
+
 	// Data
 
 	// Pad1 (variable): This field SHOULD be used as an array of padding bytes to align
@@ -146,6 +153,8 @@ func NewNtTransactRequest() *NtTransactRequest {
 		DataOffset:          types.ULONG(0),
 		SetupCount:          types.UCHAR(0),
 		Function:            types.USHORT(0),
+
+		Setup: []types.USHORT{},
 
 		// Data
 		Pad1:                []types.UCHAR{},
@@ -256,13 +265,22 @@ func (c *NtTransactRequest) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf4, uint32(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
-	// Marshalling parameter SetupCount
+	// Marshalling parameter SetupCount (derived from the Setup words so the count and the
+	// array cannot disagree on the wire).
+	c.SetupCount = types.UCHAR(len(c.Setup))
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.SetupCount))
 
 	// Marshalling parameter Function
 	buf2 = make([]byte, 2)
 	binary.LittleEndian.PutUint16(buf2, uint16(c.Function))
 	rawParametersContent = append(rawParametersContent, buf2...)
+
+	// Marshalling parameter Setup (SetupCount two-byte words)
+	for _, setupWord := range c.Setup {
+		buf2 = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf2, uint16(setupWord))
+		rawParametersContent = append(rawParametersContent, buf2...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -406,6 +424,16 @@ func (c *NtTransactRequest) Unmarshal(rawData []byte) (int, error) {
 	}
 	c.Function = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+
+	// Unmarshalling parameter Setup (SetupCount two-byte words)
+	if len(rawParametersContent) < offset+int(c.SetupCount)*2 {
+		return offset, fmt.Errorf("rawParametersContent too short for Setup")
+	}
+	c.Setup = make([]types.USHORT, c.SetupCount)
+	for i := 0; i < int(c.SetupCount); i++ {
+		c.Setup[i] = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+		offset += 2
+	}
 
 	// Then unmarshal the data
 	offset = 0
