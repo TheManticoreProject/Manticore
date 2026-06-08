@@ -65,6 +65,37 @@ type NtCreateAndxResponse struct {
 	// Directory (1 byte): If the returned FID represents a directory, the server MUST set this value to a nonzero value (0x01 is commonly used).
 	// If the FID is not a directory, the server MUST set this value to 0x00 (FALSE).
 	Directory types.UCHAR
+
+	// Extended selects the MS-SMB extended response form ([MS-SMB] section 2.2.4.9.2),
+	// returned when the client set NT_CREATE_REQUEST_EXTENDED_RESPONSE in the request.
+	// When false, the base CIFS layout (WordCount 0x22) is produced and the fields below
+	// are absent; when true, the four extended fields below are appended.
+	//
+	// Note: [MS-SMB] says the extended response WordCount field SHOULD be 0x2A, but the
+	// extended Words block actually occupies 50 16-bit words (the four extra fields add
+	// 32 octets to the 68-octet base). This implementation emits the self-consistent
+	// WordCount (the parameters layer requires WordCount to equal the number of words),
+	// so the message round-trips correctly rather than reproducing the spec's fixed 0x2A.
+	Extended bool
+
+	// VolumeGUID (16 bytes): A GUID that uniquely identifies the volume on which the file
+	// resides, or all-zero if the file system does not support volume GUIDs. Present only
+	// in the extended response.
+	VolumeGUID [16]byte
+
+	// FileId (8 bytes): A 64-bit opaque value that uniquely identifies the file on the
+	// volume, or zero if the file system does not support unique file IDs. Present only in
+	// the extended response.
+	FileId uint64
+
+	// MaximalAccessRights (4 bytes): The maximal access rights (ACCESS_MASK) the opening
+	// user has been granted for this open. Present only in the extended response.
+	MaximalAccessRights types.ULONG
+
+	// GuestMaximalAccessRights (4 bytes): The maximal access rights (ACCESS_MASK) the guest
+	// account has for this file, or zero if guest accounts are unsupported. Present only in
+	// the extended response.
+	GuestMaximalAccessRights types.ULONG
 }
 
 // NewNtCreateAndxResponse creates a new NtCreateAndxResponse structure
@@ -206,6 +237,28 @@ func (c *NtCreateAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Directory
 	rawParametersContent = append(rawParametersContent, types.UCHAR(c.Directory))
+
+	// MS-SMB extended response fields ([MS-SMB] section 2.2.4.9.2), appended only when the
+	// extended response form was selected.
+	if c.Extended {
+		// VolumeGUID (16 bytes): transmitted verbatim.
+		rawParametersContent = append(rawParametersContent, c.VolumeGUID[:]...)
+
+		// FileId (8 bytes)
+		buf8 = make([]byte, 8)
+		binary.LittleEndian.PutUint64(buf8, c.FileId)
+		rawParametersContent = append(rawParametersContent, buf8...)
+
+		// MaximalAccessRights (4 bytes, ACCESS_MASK)
+		buf4 = make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf4, uint32(c.MaximalAccessRights))
+		rawParametersContent = append(rawParametersContent, buf4...)
+
+		// GuestMaximalAccessRights (4 bytes, ACCESS_MASK)
+		buf4 = make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf4, uint32(c.GuestMaximalAccessRights))
+		rawParametersContent = append(rawParametersContent, buf4...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)
@@ -374,6 +427,25 @@ func (c *NtCreateAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	}
 	c.Directory = types.UCHAR(rawParametersContent[offset])
 	offset++
+
+	// MS-SMB extended response ([MS-SMB] section 2.2.4.9.2): if 32 more parameter octets
+	// follow Directory, this is the extended form carrying VolumeGUID (16), FileId (8),
+	// MaximalAccessRights (4), and GuestMaximalAccessRights (4).
+	if len(rawParametersContent) >= offset+32 {
+		c.Extended = true
+
+		copy(c.VolumeGUID[:], rawParametersContent[offset:offset+16])
+		offset += 16
+
+		c.FileId = binary.LittleEndian.Uint64(rawParametersContent[offset : offset+8])
+		offset += 8
+
+		c.MaximalAccessRights = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+		offset += 4
+
+		c.GuestMaximalAccessRights = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+		offset += 4
+	}
 
 	// Then unmarshal the data
 	offset = 0
