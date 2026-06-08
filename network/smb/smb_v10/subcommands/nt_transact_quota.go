@@ -176,3 +176,23 @@ func (q *FileQuotaInformation) Unmarshal(data []byte) (int, error) {
 	q.Sid = append([]byte{}, data[fileQuotaInformationFixedSize:fileQuotaInformationFixedSize+sidLength]...)
 	return fileQuotaInformationFixedSize + sidLength, nil
 }
+
+// ParseFileQuotaInformationList parses the NT_TRANSACT_QUERY_QUOTA response NT_Trans_Data
+// into its FILE_QUOTA_INFORMATION records, following NextEntryOffset until it is zero or
+// the buffer is exhausted.
+func ParseFileQuotaInformationList(data []byte) ([]FileQuotaInformation, error) {
+	items := []FileQuotaInformation{}
+	offset := 0
+	for offset+fileQuotaInformationFixedSize <= len(data) {
+		var rec FileQuotaInformation
+		if _, err := rec.Unmarshal(data[offset:]); err != nil {
+			return items, err
+		}
+		items = append(items, rec)
+		if rec.NextEntryOffset == 0 {
+			break
+		}
+		offset += int(rec.NextEntryOffset)
+	}
+	return items, nil
+}
