@@ -62,8 +62,10 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 
 	// Parse the header first to read the status. An SMB2 error response carries a
 	// fixed 9-byte SMB2 ERROR Response body (MS-SMB2 2.2.2), not the command-specific
-	// response, so the command body is decoded only for success and for the
-	// session-setup continuation status.
+	// response, so the command body is decoded only for statuses that carry a real
+	// command response: success, the session-setup continuation status, and
+	// STATUS_BUFFER_OVERFLOW (a warning the server returns from READ / IOCTL pipe
+	// transceive together with the partial data).
 	response := message.NewMessage()
 	if _, err = response.Header.Unmarshal(raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
@@ -73,7 +75,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	}
 
 	status := response.Header.Status
-	if status == 0x00000000 || status == ntStatusMoreProcessingRequired {
+	if status == 0x00000000 || status == ntStatusMoreProcessingRequired || status == ntStatusBufferOverflow {
 		if _, err = response.Unmarshal(raw); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %s response: %w", label, err)
 		}
