@@ -3,7 +3,7 @@ package client
 import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
-	"github.com/TheManticoreProject/Manticore/windows/ms_fscc"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem"
 )
 
 // DeleteFile removes a file on the current tree. It opens the file with DELETE
@@ -64,7 +64,7 @@ func (c *Client) RenameFile(oldPath, newPath string, replaceIfExists bool) error
 
 // GetVolumeSizeInfo returns the size information of the volume backing the
 // current tree. It opens the share root and issues a filesystem QUERY_INFO.
-func (c *Client) GetVolumeSizeInfo() (*ms_fscc.FileFsSizeInformation, error) {
+func (c *Client) GetVolumeSizeInfo() (*filesystem.FileFsSizeInformation, error) {
 	root, err := c.CreateFile("",
 		fileflags.FILE_READ_ATTRIBUTES,
 		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,

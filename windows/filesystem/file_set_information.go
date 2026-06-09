@@ -1,4 +1,4 @@
-package ms_fscc
+package filesystem
 
 import (
 	"encoding/binary"

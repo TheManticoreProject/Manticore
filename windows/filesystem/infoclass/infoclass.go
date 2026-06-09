@@ -1,7 +1,7 @@
 // Package infoclass holds the [MS-FSCC] FILE_INFORMATION_CLASS and
 // FILE_FS_*_INFORMATION class numbers used with SMB2 QUERY_INFO / SET_INFO. They
 // live in their own package so the class identifiers can keep their spec names
-// without colliding with the like-named structures in package ms_fscc.
+// without colliding with the like-named structures in package filesystem.
 package infoclass
 
 // FileInformationClass identifies a FILE_INFORMATION_CLASS used with the
