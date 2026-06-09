@@ -260,9 +260,8 @@ func TestUnsupportedEType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestRC4HMACUsageMsgTypeEncoding verifies that usageMsgType produces the
-// fixed 4-byte little-endian uint32 encoding required by MS-KILE / RFC 4757
-// (matching impacket's pack('<I', msusage) and gokrb5's
-// binary.LittleEndian.PutUint32), for both small and >=128 values.
+// fixed 4-byte little-endian uint32 encoding required by MS-KILE / RFC 4757,
+// for both small and >=128 values.
 //
 // The regression target is values >= 128: the previous implementation used
 // binary.PutUvarint, which for 128 emits 0x80 0x01 in the first two bytes

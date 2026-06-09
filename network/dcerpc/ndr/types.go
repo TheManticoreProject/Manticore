@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Windows-style NDR type aliases, mirroring the names used in [MS-DTYP] and impacket
+// Windows-style NDR type aliases, mirroring the names used in [MS-DTYP]
 // so declarations read like the IDL. References:
 //   - [MS-DTYP] 2.2 Common Data Types:
 //     https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/cca27429-5689-4a16-b2b4-9325d93e4ba2
