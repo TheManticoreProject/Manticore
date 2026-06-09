@@ -130,6 +130,16 @@ func (s *Session) SessionSetup() error {
 
 			negotiateFlags := spnego_ntlm_negotiate_flags.NegotiateFlags(
 				spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_NTLM |
+					// Extended session security (NTLM2) is required to derive a session key:
+					// it forces the server's CHALLENGE to set the flag, so the AUTHENTICATE
+					// takes the NTLMv2 path and computes the SessionBaseKey ([MS-NLMP] 3.3.2).
+					// Without it the NTLMv1 path runs and no key is derived, so SMB message
+					// signing (required by hardened servers, e.g. Windows Server 2003+) cannot
+					// be activated. We deliberately do NOT request NTLMSSP_NEGOTIATE_KEY_EXCH,
+					// so ExportedSessionKey == KeyExchangeKey == SessionBaseKey ([MS-NLMP]
+					// KXKEY) and EncryptedRandomSessionKey stays empty.
+					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
+					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_SIGN |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_128 |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_56 |
