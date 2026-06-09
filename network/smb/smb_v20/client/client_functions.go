@@ -29,6 +29,16 @@ func NewClientUsingNBTTransport(host net.IP, port int) *Client {
 	return newClient(transport.NewTransport("nbt"), host, port)
 }
 
+// NewFromTransport builds an SMB 2.0 client over an already-connected transport,
+// without connecting or negotiating. It is the handoff entry point used by the
+// generic SMB client (network/smb/client), which performs a multi-protocol
+// negotiate and then hands the live transport to this engine. The caller drives
+// negotiation either via Negotiate (a native SMB2 NEGOTIATE over t) or by
+// applying an already-exchanged response with ApplyNegotiateResponse.
+func NewFromTransport(t transport.Transport, host net.IP, port int) *Client {
+	return newClient(t, host, port)
+}
+
 // Connect establishes the transport connection and performs SMB2 negotiation.
 func (c *Client) Connect(ipaddr net.IP, port int) error {
 	c.Connection.Server.Host = ipaddr

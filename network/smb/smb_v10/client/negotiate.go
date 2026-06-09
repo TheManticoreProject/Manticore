@@ -76,7 +76,21 @@ func (c *Client) Negotiate() error {
 
 	negotiateResponse := responseMsg.Command.(*commands.NegotiateResponse)
 
-	selectedDialect, err := negotiateResponse.GetSelectedDialect(negotiateCmd.Dialects)
+	return c.ApplyNegotiateResponse(negotiateResponse, negotiateCmd.Dialects)
+}
+
+// ApplyNegotiateResponse records the negotiated connection state — selected
+// dialect, server capabilities, session key, timestamps, buffer sizes, identity,
+// security mode, and derived signing policy — from an SMB_COM_NEGOTIATE response.
+// offered is the dialect list that was sent, needed to resolve the server's
+// selected dialect from its index.
+//
+// It is shared by Negotiate, which exchanges the response on the transport, and
+// by the generic SMB client (network/smb/client), which hands over the response
+// it received during a multi-protocol negotiate (SMB1 cannot renegotiate on an
+// already-established connection).
+func (c *Client) ApplyNegotiateResponse(negotiateResponse *commands.NegotiateResponse, offered dialects.Dialects) error {
+	selectedDialect, err := negotiateResponse.GetSelectedDialect(offered)
 	if err != nil {
 		return fmt.Errorf("failed to get selected dialect: %v", err)
 	}

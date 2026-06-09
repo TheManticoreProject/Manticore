@@ -37,6 +37,22 @@ func (c *Client) Negotiate() error {
 		return fmt.Errorf("unexpected negotiate response command: %T", response.Command)
 	}
 
+	c.ApplyNegotiateResponse(negotiateResponse)
+
+	return nil
+}
+
+// ApplyNegotiateResponse records the negotiated connection state — selected
+// dialect, server security mode, capabilities, maximum transfer sizes, GUID,
+// timestamps, and GSS security buffer — from an SMB2 NEGOTIATE response.
+//
+// It is shared by Negotiate, which exchanges the response on the transport, and
+// by the generic SMB client (network/smb/client), which may hand over a response
+// already exchanged as part of a multi-protocol negotiate. Because NEGOTIATE
+// occupies MessageId 0, the next request on the connection uses MessageId 1; this
+// is set here for the handoff path (in the Negotiate path the MessageId has
+// already advanced past 0).
+func (c *Client) ApplyNegotiateResponse(negotiateResponse *commands.NegotiateResponse) {
 	server := c.Connection.Server
 	c.Connection.Dialect = negotiateResponse.DialectRevision
 	server.SecurityMode = negotiateResponse.SecurityMode
@@ -49,5 +65,7 @@ func (c *Client) Negotiate() error {
 	server.ServerStartTime = negotiateResponse.ServerStartTime
 	server.SecurityBuffer = negotiateResponse.SecurityBuffer
 
-	return nil
+	if c.Connection.MessageId == 0 {
+		c.Connection.MessageId = 1
+	}
 }
