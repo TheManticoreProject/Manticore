@@ -1,0 +1,8 @@
+package structures
+
+import (
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// BOUNDED_DWORD_8K is a scalar typedef ([MS-SCMR]).
+type BOUNDED_DWORD_8K ndr.DWORD

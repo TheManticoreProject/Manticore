@@ -1,0 +1,4 @@
+package structures
+
+// LPSC_NOTIFY_RPC_HANDLE is an alias for SC_NOTIFY_RPC_HANDLE ([MS-SCMR]).
+type LPSC_NOTIFY_RPC_HANDLE = SC_NOTIFY_RPC_HANDLE
