@@ -31,6 +31,22 @@ type LARGE_INTEGER int64
 // Reference: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/d7e6e5a5-6c77-4ae6-9bd5-3892b3c4641e
 type ULARGE_INTEGER uint64
 
+// FILETIME is the [MS-DTYP] 2.3.3 64-bit timestamp (100-nanosecond intervals since
+// 1601-01-01 UTC) transmitted as two 32-bit halves, low then high. Unlike a bare uint64
+// it carries 4-octet NDR alignment because both members are 32-bit ([C706] section
+// 14.2.2), matching how Windows lays it out on the wire.
+//
+// Reference: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/2c57429b-fdd4-488f-b5fc-9e4cf020fcdf
+type FILETIME struct {
+	DwLowDateTime  uint32
+	DwHighDateTime uint32
+}
+
+// Uint64 returns the FILETIME as a single 64-bit value (high half in the upper 32 bits).
+func (f FILETIME) Uint64() uint64 {
+	return uint64(f.DwHighDateTime)<<32 | uint64(f.DwLowDateTime)
+}
+
 // LUID is the [MS-DTYP] 2.3.7 locally unique identifier: a 64-bit value split into a
 // low (unsigned) and high (signed) 32-bit part, transmitted in that order. It is used
 // pervasively for privilege identifiers (for example by LsarLookupPrivilegeValue).
