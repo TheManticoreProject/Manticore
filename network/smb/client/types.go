@@ -80,6 +80,5 @@ type FileInfo struct {
 
 // IsDir reports whether the entry has the FILE_ATTRIBUTE_DIRECTORY flag set.
 func (fi FileInfo) IsDir() bool {
-	const fileAttributeDirectory = 0x00000010
 	return fi.FileAttributes&fileAttributeDirectory != 0
 }

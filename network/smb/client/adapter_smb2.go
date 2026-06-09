@@ -69,10 +69,34 @@ func (b *smb2Backend) CloseFile(h FileHandle) error {
 }
 
 func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
-	// The SMB2 engine exposes QueryDirectory as raw information-class bytes;
-	// normalizing those into []FileInfo lands in Phase 6 (with the MS-FSCC
-	// information-class package).
-	return nil, fmt.Errorf("ListDirectory is not yet implemented for SMB2 (Phase 6)")
+	if pattern == "" {
+		pattern = "*"
+	}
+
+	// Open the directory for enumeration.
+	fileId, err := b.engine.CreateFile(path, fileListDirectory|fileReadAttributes, shareReadWrite, fileOpen, fileDirectoryFile)
+	if err != nil {
+		return nil, fmt.Errorf("open directory %q: %w", path, err)
+	}
+	defer b.engine.CloseFile(fileId)
+
+	// Page through QUERY_DIRECTORY: the pattern applies to the first call, and
+	// subsequent calls continue from the server's cursor until it reports no more
+	// files (an empty buffer).
+	var out []FileInfo
+	search := pattern
+	for {
+		buf, err := b.engine.QueryDirectory(fileId, fileBothDirectoryInformation, search, 0)
+		if err != nil {
+			return nil, err
+		}
+		if len(buf) == 0 {
+			break
+		}
+		out = append(out, parseBothDirectoryInfo(buf)...)
+		search = "" // continuation
+	}
+	return out, nil
 }
 
 func (b *smb2Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }

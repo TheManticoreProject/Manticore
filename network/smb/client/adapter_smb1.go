@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
@@ -65,9 +66,48 @@ func (b *smb1Backend) CloseFile(h FileHandle) error {
 }
 
 func (b *smb1Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
-	// SMB1 directory enumeration (TRANS2 FIND_FIRST2/FIND_NEXT2) is normalized
-	// into []FileInfo in Phase 6.
-	return nil, fmt.Errorf("ListDirectory is not yet implemented for SMB1 (Phase 6)")
+	// The SMB1 engine enumerates by a single share-relative pattern (TRANS2
+	// FIND_FIRST2/FIND_NEXT2); join the directory path and the match pattern into
+	// it, e.g. ("\\Windows", "*.ini") -> "\\Windows\\*.ini".
+	if pattern == "" {
+		pattern = "*"
+	}
+	p := path
+	if p == "" {
+		p = "\\"
+	}
+	if p[0] != '\\' {
+		p = "\\" + p
+	}
+	if p[len(p)-1] != '\\' {
+		p += "\\"
+	}
+	p += pattern
+
+	entries, err := b.engine.ListEntries(p)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]FileInfo, 0, len(entries))
+	for _, e := range entries {
+		// The SMB1 engine includes the OEM name's trailing NUL terminator in
+		// LongName; normalize it away (SMB2 names are already NUL-trimmed).
+		name := strings.TrimRight(e.LongName, "\x00")
+		if name == "." || name == ".." {
+			continue
+		}
+		out = append(out, FileInfo{
+			Name:           name,
+			FileAttributes: e.Attributes,
+			Size:           e.Size,
+			CreationTime:   e.CreatedAt,
+			LastAccessTime: e.AccessedAt,
+			LastWriteTime:  e.ModifiedAt,
+			ChangeTime:     e.ChangedAt,
+		})
+	}
+	return out, nil
 }
 
 func (b *smb1Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }
