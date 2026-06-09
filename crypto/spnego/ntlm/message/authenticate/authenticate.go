@@ -1,6 +1,8 @@
 package authenticate
 
 import (
+	"crypto/hmac"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -50,6 +52,11 @@ type AuthenticateMessage struct {
 
 	// MIC (16 bytes): The message integrity for the NTLM NEGOTIATE_MESSAGE, CHALLENGE_MESSAGE, and AUTHENTICATE_MESSAGE.
 	MIC [16]byte
+
+	// NeedsMIC indicates that the server's CHALLENGE carried an MsvAvTimestamp, so
+	// the client MUST provide a MIC (MS-NLMP 3.1.5.1.2). When set, the AV_PAIRs in
+	// the NtChallengeResponse also carry MsvAvFlags with the MIC-present bit.
+	NeedsMIC bool
 
 	// Payload section
 
@@ -118,6 +125,8 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 		// Prepare TargetInfo for the blob: add MsvAvFlags with MIC bit when timestamp is present
 		hasTimestamp := targetinfo.HasTimestamp(challenge.TargetInfo)
 		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, hasTimestamp)
+		// A timestamp in the challenge means the AUTHENTICATE must carry a MIC.
+		msg.NeedsMIC = hasTimestamp
 
 		// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
 		timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
@@ -177,6 +186,37 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	}
 
 	return &msg, nil
+}
+
+// ComputeMIC computes the AUTHENTICATE_MESSAGE message integrity code and stores
+// it in the MIC field (MS-NLMP 3.1.5.1.2). The MIC is
+// HMAC_MD5(ExportedSessionKey, NEGOTIATE_MESSAGE || CHALLENGE_MESSAGE ||
+// AUTHENTICATE_MESSAGE), where the AUTHENTICATE_MESSAGE is serialized with a
+// zeroed MIC field. When no key exchange is negotiated, the exported session key
+// equals the SessionBaseKey retained in msg.SessionKey.
+//
+// It must be called after the message is fully populated and only when NeedsMIC
+// is set (the server's challenge carried an MsvAvTimestamp).
+func (msg *AuthenticateMessage) ComputeMIC(negotiateMessage, challengeMessage []byte) error {
+	if len(msg.SessionKey) == 0 {
+		return fmt.Errorf("cannot compute NTLM MIC: no session key derived")
+	}
+
+	// Serialize with a zeroed MIC field so the hash covers a zero placeholder.
+	msg.MIC = [16]byte{}
+	authenticateMessage, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	mac := hmac.New(md5.New, msg.SessionKey)
+	mac.Write(negotiateMessage)
+	mac.Write(challengeMessage)
+	mac.Write(authenticateMessage)
+	sum := mac.Sum(nil)
+	copy(msg.MIC[:], sum[:16])
+
+	return nil
 }
 
 // Marshal serializes the AuthenticateMessage into a byte slice
@@ -302,8 +342,10 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 		marshalledData = append(marshalledData, make([]byte, 8)...)
 	}
 
-	// Write MIC (all zeros for now)
-	marshalledData = append(marshalledData, make([]byte, 16)...)
+	// Write MIC. It is all zeros unless ComputeMIC has populated it (which it does
+	// when the server's challenge carried an MsvAvTimestamp); the MIC field is also
+	// zero while ComputeMIC marshals the message to hash it.
+	marshalledData = append(marshalledData, msg.MIC[:]...)
 
 	// Write payload
 	marshalledData = append(marshalledData, payload...)

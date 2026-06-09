@@ -70,10 +70,10 @@ func NewNTLMv2CtxWithNTHash(domain, username string, nthash [16]byte, serverChal
 		LMHash: lm.LMHash(""),
 	}
 
-	// Calculate the ResponseKeyNT (HMAC-MD5 of NT-Hash with username and domain)
+	// Calculate the ResponseKeyNT = NTOWFv2 = HMAC-MD5(NTHash, UNICODE(Uppercase(User) || Domain)).
+	// Per MS-NLMP 3.3.2, only the username is uppercased; the domain is used as-is.
 	usernameUpper := strings.ToUpper(username)
-	domainUpper := strings.ToUpper(domain)
-	identity := utf16.EncodeUTF16LE(usernameUpper + domainUpper)
+	identity := utf16.EncodeUTF16LE(usernameUpper + domain)
 
 	h := hmac.New(md5.New, ntlm.NTHash[:])
 	h.Write(identity)

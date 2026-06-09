@@ -72,6 +72,19 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 	// Retain the derived session key so callers can use it as the SMB signing MAC key.
 	ctx.SessionKey = ntlmAuth.SessionKey
 
+	// When the server's CHALLENGE carried an MsvAvTimestamp, CreateAuthenticateMessage
+	// sets the MsvAvFlags MIC-present bit in the NtChallengeResponse, so the
+	// AUTHENTICATE MUST also carry a matching MIC over NEGOTIATE||CHALLENGE||
+	// AUTHENTICATE (MS-NLMP 3.1.5.1.2). innerToken is the raw CHALLENGE_MESSAGE.
+	if ntlmAuth.NeedsMIC {
+		if len(ctx.NegotiateMessageBytes) == 0 {
+			return nil, fmt.Errorf("cannot compute NTLM MIC: NEGOTIATE message not retained")
+		}
+		if err := ntlmAuth.ComputeMIC(ctx.NegotiateMessageBytes, innerToken); err != nil {
+			return nil, fmt.Errorf("failed to compute NTLM MIC: %v", err)
+		}
+	}
+
 	ntlmAuthBytes, err := ntlmAuth.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal NTLM AUTHENTICATE message: %v", err)
