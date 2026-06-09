@@ -32,10 +32,8 @@ func TestDispatcher_ConnectionSetupCommands(t *testing.T) {
 		}
 	}
 
-	// A code without a structure yet is still unsupported.
-	if _, err := commands.CreateRequestCommand(codes.SMB2_OPLOCK_BREAK); err == nil {
-		t.Errorf("expected SMB2_OPLOCK_BREAK request to be unsupported")
-	}
+	// All 19 defined SMB2 commands now have structures; only an undefined command
+	// code is unsupported.
 	if _, err := commands.CreateRequestCommand(codes.CommandCode(0x00FF)); err == nil {
 		t.Errorf("expected unknown code to be unsupported")
 	}
