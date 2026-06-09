@@ -26,6 +26,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewTreeDisconnectRequest(), nil
 	case codes.SMB2_ECHO:
 		return NewEchoRequest(), nil
+	case codes.SMB2_CANCEL:
+		return NewCancelRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
