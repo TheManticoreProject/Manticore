@@ -10,7 +10,7 @@ import (
 
 // efsRpcQueryProtectorsRequest carries the [in] parameters of EfsRpcQueryProtectors.
 type efsRpcQueryProtectorsRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 }
 
 func (*efsRpcQueryProtectorsRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcQueryProtectors }
@@ -23,7 +23,7 @@ type efsRpcQueryProtectorsResponse struct {
 
 // EfsRpcQueryProtectors calls EfsRpcQueryProtectors (opnum 22) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcQueryProtectors(rpc ndr.Invoker, fileName *ndr.WSTR) (PpProtectorList *structures.ENCRYPTION_PROTECTOR_LIST, err error) {
+func EfsRpcQueryProtectors(rpc ndr.Invoker, fileName ndr.WSTR) (PpProtectorList *structures.ENCRYPTION_PROTECTOR_LIST, err error) {
 	req := &efsRpcQueryProtectorsRequest{
 		FileName: fileName,
 	}

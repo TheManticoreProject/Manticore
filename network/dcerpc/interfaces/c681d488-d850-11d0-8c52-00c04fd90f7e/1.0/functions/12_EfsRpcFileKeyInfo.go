@@ -10,7 +10,7 @@ import (
 
 // efsRpcFileKeyInfoRequest carries the [in] parameters of EfsRpcFileKeyInfo.
 type efsRpcFileKeyInfoRequest struct {
-	FileName  *ndr.WSTR `ndr:"unique"`
+	FileName  ndr.WSTR
 	InfoClass ndr.DWORD
 }
 
@@ -24,7 +24,7 @@ type efsRpcFileKeyInfoResponse struct {
 
 // EfsRpcFileKeyInfo calls EfsRpcFileKeyInfo (opnum 12) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcFileKeyInfo(rpc ndr.Invoker, fileName *ndr.WSTR, infoClass ndr.DWORD) (KeyInfo *structures.EFS_RPC_BLOB, err error) {
+func EfsRpcFileKeyInfo(rpc ndr.Invoker, fileName ndr.WSTR, infoClass ndr.DWORD) (KeyInfo *structures.EFS_RPC_BLOB, err error) {
 	req := &efsRpcFileKeyInfoRequest{
 		FileName:  fileName,
 		InfoClass: infoClass,

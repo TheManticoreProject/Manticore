@@ -10,7 +10,7 @@ import (
 
 // efsRpcRemoveUsersFromFileRequest carries the [in] parameters of EfsRpcRemoveUsersFromFile.
 type efsRpcRemoveUsersFromFileRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 	Users    structures.ENCRYPTION_CERTIFICATE_HASH_LIST
 }
 
@@ -23,7 +23,7 @@ type efsRpcRemoveUsersFromFileResponse struct {
 
 // EfsRpcRemoveUsersFromFile calls EfsRpcRemoveUsersFromFile (opnum 8) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcRemoveUsersFromFile(rpc ndr.Invoker, fileName *ndr.WSTR, users structures.ENCRYPTION_CERTIFICATE_HASH_LIST) (err error) {
+func EfsRpcRemoveUsersFromFile(rpc ndr.Invoker, fileName ndr.WSTR, users structures.ENCRYPTION_CERTIFICATE_HASH_LIST) (err error) {
 	req := &efsRpcRemoveUsersFromFileRequest{
 		FileName: fileName,
 		Users:    users,

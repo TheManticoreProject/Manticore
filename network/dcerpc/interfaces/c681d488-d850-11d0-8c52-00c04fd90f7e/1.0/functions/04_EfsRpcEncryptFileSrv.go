@@ -9,7 +9,7 @@ import (
 
 // efsRpcEncryptFileSrvRequest carries the [in] parameters of EfsRpcEncryptFileSrv.
 type efsRpcEncryptFileSrvRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 }
 
 func (*efsRpcEncryptFileSrvRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcEncryptFileSrv }
@@ -21,7 +21,7 @@ type efsRpcEncryptFileSrvResponse struct {
 
 // EfsRpcEncryptFileSrv calls EfsRpcEncryptFileSrv (opnum 4) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcEncryptFileSrv(rpc ndr.Invoker, fileName *ndr.WSTR) (err error) {
+func EfsRpcEncryptFileSrv(rpc ndr.Invoker, fileName ndr.WSTR) (err error) {
 	req := &efsRpcEncryptFileSrvRequest{
 		FileName: fileName,
 	}

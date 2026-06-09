@@ -12,7 +12,7 @@ import (
 type efsRpcAddUsersToFileExRequest struct {
 	DwFlags                ndr.DWORD
 	Reserved               *structures.EFS_RPC_BLOB `ndr:"unique"`
-	FileName               *ndr.WSTR                `ndr:"unique"`
+	FileName               ndr.WSTR
 	EncryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST
 }
 
@@ -25,7 +25,7 @@ type efsRpcAddUsersToFileExResponse struct {
 
 // EfsRpcAddUsersToFileEx calls EfsRpcAddUsersToFileEx (opnum 15) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcAddUsersToFileEx(rpc ndr.Invoker, dwFlags ndr.DWORD, reserved *structures.EFS_RPC_BLOB, fileName *ndr.WSTR, encryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST) (err error) {
+func EfsRpcAddUsersToFileEx(rpc ndr.Invoker, dwFlags ndr.DWORD, reserved *structures.EFS_RPC_BLOB, fileName ndr.WSTR, encryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST) (err error) {
 	req := &efsRpcAddUsersToFileExRequest{
 		DwFlags:                dwFlags,
 		Reserved:               reserved,

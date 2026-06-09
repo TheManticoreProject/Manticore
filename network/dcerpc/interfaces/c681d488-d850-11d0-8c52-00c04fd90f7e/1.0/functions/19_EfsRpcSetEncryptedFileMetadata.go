@@ -10,7 +10,7 @@ import (
 
 // efsRpcSetEncryptedFileMetadataRequest carries the [in] parameters of EfsRpcSetEncryptedFileMetadata.
 type efsRpcSetEncryptedFileMetadataRequest struct {
-	FileName         *ndr.WSTR                `ndr:"unique"`
+	FileName         ndr.WSTR
 	OldEfsStreamBlob *structures.EFS_RPC_BLOB `ndr:"unique"`
 	NewEfsStreamBlob structures.EFS_RPC_BLOB
 	NewEfsSignature  *structures.ENCRYPTED_FILE_METADATA_SIGNATURE `ndr:"unique"`
@@ -27,7 +27,7 @@ type efsRpcSetEncryptedFileMetadataResponse struct {
 
 // EfsRpcSetEncryptedFileMetadata calls EfsRpcSetEncryptedFileMetadata (opnum 19) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcSetEncryptedFileMetadata(rpc ndr.Invoker, fileName *ndr.WSTR, oldEfsStreamBlob *structures.EFS_RPC_BLOB, newEfsStreamBlob structures.EFS_RPC_BLOB, newEfsSignature *structures.ENCRYPTED_FILE_METADATA_SIGNATURE) (err error) {
+func EfsRpcSetEncryptedFileMetadata(rpc ndr.Invoker, fileName ndr.WSTR, oldEfsStreamBlob *structures.EFS_RPC_BLOB, newEfsStreamBlob structures.EFS_RPC_BLOB, newEfsSignature *structures.ENCRYPTED_FILE_METADATA_SIGNATURE) (err error) {
 	req := &efsRpcSetEncryptedFileMetadataRequest{
 		FileName:         fileName,
 		OldEfsStreamBlob: oldEfsStreamBlob,

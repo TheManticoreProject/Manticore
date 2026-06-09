@@ -12,7 +12,7 @@ import (
 type efsRpcFileKeyInfoExRequest struct {
 	DwFileKeyInfoFlags ndr.DWORD
 	Reserved           *structures.EFS_RPC_BLOB `ndr:"unique"`
-	FileName           *ndr.WSTR                `ndr:"unique"`
+	FileName           ndr.WSTR
 	InfoClass          ndr.DWORD
 }
 
@@ -26,7 +26,7 @@ type efsRpcFileKeyInfoExResponse struct {
 
 // EfsRpcFileKeyInfoEx calls EfsRpcFileKeyInfoEx (opnum 16) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcFileKeyInfoEx(rpc ndr.Invoker, dwFileKeyInfoFlags ndr.DWORD, reserved *structures.EFS_RPC_BLOB, fileName *ndr.WSTR, infoClass ndr.DWORD) (KeyInfo *structures.EFS_RPC_BLOB, err error) {
+func EfsRpcFileKeyInfoEx(rpc ndr.Invoker, dwFileKeyInfoFlags ndr.DWORD, reserved *structures.EFS_RPC_BLOB, fileName ndr.WSTR, infoClass ndr.DWORD) (KeyInfo *structures.EFS_RPC_BLOB, err error) {
 	req := &efsRpcFileKeyInfoExRequest{
 		DwFileKeyInfoFlags: dwFileKeyInfoFlags,
 		Reserved:           reserved,

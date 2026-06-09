@@ -9,7 +9,7 @@ import (
 
 // efsRpcDecryptFileSrvRequest carries the [in] parameters of EfsRpcDecryptFileSrv.
 type efsRpcDecryptFileSrvRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 	OpenFlag ndr.DWORD
 }
 
@@ -22,7 +22,7 @@ type efsRpcDecryptFileSrvResponse struct {
 
 // EfsRpcDecryptFileSrv calls EfsRpcDecryptFileSrv (opnum 5) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcDecryptFileSrv(rpc ndr.Invoker, fileName *ndr.WSTR, openFlag ndr.DWORD) (err error) {
+func EfsRpcDecryptFileSrv(rpc ndr.Invoker, fileName ndr.WSTR, openFlag ndr.DWORD) (err error) {
 	req := &efsRpcDecryptFileSrvRequest{
 		FileName: fileName,
 		OpenFlag: openFlag,
