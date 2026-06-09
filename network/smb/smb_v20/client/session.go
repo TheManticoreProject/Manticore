@@ -101,6 +101,22 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		return fmt.Errorf("failed to create NTLM authenticate token: %w", err)
 	}
 
+	// Install the session (with its signing key) before sending the final leg, so
+	// the engine signs the AUTHENTICATE request when signing is in effect. For the
+	// SMB 2.0.2/2.1 dialects the signing key is the session key itself. Signing is
+	// activated when the server enables or requires it.
+	sessionKey := authCtx.GetSessionKey()
+	serverMode := c.Connection.Server.SecurityMode
+	session := &Session{
+		Client:        c,
+		SessionId:     sessionId,
+		Credentials:   creds,
+		SessionKey:    sessionKey,
+		SigningKey:    sessionKey,
+		SigningActive: serverMode.IsSigningEnabled() || serverMode.IsSigningRequired(),
+	}
+	c.Session = session
+
 	req2 := commands.NewSessionSetupRequest()
 	req2.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 	req2.SecurityBuffer = authenticateToken
@@ -110,20 +126,14 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 
 	resp2, err := c.sendReceive(msg2, "SessionSetup(authenticate)")
 	if err != nil {
+		c.Session = nil
 		return err
 	}
 	if status := statusFromResponse(resp2); status != 0x00000000 {
+		c.Session = nil
 		return fmt.Errorf("session setup failed: %s", formatNTStatus(status))
 	}
 
-	// Session established.
-	session := &Session{
-		Client:      c,
-		SessionId:   sessionId,
-		Credentials: creds,
-		SessionKey:  authCtx.GetSessionKey(),
-	}
-	c.Session = session
 	if c.Connection.SessionTable == nil {
 		c.Connection.SessionTable = make(map[uint64]*Session)
 	}

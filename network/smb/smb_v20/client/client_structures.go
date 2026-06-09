@@ -96,8 +96,16 @@ type Session struct {
 	// TreeId is the 32-bit tree connect currently selected for file operations.
 	TreeId uint32
 
-	// SessionKey is the session key derived during authentication (used by signing).
+	// SessionKey is the session key derived during authentication.
 	SessionKey []byte
+
+	// SigningKey is the key used to sign/verify messages on this session. For the
+	// SMB 2.0.2 and 2.1 dialects it is the session key itself.
+	SigningKey []byte
+
+	// SigningActive indicates that requests on this session are signed and
+	// responses are verified.
+	SigningActive bool
 
 	// Credentials are the credentials used to authenticate the session.
 	Credentials *credentials.Credentials

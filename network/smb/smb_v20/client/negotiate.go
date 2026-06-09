@@ -5,6 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 )
 
 // Negotiate performs the SMB2 NEGOTIATE exchange, requesting the SMB 2.0.2
@@ -16,6 +17,8 @@ func (c *Client) Negotiate() error {
 	req := commands.NewNegotiateRequest()
 	req.AddDialect(dialects.SMB2_DIALECT_2_0_2)
 	req.ClientGuid = c.ClientGuid
+	// Advertise that the client supports signing.
+	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 
 	msg := c.newRequest(req)
 	// NEGOTIATE is sent before any session exists; SessionId MUST be 0.

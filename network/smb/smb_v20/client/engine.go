@@ -45,6 +45,11 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		return nil, fmt.Errorf("failed to marshal %s: %w", label, err)
 	}
 
+	// Sign the request in place when signing is active for the session.
+	if c.Session != nil && c.Session.SigningActive {
+		signMessage(c.Session.SigningKey, marshalled)
+	}
+
 	if _, err = c.Transport.Send(marshalled); err != nil {
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
@@ -61,6 +66,14 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 
 	if !response.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
+	}
+
+	// Verify the response signature when signing is active and the server signed
+	// the response.
+	if c.Session != nil && c.Session.SigningActive && response.Header.Flags.IsSigned() {
+		if !verifySignature(c.Session.SigningKey, raw) {
+			return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
+		}
 	}
 
 	// The server replenishes credits via the response Credit field.
