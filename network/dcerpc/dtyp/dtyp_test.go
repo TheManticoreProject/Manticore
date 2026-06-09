@@ -26,6 +26,30 @@ func TestLUID_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestFILETIME_GoldenAndRoundTrip(t *testing.T) {
+	type rec struct{ T FILETIME }
+	in := &rec{T: FILETIME{DwLowDateTime: 0x11223344, DwHighDateTime: 0x55667788}}
+	raw, err := ndr.Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// Two 32-bit LE words, low half first ([MS-DTYP] 2.3.3).
+	want := []byte{0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("FILETIME wire = % x, want % x", raw, want)
+	}
+	var out rec
+	if err := ndr.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.T != in.T {
+		t.Errorf("FILETIME round-trip: got %+v want %+v", out.T, in.T)
+	}
+	if got := in.T.Uint64(); got != 0x5566778811223344 {
+		t.Errorf("FILETIME.Uint64() = %#x", got)
+	}
+}
+
 func TestLargeInteger_RoundTrip(t *testing.T) {
 	type rec struct {
 		Q LARGE_INTEGER
