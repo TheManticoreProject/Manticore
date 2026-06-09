@@ -32,6 +32,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewFlushRequest(), nil
 	case codes.SMB2_CLOSE:
 		return NewCloseRequest(), nil
+	case codes.SMB2_CREATE:
+		return NewCreateRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
@@ -60,6 +62,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewFlushResponse(), nil
 	case codes.SMB2_CLOSE:
 		return NewCloseResponse(), nil
+	case codes.SMB2_CREATE:
+		return NewCreateResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
