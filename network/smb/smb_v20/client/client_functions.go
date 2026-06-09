@@ -1,0 +1,67 @@
+package client
+
+import (
+	"fmt"
+	"net"
+
+	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
+)
+
+// newClient builds a client over the given transport, targeting host:port.
+func newClient(t transport.Transport, host net.IP, port int) *Client {
+	return &Client{
+		Transport: t,
+		Connection: &Connection{
+			Server:           &Server{Host: host, Port: port},
+			SessionTable:     make(map[uint64]*Session),
+			TreeConnectTable: make(map[uint32]*TreeConnect),
+		},
+	}
+}
+
+// NewClientUsingTCPTransport creates a new SMB 2.0 client using direct TCP transport.
+func NewClientUsingTCPTransport(host net.IP, port int) *Client {
+	return newClient(transport.NewTransport("tcp"), host, port)
+}
+
+// NewClientUsingNBTTransport creates a new SMB 2.0 client using NetBIOS transport.
+func NewClientUsingNBTTransport(host net.IP, port int) *Client {
+	return newClient(transport.NewTransport("nbt"), host, port)
+}
+
+// Connect establishes the transport connection and performs SMB2 negotiation.
+func (c *Client) Connect(ipaddr net.IP, port int) error {
+	c.Connection.Server.Host = ipaddr
+	c.Connection.Server.Port = port
+
+	if err := c.Transport.Connect(ipaddr, port); err != nil {
+		return fmt.Errorf("failed to connect to SMB2 server: %w", err)
+	}
+
+	if err := c.Negotiate(); err != nil {
+		return fmt.Errorf("failed to negotiate with SMB2 server: %w", err)
+	}
+
+	return nil
+}
+
+// Disconnect closes the underlying transport connection. It does not send any
+// SMB2 commands; call TreeDisconnect and Logoff first for a clean teardown.
+func (c *Client) Disconnect() error {
+	if c.Transport == nil {
+		return nil
+	}
+	return c.Transport.Close()
+}
+
+// SetHost sets the target server IP address.
+func (c *Client) SetHost(host net.IP) { c.Connection.Server.Host = host }
+
+// GetHost returns the target server IP address.
+func (c *Client) GetHost() net.IP { return c.Connection.Server.Host }
+
+// SetPort sets the target server port.
+func (c *Client) SetPort(port int) { c.Connection.Server.Port = port }
+
+// GetPort returns the target server port.
+func (c *Client) GetPort() int { return c.Connection.Server.Port }
