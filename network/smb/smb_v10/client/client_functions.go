@@ -45,6 +45,24 @@ func NewClientUsingTCPTransport(host net.IP, port int) *Client {
 	}
 }
 
+// NewFromTransport builds an SMB v1.0 client over an already-connected transport,
+// without connecting or negotiating. It is the handoff entry point used by the
+// generic SMB client (network/smb/client), which performs a multi-protocol
+// negotiate and then hands the live transport to this engine together with the
+// SMB_COM_NEGOTIATE response it received, applied via ApplyNegotiateResponse.
+func NewFromTransport(t transport.Transport, host net.IP, port int) *Client {
+	return &Client{
+		Transport: t,
+		Connection: &Connection{
+			Server: &Server{
+				Host: host,
+				Port: port,
+			},
+		},
+		Session: nil,
+	}
+}
+
 // Connect establishes a connection to an SMB server
 //
 // Returns:
