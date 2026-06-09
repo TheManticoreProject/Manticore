@@ -20,8 +20,8 @@ type Backend interface {
 	// Login authenticates a session with the server.
 	Login(creds *credentials.Credentials) error
 
-	// TreeConnect connects to a share (e.g. `\\server\C$`), making it the
-	// current tree for subsequent file operations.
+	// TreeConnect connects to a share by name (e.g. "C$"), making it the current
+	// tree for subsequent file operations. The backend forms the full UNC path.
 	TreeConnect(share string) error
 
 	// OpenFile opens or creates a file on the current tree and returns a handle.

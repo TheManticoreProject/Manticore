@@ -1,0 +1,93 @@
+package client
+
+import (
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/smb"
+	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
+	"github.com/TheManticoreProject/Manticore/windows/credentials"
+)
+
+// smb2Backend adapts the SMB 2.x engine (network/smb/smb_v20/client) to the
+// version-agnostic Backend interface.
+type smb2Backend struct {
+	engine  *smb2.Client
+	dialect smb.SMBProtocolVersion
+}
+
+// newSMB2Backend wraps an already-negotiated SMB2 engine. The negotiated dialect
+// is resolved once; an unrecognized revision falls back to SMB 2.0.2.
+func newSMB2Backend(engine *smb2.Client) *smb2Backend {
+	dialect, ok := versionForSMB2Dialect(engine.Connection.Dialect)
+	if !ok {
+		dialect = smb.SMB_VERSION_2_0_2
+	}
+	return &smb2Backend{engine: engine, dialect: dialect}
+}
+
+func (b *smb2Backend) Dialect() smb.SMBProtocolVersion { return b.dialect }
+
+func (b *smb2Backend) Login(creds *credentials.Credentials) error {
+	return b.engine.SessionSetup(creds)
+}
+
+func (b *smb2Backend) TreeConnect(share string) error {
+	return b.engine.TreeConnect(share)
+}
+
+func (b *smb2Backend) OpenFile(path string, opts OpenOptions) (FileHandle, error) {
+	fileId, err := b.engine.CreateFile(path, opts.DesiredAccess, opts.ShareAccess, opts.CreateDisposition, opts.CreateOptions)
+	if err != nil {
+		return FileHandle{}, err
+	}
+	return newFileHandle(b.dialect, fileId), nil
+}
+
+func (b *smb2Backend) ReadFile(h FileHandle, off uint64, n uint32) ([]byte, error) {
+	fileId, err := b.fileId(h)
+	if err != nil {
+		return nil, err
+	}
+	return b.engine.ReadFile(fileId, off, n)
+}
+
+func (b *smb2Backend) WriteFile(h FileHandle, off uint64, data []byte) (uint32, error) {
+	fileId, err := b.fileId(h)
+	if err != nil {
+		return 0, err
+	}
+	return b.engine.WriteFile(fileId, off, data)
+}
+
+func (b *smb2Backend) CloseFile(h FileHandle) error {
+	fileId, err := b.fileId(h)
+	if err != nil {
+		return err
+	}
+	return b.engine.CloseFile(fileId)
+}
+
+func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
+	// The SMB2 engine exposes QueryDirectory as raw information-class bytes;
+	// normalizing those into []FileInfo lands in Phase 6 (with the MS-FSCC
+	// information-class package).
+	return nil, fmt.Errorf("ListDirectory is not yet implemented for SMB2 (Phase 6)")
+}
+
+func (b *smb2Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }
+func (b *smb2Backend) Logoff() error         { return b.engine.Logoff() }
+func (b *smb2Backend) Disconnect() error     { return b.engine.Disconnect() }
+
+// fileId unboxes an opaque FileHandle back into the SMB2 file id that produced
+// it, guarding against a handle from another backend.
+func (b *smb2Backend) fileId(h FileHandle) (types.SMB2_FILEID, error) {
+	fileId, ok := h.raw.(types.SMB2_FILEID)
+	if !ok {
+		return types.SMB2_FILEID{}, fmt.Errorf("file handle is not an SMB2 file id (got %T)", h.raw)
+	}
+	return fileId, nil
+}
+
+// Compile-time assurance that the adapter satisfies the Backend contract.
+var _ Backend = (*smb2Backend)(nil)
