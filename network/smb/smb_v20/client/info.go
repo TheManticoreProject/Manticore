@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
-	"github.com/TheManticoreProject/Manticore/windows/ms_fscc"
-	"github.com/TheManticoreProject/Manticore/windows/ms_fscc/infoclass"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem/infoclass"
 )
 
 // QueryInfo issues an SMB2 QUERY_INFO on the open identified by fileId and returns
@@ -66,12 +66,12 @@ func (c *Client) SetInfo(fileId types.SMB2_FILEID, infoType, fileInfoClass uint8
 
 // QueryFileBasicInfo returns the FILE_BASIC_INFORMATION (timestamps, attributes)
 // of an open file.
-func (c *Client) QueryFileBasicInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileBasicInformation, error) {
+func (c *Client) QueryFileBasicInfo(fileId types.SMB2_FILEID) (*filesystem.FileBasicInformation, error) {
 	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileBasicInformation), 0)
 	if err != nil {
 		return nil, err
 	}
-	fi := &ms_fscc.FileBasicInformation{}
+	fi := &filesystem.FileBasicInformation{}
 	if err := fi.Unmarshal(raw); err != nil {
 		return nil, err
 	}
@@ -80,12 +80,12 @@ func (c *Client) QueryFileBasicInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileBasi
 
 // QueryFileStandardInfo returns the FILE_STANDARD_INFORMATION (size, link count,
 // delete/directory flags) of an open file.
-func (c *Client) QueryFileStandardInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileStandardInformation, error) {
+func (c *Client) QueryFileStandardInfo(fileId types.SMB2_FILEID) (*filesystem.FileStandardInformation, error) {
 	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileStandardInformation), 0)
 	if err != nil {
 		return nil, err
 	}
-	fi := &ms_fscc.FileStandardInformation{}
+	fi := &filesystem.FileStandardInformation{}
 	if err := fi.Unmarshal(raw); err != nil {
 		return nil, err
 	}
@@ -94,12 +94,12 @@ func (c *Client) QueryFileStandardInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileS
 
 // QueryFsSizeInfo returns the FILE_FS_SIZE_INFORMATION of the volume backing the
 // open identified by fileId (any open on the tree, e.g. the share root).
-func (c *Client) QueryFsSizeInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileFsSizeInformation, error) {
+func (c *Client) QueryFsSizeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsSizeInformation, error) {
 	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsSizeInformation), 0)
 	if err != nil {
 		return nil, err
 	}
-	fi := &ms_fscc.FileFsSizeInformation{}
+	fi := &filesystem.FileFsSizeInformation{}
 	if err := fi.Unmarshal(raw); err != nil {
 		return nil, err
 	}
@@ -108,20 +108,20 @@ func (c *Client) QueryFsSizeInfo(fileId types.SMB2_FILEID) (*ms_fscc.FileFsSizeI
 
 // SetEndOfFile sets the logical size of an open file (truncate or extend).
 func (c *Client) SetEndOfFile(fileId types.SMB2_FILEID, size int64) error {
-	buf, _ := (&ms_fscc.FileEndOfFileInformation{EndOfFile: size}).Marshal()
+	buf, _ := (&filesystem.FileEndOfFileInformation{EndOfFile: size}).Marshal()
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileEndOfFileInformation), 0, buf)
 }
 
 // SetDeleteOnClose marks (or unmarks) an open file for deletion when its last
 // handle is closed.
 func (c *Client) SetDeleteOnClose(fileId types.SMB2_FILEID, deletePending bool) error {
-	buf, _ := (&ms_fscc.FileDispositionInformation{DeletePending: deletePending}).Marshal()
+	buf, _ := (&filesystem.FileDispositionInformation{DeletePending: deletePending}).Marshal()
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileDispositionInformation), 0, buf)
 }
 
 // RenameByHandle renames the open file to newName (share-relative). The handle
 // must have been opened with DELETE access.
 func (c *Client) RenameByHandle(fileId types.SMB2_FILEID, newName string, replaceIfExists bool) error {
-	buf, _ := (&ms_fscc.FileRenameInformation{ReplaceIfExists: replaceIfExists, FileName: newName}).Marshal()
+	buf, _ := (&filesystem.FileRenameInformation{ReplaceIfExists: replaceIfExists, FileName: newName}).Marshal()
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileRenameInformation), 0, buf)
 }
