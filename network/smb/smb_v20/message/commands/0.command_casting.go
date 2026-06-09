@@ -48,6 +48,8 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 		return NewChangeNotifyRequest(), nil
 	case codes.SMB2_QUERY_INFO:
 		return NewQueryInfoRequest(), nil
+	case codes.SMB2_SET_INFO:
+		return NewSetInfoRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
@@ -92,6 +94,8 @@ func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.Com
 		return NewChangeNotifyResponse(), nil
 	case codes.SMB2_QUERY_INFO:
 		return NewQueryInfoResponse(), nil
+	case codes.SMB2_SET_INFO:
+		return NewSetInfoResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
