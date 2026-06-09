@@ -101,14 +101,14 @@ func (c *CreateRequest) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[36:40], c.CreateDisposition)
 	binary.LittleEndian.PutUint32(buf[40:44], c.CreateOptions)
 
-	// The name (if any) begins immediately after the fixed part; offsets are
-	// measured from the start of the SMB2 header.
+	// The name begins immediately after the fixed part; offsets are measured from
+	// the start of the SMB2 header. NameOffset MUST point at the Buffer even when
+	// the name is empty (a root open): Windows rejects a zero NameOffset with
+	// STATUS_INVALID_PARAMETER. NameLength is 0 for an empty name.
 	variable := []byte{}
-	if len(nameBytes) > 0 {
-		binary.LittleEndian.PutUint16(buf[44:46], uint16(header.SMB2_HEADER_SIZE+createRequestFixedSize))
-		binary.LittleEndian.PutUint16(buf[46:48], uint16(len(nameBytes)))
-		variable = append(variable, nameBytes...)
-	}
+	binary.LittleEndian.PutUint16(buf[44:46], uint16(header.SMB2_HEADER_SIZE+createRequestFixedSize))
+	binary.LittleEndian.PutUint16(buf[46:48], uint16(len(nameBytes)))
+	variable = append(variable, nameBytes...)
 
 	if len(c.CreateContexts) > 0 {
 		// Create contexts must start on an 8-byte boundary relative to the header.
