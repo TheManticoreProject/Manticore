@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/transport"
+	"github.com/TheManticoreProject/Manticore/network/smb/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )

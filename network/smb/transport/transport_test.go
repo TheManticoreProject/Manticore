@@ -4,7 +4,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/transport"
+	"github.com/TheManticoreProject/Manticore/network/smb/transport"
 )
 
 // MockTransport implements the Transport interface for testing
