@@ -10,12 +10,20 @@ import (
 // CreateRequestCommand creates a request command for the given command code.
 //
 // Concrete request commands are wired in as they are implemented (one case per
-// SMB2 command code), mirroring the SMB 1.0 dispatcher. Until a code's structure
-// exists, the command code is reported as unsupported.
+// SMB2 command code), mirroring the SMB 1.0 dispatcher. Codes without a
+// structure yet are reported as unsupported.
 func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.CommandInterface, error) {
 	switch commandCode {
-	// case codes.SMB2_NEGOTIATE:
-	// 	return NewNegotiateRequest(), nil
+	case codes.SMB2_NEGOTIATE:
+		return NewNegotiateRequest(), nil
+	case codes.SMB2_SESSION_SETUP:
+		return NewSessionSetupRequest(), nil
+	case codes.SMB2_LOGOFF:
+		return NewLogoffRequest(), nil
+	case codes.SMB2_TREE_CONNECT:
+		return NewTreeConnectRequest(), nil
+	case codes.SMB2_TREE_DISCONNECT:
+		return NewTreeDisconnectRequest(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}
@@ -24,12 +32,20 @@ func CreateRequestCommand(commandCode codes.CommandCode) (command_interface.Comm
 // CreateResponseCommand creates a response command for the given command code.
 //
 // Concrete response commands are wired in as they are implemented (one case per
-// SMB2 command code), mirroring the SMB 1.0 dispatcher. Until a code's structure
-// exists, the command code is reported as unsupported.
+// SMB2 command code), mirroring the SMB 1.0 dispatcher. Codes without a
+// structure yet are reported as unsupported.
 func CreateResponseCommand(commandCode codes.CommandCode) (command_interface.CommandInterface, error) {
 	switch commandCode {
-	// case codes.SMB2_NEGOTIATE:
-	// 	return NewNegotiateResponse(), nil
+	case codes.SMB2_NEGOTIATE:
+		return NewNegotiateResponse(), nil
+	case codes.SMB2_SESSION_SETUP:
+		return NewSessionSetupResponse(), nil
+	case codes.SMB2_LOGOFF:
+		return NewLogoffResponse(), nil
+	case codes.SMB2_TREE_CONNECT:
+		return NewTreeConnectResponse(), nil
+	case codes.SMB2_TREE_DISCONNECT:
+		return NewTreeDisconnectResponse(), nil
 	default:
 		return nil, fmt.Errorf("command code not supported: 0x%04x", uint16(commandCode))
 	}

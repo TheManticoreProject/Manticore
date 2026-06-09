@@ -5,10 +5,13 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 )
 
 // fakeCommand is a test-only command body used to exercise the message envelope
@@ -58,6 +61,56 @@ func TestMessageMarshalSingle(t *testing.T) {
 	}
 	if !bytes.Equal(wire[header.SMB2_HEADER_SIZE:], body) {
 		t.Errorf("body = % x, want % x", wire[header.SMB2_HEADER_SIZE:], body)
+	}
+}
+
+// TestMessageRoundTripWithRealCommand exercises the full envelope decode path
+// (Message.Unmarshal -> dispatcher -> concrete command) now that a concrete
+// command exists, the way the SMB 1.0 message tests use real commands.
+func TestMessageRoundTripWithRealCommand(t *testing.T) {
+	req := commands.NewNegotiateRequest()
+	req.AddDialect(dialects.SMB2_DIALECT_2_0_2)
+
+	m := message.NewMessage()
+	m.Header.MessageId = 7
+	m.SetCommand(req)
+
+	wire, err := m.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	decoded := message.NewMessage()
+	if _, err := decoded.Unmarshal(wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if decoded.Header.Command != codes.SMB2_NEGOTIATE || decoded.Header.MessageId != 7 {
+		t.Errorf("header mismatch: %+v", decoded.Header)
+	}
+	neg, ok := decoded.Command.(*commands.NegotiateRequest)
+	if !ok {
+		t.Fatalf("decoded command is %T, want *NegotiateRequest", decoded.Command)
+	}
+	if len(neg.Dialects) != 1 || neg.Dialects[0] != dialects.SMB2_DIALECT_2_0_2 {
+		t.Errorf("dialects mismatch: %v", neg.Dialects)
+	}
+
+	// A response is dispatched to the response-side type via SERVER_TO_REDIR.
+	resp := commands.NewNegotiateResponse()
+	resp.DialectRevision = dialects.SMB2_DIALECT_2_0_2
+	rm := message.NewMessage()
+	rm.Header.AddFlags(flags.SMB2_FLAGS_SERVER_TO_REDIR)
+	rm.SetCommand(resp)
+	rwire, err := rm.Marshal()
+	if err != nil {
+		t.Fatalf("response Marshal: %v", err)
+	}
+	rdecoded := message.NewMessage()
+	if _, err := rdecoded.Unmarshal(rwire); err != nil {
+		t.Fatalf("response Unmarshal: %v", err)
+	}
+	if _, ok := rdecoded.Command.(*commands.NegotiateResponse); !ok {
+		t.Errorf("decoded response command is %T, want *NegotiateResponse", rdecoded.Command)
 	}
 }
 
