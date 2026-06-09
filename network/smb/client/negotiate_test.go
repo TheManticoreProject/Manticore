@@ -23,9 +23,9 @@ func TestEngineSupportsSMB2(t *testing.T) {
 
 func TestWantedFamilies(t *testing.T) {
 	cases := []struct {
-		name             string
-		prefs            []smb.SMBProtocolVersion
-		wantSMB1, want2  bool
+		name            string
+		prefs           []smb.SMBProtocolVersion
+		wantSMB1, want2 bool
 	}{
 		{"empty", nil, false, false},
 		{"smb1 only", []smb.SMBProtocolVersion{smb.SMB_VERSION_1_0}, true, false},

@@ -13,11 +13,11 @@ const fileAttributeDirectory uint32 = 0x00000010
 // File-open and information-class constants used to enumerate a directory over
 // SMB2 (MS-SMB2 / MS-FSCC).
 const (
-	fileListDirectory uint32 = 0x00000001 // DesiredAccess: FILE_LIST_DIRECTORY
+	fileListDirectory  uint32 = 0x00000001 // DesiredAccess: FILE_LIST_DIRECTORY
 	fileReadAttributes uint32 = 0x00000080 // DesiredAccess: FILE_READ_ATTRIBUTES
-	fileOpen          uint32 = 0x00000001 // CreateDisposition: FILE_OPEN
-	fileDirectoryFile uint32 = 0x00000001 // CreateOptions: FILE_DIRECTORY_FILE
-	shareReadWrite    uint32 = 0x00000003 // ShareAccess: FILE_SHARE_READ|WRITE
+	fileOpen           uint32 = 0x00000001 // CreateDisposition: FILE_OPEN
+	fileDirectoryFile  uint32 = 0x00000001 // CreateOptions: FILE_DIRECTORY_FILE
+	shareReadWrite     uint32 = 0x00000003 // ShareAccess: FILE_SHARE_READ|WRITE
 
 	// fileBothDirectoryInformation is the FILE_INFORMATION_CLASS used for
 	// enumeration; its FILE_BOTH_DIR_INFORMATION entries (MS-FSCC 2.4.8) carry the

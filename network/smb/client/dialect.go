@@ -5,18 +5,11 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 )
 
-// SMB1 dialect strings (MS-CIFS) and SMB2 markers used in the dialect list of a
-// multi-protocol SMB_COM_NEGOTIATE request.
-const (
-	// SMB1DialectNTLM012 is the modern SMB1 dialect ("NT LM 0.12").
-	SMB1DialectNTLM012 = "NT LM 0.12"
-	// SMB2DialectString2002 pins SMB 2.0.2 when offered in an SMB1 negotiate.
-	SMB2DialectString2002 = "SMB 2.002"
-	// SMB2DialectStringWildcard offers "any SMB2"; the server replies with the
-	// wildcard revision 0x02FF and the client follows up with a native SMB2
-	// negotiate to pin the exact dialect.
-	SMB2DialectStringWildcard = "SMB 2.???"
-)
+// smb2DialectString2002 is the SMB2 dialect marker offered in a multi-protocol
+// SMB_COM_NEGOTIATE to advertise SMB 2.0.2 (the engine's current ceiling). The
+// "SMB 2.???" wildcard, which declares 2.1+ support and triggers a follow-up
+// native SMB2 negotiate, will be added when 2.1+/3.x engines exist.
+const smb2DialectString2002 = "SMB 2.002"
 
 // smb2DialectFor maps an abstract protocol version to its concrete SMB2 wire
 // dialect revision. ok is false for SMB1 (which has no 16-bit revision) and for

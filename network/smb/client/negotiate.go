@@ -13,7 +13,6 @@ import (
 	smb1flags "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	smb1flags2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	smb2msg "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	smb2commands "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
@@ -155,9 +154,8 @@ func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2 bool) 
 		// support, after which the server replies with the wildcard revision and
 		// expects a follow-up negotiate offering 2.1+ — a 2.0.2-only follow-up is
 		// reset by Windows Server. "SMB 2.002" makes the server return a concrete
-		// SMB 2.0.2 negotiate response directly, needing no second leg. (The
-		// wildcard path in finishSMB2 remains for when 2.1+/3.x engines land.)
-		neg.Dialects.AddDialect(SMB2DialectString2002)
+		// SMB 2.0.2 negotiate response directly, needing no second leg.
+		neg.Dialects.AddDialect(smb2DialectString2002)
 	}
 	req.AddCommand(neg)
 
@@ -203,9 +201,11 @@ func finishSMB1(t transport.Transport, ip net.IP, host string, port int, opts Op
 	return &Client{backend: newSMB1Backend(engine), host: host, port: port, opts: opts}, nil
 }
 
-// finishSMB2 parses the SMB2 negotiate response, hands the live transport to the
-// SMB2 engine, and either applies the response directly or, for a wildcard
-// response, performs the native second negotiate that pins the concrete dialect.
+// finishSMB2 parses the SMB2 negotiate response and hands the live transport to
+// the SMB2 engine. Because the multi-protocol negotiate offers the "SMB 2.002"
+// marker, the server returns a concrete SMB 2.0.2 negotiate response, which is
+// applied directly. A dialect the engine cannot drive is rejected rather than
+// applied.
 func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Options, raw []byte) (*Client, error) {
 	respMsg := smb2msg.NewMessage()
 	if _, err := respMsg.Header.Unmarshal(raw); err != nil {
@@ -222,26 +222,15 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 		return nil, fmt.Errorf("unexpected SMB2 negotiate response command: %T", respMsg.Command)
 	}
 
+	if v, ok := versionForSMB2Dialect(resp.DialectRevision); !ok || !engineSupportsSMB2(v) {
+		t.Close()
+		return nil, fmt.Errorf("server selected SMB2 dialect 0x%04x, which the engine cannot drive", uint16(resp.DialectRevision))
+	}
+
 	engine := smb2.NewFromTransport(t, ip, port)
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
-
-	if resp.DialectRevision == dialects.SMB2_DIALECT_WILDCARD {
-		// Second leg: a native SMB2 NEGOTIATE pins the concrete dialect (SMB 2.0.2).
-		if err := engine.Negotiate(); err != nil {
-			t.Close()
-			return nil, fmt.Errorf("SMB2 second-stage negotiate failed: %w", err)
-		}
-	} else {
-		engine.ApplyNegotiateResponse(resp)
-	}
+	engine.ApplyNegotiateResponse(resp)
 	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

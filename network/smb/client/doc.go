@@ -25,10 +25,18 @@
 //   - PolicyHighestInSet performs a single multi-protocol negotiate over the
 //     whole set and uses the server's highest-supported dialect within it.
 //
-// Discovery uses the SMB1 multi-protocol negotiate: one request offers the SMB1
-// and SMB2 dialect markers, and the reply is dispatched on its protocol marker
-// (\xFFSMB for SMB1, \xFESMB for SMB2); the SMB2 wildcard dialect triggers a
-// second, native SMB2 negotiate to pin the exact 2.1/3.x revision.
+// PolicyHighestInSet uses the SMB1 multi-protocol negotiate: one request offers
+// the SMB1 and SMB2 dialect markers, and the reply is dispatched on its protocol
+// marker (\xFFSMB for SMB1, \xFESMB for SMB2). The SMB2 engine's ceiling is
+// SMB 2.0.2, so the "SMB 2.002" marker is offered and the server returns a
+// concrete SMB 2.0.2 response. (When SMB 2.1+/3.x engines exist, the "SMB 2.???"
+// wildcard will be offered, with a follow-up native SMB2 negotiate to pin the
+// exact revision.)
 //
-// This package is built in phases; see .private/smb_common/docs for the plan.
+// PolicyStrictOrder instead tries the preferred versions in order with a native
+// per-engine negotiate, reconnecting between attempts and binding the first the
+// server accepts — so a lower dialect listed first is selected even when the
+// server also supports a higher one.
+//
+// Backends supported today: SMB 1.0 and SMB 2.0.2. SMB 3.x awaits its engine.
 package client
