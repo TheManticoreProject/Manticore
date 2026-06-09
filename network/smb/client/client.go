@@ -24,21 +24,29 @@ type Client struct {
 // Dial connects to host:port, negotiates a dialect according to opts, and
 // returns a ready-to-authenticate Client.
 //
-// NOTE (Phase 3/4): there is no real negotiation yet — the engine is chosen from
-// the first entry of opts.Preferred (the SMB1 engine when it is SMB_VERSION_1_0,
-// otherwise the SMB2 engine), and that engine performs its own native negotiate.
-// Phase 5 replaces this with the multi-protocol negotiate that honors the full
-// opts.Preferred list and opts.Policy.
+// Selection is driven by opts.Preferred (highest priority first; defaults to all
+// supported versions, best first) and opts.Policy:
+//
+//   - PolicyStrictOrder (default) tries the preferred versions in order and
+//     returns the first the server accepts, reconnecting between attempts. It
+//     can select a lower dialect even when the server supports a higher one.
+//   - PolicyHighestInSet performs a single SMB1 multi-protocol negotiate and
+//     uses the server's highest-supported dialect within the set.
 func Dial(host string, port int, opts Options) (*Client, error) {
 	ip, err := resolveHost(host)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(opts.Preferred) > 0 && opts.Preferred[0] == smb.SMB_VERSION_1_0 {
-		return dialSMB1(ip, host, port, opts)
+	prefs := opts.Preferred
+	if len(prefs) == 0 {
+		prefs = defaultPreference()
 	}
-	return dialSMB2(ip, host, port, opts)
+
+	if opts.Policy == PolicyHighestInSet {
+		return dialHighestInSet(host, ip, port, opts, prefs)
+	}
+	return dialStrictOrder(host, ip, port, opts, prefs)
 }
 
 // dialSMB2 connects with the SMB2 engine and performs its native negotiate.
