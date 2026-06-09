@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // ExampleDial shows a full session: negotiate the best mutually-supported
@@ -36,10 +37,10 @@ func ExampleDial() {
 	defer c.TreeDisconnect()
 
 	h, err := c.OpenFile(`Windows\win.ini`, smbclient.OpenOptions{
-		DesiredAccess:     0x80000000, // GENERIC_READ
-		ShareAccess:       0x00000001, // FILE_SHARE_READ
-		CreateDisposition: 0x00000001, // FILE_OPEN
-		CreateOptions:     0x00000040, // FILE_NON_DIRECTORY_FILE
+		DesiredAccess:     fileflags.GENERIC_READ | fileflags.FILE_READ_ATTRIBUTES,
+		ShareAccess:       fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE,
+		CreateDisposition: fileflags.FILE_OPEN,
+		CreateOptions:     fileflags.FILE_NON_DIRECTORY_FILE,
 	})
 	if err != nil {
 		log.Fatal(err)

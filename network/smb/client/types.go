@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // NegotiationPolicy controls how the client applies its preference list when
@@ -53,15 +54,15 @@ func newFileHandle(dialect smb.SMBProtocolVersion, raw any) FileHandle {
 	return FileHandle{dialect: dialect, raw: raw}
 }
 
-// OpenOptions carries the file-open parameters shared by every dialect. The
-// access, share, disposition, and options fields use the MS-DTYP/MS-SMB2 bit
-// definitions, which are identical across SMB1 and SMB2.
+// OpenOptions carries the file-open parameters shared by every dialect. Combine
+// the bit values from windows/fileflags with bitwise OR, e.g.
+// DesiredAccess: fileflags.GENERIC_READ | fileflags.FILE_READ_ATTRIBUTES.
 type OpenOptions struct {
-	DesiredAccess     uint32
-	ShareAccess       uint32
-	CreateDisposition uint32
-	CreateOptions     uint32
-	FileAttributes    uint32
+	DesiredAccess     uint32 // fileflags GENERIC_* / FILE_* access rights
+	ShareAccess       uint32 // fileflags FILE_SHARE_*
+	CreateDisposition uint32 // fileflags FILE_OPEN / FILE_CREATE / ...
+	CreateOptions     uint32 // fileflags FILE_DIRECTORY_FILE / FILE_NON_DIRECTORY_FILE / ...
+	FileAttributes    uint32 // fileflags FILE_ATTRIBUTE_*
 }
 
 // FileInfo is a version-agnostic directory entry, normalized from the SMB1
@@ -80,5 +81,5 @@ type FileInfo struct {
 
 // IsDir reports whether the entry has the FILE_ATTRIBUTE_DIRECTORY flag set.
 func (fi FileInfo) IsDir() bool {
-	return fi.FileAttributes&fileAttributeDirectory != 0
+	return fi.FileAttributes&fileflags.FILE_ATTRIBUTE_DIRECTORY != 0
 }

@@ -7,6 +7,7 @@ import (
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // smb2Backend adapts the SMB 2.x engine (network/smb/smb_v20/client) to the
@@ -74,7 +75,11 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	}
 
 	// Open the directory for enumeration.
-	fileId, err := b.engine.CreateFile(path, fileListDirectory|fileReadAttributes, shareReadWrite, fileOpen, fileDirectoryFile)
+	fileId, err := b.engine.CreateFile(path,
+		fileflags.FILE_LIST_DIRECTORY|fileflags.FILE_READ_ATTRIBUTES,
+		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,
+		fileflags.FILE_OPEN,
+		fileflags.FILE_DIRECTORY_FILE)
 	if err != nil {
 		return nil, fmt.Errorf("open directory %q: %w", path, err)
 	}
