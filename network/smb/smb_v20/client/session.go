@@ -17,6 +17,11 @@ import (
 // (AUTHENTICATE) leg of the NTLM exchange.
 const ntStatusMoreProcessingRequired = 0xC0000016
 
+// ntStatusBufferOverflow (STATUS_BUFFER_OVERFLOW) is a warning, not an error: the
+// server returns it from READ and from an IOCTL pipe transceive together with the
+// partial data that did fit, signalling that more remains to be read.
+const ntStatusBufferOverflow = 0x80000005
+
 // SessionSetup authenticates a session with the server using NTLM over SPNEGO,
 // the SMB2 analog of the SMB 1.0 extended-security session setup. It performs the
 // two-leg NEGOTIATE -> CHALLENGE -> AUTHENTICATE exchange, capturing the
