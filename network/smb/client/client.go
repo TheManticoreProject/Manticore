@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/TheManticoreProject/Manticore/network/smb"
+	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -23,15 +24,25 @@ type Client struct {
 // Dial connects to host:port, negotiates a dialect according to opts, and
 // returns a ready-to-authenticate Client.
 //
-// NOTE (Phase 3): negotiation currently forces SMB2 — it always connects with
-// the SMB2 engine. Phase 5 replaces this with the multi-protocol negotiate that
-// honors opts.Preferred and opts.Policy and can select SMB1 or SMB2/3.
+// NOTE (Phase 3/4): there is no real negotiation yet — the engine is chosen from
+// the first entry of opts.Preferred (the SMB1 engine when it is SMB_VERSION_1_0,
+// otherwise the SMB2 engine), and that engine performs its own native negotiate.
+// Phase 5 replaces this with the multi-protocol negotiate that honors the full
+// opts.Preferred list and opts.Policy.
 func Dial(host string, port int, opts Options) (*Client, error) {
 	ip, err := resolveHost(host)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(opts.Preferred) > 0 && opts.Preferred[0] == smb.SMB_VERSION_1_0 {
+		return dialSMB1(ip, host, port, opts)
+	}
+	return dialSMB2(ip, host, port, opts)
+}
+
+// dialSMB2 connects with the SMB2 engine and performs its native negotiate.
+func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb2.NewClientUsingTCPTransport(ip, port)
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
@@ -39,13 +50,22 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 	if err := engine.Connect(ip, port); err != nil {
 		return nil, fmt.Errorf("SMB2 connect/negotiate failed: %w", err)
 	}
+	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
+}
 
-	return &Client{
-		backend: newSMB2Backend(engine),
-		host:    host,
-		port:    port,
-		opts:    opts,
-	}, nil
+// dialSMB1 connects with the SMB1 engine and performs its native negotiate.
+func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
+	engine := smb1.NewClientUsingTCPTransport(ip, port)
+	// The SMB1 session setup requires the NativeOS / NativeLanMan fields to be set.
+	engine.NativeOS = "Manticore"
+	engine.NativeLanMan = "Manticore"
+	if opts.Workstation != "" {
+		engine.Workstation = opts.Workstation
+	}
+	if err := engine.Connect(ip, port); err != nil {
+		return nil, fmt.Errorf("SMB1 connect/negotiate failed: %w", err)
+	}
+	return &Client{backend: newSMB1Backend(engine), host: host, port: port, opts: opts}, nil
 }
 
 // Dialect reports the negotiated protocol version.
