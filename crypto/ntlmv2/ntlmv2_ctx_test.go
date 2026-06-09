@@ -99,8 +99,9 @@ func TestComputeNTChallengeResponse(t *testing.T) {
 	}
 
 	// NTChallengeResponse = NTProofStr(16) || blob(variable)
-	// blob = RespType(1)+HiRespType(1)+Z(2)+Z(4)+timestamp(8)+CC(8)+Z(4)+targetInfo(4)+Z(4) = 36 bytes
-	expectedBlobLen := 1 + 1 + 2 + 4 + 8 + 8 + 4 + len(targetInfo) + 4
+	// blob = RespType(1)+HiRespType(1)+Z(2)+Z(4)+timestamp(8)+CC(8)+Z(4)+targetInfo
+	// (the TargetInfo is already MsvAvEOL-terminated; no extra trailing Z(4) is added).
+	expectedBlobLen := 1 + 1 + 2 + 4 + 8 + 8 + 4 + len(targetInfo)
 	if len(ntCR) != 16+expectedBlobLen {
 		t.Errorf("NTChallengeResponse length: expected %d, got %d", 16+expectedBlobLen, len(ntCR))
 	}

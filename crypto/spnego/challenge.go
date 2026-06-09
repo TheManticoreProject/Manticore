@@ -90,9 +90,10 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 		return nil, fmt.Errorf("failed to marshal NTLM AUTHENTICATE message: %v", err)
 	}
 
-	negTokenResp := NegTokenResp{}
-	negTokenResp.NegState = NegStateAcceptCompleted
-	negTokenResp.SetMechTokenNTLM(ntlmAuthBytes)
+	// The client's continuation (AUTHENTICATE) token carries only the responseToken
+	// — no negState and no supportedMech — matching the Windows client.
+	negTokenResp := NegTokenResp{SuppressNegState: true}
+	negTokenResp.SetMechToken(ntlmAuthBytes)
 
 	marshalledNegTokenResp, err := negTokenResp.Marshal()
 	if err != nil {

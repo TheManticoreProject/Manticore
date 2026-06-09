@@ -20,11 +20,12 @@ const ntStatusMoreProcessingRequired = 0xC0000016
 // SessionSetup authenticates a session with the server using NTLM over SPNEGO,
 // the SMB2 analog of the SMB 1.0 extended-security session setup. It performs the
 // two-leg NEGOTIATE -> CHALLENGE -> AUTHENTICATE exchange, capturing the
-// server-assigned SessionId from the first response and the derived session key
-// for later signing (Phase 6).
+// server-assigned SessionId from the first response and the derived session key.
 //
-// Note: this leg does not yet sign requests; against a server that requires
-// signing, operations after session setup will be rejected until signing lands.
+// The AUTHENTICATE request itself is not signed (the session is not yet
+// established); once the server confirms the session, signing is activated so
+// every subsequent request is signed. Live-validated against Windows Server 2016
+// with signing required.
 func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 	if creds == nil {
 		return fmt.Errorf("session setup requires credentials but none were provided")
@@ -108,12 +109,15 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 	sessionKey := authCtx.GetSessionKey()
 	serverMode := c.Connection.Server.SecurityMode
 	session := &Session{
-		Client:        c,
-		SessionId:     sessionId,
-		Credentials:   creds,
-		SessionKey:    sessionKey,
-		SigningKey:    sessionKey,
-		SigningActive: serverMode.IsSigningEnabled() || serverMode.IsSigningRequired(),
+		Client:      c,
+		SessionId:   sessionId,
+		Credentials: creds,
+		SessionKey:  sessionKey,
+		SigningKey:  sessionKey,
+		// The AUTHENTICATE request itself is NOT signed — the session is not yet
+		// established. Signing is activated below, after the server confirms the
+		// session, so it applies to subsequent requests (tree connect, file I/O).
+		SigningActive: false,
 	}
 	c.Session = session
 
@@ -133,6 +137,10 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		c.Session = nil
 		return fmt.Errorf("session setup failed: %s", formatNTStatus(status))
 	}
+
+	// Session established: activate signing for all subsequent requests when the
+	// server enables or requires it.
+	session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
 
 	if c.Connection.SessionTable == nil {
 		c.Connection.SessionTable = make(map[uint64]*Session)

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/avpair"
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
 
 // ParseTargetInfo parses the target info from a challenge message
@@ -70,39 +71,42 @@ func GetTimestamp(targetInfo []byte) []byte {
 
 // BuildBlobTargetInfo constructs the modified TargetInfo to embed in the NTLMv2 blob.
 //
-// It copies all AVPairs from the challenge TargetInfo, inserting or replacing MsvAvFlags
-// (AvId=0x0006) before the EOL marker. When needsMIC is true, MsvAvFlags is set to
-// 0x00000002 (MIC present bit), as required by MS-NLMP 3.1.5.1.2.
-func BuildBlobTargetInfo(targetInfo []byte, needsMIC bool) []byte {
-	result := make([]byte, 0, len(targetInfo)+8)
-
-	avFlags := uint32(0)
-	if needsMIC {
-		avFlags = 0x00000002
+// It copies all AVPairs from the challenge TargetInfo and, when a DNS computer name
+// (MsvAvDnsComputerName) is present, inserts an MsvAvTargetName AVPair set to the SMB
+// service principal name "cifs/<DnsComputerName>" before the EOL marker. This mirrors
+// what the Windows client sends; modern Windows servers require the SPN in the
+// AUTHENTICATE's NTLMv2 AVPairs and reject the authentication (STATUS_INVALID_PARAMETER)
+// when it is absent.
+func BuildBlobTargetInfo(targetInfo []byte) []byte {
+	// Build the SMB SPN "cifs/<DnsComputerName>" from the DNS computer name AVPair,
+	// in UTF-16LE (DnsComputerName is already UTF-16LE on the wire).
+	var targetName []byte
+	if pairs, err := ParseTargetInfo(targetInfo); err == nil {
+		if dnsComputer, ok := pairs[avpair.MsvAvDnsComputerName]; ok && len(dnsComputer) > 0 {
+			targetName = append(utf16.EncodeUTF16LE("cifs/"), dnsComputer...)
+		}
 	}
-	avFlagsBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(avFlagsBytes, avFlags)
 
+	result := make([]byte, 0, len(targetInfo)+4+len(targetName))
 	i := 0
 	for i+4 <= len(targetInfo) {
 		currentID := avpair.AvId(binary.LittleEndian.Uint16(targetInfo[i : i+2]))
 		avLen := binary.LittleEndian.Uint16(targetInfo[i+2 : i+4])
 
-		switch currentID {
-		case avpair.MsvAvEOL:
-			// Insert MsvAvFlags before EOL, then append EOL
-			result = append(result, 0x06, 0x00, 0x04, 0x00)
-			result = append(result, avFlagsBytes...)
+		if currentID == avpair.MsvAvEOL {
+			// Insert MsvAvTargetName (SPN) before EOL, then append EOL.
+			if len(targetName) > 0 {
+				hdr := make([]byte, 4)
+				binary.LittleEndian.PutUint16(hdr[0:2], uint16(avpair.MsvAvTargetName))
+				binary.LittleEndian.PutUint16(hdr[2:4], uint16(len(targetName)))
+				result = append(result, hdr...)
+				result = append(result, targetName...)
+			}
 			result = append(result, targetInfo[i:i+4]...)
 			return result
-		case avpair.MsvAvFlags:
-			// Replace existing MsvAvFlags value
-			result = append(result, 0x06, 0x00, 0x04, 0x00)
-			result = append(result, avFlagsBytes...)
-		default:
-			result = append(result, targetInfo[i:i+4+int(avLen)]...)
 		}
 
+		result = append(result, targetInfo[i:i+4+int(avLen)]...)
 		i += 4 + int(avLen)
 	}
 

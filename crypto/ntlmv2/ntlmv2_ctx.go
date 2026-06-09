@@ -109,11 +109,14 @@ func (ntlm *NTLMv2Ctx) ComputeNTChallengeResponse(timestamp []byte, targetInfo [
 	blob = append(blob, 0x01, 0x01)               // RespType, HiRespType
 	blob = append(blob, 0x00, 0x00)               // Reserved1
 	blob = append(blob, 0x00, 0x00, 0x00, 0x00)   // Reserved2
-	blob = append(blob, timestamp...)              // Timestamp (8 bytes)
+	blob = append(blob, timestamp...)               // Timestamp (8 bytes)
 	blob = append(blob, ntlm.ClientChallenge[:]...) // ClientChallenge (8 bytes)
-	blob = append(blob, 0x00, 0x00, 0x00, 0x00)   // Reserved3
-	blob = append(blob, targetInfo...)             // TargetInfo (variable)
-	blob = append(blob, 0x00, 0x00, 0x00, 0x00)   // Reserved4
+	blob = append(blob, 0x00, 0x00, 0x00, 0x00)     // Reserved3
+	// TargetInfo already ends with the MsvAvEOL terminator (the "Z(4)" in the
+	// MS-NLMP 3.3.2 temp). Appending another Z(4) here puts 4 stray bytes past the
+	// EOL, which a real Windows client does not send and which Windows Server 2016
+	// rejects as an invalid AVPair length (STATUS_INVALID_PARAMETER).
+	blob = append(blob, targetInfo...) // TargetInfo (variable, EOL-terminated)
 
 	// NTProofStr = HMAC-MD5(ResponseKeyNT, ServerChallenge || blob)
 	mac := hmac.New(md5.New, ntlm.ResponseKeyNT[:])

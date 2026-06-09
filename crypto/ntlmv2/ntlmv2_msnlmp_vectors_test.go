@@ -32,8 +32,11 @@ func TestMSNLMP_4_2_4_Vectors(t *testing.T) {
 		t.Errorf("NTOWFv2 = %s, want 0c868a403bfd7a93a3001ef22ef02e3f", got)
 	}
 
-	// MS-NLMP 4.2.4.1.3 TargetInfo: NbDomainName "Domain", NbComputerName "Server", EOL.
-	targetInfo := mustHex("02000c0044006f006d00610069006e0001000c0053006500720076006500720000000000")
+	// MS-NLMP 4.2.4.1.3 ServerName: NbDomainName "Domain", NbComputerName "Server",
+	// MsvAvEOL, plus the trailing Z(4) the worked example carries in temp. The blob
+	// builder no longer appends its own Z(4) (real clients send the TargetInfo
+	// EOL-terminated as-is), so the example's trailing Z(4) is included here.
+	targetInfo := mustHex("02000c0044006f006d00610069006e0001000c005300650072007600650072000000000000000000")
 	// Time is all-zero in the worked example.
 	_, ntProofStr, err := ctx.ComputeNTChallengeResponse(make([]byte, 8), targetInfo)
 	if err != nil {

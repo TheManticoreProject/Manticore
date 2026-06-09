@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 )
 
+
 // newRequest builds an SMB2 request message with the header fields common to
 // every command: the next 64-bit MessageId on the connection, a one-credit
 // request (CreditCharge is 0 in the SMB 2.0.2 dialect), and — when a session is
@@ -59,13 +60,23 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 	}
 
+	// Parse the header first to read the status. An SMB2 error response carries a
+	// fixed 9-byte SMB2 ERROR Response body (MS-SMB2 2.2.2), not the command-specific
+	// response, so the command body is decoded only for success and for the
+	// session-setup continuation status.
 	response := message.NewMessage()
-	if _, err = response.Unmarshal(raw); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s response: %w", label, err)
+	if _, err = response.Header.Unmarshal(raw); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
 	}
-
 	if !response.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
+	}
+
+	status := response.Header.Status
+	if status == 0x00000000 || status == ntStatusMoreProcessingRequired {
+		if _, err = response.Unmarshal(raw); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s response: %w", label, err)
+		}
 	}
 
 	// Verify the response signature when signing is active and the server signed
