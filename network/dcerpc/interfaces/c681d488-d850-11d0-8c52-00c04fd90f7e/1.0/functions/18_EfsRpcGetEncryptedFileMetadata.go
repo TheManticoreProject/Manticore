@@ -10,7 +10,7 @@ import (
 
 // efsRpcGetEncryptedFileMetadataRequest carries the [in] parameters of EfsRpcGetEncryptedFileMetadata.
 type efsRpcGetEncryptedFileMetadataRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 }
 
 func (*efsRpcGetEncryptedFileMetadataRequest) Opnum() uint16 {
@@ -25,7 +25,7 @@ type efsRpcGetEncryptedFileMetadataResponse struct {
 
 // EfsRpcGetEncryptedFileMetadata calls EfsRpcGetEncryptedFileMetadata (opnum 18) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcGetEncryptedFileMetadata(rpc ndr.Invoker, fileName *ndr.WSTR) (EfsStreamBlob *structures.EFS_RPC_BLOB, err error) {
+func EfsRpcGetEncryptedFileMetadata(rpc ndr.Invoker, fileName ndr.WSTR) (EfsStreamBlob *structures.EFS_RPC_BLOB, err error) {
 	req := &efsRpcGetEncryptedFileMetadataRequest{
 		FileName: fileName,
 	}

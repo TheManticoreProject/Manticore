@@ -10,7 +10,7 @@ import (
 
 // efsRpcOpenFileRawRequest carries the [in] parameters of EfsRpcOpenFileRaw.
 type efsRpcOpenFileRawRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 	Flags    int32
 }
 
@@ -24,7 +24,7 @@ type efsRpcOpenFileRawResponse struct {
 
 // EfsRpcOpenFileRaw calls EfsRpcOpenFileRaw (opnum 0) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcOpenFileRaw(rpc ndr.Invoker, fileName *ndr.WSTR, flags int32) (HContext structures.PEXIMPORT_CONTEXT_HANDLE, err error) {
+func EfsRpcOpenFileRaw(rpc ndr.Invoker, fileName ndr.WSTR, flags int32) (HContext structures.PEXIMPORT_CONTEXT_HANDLE, err error) {
 	req := &efsRpcOpenFileRawRequest{
 		FileName: fileName,
 		Flags:    flags,

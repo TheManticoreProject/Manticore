@@ -10,7 +10,7 @@ import (
 
 // efsRpcQueryUsersOnFileRequest carries the [in] parameters of EfsRpcQueryUsersOnFile.
 type efsRpcQueryUsersOnFileRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 }
 
 func (*efsRpcQueryUsersOnFileRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcQueryUsersOnFile }
@@ -23,7 +23,7 @@ type efsRpcQueryUsersOnFileResponse struct {
 
 // EfsRpcQueryUsersOnFile calls EfsRpcQueryUsersOnFile (opnum 6) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcQueryUsersOnFile(rpc ndr.Invoker, fileName *ndr.WSTR) (Users *structures.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
+func EfsRpcQueryUsersOnFile(rpc ndr.Invoker, fileName ndr.WSTR) (Users *structures.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
 	req := &efsRpcQueryUsersOnFileRequest{
 		FileName: fileName,
 	}

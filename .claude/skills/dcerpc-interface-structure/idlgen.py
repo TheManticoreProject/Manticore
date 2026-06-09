@@ -1302,7 +1302,15 @@ def _param_field(res: TypeResolver, p: Param) -> tuple[str, str, set]:
     is_unique = "unique" in p.attrs
 
     if "string" in p.attrs and arr is None:
-        return "*ndr.WSTR", "unique", set()
+        # A [string] wchar_t* parameter. Its pointer attribute decides the framing:
+        # [unique]/[ptr] -> a referent id then the wide string; [ref] (the default for a
+        # top-level parameter with no explicit attribute — pointer_default governs only
+        # embedded pointers) -> the wide string inline, no referent id.
+        if is_unique:
+            return "*ndr.WSTR", "unique", set()
+        if "ptr" in p.attrs or "full" in p.attrs:
+            return "*ndr.WSTR", "ptr", set()
+        return "ndr.WSTR", "", set()
 
     ptr_array = (arr is None) and isinstance(size, str) and ptr >= 1
     if arr is not None or ptr_array:

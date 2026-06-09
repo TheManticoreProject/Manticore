@@ -10,8 +10,8 @@ import (
 
 // efsRpcDuplicateEncryptionInfoFileRequest carries the [in] parameters of EfsRpcDuplicateEncryptionInfoFile.
 type efsRpcDuplicateEncryptionInfoFileRequest struct {
-	SrcFileName           *ndr.WSTR `ndr:"unique"`
-	DestFileName          *ndr.WSTR `ndr:"unique"`
+	SrcFileName           ndr.WSTR
+	DestFileName          ndr.WSTR
 	DwCreationDisposition ndr.DWORD
 	DwAttributes          ndr.DWORD
 	RelativeSD            *structures.EFS_RPC_BLOB `ndr:"unique"`
@@ -29,7 +29,7 @@ type efsRpcDuplicateEncryptionInfoFileResponse struct {
 
 // EfsRpcDuplicateEncryptionInfoFile calls EfsRpcDuplicateEncryptionInfoFile (opnum 13) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcDuplicateEncryptionInfoFile(rpc ndr.Invoker, srcFileName *ndr.WSTR, destFileName *ndr.WSTR, dwCreationDisposition ndr.DWORD, dwAttributes ndr.DWORD, relativeSD *structures.EFS_RPC_BLOB, bInheritHandle ndr.BOOL) (err error) {
+func EfsRpcDuplicateEncryptionInfoFile(rpc ndr.Invoker, srcFileName ndr.WSTR, destFileName ndr.WSTR, dwCreationDisposition ndr.DWORD, dwAttributes ndr.DWORD, relativeSD *structures.EFS_RPC_BLOB, bInheritHandle ndr.BOOL) (err error) {
 	req := &efsRpcDuplicateEncryptionInfoFileRequest{
 		SrcFileName:           srcFileName,
 		DestFileName:          destFileName,

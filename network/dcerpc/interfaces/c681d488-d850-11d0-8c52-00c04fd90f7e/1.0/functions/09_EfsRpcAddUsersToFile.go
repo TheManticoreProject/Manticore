@@ -10,7 +10,7 @@ import (
 
 // efsRpcAddUsersToFileRequest carries the [in] parameters of EfsRpcAddUsersToFile.
 type efsRpcAddUsersToFileRequest struct {
-	FileName               *ndr.WSTR `ndr:"unique"`
+	FileName               ndr.WSTR
 	EncryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST
 }
 
@@ -23,7 +23,7 @@ type efsRpcAddUsersToFileResponse struct {
 
 // EfsRpcAddUsersToFile calls EfsRpcAddUsersToFile (opnum 9) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcAddUsersToFile(rpc ndr.Invoker, fileName *ndr.WSTR, encryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST) (err error) {
+func EfsRpcAddUsersToFile(rpc ndr.Invoker, fileName ndr.WSTR, encryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST) (err error) {
 	req := &efsRpcAddUsersToFileRequest{
 		FileName:               fileName,
 		EncryptionCertificates: encryptionCertificates,

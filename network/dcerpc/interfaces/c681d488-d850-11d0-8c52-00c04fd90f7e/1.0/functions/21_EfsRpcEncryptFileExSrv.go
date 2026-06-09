@@ -9,7 +9,7 @@ import (
 
 // efsRpcEncryptFileExSrvRequest carries the [in] parameters of EfsRpcEncryptFileExSrv.
 type efsRpcEncryptFileExSrvRequest struct {
-	FileName            *ndr.WSTR `ndr:"unique"`
+	FileName            ndr.WSTR
 	ProtectorDescriptor *ndr.WSTR `ndr:"unique"`
 	Flags               ndr.DWORD
 }
@@ -23,7 +23,7 @@ type efsRpcEncryptFileExSrvResponse struct {
 
 // EfsRpcEncryptFileExSrv calls EfsRpcEncryptFileExSrv (opnum 21) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcEncryptFileExSrv(rpc ndr.Invoker, fileName *ndr.WSTR, protectorDescriptor *ndr.WSTR, flags ndr.DWORD) (err error) {
+func EfsRpcEncryptFileExSrv(rpc ndr.Invoker, fileName ndr.WSTR, protectorDescriptor *ndr.WSTR, flags ndr.DWORD) (err error) {
 	req := &efsRpcEncryptFileExSrvRequest{
 		FileName:            fileName,
 		ProtectorDescriptor: protectorDescriptor,

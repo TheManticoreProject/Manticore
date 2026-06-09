@@ -10,7 +10,7 @@ import (
 
 // efsRpcQueryRecoveryAgentsRequest carries the [in] parameters of EfsRpcQueryRecoveryAgents.
 type efsRpcQueryRecoveryAgentsRequest struct {
-	FileName *ndr.WSTR `ndr:"unique"`
+	FileName ndr.WSTR
 }
 
 func (*efsRpcQueryRecoveryAgentsRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcQueryRecoveryAgents }
@@ -23,7 +23,7 @@ type efsRpcQueryRecoveryAgentsResponse struct {
 
 // EfsRpcQueryRecoveryAgents calls EfsRpcQueryRecoveryAgents (opnum 7) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcQueryRecoveryAgents(rpc ndr.Invoker, fileName *ndr.WSTR) (RecoveryAgents *structures.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
+func EfsRpcQueryRecoveryAgents(rpc ndr.Invoker, fileName ndr.WSTR) (RecoveryAgents *structures.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
 	req := &efsRpcQueryRecoveryAgentsRequest{
 		FileName: fileName,
 	}
