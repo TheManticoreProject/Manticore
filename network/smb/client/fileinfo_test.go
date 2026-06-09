@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // bothDirEntry builds a single FILE_BOTH_DIR_INFORMATION entry with a UTF-16LE
@@ -25,10 +27,10 @@ func bothDirEntry(name string, attrs uint32, size uint64, next uint32) []byte {
 }
 
 func TestParseBothDirectoryInfo(t *testing.T) {
-	dot := bothDirEntry(".", fileAttributeDirectory, 0, 0)
-	dotdot := bothDirEntry("..", fileAttributeDirectory, 0, 0)
+	dot := bothDirEntry(".", fileflags.FILE_ATTRIBUTE_DIRECTORY, 0, 0)
+	dotdot := bothDirEntry("..", fileflags.FILE_ATTRIBUTE_DIRECTORY, 0, 0)
 	file := bothDirEntry("report.txt", 0x20 /*ARCHIVE*/, 1234, 0)
-	dir := bothDirEntry("subdir", fileAttributeDirectory, 0, 0)
+	dir := bothDirEntry("subdir", fileflags.FILE_ATTRIBUTE_DIRECTORY, 0, 0)
 
 	// Chain: NextEntryOffset of each non-last entry is that entry's length.
 	dot[0] = byte(len(dot))
