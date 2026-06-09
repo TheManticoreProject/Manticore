@@ -31,6 +31,7 @@ import (
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 func ws(s string) ndr.WSTR { return ndr.WSTR(s) }
@@ -85,8 +86,8 @@ func TestIntegration_Efsr(t *testing.T) {
 			return
 		}
 		defer smb.TreeDisconnect()
-		fid, err := smb.OpenFile(sharePath, smbclient.GENERIC_READ|smbclient.GENERIC_WRITE,
-			smbclient.FILE_SHARE_READ|smbclient.FILE_SHARE_WRITE, smbclient.FILE_OVERWRITE_IF, smbclient.FILE_NON_DIRECTORY_FILE)
+		fid, err := smb.OpenFile(sharePath, fileflags.GENERIC_READ|fileflags.GENERIC_WRITE,
+			fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE, fileflags.FILE_OVERWRITE_IF, fileflags.FILE_NON_DIRECTORY_FILE)
 		if err != nil {
 			t.Logf("[info] OpenFile(%s) failed: %v", sharePath, err)
 			return

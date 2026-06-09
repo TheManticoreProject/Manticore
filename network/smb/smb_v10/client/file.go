@@ -36,35 +36,8 @@ const (
 // FID is an opaque file handle returned by the server for an open file or directory.
 type FID uint16
 
-// NT access mask values (subset) used by OpenFile.
-const (
-	GENERIC_READ  uint32 = 0x80000000
-	GENERIC_WRITE uint32 = 0x40000000
-)
-
-// FILE_SHARE_* values for the shareAccess argument of OpenFile.
-const (
-	FILE_SHARE_NONE   uint32 = 0x00000000
-	FILE_SHARE_READ   uint32 = 0x00000001
-	FILE_SHARE_WRITE  uint32 = 0x00000002
-	FILE_SHARE_DELETE uint32 = 0x00000004
-)
-
-// CreateDisposition values for the createDisp argument of OpenFile.
-const (
-	FILE_SUPERSEDE    uint32 = 0x00000000
-	FILE_OPEN         uint32 = 0x00000001
-	FILE_CREATE       uint32 = 0x00000002
-	FILE_OPEN_IF      uint32 = 0x00000003
-	FILE_OVERWRITE    uint32 = 0x00000004
-	FILE_OVERWRITE_IF uint32 = 0x00000005
-)
-
-// CreateOptions values for the createOptions argument of OpenFile.
-const (
-	FILE_DIRECTORY_FILE     uint32 = 0x00000001
-	FILE_NON_DIRECTORY_FILE uint32 = 0x00000040
-)
+// The NT access mask, share access, create disposition, and create option values
+// that callers pass to OpenFile live in windows/fileflags.
 
 // FileIODebug, when true, dumps the raw bytes of file-I/O requests and responses
 // to stdout. It is a coarse diagnostic aid until a structured logger is wired in.

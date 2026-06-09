@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 	"github.com/TheManticoreProject/goopts/parser"
 )
 
@@ -134,10 +135,10 @@ func main() {
 	if writeContent != "" {
 		wfid, err := c.OpenFile(
 			filePath,
-			client.GENERIC_READ|client.GENERIC_WRITE,
-			client.FILE_SHARE_READ|client.FILE_SHARE_WRITE,
-			client.FILE_OVERWRITE_IF,
-			client.FILE_NON_DIRECTORY_FILE,
+			fileflags.GENERIC_READ|fileflags.GENERIC_WRITE,
+			fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,
+			fileflags.FILE_OVERWRITE_IF,
+			fileflags.FILE_NON_DIRECTORY_FILE,
 		)
 		if err != nil {
 			fmt.Printf("[error] Error opening file %q for write: %s\n", filePath, err)
@@ -158,10 +159,10 @@ func main() {
 	// Open the file at the root of the share for reading.
 	fid, err := c.OpenFile(
 		filePath,
-		client.GENERIC_READ,
-		client.FILE_SHARE_READ|client.FILE_SHARE_WRITE,
-		client.FILE_OPEN,
-		client.FILE_NON_DIRECTORY_FILE,
+		fileflags.GENERIC_READ,
+		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,
+		fileflags.FILE_OPEN,
+		fileflags.FILE_NON_DIRECTORY_FILE,
 	)
 	if err != nil {
 		fmt.Printf("[error] Error opening file %q: %s\n", filePath, err)

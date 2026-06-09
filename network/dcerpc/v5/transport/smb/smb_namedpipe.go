@@ -15,6 +15,7 @@ import (
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // Default fragment sizes proposed at Bind time. 4280 (0x10B8) is the classic Windows
@@ -87,9 +88,9 @@ func (p *SMBNamedPipe) Connect() error {
 
 	fid, err := p.conn.OpenFile(
 		p.pipeName,
-		client.GENERIC_READ|client.GENERIC_WRITE,
-		client.FILE_SHARE_READ|client.FILE_SHARE_WRITE,
-		client.FILE_OPEN,
+		fileflags.GENERIC_READ|fileflags.GENERIC_WRITE,
+		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,
+		fileflags.FILE_OPEN,
 		0,
 	)
 	if err != nil {
