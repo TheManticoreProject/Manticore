@@ -1,6 +1,6 @@
 // Package transport defines the transport abstraction used by the DCE/RPC client.
 //
-// Unlike the SMB byte-stream transport (network/smb/smb_v10/transport), which frames
+// Unlike the SMB byte-stream transport (network/smb/common/transport), which frames
 // raw bytes over a socket, a DCE/RPC transport carries PDUs. A connection-oriented
 // call may span several fragments in each direction, so the interface exposes
 // independent Send and Recv primitives: the DCE/RPC client writes all request

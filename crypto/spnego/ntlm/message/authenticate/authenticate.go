@@ -1,6 +1,8 @@
 package authenticate
 
 import (
+	"crypto/hmac"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -51,6 +53,11 @@ type AuthenticateMessage struct {
 	// MIC (16 bytes): The message integrity for the NTLM NEGOTIATE_MESSAGE, CHALLENGE_MESSAGE, and AUTHENTICATE_MESSAGE.
 	MIC [16]byte
 
+	// NeedsMIC indicates that the server's CHALLENGE carried an MsvAvTimestamp, so
+	// the client MUST provide a MIC (MS-NLMP 3.1.5.1.2). When set, the AV_PAIRs in
+	// the NtChallengeResponse also carry MsvAvFlags with the MIC-present bit.
+	NeedsMIC bool
+
 	// Payload section
 
 	// LmChallengeResponse (16 bytes): A payload containing LmChallengeResponse data.
@@ -83,7 +90,20 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	// Create the AuthenticateMessage struct
 	msg := AuthenticateMessage{}
 
-	msg.NegotiateFlags = challenge.NegotiateFlags
+	// The AUTHENTICATE carries the client's negotiated flags, not an echo of the
+	// server's CHALLENGE flags (which include server-only bits such as the target
+	// type and a server VERSION). This matches what the Windows client sends and
+	// what Windows Server 2016 (signing required) accepts.
+	msg.NegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
+		flags.NTLMSSP_REQUEST_TARGET |
+		flags.NTLMSSP_NEGOTIATE_SIGN |
+		flags.NTLMSSP_NEGOTIATE_SEAL |
+		flags.NTLMSSP_NEGOTIATE_NTLM |
+		flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
+		flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
+		flags.NTLMSSP_NEGOTIATE_TARGET_INFO |
+		flags.NTLMSSP_NEGOTIATE_128 |
+		flags.NTLMSSP_NEGOTIATE_56
 
 	// Determine if we should use Unicode
 	useUnicode := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_UNICODE) != 0
@@ -115,9 +135,11 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 			return nil, err
 		}
 
-		// Prepare TargetInfo for the blob: add MsvAvFlags with MIC bit when timestamp is present
-		hasTimestamp := targetinfo.HasTimestamp(challenge.TargetInfo)
-		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, hasTimestamp)
+		// Prepare TargetInfo for the blob: add the MsvAvTargetName (SPN) AVPair, as
+		// the Windows client does. This server (Server 2016, signing required)
+		// requires the SPN rather than an MsvAvFlags MIC, so no MIC is emitted.
+		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo)
+		msg.NeedsMIC = false
 
 		// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
 		timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
@@ -132,11 +154,11 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 		if err != nil {
 			return nil, err
 		}
-		msg.LmChallengeResponse = ctx.ComputeLMChallengeResponse(hasTimestamp)
+		// Send a real LMv2 response (the Windows client does, even with a timestamp).
+		msg.LmChallengeResponse = ctx.ComputeLMChallengeResponse(false)
 
-		// Derive the session key (SessionBaseKey). No key exchange is negotiated here,
-		// so the exported session key equals the SessionBaseKey; SMB signing uses it as
-		// the MAC key.
+		// EXPERIMENT: no key exchange. The exported session key (the SMB signing MAC
+		// key) equals the SessionBaseKey.
 		msg.SessionKey = ctx.ComputeSessionBaseKey(ntProofStr)
 	} else {
 		// Use NTLMv1
@@ -167,8 +189,11 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 		return nil, err
 	}
 
-	// Prepare session key (empty for now)
-	msg.EncryptedRandomSessionKey = []byte{}
+	// The NTLMv2 path sets EncryptedRandomSessionKey via key exchange above; only
+	// default it to empty when it was not produced (e.g. the NTLMv1 path).
+	if msg.EncryptedRandomSessionKey == nil {
+		msg.EncryptedRandomSessionKey = []byte{}
+	}
 
 	// Set version if needed
 	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_VERSION) != 0 {
@@ -179,29 +204,59 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	return &msg, nil
 }
 
+// ComputeMIC computes the AUTHENTICATE_MESSAGE message integrity code and stores
+// it in the MIC field (MS-NLMP 3.1.5.1.2). The MIC is
+// HMAC_MD5(ExportedSessionKey, NEGOTIATE_MESSAGE || CHALLENGE_MESSAGE ||
+// AUTHENTICATE_MESSAGE), where the AUTHENTICATE_MESSAGE is serialized with a
+// zeroed MIC field. When no key exchange is negotiated, the exported session key
+// equals the SessionBaseKey retained in msg.SessionKey.
+//
+// It must be called after the message is fully populated and only when NeedsMIC
+// is set (the server's challenge carried an MsvAvTimestamp).
+func (msg *AuthenticateMessage) ComputeMIC(negotiateMessage, challengeMessage []byte) error {
+	if len(msg.SessionKey) == 0 {
+		return fmt.Errorf("cannot compute NTLM MIC: no session key derived")
+	}
+
+	// Serialize with a zeroed MIC field so the hash covers a zero placeholder.
+	msg.MIC = [16]byte{}
+	authenticateMessage, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	mac := hmac.New(md5.New, msg.SessionKey)
+	mac.Write(negotiateMessage)
+	mac.Write(challengeMessage)
+	mac.Write(authenticateMessage)
+	sum := mac.Sum(nil)
+	copy(msg.MIC[:], sum[:16])
+
+	return nil
+}
+
 // Marshal serializes the AuthenticateMessage into a byte slice
 func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
-	// A 32-bit unsigned integer that defines the offset, in bytes, from
-	// the beginning of the AUTHENTICATE_MESSAGE to the entry in Payload
-	// Starting at x for length of data section
-	offset := 88
+	// Offset, in bytes, from the start of the AUTHENTICATE_MESSAGE to the payload.
+	// After the 64-byte fixed header, the optional Version (8 bytes) is present only
+	// when NTLMSSP_NEGOTIATE_VERSION is set, and the optional MIC (16 bytes) only
+	// when a MIC is in use. The Windows client omits both when not in use; emitting
+	// spurious zero-filled Version/MIC fields is rejected by Windows Server 2016.
+	hasVersion := msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_VERSION)
+	offset := 64
+	if hasVersion {
+		offset += 8
+	}
+	if msg.NeedsMIC {
+		offset += 16
+	}
 
-	// Write payload data first to compute offsets
+	// Write payload data first to compute offsets. The payload is laid out in the
+	// canonical Windows-client order — DomainName, UserName, Workstation,
+	// LmChallengeResponse, NtChallengeResponse, EncryptedRandomSessionKey — which
+	// Windows Server 2016 expects (it rejects an out-of-order payload with
+	// STATUS_INVALID_PARAMETER even though the field offsets are self-describing).
 	payload := []byte{}
-
-	// LM response
-	msg.LmChallengeResponseFields.Len = uint16(len(msg.LmChallengeResponse))
-	msg.LmChallengeResponseFields.MaxLen = uint16(len(msg.LmChallengeResponse))
-	msg.LmChallengeResponseFields.BufferOffset = uint32(offset)
-	offset += len(msg.LmChallengeResponse)
-	payload = append(payload, msg.LmChallengeResponse...)
-
-	// NT response
-	msg.NtChallengeResponseFields.Len = uint16(len(msg.NtChallengeResponse))
-	msg.NtChallengeResponseFields.MaxLen = uint16(len(msg.NtChallengeResponse))
-	msg.NtChallengeResponseFields.BufferOffset = uint32(offset)
-	offset += len(msg.NtChallengeResponse)
-	payload = append(payload, msg.NtChallengeResponse...)
 
 	// Domain name
 	msg.DomainNameFields.Len = uint16(len(msg.DomainName))
@@ -223,6 +278,20 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 	msg.WorkstationFields.BufferOffset = uint32(offset)
 	offset += len(msg.Workstation)
 	payload = append(payload, msg.Workstation...)
+
+	// LM response
+	msg.LmChallengeResponseFields.Len = uint16(len(msg.LmChallengeResponse))
+	msg.LmChallengeResponseFields.MaxLen = uint16(len(msg.LmChallengeResponse))
+	msg.LmChallengeResponseFields.BufferOffset = uint32(offset)
+	offset += len(msg.LmChallengeResponse)
+	payload = append(payload, msg.LmChallengeResponse...)
+
+	// NT response
+	msg.NtChallengeResponseFields.Len = uint16(len(msg.NtChallengeResponse))
+	msg.NtChallengeResponseFields.MaxLen = uint16(len(msg.NtChallengeResponse))
+	msg.NtChallengeResponseFields.BufferOffset = uint32(offset)
+	offset += len(msg.NtChallengeResponse)
+	payload = append(payload, msg.NtChallengeResponse...)
 
 	// Encrypted random session key
 	msg.EncryptedRandomSessionKeyFields.Len = uint16(len(msg.EncryptedRandomSessionKey))
@@ -290,20 +359,22 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf, uint32(msg.NegotiateFlags))
 	marshalledData = append(marshalledData, buf...)
 
-	// Write version if needed
-	if msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_VERSION) {
+	// Write the Version field only when NTLMSSP_NEGOTIATE_VERSION is set; otherwise
+	// it is omitted entirely (not zero-filled).
+	if hasVersion {
 		byteStream, err := msg.Version.Marshal()
 		if err != nil {
 			return nil, err
 		}
 		marshalledData = append(marshalledData, byteStream...)
-	} else {
-		// Write 8 bytes of zeros
-		marshalledData = append(marshalledData, make([]byte, 8)...)
 	}
 
-	// Write MIC (all zeros for now)
-	marshalledData = append(marshalledData, make([]byte, 16)...)
+	// Write the 16-byte MIC field only when a MIC is in use. When NeedsMIC is set,
+	// the field is zero while ComputeMIC marshals the message to hash it, then holds
+	// the computed MIC.
+	if msg.NeedsMIC {
+		marshalledData = append(marshalledData, msg.MIC[:]...)
+	}
 
 	// Write payload
 	marshalledData = append(marshalledData, payload...)

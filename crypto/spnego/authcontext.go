@@ -25,6 +25,10 @@ type AuthContext struct {
 	// NTLM specific fields
 	NTLMChallenge *challenge.ChallengeMessage
 
+	// NegotiateMessageBytes retains the raw NTLM NEGOTIATE_MESSAGE that was sent,
+	// so the AUTHENTICATE MIC can be computed over NEGOTIATE||CHALLENGE||AUTHENTICATE.
+	NegotiateMessageBytes []byte
+
 	// SessionKey is the session key derived during the most recent successful
 	// CreateAuthenticateTokenFromChallengeToken call. It is not transmitted on the
 	// wire; callers use it as the MAC key for SMB message signing. It is nil until

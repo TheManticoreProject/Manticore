@@ -39,6 +39,9 @@ func (ctx *AuthContext) processNegotiateInnerTokenNTLM(negotiateFlags flags.Nego
 		return nil, fmt.Errorf("failed to marshal NTLM NEGOTIATE message: %v", err)
 	}
 
+	// Retain the raw NEGOTIATE message for the AUTHENTICATE MIC computation.
+	ctx.NegotiateMessageBytes = ntlmNegotiateBytes
+
 	// Wrap in SPNEGO
 	return CreateNegTokenInit(ntlmNegotiateBytes)
 }

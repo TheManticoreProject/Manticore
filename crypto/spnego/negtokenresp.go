@@ -59,6 +59,11 @@ type NegTokenResp struct {
 	SupportedMech asn1.ObjectIdentifier `asn1:"optional,tag:1"`
 	ResponseToken []byte                `asn1:"optional,tag:2,octet"`
 	MechListMIC   []byte                `asn1:"optional,tag:3,octet"`
+
+	// SuppressNegState omits the [0] negState field on Marshal. A client's
+	// continuation token (the AUTHENTICATE) carries only the responseToken — no
+	// negState and no supportedMech — matching the Windows client.
+	SuppressNegState bool `asn1:"-"`
 }
 
 // NewNegTokenResp creates a new NegTokenResp
@@ -100,7 +105,7 @@ func (n *NegTokenResp) Marshal() ([]byte, error) {
 	var seq []asn1.RawValue
 
 	// [0] EXPLICIT ENUMERATED
-	{
+	if !n.SuppressNegState {
 		enumBytes, err := asn1.Marshal(asn1.Enumerated(n.NegState))
 		if err != nil {
 			return nil, fmt.Errorf("marshal negState: %v", err)
