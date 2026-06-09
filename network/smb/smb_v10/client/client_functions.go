@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/transport"
+	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
