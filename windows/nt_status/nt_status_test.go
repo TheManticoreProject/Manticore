@@ -71,9 +71,11 @@ func TestNTStatusError(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name:          "Unknown status",
+			// An unmapped, non-success status is still a failure and must report
+			// a non-nil error so callers do not mistake it for success.
+			name:          "Unknown non-success status",
 			status:        nt_status.NT_STATUS(0xFFFFFFFF),
-			expectedError: false,
+			expectedError: true,
 		},
 	}
 
