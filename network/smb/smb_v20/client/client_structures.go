@@ -2,6 +2,7 @@ package client
 
 import (
 	"net"
+	"sync"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
@@ -27,6 +28,37 @@ type Client struct {
 
 	// Workstation is the client workstation name used during NTLM authentication.
 	Workstation string
+
+	// asyncMu guards the identifiers of the request currently awaiting an async
+	// (STATUS_PENDING) completion, which Cancel reads to target a pending
+	// operation (for example a blocked CHANGE_NOTIFY). Only one operation is
+	// outstanding at a time on this synchronous client.
+	asyncMu          sync.Mutex
+	pendingMessageId uint64
+	pendingAsyncId   uint64
+	hasPendingAsync  bool
+}
+
+// setPendingAsync records the in-flight async operation so a concurrent Cancel
+// can target it.
+func (c *Client) setPendingAsync(messageId, asyncId uint64) {
+	c.asyncMu.Lock()
+	c.pendingMessageId, c.pendingAsyncId, c.hasPendingAsync = messageId, asyncId, true
+	c.asyncMu.Unlock()
+}
+
+// clearPendingAsync forgets any recorded in-flight async operation.
+func (c *Client) clearPendingAsync() {
+	c.asyncMu.Lock()
+	c.hasPendingAsync = false
+	c.asyncMu.Unlock()
+}
+
+// pendingAsync returns the recorded in-flight async operation's identifiers.
+func (c *Client) pendingAsync() (messageId, asyncId uint64, ok bool) {
+	c.asyncMu.Lock()
+	defer c.asyncMu.Unlock()
+	return c.pendingMessageId, c.pendingAsyncId, c.hasPendingAsync
 }
 
 // Connection represents an established SMB2 connection between client and server.
