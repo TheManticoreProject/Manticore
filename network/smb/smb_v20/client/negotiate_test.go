@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"net"
 	"testing"
 	"time"
@@ -32,6 +33,16 @@ func (f *fakeTransport) Send(data []byte) (int, error) {
 func (f *fakeTransport) Receive() ([]byte, error) {
 	resp := f.responses[0]
 	f.responses = f.responses[1:]
+	// Mirror a real server: stamp the most recently sent request's MessageId
+	// onto a response that left the field unset (0), so the engine's
+	// request/response matching is satisfied without every test plumbing a
+	// MessageId through cannedResponse. A response with an explicit MessageId
+	// (e.g. an unsolicited 0xFFFFFFFFFFFFFFFF notification) is left untouched.
+	if n := len(f.sent); n > 0 && len(resp) >= 32 {
+		if sent := f.sent[n-1]; len(sent) >= 32 && binary.LittleEndian.Uint64(resp[24:32]) == 0 {
+			copy(resp[24:32], sent[24:32])
+		}
+	}
 	return resp, nil
 }
 
