@@ -10,6 +10,15 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
+// Default NativeOS / NativeLanMan strings sent in SESSION_SETUP_ANDX when the caller
+// leaves Client.NativeOS / Client.NativeLanMan empty. They must be non-empty: strict
+// servers (e.g. Windows Server 2016) reject a session setup with empty values. The
+// exact strings are informational only.
+const (
+	DefaultNativeOS     = "Unix"
+	DefaultNativeLanMan = "Samba"
+)
+
 // Client represents an SMB v1.0 client
 type Client struct {
 	// Transport is the transport layer for the client
