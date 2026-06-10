@@ -3,6 +3,7 @@ package client_test
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
@@ -22,6 +23,7 @@ func (m *cannedTransport) Close() error                          { return nil }
 func (m *cannedTransport) Send(data []byte) (int, error)         { return len(data), nil }
 func (m *cannedTransport) Receive() ([]byte, error)              { return m.response, nil }
 func (m *cannedTransport) IsConnected() bool                     { return true }
+func (m *cannedTransport) SetTimeout(time.Duration)              {}
 
 // TestNegotiateRejectsErrorStatus verifies that Negotiate returns an error when
 // the server's NEGOTIATE response carries a non-zero Header.Status, rather than

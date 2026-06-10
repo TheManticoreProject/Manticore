@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
@@ -27,6 +28,7 @@ func (m *capturingTransport) Send(data []byte) (int, error) {
 }
 func (m *capturingTransport) Receive() ([]byte, error) { return m.response, nil }
 func (m *capturingTransport) IsConnected() bool        { return true }
+func (m *capturingTransport) SetTimeout(time.Duration) {}
 
 func newSessionClient(tr *capturingTransport) *client.Client {
 	c := &client.Client{

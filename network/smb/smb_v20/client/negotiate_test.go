@@ -3,6 +3,7 @@ package client
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
@@ -23,6 +24,7 @@ type fakeTransport struct {
 func (f *fakeTransport) Connect(net.IP, int) error { f.connected = true; return nil }
 func (f *fakeTransport) Close() error              { f.connected = false; return nil }
 func (f *fakeTransport) IsConnected() bool         { return f.connected }
+func (f *fakeTransport) SetTimeout(time.Duration)  {}
 func (f *fakeTransport) Send(data []byte) (int, error) {
 	f.sent = append(f.sent, append([]byte{}, data...))
 	return len(data), nil
