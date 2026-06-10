@@ -75,6 +75,16 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 			return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
 		}
 
+		// Skip server-initiated messages that can interleave with a synchronous
+		// exchange — most notably an OPLOCK_BREAK notification, which the server
+		// may send at any time once an oplock is granted and which carries the
+		// reserved MessageId 0xFFFFFFFFFFFFFFFF. Such a message is not the
+		// response to this request; consuming it as one would desynchronize the
+		// request/response stream. Keep reading for the real response.
+		if uint64(response.Header.MessageId) == unsolicitedMessageId {
+			continue
+		}
+
 		// Verify the signature when signing is active and the server signed the
 		// response (interim and final responses are both signed).
 		if c.Session != nil && c.Session.SigningActive && response.Header.Flags.IsSigned() {
@@ -87,6 +97,13 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 			c.Connection.Credits = response.Header.Credit
 		}
 
+		// A response must carry the MessageId of the request it answers; an
+		// interim STATUS_PENDING response and the final response both echo it.
+		// A mismatch means the stream is desynchronized.
+		if response.Header.MessageId != msg.Header.MessageId {
+			return nil, fmt.Errorf("%s response MessageId %d does not match request MessageId %d", label, uint64(response.Header.MessageId), uint64(msg.Header.MessageId))
+		}
+
 		if response.Header.Status != ntStatusPending {
 			break
 		}
@@ -96,6 +113,13 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		c.setPendingAsync(msg.Header.MessageId, uint64(response.Header.GetAsyncId()))
 	}
 	c.clearPendingAsync()
+
+	// The response command code must match the request's; otherwise the server
+	// answered with a different command than was asked, indicating a corrupt or
+	// desynchronized exchange.
+	if response.Header.Command != msg.Header.Command {
+		return nil, fmt.Errorf("%s response command 0x%04x does not match request command 0x%04x", label, uint16(response.Header.Command), uint16(msg.Header.Command))
+	}
 
 	// Decode the command body only for statuses that carry a real command response:
 	// success, the session-setup continuation status, and STATUS_BUFFER_OVERFLOW (a
@@ -111,6 +135,11 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 
 	return response, nil
 }
+
+// unsolicitedMessageId is the reserved MessageId (0xFFFFFFFFFFFFFFFF) the server
+// stamps on messages not sent in reply to a client request, such as an
+// OPLOCK_BREAK notification (MS-SMB2 2.2.1.2).
+const unsolicitedMessageId = 0xFFFFFFFFFFFFFFFF
 
 // statusFromResponse returns the NT status code carried in a response header.
 func statusFromResponse(response *message.Message) uint32 {
