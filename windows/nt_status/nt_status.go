@@ -7232,5 +7232,8 @@ func (s NT_STATUS) Error() error {
 		return fmt.Errorf("NT_STATUS(0x%08x): %s", uint32(s), str)
 	}
 
-	return nil
+	// Any non-success status that is not in the map is still a failure; report a
+	// generic error rather than nil so callers checking Error() != nil do not
+	// treat an unmapped code as success.
+	return fmt.Errorf("NT_STATUS(0x%08x)", uint32(s))
 }
