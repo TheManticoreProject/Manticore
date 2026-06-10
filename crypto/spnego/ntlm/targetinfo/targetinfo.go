@@ -106,6 +106,12 @@ func BuildBlobTargetInfo(targetInfo []byte) []byte {
 			return result
 		}
 
+		// avLen is server-controlled; ensure the declared value bytes are present
+		// before slicing, so a length running past the buffer cannot panic. A
+		// malformed (truncated) tail stops processing rather than crashing.
+		if i+4+int(avLen) > len(targetInfo) {
+			break
+		}
 		result = append(result, targetInfo[i:i+4+int(avLen)]...)
 		i += 4 + int(avLen)
 	}
