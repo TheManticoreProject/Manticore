@@ -3,27 +3,26 @@ package client
 import (
 	"encoding/binary"
 	"testing"
-	"unicode/utf16"
 
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem"
 )
 
-// bothDirEntry builds a single FILE_BOTH_DIR_INFORMATION entry with a UTF-16LE
-// name. next is written to NextEntryOffset verbatim.
+// bothDirEntry builds a single FILE_BOTH_DIR_INFORMATION entry via the typed
+// windows/filesystem marshaller. next is written to NextEntryOffset verbatim.
 func bothDirEntry(name string, attrs uint32, size uint64, next uint32) []byte {
-	u16 := utf16.Encode([]rune(name))
-	nameBytes := make([]byte, len(u16)*2)
-	for i, u := range u16 {
-		binary.LittleEndian.PutUint16(nameBytes[i*2:], u)
+	e := &filesystem.FileBothDirectoryInformation{
+		NextEntryOffset: next,
+		EndOfFile:       int64(size),
+		AllocationSize:  int64(size),
+		FileAttributes:  attrs,
+		FileName:        name,
 	}
-	e := make([]byte, bothDirInfoFixedSize+len(nameBytes))
-	binary.LittleEndian.PutUint32(e[0:4], next)
-	binary.LittleEndian.PutUint64(e[40:48], size)                   // EndOfFile
-	binary.LittleEndian.PutUint64(e[48:56], size)                   // AllocationSize
-	binary.LittleEndian.PutUint32(e[56:60], attrs)                  // FileAttributes
-	binary.LittleEndian.PutUint32(e[60:64], uint32(len(nameBytes))) // FileNameLength
-	copy(e[bothDirInfoFixedSize:], nameBytes)
-	return e
+	b, err := e.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 func TestParseBothDirectoryInfo(t *testing.T) {
@@ -33,13 +32,9 @@ func TestParseBothDirectoryInfo(t *testing.T) {
 	dir := bothDirEntry("subdir", fileflags.FILE_ATTRIBUTE_DIRECTORY, 0, 0)
 
 	// Chain: NextEntryOffset of each non-last entry is that entry's length.
-	dot[0] = byte(len(dot))
-	off := len(dot)
+	binary.LittleEndian.PutUint32(dot[0:4], uint32(len(dot)))
 	binary.LittleEndian.PutUint32(dotdot[0:4], uint32(len(dotdot)))
-	off += len(dotdot)
 	binary.LittleEndian.PutUint32(file[0:4], uint32(len(file)))
-	off += len(file)
-	_ = off
 
 	var buf []byte
 	buf = append(buf, dot...)
