@@ -110,9 +110,40 @@ func (b *smb1Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return out, nil
 }
 
+func (b *smb1Backend) DeleteFile(path string) error { return b.engine.DeleteFile(smb1WirePath(path)) }
+
+func (b *smb1Backend) CreateDirectory(path string) error {
+	return b.engine.CreateDirectory(smb1WirePath(path))
+}
+
+func (b *smb1Backend) DeleteDirectory(path string) error {
+	return b.engine.DeleteDirectory(smb1WirePath(path))
+}
+
+func (b *smb1Backend) RenameFile(oldPath, newPath string) error {
+	return b.engine.RenameFile(smb1WirePath(oldPath), smb1WirePath(newPath))
+}
+
+func (b *smb1Backend) CheckDirectory(path string) error {
+	return b.engine.CheckDirectory(smb1WirePath(path))
+}
+
 func (b *smb1Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }
 func (b *smb1Backend) Logoff() error         { return b.engine.Logoff() }
 func (b *smb1Backend) Disconnect() error     { return b.engine.Disconnect() }
+
+// smb1WirePath converts a generic share-relative path (no leading backslash; ""
+// for the root) into the leading-backslash form the SMB1 file-management commands
+// expect. Unlike the engine's OpenFile, those commands do not prepend it.
+func smb1WirePath(path string) string {
+	if path == "" {
+		return "\\"
+	}
+	if path[0] != '\\' {
+		return "\\" + path
+	}
+	return path
+}
 
 // fid unboxes an opaque FileHandle back into the SMB1 FID that produced it,
 // guarding against a handle from another backend.
