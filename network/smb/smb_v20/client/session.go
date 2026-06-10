@@ -28,6 +28,15 @@ const ntStatusBufferOverflow = 0x80000005
 // follows once the operation completes.
 const ntStatusPending = 0x00000103
 
+// ntStatusCancelled (STATUS_CANCELLED) is the final status of a request that was
+// cancelled via SMB2 CANCEL (e.g. a blocked CHANGE_NOTIFY).
+const ntStatusCancelled = 0xC0000120
+
+// ntStatusNotifyEnumDir (STATUS_NOTIFY_ENUM_DIR) is returned from CHANGE_NOTIFY
+// when too many changes occurred to report individually; the client should
+// re-enumerate the directory. The output buffer is empty.
+const ntStatusNotifyEnumDir = 0x0000010C
+
 // SessionSetup authenticates a session with the server using NTLM over SPNEGO,
 // the SMB2 analog of the SMB 1.0 extended-security session setup. It performs the
 // two-leg NEGOTIATE -> CHALLENGE -> AUTHENTICATE exchange, capturing the

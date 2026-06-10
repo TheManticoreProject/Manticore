@@ -90,7 +90,12 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		if response.Header.Status != ntStatusPending {
 			break
 		}
+		// Record this interim async operation so a concurrent Cancel can target it
+		// (e.g. to interrupt a blocked CHANGE_NOTIFY), then wait for the final
+		// response.
+		c.setPendingAsync(msg.Header.MessageId, uint64(response.Header.GetAsyncId()))
 	}
+	c.clearPendingAsync()
 
 	// Decode the command body only for statuses that carry a real command response:
 	// success, the session-setup continuation status, and STATUS_BUFFER_OVERFLOW (a
