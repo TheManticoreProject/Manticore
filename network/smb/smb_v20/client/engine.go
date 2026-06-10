@@ -7,7 +7,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 )
 
-
 // newRequest builds an SMB2 request message with the header fields common to
 // every command: the next 64-bit MessageId on the connection, a one-credit
 // request (CreditCharge is 0 in the SMB 2.0.2 dialect), and — when a session is
@@ -55,43 +54,54 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
 
-	raw, err := c.Transport.Receive()
-	if err != nil {
-		return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
-	}
-
-	// Parse the header first to read the status. An SMB2 error response carries a
-	// fixed 9-byte SMB2 ERROR Response body (MS-SMB2 2.2.2), not the command-specific
-	// response, so the command body is decoded only for statuses that carry a real
-	// command response: success, the session-setup continuation status, and
-	// STATUS_BUFFER_OVERFLOW (a warning the server returns from READ / IOCTL pipe
-	// transceive together with the partial data).
+	// Receive the response. The server may first return one or more interim
+	// STATUS_PENDING responses (SMB2_FLAGS_ASYNC_COMMAND) for an operation it
+	// cannot complete immediately (a blocking lock, CHANGE_NOTIFY, a long IOCTL);
+	// each is verified and credited like any other response, then we keep reading
+	// until the final response arrives.
+	var raw []byte
 	response := message.NewMessage()
-	if _, err = response.Header.Unmarshal(raw); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
-	}
-	if !response.Header.HasValidProtocolId() {
-		return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
+	for {
+		raw, err = c.Transport.Receive()
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
+		}
+
+		response = message.NewMessage()
+		if _, err = response.Header.Unmarshal(raw); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
+		}
+		if !response.Header.HasValidProtocolId() {
+			return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
+		}
+
+		// Verify the signature when signing is active and the server signed the
+		// response (interim and final responses are both signed).
+		if c.Session != nil && c.Session.SigningActive && response.Header.Flags.IsSigned() {
+			if !verifySignature(c.Session.SigningKey, raw) {
+				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
+			}
+		}
+		// The server replenishes credits via the response Credit field.
+		if response.Header.Credit > 0 {
+			c.Connection.Credits = response.Header.Credit
+		}
+
+		if response.Header.Status != ntStatusPending {
+			break
+		}
 	}
 
+	// Decode the command body only for statuses that carry a real command response:
+	// success, the session-setup continuation status, and STATUS_BUFFER_OVERFLOW (a
+	// warning returned from READ / IOCTL pipe transceive with the partial data). An
+	// SMB2 error response carries a fixed 9-byte SMB2 ERROR Response body
+	// (MS-SMB2 2.2.2), not the command-specific response.
 	status := response.Header.Status
 	if status == 0x00000000 || status == ntStatusMoreProcessingRequired || status == ntStatusBufferOverflow {
 		if _, err = response.Unmarshal(raw); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %s response: %w", label, err)
 		}
-	}
-
-	// Verify the response signature when signing is active and the server signed
-	// the response.
-	if c.Session != nil && c.Session.SigningActive && response.Header.Flags.IsSigned() {
-		if !verifySignature(c.Session.SigningKey, raw) {
-			return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
-		}
-	}
-
-	// The server replenishes credits via the response Credit field.
-	if response.Header.Credit > 0 {
-		c.Connection.Credits = response.Header.Credit
 	}
 
 	return response, nil

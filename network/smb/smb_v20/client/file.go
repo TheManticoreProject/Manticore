@@ -75,6 +75,41 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 		return nil, fmt.Errorf("no session established")
 	}
 
+	// A single READ is bounded by the negotiated MaxReadSize; satisfy a larger
+	// request by issuing successive reads until length bytes are read or the file
+	// ends. A request within MaxReadSize is a single read, as before.
+	maxRead := c.Connection.Server.MaxReadSize
+	if maxRead == 0 {
+		maxRead = 65536
+	}
+
+	out := make([]byte, 0, length)
+	remaining := length
+	pos := offset
+	for remaining > 0 {
+		chunk := remaining
+		if chunk > maxRead {
+			chunk = maxRead
+		}
+		data, eof, err := c.readChunk(fileId, pos, chunk)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, data...)
+		// Stop at end-of-file or a short read (the server returned less than was
+		// asked for, which for a pipe is one message and for a file is the tail).
+		if eof || len(data) == 0 || uint32(len(data)) < chunk {
+			break
+		}
+		pos += uint64(len(data))
+		remaining -= uint32(len(data))
+	}
+	return out, nil
+}
+
+// readChunk performs a single SMB2 READ of up to length bytes at offset. eof is
+// true when the server reports end-of-file (STATUS_END_OF_FILE).
+func (c *Client) readChunk(fileId types.SMB2_FILEID, offset uint64, length uint32) (data []byte, eof bool, err error) {
 	req := commands.NewReadRequest()
 	req.FileId = fileId
 	req.Offset = offset
@@ -83,20 +118,20 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 
 	response, err := c.sendReceive(c.newRequest(req), "Read")
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if status := statusFromResponse(response); status != 0x00000000 {
 		if status == ntStatusEndOfFile {
-			return []byte{}, nil
+			return nil, true, nil
 		}
-		return nil, fmt.Errorf("read failed: %s", formatNTStatus(status))
+		return nil, false, fmt.Errorf("read failed: %s", formatNTStatus(status))
 	}
 
 	readResponse, ok := response.Command.(*commands.ReadResponse)
 	if !ok {
-		return nil, fmt.Errorf("unexpected read response command: %T", response.Command)
+		return nil, false, fmt.Errorf("unexpected read response command: %T", response.Command)
 	}
-	return readResponse.Data, nil
+	return readResponse.Data, false, nil
 }
 
 // WriteFile writes data to the open at the given offset and returns the number of
@@ -106,6 +141,38 @@ func (c *Client) WriteFile(fileId types.SMB2_FILEID, offset uint64, data []byte)
 		return 0, fmt.Errorf("no session established")
 	}
 
+	// A single WRITE is bounded by the negotiated MaxWriteSize; split a larger
+	// payload across successive writes. A payload within MaxWriteSize is a single
+	// write, as before.
+	maxWrite := c.Connection.Server.MaxWriteSize
+	if maxWrite == 0 {
+		maxWrite = 65536
+	}
+
+	var total uint32
+	pos := offset
+	for len(data) > 0 {
+		n := uint32(len(data))
+		if n > maxWrite {
+			n = maxWrite
+		}
+		written, err := c.writeChunk(fileId, pos, data[:n])
+		if err != nil {
+			return total, err
+		}
+		total += written
+		pos += uint64(written)
+		data = data[written:]
+		if written == 0 {
+			break
+		}
+	}
+	return total, nil
+}
+
+// writeChunk performs a single SMB2 WRITE of data at offset and returns the
+// number of bytes the server accepted.
+func (c *Client) writeChunk(fileId types.SMB2_FILEID, offset uint64, data []byte) (uint32, error) {
 	req := commands.NewWriteRequest()
 	req.FileId = fileId
 	req.Offset = offset

@@ -22,6 +22,12 @@ const ntStatusMoreProcessingRequired = 0xC0000016
 // partial data that did fit, signalling that more remains to be read.
 const ntStatusBufferOverflow = 0x80000005
 
+// ntStatusPending (STATUS_PENDING) is the interim status the server returns
+// (with SMB2_FLAGS_ASYNC_COMMAND set) for a request it cannot complete
+// immediately — a blocking lock, CHANGE_NOTIFY, a long IOCTL. The final response
+// follows once the operation completes.
+const ntStatusPending = 0x00000103
+
 // SessionSetup authenticates a session with the server using NTLM over SPNEGO,
 // the SMB2 analog of the SMB 1.0 extended-security session setup. It performs the
 // two-leg NEGOTIATE -> CHALLENGE -> AUTHENTICATE exchange, capturing the
