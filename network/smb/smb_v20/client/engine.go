@@ -75,9 +75,14 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 			return nil, fmt.Errorf("%s response is not an SMB2 message (ProtocolId % x)", label, response.Header.ProtocolId)
 		}
 
-		// Verify the signature when signing is active and the server signed the
-		// response (interim and final responses are both signed).
-		if c.Session != nil && c.Session.SigningActive && response.Header.Flags.IsSigned() {
+		// Enforce signing when it is active for the session. Per MS-SMB2
+		// 3.2.5.1.3, the client MUST verify the signature of every received
+		// message, exempting only interim responses (STATUS_PENDING) and
+		// messages with MessageId 0xFFFFFFFFFFFFFFFF; verification is not
+		// conditional on the SMB2_FLAGS_SIGNED bit, so a response that simply
+		// arrives unsigned (zeroed signature) fails verification and is
+		// rejected rather than silently accepted.
+		if c.Session != nil && c.Session.SigningActive && signatureRequired(response) {
 			if !verifySignature(c.Session.SigningKey, raw) {
 				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
 			}
@@ -110,6 +115,25 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	}
 
 	return response, nil
+}
+
+// unsolicitedMessageId is the reserved MessageId (0xFFFFFFFFFFFFFFFF) the server
+// stamps on messages not sent in reply to a client request, such as an
+// OPLOCK_BREAK notification. Signature verification is not mandatory for these.
+const unsolicitedMessageId = 0xFFFFFFFFFFFFFFFF
+
+// signatureRequired reports whether a received message must carry a valid
+// signature when session signing is active, per MS-SMB2 3.2.5.1.3. Interim
+// responses (STATUS_PENDING) and messages with the reserved MessageId are
+// exempt; every other message must be verified.
+func signatureRequired(response *message.Message) bool {
+	if response.Header.Status == ntStatusPending {
+		return false
+	}
+	if uint64(response.Header.MessageId) == unsolicitedMessageId {
+		return false
+	}
+	return true
 }
 
 // statusFromResponse returns the NT status code carried in a response header.
