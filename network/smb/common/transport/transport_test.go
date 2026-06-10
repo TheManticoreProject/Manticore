@@ -3,6 +3,7 @@ package transport_test
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 )
@@ -49,6 +50,8 @@ func (m *MockTransport) Receive() ([]byte, error) {
 func (m *MockTransport) IsConnected() bool {
 	return m.connected
 }
+
+func (m *MockTransport) SetTimeout(time.Duration) {}
 
 func TestNewTransport(t *testing.T) {
 	tests := []struct {

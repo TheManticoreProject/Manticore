@@ -102,6 +102,10 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 	}
 
 	t := transport.NewTransport("tcp")
+	// Bound the connect/negotiate exchange so an unresponsive server fails the
+	// dial instead of blocking forever; finishSMB1/finishSMB2 lift the bound
+	// once the dialect is established.
+	t.SetTimeout(opts.dialTimeout())
 	if err := t.Connect(ip, port); err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 	}
@@ -198,6 +202,7 @@ func finishSMB1(t transport.Transport, ip net.IP, host string, port int, opts Op
 		t.Close()
 		return nil, err
 	}
+	t.SetTimeout(0) // negotiation is done; lift the per-attempt bound
 	return &Client{backend: newSMB1Backend(engine), host: host, port: port, opts: opts}, nil
 }
 
@@ -232,5 +237,6 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 		engine.Workstation = opts.Workstation
 	}
 	engine.ApplyNegotiateResponse(resp)
+	t.SetTimeout(0) // negotiation is done; lift the per-attempt bound
 	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
 }

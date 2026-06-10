@@ -35,6 +35,30 @@ type Options struct {
 	// Workstation is the NetBIOS workstation name sent during authentication.
 	// When empty, a default is used.
 	Workstation string
+	// DialTimeout bounds each connect/negotiate attempt during Dial, so that a
+	// server which silently drops a probe (e.g. an SMB1-only host receiving an
+	// SMB2 negotiate) fails the attempt instead of blocking forever, letting
+	// PolicyStrictOrder move on to the next preferred version. The bound is
+	// lifted once negotiation completes, so it does not constrain long-blocking
+	// operations such as CHANGE_NOTIFY. Zero applies DefaultDialTimeout; a
+	// negative value disables the bound.
+	DialTimeout time.Duration
+}
+
+// DefaultDialTimeout is the per-attempt connect/negotiate bound applied when
+// Options.DialTimeout is zero.
+const DefaultDialTimeout = 10 * time.Second
+
+// dialTimeout resolves the effective per-attempt bound from the options: zero
+// means DefaultDialTimeout, negative means unbounded.
+func (o Options) dialTimeout() time.Duration {
+	switch {
+	case o.DialTimeout < 0:
+		return 0
+	case o.DialTimeout == 0:
+		return DefaultDialTimeout
+	}
+	return o.DialTimeout
 }
 
 // FileHandle is an opaque, version-agnostic handle to an open file. The backend

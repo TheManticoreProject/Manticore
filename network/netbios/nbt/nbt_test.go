@@ -3,6 +3,7 @@ package nbt_test
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/netbios/nbt"
 )
@@ -62,4 +63,41 @@ func TestNBTTransport_Send(t *testing.T) {
 	}
 
 	tr.Close()
+}
+
+func TestNBTTransport_ReceiveTimesOutOnSilentServer(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start test server: %v", err)
+	}
+	defer ln.Close()
+
+	// Accept the connection but never write anything.
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		select {}
+	}()
+
+	addr := ln.Addr().(*net.TCPAddr)
+
+	tr := nbt.NewNBTTransport()
+	tr.SetTimeout(100 * time.Millisecond)
+	if err := tr.Connect(addr.IP, addr.Port); err != nil {
+		t.Fatalf("NBTTransport.Connect() error = %v", err)
+	}
+	defer tr.Close()
+
+	start := time.Now()
+	_, err = tr.Receive()
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("NBTTransport.Receive() should time out on a silent server, got nil error")
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("NBTTransport.Receive() took %v to fail, want a bounded timeout", elapsed)
+	}
 }

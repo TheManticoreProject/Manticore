@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/netbios"
 )
@@ -11,7 +12,8 @@ import (
 // NBTTransport implements the Transport interface for NetBIOS over TCP
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/45170055-a0cd-4910-9228-801d5bf7ac84
 type NBTTransport struct {
-	conn net.Conn
+	conn    net.Conn
+	timeout time.Duration
 }
 
 // NewNBTTransport creates a new NetBIOS over TCP transport
@@ -35,13 +37,23 @@ func (n *NBTTransport) Connect(ipaddr net.IP, port int) error {
 		address = fmt.Sprintf("[%s]:%d", ipaddr.String(), port)
 	}
 
-	conn, err := net.Dial("tcp", address)
+	conn, err := net.DialTimeout("tcp", address, n.timeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect via TCP: %v", err)
 	}
 	n.conn = conn
 
 	return nil
+}
+
+// SetTimeout bounds Connect and each subsequent Receive: Connect fails if the
+// TCP connection cannot be established within d, and Receive fails if a frame
+// does not arrive within d. A non-positive d removes the bound (blocking I/O).
+func (n *NBTTransport) SetTimeout(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	n.timeout = d
 }
 
 // Close terminates the NetBIOS over TCP connection
@@ -78,6 +90,15 @@ func (n *NBTTransport) Send(data []byte) (int, error) {
 func (n *NBTTransport) Receive() ([]byte, error) {
 	if !n.IsConnected() {
 		return nil, fmt.Errorf("not connected")
+	}
+
+	// Apply the configured read deadline (a zero deadline blocks forever)
+	var deadline time.Time
+	if n.timeout > 0 {
+		deadline = time.Now().Add(n.timeout)
+	}
+	if err := n.conn.SetReadDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %v", err)
 	}
 
 	// Read NetBIOS header

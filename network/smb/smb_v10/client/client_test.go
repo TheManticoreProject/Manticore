@@ -3,6 +3,7 @@ package client_test
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
@@ -21,6 +22,7 @@ func (m *connectedMockTransport) Close() error                          { return
 func (m *connectedMockTransport) Send(data []byte) (int, error)         { return len(data), nil }
 func (m *connectedMockTransport) Receive() ([]byte, error)              { return nil, nil }
 func (m *connectedMockTransport) IsConnected() bool                     { return true }
+func (m *connectedMockTransport) SetTimeout(time.Duration)              {}
 
 // scriptedTransport reports itself as connected, returns a preset payload from
 // Receive, and counts how many times Send is called so a test can assert how
@@ -35,6 +37,7 @@ func (m *scriptedTransport) Close() error                          { return nil 
 func (m *scriptedTransport) Send(data []byte) (int, error)         { m.sendCount++; return len(data), nil }
 func (m *scriptedTransport) Receive() ([]byte, error)              { return m.response, nil }
 func (m *scriptedTransport) IsConnected() bool                     { return true }
+func (m *scriptedTransport) SetTimeout(time.Duration)              {}
 
 // TestSessionSetupShareLevelCompletesInOneRoundTrip verifies that, when the
 // server uses share-level access control, SessionSetup completes after the
