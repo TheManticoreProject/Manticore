@@ -246,16 +246,6 @@ func (msg *NegotiateMessage) Unmarshal(data []byte) (int, error) {
 
 	// Read payload section
 
-	fmt.Printf("len(data): %d\n", len(data))
-
-	fmt.Printf("msg.DomainNameFields.BufferOffset: %d\n", msg.DomainNameFields.BufferOffset)
-	fmt.Printf("msg.DomainNameFields.Len: %d\n", msg.DomainNameFields.Len)
-	fmt.Printf("DomainName = data [%d:%d]\n", msg.DomainNameFields.BufferOffset, msg.DomainNameFields.BufferOffset+uint32(msg.DomainNameFields.Len))
-
-	fmt.Printf("msg.WorkstationFields.BufferOffset: %d\n", msg.WorkstationFields.BufferOffset)
-	fmt.Printf("msg.WorkstationFields.Len: %d\n", msg.WorkstationFields.Len)
-	fmt.Printf("Workstation = data [%d:%d]\n", msg.WorkstationFields.BufferOffset, msg.WorkstationFields.BufferOffset+uint32(msg.WorkstationFields.Len))
-
 	// Domain name
 	if msg.DomainNameFields.Len != 0 {
 		if msg.DomainNameFields.BufferOffset+uint32(msg.DomainNameFields.Len) > uint32(len(data)) {
