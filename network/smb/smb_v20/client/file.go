@@ -13,17 +13,34 @@ import (
 const ntStatusEndOfFile = 0xC0000011
 
 // CreateFile opens or creates a file (or pipe) on the currently connected tree
-// and returns the server-assigned FileId.
+// and returns the server-assigned FileId. It requests no oplock.
 //
 // The path is relative to the share root; a leading backslash is stripped (an
 // SMB2 CREATE name is share-relative). Wire: SMB2 CREATE.
 func (c *Client) CreateFile(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32) (types.SMB2_FILEID, error) {
+	fileId, _, err := c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, commands.SMB2_OPLOCK_LEVEL_NONE)
+	return fileId, err
+}
+
+// CreateFileWithOplock opens or creates a file like CreateFile but also requests
+// an oplock (one of commands.SMB2_OPLOCK_LEVEL_*) and returns the oplock level the
+// server granted. When the server later needs to break that oplock — because
+// another client opens the same file — it sends an OPLOCK_BREAK notification; the
+// caller observes it with WaitOplockBreak and replies with AcknowledgeOplockBreak.
+func (c *Client) CreateFileWithOplock(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32, requestedOplock uint8) (types.SMB2_FILEID, uint8, error) {
+	return c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, requestedOplock)
+}
+
+// createFile performs an SMB2 CREATE and returns the FileId and the granted oplock
+// level.
+func (c *Client) createFile(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32, requestedOplock uint8) (types.SMB2_FILEID, uint8, error) {
 	var fileId types.SMB2_FILEID
 	if c.Session == nil || c.Session.TreeId == 0 {
-		return fileId, fmt.Errorf("no tree connect established")
+		return fileId, 0, fmt.Errorf("no tree connect established")
 	}
 
 	req := commands.NewCreateRequest()
+	req.RequestedOplockLevel = types.UCHAR(requestedOplock)
 	req.DesiredAccess = desiredAccess
 	req.ShareAccess = shareAccess
 	req.CreateDisposition = createDisposition
@@ -36,17 +53,17 @@ func (c *Client) CreateFile(path string, desiredAccess, shareAccess, createDispo
 
 	response, err := c.sendReceive(c.newRequest(req), "Create")
 	if err != nil {
-		return fileId, err
+		return fileId, 0, err
 	}
 	if status := statusFromResponse(response); status != 0x00000000 {
-		return fileId, fmt.Errorf("create %q failed: %s", path, formatNTStatus(status))
+		return fileId, 0, fmt.Errorf("create %q failed: %s", path, formatNTStatus(status))
 	}
 
 	createResponse, ok := response.Command.(*commands.CreateResponse)
 	if !ok {
-		return fileId, fmt.Errorf("unexpected create response command: %T", response.Command)
+		return fileId, 0, fmt.Errorf("unexpected create response command: %T", response.Command)
 	}
-	return createResponse.FileId, nil
+	return createResponse.FileId, uint8(createResponse.OplockLevel), nil
 }
 
 // CloseFile closes an open identified by FileId. Wire: SMB2 CLOSE.
