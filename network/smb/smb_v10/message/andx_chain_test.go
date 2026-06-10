@@ -90,3 +90,49 @@ func TestUnmarshalNonAndXLeavesNoChain(t *testing.T) {
 		t.Errorf("expected no chained command, got %T", next)
 	}
 }
+
+// TestUnmarshalRejectsCyclicAndXChain verifies that a batched message whose two
+// AndX commands reference each other (A->B, B->A) is rejected with an error
+// rather than looping forever. Without a forward-progress guard, Unmarshal would
+// never terminate.
+func TestUnmarshalRejectsCyclicAndXChain(t *testing.T) {
+	// Build a SessionSetupAndxResponse message (header + command block A).
+	aMsg := message.NewMessage()
+	aMsg.Header.SetFlags(flags.FLAGS_REPLY)
+	aMsg.AddCommand(commands.NewSessionSetupAndxResponse())
+	aRaw, err := aMsg.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal SessionSetupAndxResponse: %v", err)
+	}
+
+	// A second SessionSetupAndxResponse command block (bytes after the header).
+	bMsg := message.NewMessage()
+	bMsg.Header.SetFlags(flags.FLAGS_REPLY)
+	bMsg.AddCommand(commands.NewSessionSetupAndxResponse())
+	bRaw, err := bMsg.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal second SessionSetupAndxResponse: %v", err)
+	}
+	bBlock := bRaw[header.SMB_HEADER_SIZE:]
+
+	full := append(append([]byte{}, aRaw...), bBlock...)
+	aOffset := header.SMB_HEADER_SIZE // command A's WordCount index
+	bOffset := len(aRaw)              // command B's WordCount index
+
+	// A's AndX block -> B.
+	aAndx := aOffset + 1
+	full[aAndx] = byte(codes.SMB_COM_SESSION_SETUP_ANDX)
+	full[aAndx+1] = 0x00
+	binary.LittleEndian.PutUint16(full[aAndx+2:aAndx+4], uint16(bOffset))
+
+	// B's AndX block -> A (the cycle).
+	bAndx := bOffset + 1
+	full[bAndx] = byte(codes.SMB_COM_SESSION_SETUP_ANDX)
+	full[bAndx+1] = 0x00
+	binary.LittleEndian.PutUint16(full[bAndx+2:bAndx+4], uint16(aOffset))
+
+	out := message.NewMessage()
+	if err := out.Unmarshal(full); err == nil {
+		t.Fatal("Unmarshal should reject a cyclic AndX chain, got nil error")
+	}
+}
