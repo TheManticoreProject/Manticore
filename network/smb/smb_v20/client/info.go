@@ -108,20 +108,29 @@ func (c *Client) QueryFsSizeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsSi
 
 // SetEndOfFile sets the logical size of an open file (truncate or extend).
 func (c *Client) SetEndOfFile(fileId types.SMB2_FILEID, size int64) error {
-	buf, _ := (&filesystem.FileEndOfFileInformation{EndOfFile: size}).Marshal()
+	buf, err := (&filesystem.FileEndOfFileInformation{EndOfFile: size}).Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal FILE_END_OF_FILE_INFORMATION: %w", err)
+	}
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileEndOfFileInformation), 0, buf)
 }
 
 // SetDeleteOnClose marks (or unmarks) an open file for deletion when its last
 // handle is closed.
 func (c *Client) SetDeleteOnClose(fileId types.SMB2_FILEID, deletePending bool) error {
-	buf, _ := (&filesystem.FileDispositionInformation{DeletePending: deletePending}).Marshal()
+	buf, err := (&filesystem.FileDispositionInformation{DeletePending: deletePending}).Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal FILE_DISPOSITION_INFORMATION: %w", err)
+	}
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileDispositionInformation), 0, buf)
 }
 
 // RenameByHandle renames the open file to newName (share-relative). The handle
 // must have been opened with DELETE access.
 func (c *Client) RenameByHandle(fileId types.SMB2_FILEID, newName string, replaceIfExists bool) error {
-	buf, _ := (&filesystem.FileRenameInformation{ReplaceIfExists: replaceIfExists, FileName: newName}).Marshal()
+	buf, err := (&filesystem.FileRenameInformation{ReplaceIfExists: replaceIfExists, FileName: newName}).Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal FILE_RENAME_INFORMATION: %w", err)
+	}
 	return c.SetInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileRenameInformation), 0, buf)
 }
