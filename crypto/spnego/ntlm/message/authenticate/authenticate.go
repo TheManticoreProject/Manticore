@@ -108,13 +108,21 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	// Determine if we should use Unicode
 	useUnicode := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_UNICODE) != 0
 
-	// Prepare domain, username, and workstation
+	// Prepare domain, username, and workstation.
+	//
+	// DomainName MUST be carried with its original case: it has to match, byte for
+	// byte, the domain folded into NTOWFv2 below (NTLMv2 uppercases only the username,
+	// never the domain — MS-NLMP 3.3.2). Uppercasing it here while NTOWFv2 used the
+	// caller's case made the server recompute a different NTProofStr and reject any
+	// mixed/lower-case domain (e.g. an FQDN like "host.example.local") with
+	// STATUS_LOGON_FAILURE; it only worked when the domain was already upper-case or
+	// empty.
 	if useUnicode {
-		msg.DomainName = utf16.EncodeUTF16LE(strings.ToUpper(domain))
+		msg.DomainName = utf16.EncodeUTF16LE(domain)
 		msg.UserName = utf16.EncodeUTF16LE(username)
 		msg.Workstation = utf16.EncodeUTF16LE(strings.ToUpper(workstation))
 	} else {
-		msg.DomainName = []byte(strings.ToUpper(domain))
+		msg.DomainName = []byte(domain)
 		msg.UserName = []byte(username)
 		msg.Workstation = []byte(strings.ToUpper(workstation))
 	}
