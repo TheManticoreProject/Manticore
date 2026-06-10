@@ -147,3 +147,36 @@ func TestAvPairUnmarshalTooShort(t *testing.T) {
 		})
 	}
 }
+
+// TestAvPairUnmarshalReturnsConsumedCount verifies that Unmarshal returns the
+// number of bytes consumed (4-byte header + AvLen value) and that AvData is
+// limited to exactly AvLen bytes when the buffer carries trailing data.
+func TestAvPairUnmarshalReturnsConsumedCount(t *testing.T) {
+	// AvId=MsvAvNbComputerName, AvLen=2, value {0xAA,0xBB}, plus 3 trailing bytes
+	// belonging to a following AV_PAIR.
+	data := []byte{0x01, 0x00, 0x02, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE}
+
+	av := avpair.AvPair{}
+	n, err := av.Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if n != 6 {
+		t.Errorf("Unmarshal consumed = %d bytes, want 6 (4 header + 2 value)", n)
+	}
+	if !bytes.Equal(av.AvData, []byte{0xAA, 0xBB}) {
+		t.Errorf("AvData = %v, want [0xAA 0xBB] (trailing bytes must be excluded)", av.AvData)
+	}
+}
+
+// TestAvPairUnmarshalRejectsTruncatedValue verifies that an AvLen extending past
+// the buffer is rejected rather than silently over-reading.
+func TestAvPairUnmarshalRejectsTruncatedValue(t *testing.T) {
+	// AvLen=0x10 (16) but only 2 value bytes are present.
+	data := []byte{0x01, 0x00, 0x10, 0x00, 0xAA, 0xBB}
+
+	av := avpair.AvPair{}
+	if _, err := av.Unmarshal(data); err == nil {
+		t.Fatal("Unmarshal should reject an AvLen that exceeds the buffer")
+	}
+}
