@@ -157,3 +157,25 @@ func TestMarshalUnmarshalNegTokenResp(t *testing.T) {
 		})
 	}
 }
+
+// TestUnmarshalRejectsEmptyNegStateEnum verifies that a NegTokenResp whose
+// negState ENUMERATED carries no content bytes is rejected with an error rather
+// than panicking on an out-of-range index.
+func TestUnmarshalRejectsEmptyNegStateEnum(t *testing.T) {
+	// SEQUENCE { [0] EXPLICIT { ENUMERATED (length 0) } }
+	//   30 04        SEQUENCE, length 4
+	//     a0 02      [0] context, length 2
+	//       0a 00    ENUMERATED, length 0 (no content)
+	malformed := []byte{0x30, 0x04, 0xA0, 0x02, 0x0A, 0x00}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("NegTokenResp.Unmarshal panicked on an empty negState ENUMERATED: %v", r)
+		}
+	}()
+
+	resp := &spnego.NegTokenResp{}
+	if _, err := resp.Unmarshal(malformed); err == nil {
+		t.Fatal("Unmarshal should reject an empty negState ENUMERATED, got nil error")
+	}
+}

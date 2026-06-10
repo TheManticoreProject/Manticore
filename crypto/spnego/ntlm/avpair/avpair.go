@@ -53,18 +53,20 @@ func (a *AvPair) Unmarshal(marshaledData []byte) (int, error) {
 		return 0, fmt.Errorf("data too short to unmarshal AV_PAIR, expected at least 4 bytes, got %d bytes", len(marshaledData))
 	}
 
-	buf := []byte{}
-
 	// AvId
 	a.AvID = AvId(binary.LittleEndian.Uint16(marshaledData[0:2]))
 
 	// AvLen
 	a.AvLen = binary.LittleEndian.Uint16(marshaledData[2:4])
 
-	// AvData
-	a.AvData = marshaledData[4:]
+	// AvData is exactly AvLen bytes following the 4-byte header.
+	if 4+int(a.AvLen) > len(marshaledData) {
+		return 0, fmt.Errorf("data too short to unmarshal AV_PAIR value, need %d bytes, got %d", 4+int(a.AvLen), len(marshaledData))
+	}
+	a.AvData = marshaledData[4 : 4+int(a.AvLen)]
 
-	return len(buf), nil
+	// Bytes consumed: the 4-byte header plus the value.
+	return 4 + int(a.AvLen), nil
 }
 
 // String returns a string representation of the AV_PAIR.

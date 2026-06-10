@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -25,6 +26,7 @@ func (m *recordingTransport) Send(data []byte) (int, error) {
 }
 func (m *recordingTransport) Receive() ([]byte, error) { return m.response, nil }
 func (m *recordingTransport) IsConnected() bool        { return true }
+func (m *recordingTransport) SetTimeout(time.Duration) {}
 
 func TestPlanTransaction2Chunks(t *testing.T) {
 	// Reassembling the chunk runs by displacement must reproduce the inputs, every

@@ -269,8 +269,12 @@ func (n *NTLMv1Ctx) ComputeNtChallengeResponse() ([24]byte, error) {
 //   - []byte: The 24-byte LM response
 //   - error: If key adjustment or encryption fails
 func (n *NTLMv1Ctx) ComputeLmChallengeResponse() ([24]byte, error) {
-	// Create the LM hash
-	lmHash := lm.LMHash(n.Password)
+	// Use the stored LM hash, which the constructors populate either from the
+	// password or directly from a caller-supplied hash (pass-the-hash). This
+	// mirrors ComputeNtChallengeResponse, which keys off n.NTHash; recomputing
+	// from n.Password here would discard a supplied hash, since the hash-based
+	// constructors leave Password empty.
+	lmHash := n.LMHash
 
 	// Split the LM hash into three 7-byte keys
 	key1 := lmHash[:7]

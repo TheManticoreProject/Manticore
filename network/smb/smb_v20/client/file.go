@@ -177,6 +177,12 @@ func (c *Client) WriteFile(fileId types.SMB2_FILEID, offset uint64, data []byte)
 		if err != nil {
 			return total, err
 		}
+		// The server-reported count is untrusted: a value larger than the chunk
+		// submitted would slice data out of range below. Clamp it to the bytes
+		// actually sent and reject the response as malformed.
+		if written > n {
+			return total, fmt.Errorf("write reported %d bytes written, more than the %d submitted", written, n)
+		}
 		total += written
 		pos += uint64(written)
 		data = data[written:]

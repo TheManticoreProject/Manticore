@@ -50,18 +50,27 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 }
 
 // dialSMB2 connects with the SMB2 engine and performs its native negotiate.
+// The connect/negotiate exchange runs under the per-attempt dial timeout so a
+// server that silently drops the probe fails the attempt instead of blocking;
+// the bound is lifted once the dialect is established.
 func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb2.NewClientUsingTCPTransport(ip, port)
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
+	engine.Transport.SetTimeout(opts.dialTimeout())
 	if err := engine.Connect(ip, port); err != nil {
+		engine.Transport.Close()
 		return nil, fmt.Errorf("SMB2 connect/negotiate failed: %w", err)
 	}
+	engine.Transport.SetTimeout(0)
 	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
 }
 
 // dialSMB1 connects with the SMB1 engine and performs its native negotiate.
+// The connect/negotiate exchange runs under the per-attempt dial timeout so a
+// server that silently drops the probe fails the attempt instead of blocking;
+// the bound is lifted once the dialect is established.
 func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb1.NewClientUsingTCPTransport(ip, port)
 	// The SMB1 session setup requires the NativeOS / NativeLanMan fields to be set.
@@ -70,9 +79,12 @@ func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
+	engine.Transport.SetTimeout(opts.dialTimeout())
 	if err := engine.Connect(ip, port); err != nil {
+		engine.Transport.Close()
 		return nil, fmt.Errorf("SMB1 connect/negotiate failed: %w", err)
 	}
+	engine.Transport.SetTimeout(0)
 	return &Client{backend: newSMB1Backend(engine), host: host, port: port, opts: opts}, nil
 }
 

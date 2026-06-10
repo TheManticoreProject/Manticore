@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"github.com/TheManticoreProject/Manticore/crypto/lm"
 )
 
 func Test_NTLMv1_FromPassword(t *testing.T) {
@@ -103,5 +105,36 @@ func Test_NTLMv1_ToHashcatString(t *testing.T) {
 				t.Errorf("HashcatString()\n\tgot  : %v\n\twant : %v", strings.ToUpper(hashcatString), strings.ToUpper(tc.expectedString))
 			}
 		})
+	}
+}
+
+// Test_NTLMv1_LmResponse_UsesSuppliedHash verifies that a context built from a
+// pre-computed LM hash (pass-the-hash) computes the LM challenge response from
+// that hash, matching a context built from the password whose LM hash is equal.
+func Test_NTLMv1_LmResponse_UsesSuppliedHash(t *testing.T) {
+	serverChallenge := [8]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88}
+	password := "Password123!"
+	lmHash := lm.LMHash(password)
+
+	fromPassword, err := NewNTLMv1CtxWithPassword("DOMAIN", "user", password, serverChallenge)
+	if err != nil {
+		t.Fatalf("NewNTLMv1CtxWithPassword: %v", err)
+	}
+	fromHash, err := NewNTLMv1CtxWithLMHash("DOMAIN", "user", lmHash, serverChallenge)
+	if err != nil {
+		t.Fatalf("NewNTLMv1CtxWithLMHash: %v", err)
+	}
+
+	wantResp, err := fromPassword.ComputeLmChallengeResponse()
+	if err != nil {
+		t.Fatalf("ComputeLmChallengeResponse (password): %v", err)
+	}
+	gotResp, err := fromHash.ComputeLmChallengeResponse()
+	if err != nil {
+		t.Fatalf("ComputeLmChallengeResponse (hash): %v", err)
+	}
+
+	if gotResp != wantResp {
+		t.Errorf("LM response from supplied hash = %x, want %x (it must not be derived from the empty password)", gotResp, wantResp)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
 // MaxDirectTCPPayloadSize caps the payload size accepted from a single Direct TCP frame.
@@ -15,7 +16,8 @@ const MaxDirectTCPPayloadSize = 1 * 1024 * 1024
 // TCPTransport implements the Transport interface for Direct TCP transport
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/f906c680-330c-43ae-9a71-f854e24aeee6
 type TCPTransport struct {
-	conn net.Conn
+	conn    net.Conn
+	timeout time.Duration
 }
 
 // NewTCPTransport creates a new Direct TCP transport
@@ -39,13 +41,23 @@ func (t *TCPTransport) Connect(ipaddr net.IP, port int) error {
 		address = fmt.Sprintf("[%s]:%d", ipaddr.String(), port)
 	}
 
-	conn, err := net.Dial("tcp", address)
+	conn, err := net.DialTimeout("tcp", address, t.timeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect via TCP: %v", err)
 	}
 	t.conn = conn
 
 	return nil
+}
+
+// SetTimeout bounds Connect and each subsequent Receive: Connect fails if the
+// TCP connection cannot be established within d, and Receive fails if a frame
+// does not arrive within d. A non-positive d removes the bound (blocking I/O).
+func (t *TCPTransport) SetTimeout(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	t.timeout = d
 }
 
 // Close terminates the Direct TCP connection
@@ -80,6 +92,15 @@ func (t *TCPTransport) Send(data []byte) (int, error) {
 func (t *TCPTransport) Receive() ([]byte, error) {
 	if !t.IsConnected() {
 		return nil, fmt.Errorf("not connected")
+	}
+
+	// Apply the configured read deadline (a zero deadline blocks forever)
+	var deadline time.Time
+	if t.timeout > 0 {
+		deadline = time.Now().Add(t.timeout)
+	}
+	if err := t.conn.SetReadDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %v", err)
 	}
 
 	// Read Direct TCP header (4 bytes)

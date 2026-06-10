@@ -86,3 +86,21 @@ func TestCreateFileRequiresTree(t *testing.T) {
 		t.Errorf("expected CreateFile without a tree connect to error")
 	}
 }
+
+// TestWriteFileRejectsOversizedCount verifies that a server reporting a write
+// count larger than the chunk submitted is rejected as malformed rather than
+// causing an out-of-range slice panic.
+func TestWriteFileRejectsOversizedCount(t *testing.T) {
+	writeResp := commands.NewWriteResponse()
+	writeResp.Count = 99 // far more than the 5 bytes submitted
+
+	ft := &fakeTransport{responses: [][]byte{
+		cannedResponse(t, writeResp, 0, 0x5, 0x99),
+	}}
+	c := withConnectedTree(ft)
+
+	_, err := c.WriteFile(types.SMB2_FILEID{}, 0, []byte("hello"))
+	if err == nil {
+		t.Fatal("WriteFile should reject a write count larger than the bytes submitted")
+	}
+}
