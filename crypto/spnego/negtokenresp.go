@@ -221,6 +221,9 @@ func (n *NegTokenResp) Unmarshal(data []byte) (int, error) {
 				if enumRaw.Tag != asn1.TagEnum {
 					return 0, fmt.Errorf("negState is not an ENUMERATED type")
 				}
+				if len(enumRaw.Bytes) == 0 {
+					return 0, fmt.Errorf("negState ENUMERATED has no content")
+				}
 				n.NegState = NegState(enumRaw.Bytes[0])
 			case 1:
 				// OBJECT IDENTIFIER inside EXPLICIT
