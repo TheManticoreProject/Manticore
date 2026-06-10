@@ -30,6 +30,7 @@ const (
 	FileAllocationInformation      FileInformationClass = 19
 	FileEndOfFileInformation       FileInformationClass = 20
 	FileAlternateNameInformation   FileInformationClass = 21
+	FileNetworkOpenInformation     FileInformationClass = 34
 	FileIdBothDirectoryInformation FileInformationClass = 37
 	FileIdFullDirectoryInformation FileInformationClass = 38
 )
