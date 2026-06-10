@@ -106,6 +106,91 @@ func (c *Client) QueryFsSizeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsSi
 	return fi, nil
 }
 
+// QueryFileAllInfo returns the FILE_ALL_INFORMATION (the aggregate basic,
+// standard, internal, EA, access, position, mode, alignment, and name data) of an
+// open file.
+func (c *Client) QueryFileAllInfo(fileId types.SMB2_FILEID) (*filesystem.FileAllInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileAllInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileAllInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFileNetworkOpenInfo returns the FILE_NETWORK_OPEN_INFORMATION (timestamps,
+// sizes, attributes) of an open file.
+func (c *Client) QueryFileNetworkOpenInfo(fileId types.SMB2_FILEID) (*filesystem.FileNetworkOpenInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileNetworkOpenInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileNetworkOpenInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFsVolumeInfo returns the FILE_FS_VOLUME_INFORMATION (creation time, serial
+// number, label) of the volume backing the open identified by fileId.
+func (c *Client) QueryFsVolumeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsVolumeInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsVolumeInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsVolumeInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFsFullSizeInfo returns the FILE_FS_FULL_SIZE_INFORMATION (total and
+// caller/actual available allocation units) of the volume backing fileId.
+func (c *Client) QueryFsFullSizeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsFullSizeInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsFullSizeInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsFullSizeInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFsAttributeInfo returns the FILE_FS_ATTRIBUTE_INFORMATION (attribute flags,
+// max component name length, file system name) of the volume backing fileId.
+func (c *Client) QueryFsAttributeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsAttributeInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsAttributeInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsAttributeInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFsDeviceInfo returns the FILE_FS_DEVICE_INFORMATION (device type and
+// characteristics) of the volume backing fileId.
+func (c *Client) QueryFsDeviceInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsDeviceInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsDeviceInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsDeviceInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
 // SetEndOfFile sets the logical size of an open file (truncate or extend).
 func (c *Client) SetEndOfFile(fileId types.SMB2_FILEID, size int64) error {
 	buf, err := (&filesystem.FileEndOfFileInformation{EndOfFile: size}).Marshal()
