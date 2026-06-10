@@ -1,0 +1,33 @@
+// Package functions holds the endpoint mapper (ept) method stubs. Each stub depends
+// only on the small ndr.Invoker surface, so it is independent of any concrete client or
+// wire-protocol version.
+package functions
+
+import (
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/guid"
+)
+
+// DefaultMaxTowers is the number of towers Map asks ept_map to return. A handful covers
+// the endpoints a single interface is typically bound to.
+const DefaultMaxTowers = 4
+
+// Map resolves the ncacn_ip_tcp endpoints bound to the given interface UUID and version
+// by building a TCP map tower and calling ept_map, then extracting the endpoints from
+// the returned towers. It is the common path for discovering the dynamic TCP port a
+// service listens on; for finer control (a non-nil object, a custom tower, or the raw
+// towers) call EptMap directly.
+func Map(rpc ndr.Invoker, iface guid.GUID, ifMajor, ifMinor uint16) ([]structures.Endpoint, error) {
+	towers, err := EptMap(rpc, nil, structures.BuildMapTowerTCP(iface, ifMajor, ifMinor), DefaultMaxTowers)
+	if err != nil {
+		return nil, err
+	}
+	var eps []structures.Endpoint
+	for _, t := range towers {
+		if ep, ok := t.Endpoint(); ok {
+			eps = append(eps, ep)
+		}
+	}
+	return eps, nil
+}
