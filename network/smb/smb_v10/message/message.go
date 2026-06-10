@@ -163,6 +163,14 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 		if andxOffset < header.SMB_HEADER_SIZE || andxOffset >= len(fullData) {
 			return fmt.Errorf("AndX offset %d out of bounds (message is %d bytes)", andxOffset, len(fullData))
 		}
+		// The chain is laid out forward in the buffer, so each command must
+		// begin strictly after the current one. Requiring the offset to advance
+		// rejects a cyclic chain (e.g. two commands whose AndXOffset fields point
+		// at each other), which would otherwise loop forever and allocate a
+		// command on every iteration.
+		if andxOffset <= commandStart {
+			return fmt.Errorf("AndX offset %d does not advance past current command at %d (cyclic chain)", andxOffset, commandStart)
+		}
 
 		next, err := newCommand(andxCommand)
 		if err != nil {
