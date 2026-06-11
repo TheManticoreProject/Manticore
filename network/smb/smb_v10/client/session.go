@@ -79,8 +79,19 @@ func (s *Session) SessionSetup() error {
 	sessionSetupCmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
 	sessionSetupCmd.Capabilities = s.Client.Connection.Server.Capabilities
 
+	// NativeOS / NativeLanMan are informational strings, but they MUST NOT be empty:
+	// strict servers (e.g. Windows Server 2016) reject a SESSION_SETUP_ANDX whose
+	// NativeOS/NativeLanMan are empty, replying with a DOS-class error and an empty
+	// security blob — which then fails SPNEGO parsing with "asn1: sequence truncated".
+	// Default them when the caller left them blank so every caller interoperates.
 	sessionSetupCmd.NativeOS = s.Client.NativeOS
 	sessionSetupCmd.NativeLanMan = s.Client.NativeLanMan
+	if sessionSetupCmd.NativeOS == "" {
+		sessionSetupCmd.NativeOS = DefaultNativeOS
+	}
+	if sessionSetupCmd.NativeLanMan == "" {
+		sessionSetupCmd.NativeLanMan = DefaultNativeLanMan
+	}
 
 	// Track whether step 1 used the extended-security (NTLMSSP) challenge/response
 	// path. Only that path performs the second-step authenticate exchange below;
