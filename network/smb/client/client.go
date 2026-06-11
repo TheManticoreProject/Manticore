@@ -128,6 +128,13 @@ func (c *Client) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return c.backend.ListDirectory(path, pattern)
 }
 
+// QuerySecurityDescriptor returns the raw self-relative SECURITY_DESCRIPTOR bytes
+// for path on the current tree. info selects which parts (owner, group, DACL, SACL)
+// to retrieve; parse the result with github.com/TheManticoreProject/winacl.
+func (c *Client) QuerySecurityDescriptor(path string, info SecurityInformation) ([]byte, error) {
+	return c.backend.QuerySecurityDescriptor(path, info)
+}
+
 // DeleteFile deletes a file on the current tree.
 func (c *Client) DeleteFile(path string) error { return c.backend.DeleteFile(path) }
 

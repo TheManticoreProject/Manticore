@@ -7,6 +7,7 @@ import (
 	dcerpcsmb2 "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb2"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
@@ -129,6 +130,17 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 		out = append(out, parseBothDirectoryInfo(buf)...)
 	}
 	return out, nil
+}
+
+func (b *smb2Backend) QuerySecurityDescriptor(path string, info SecurityInformation) ([]byte, error) {
+	// Open with READ_CONTROL (the access right required to read a security
+	// descriptor), then QUERY_INFO with the SECURITY info type.
+	fileId, err := b.engine.CreateFile(path, fileflags.READ_CONTROL, fileflags.FILE_SHARE_READ, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		return nil, fmt.Errorf("open %q for security query: %w", path, err)
+	}
+	defer b.engine.CloseFile(fileId)
+	return b.engine.QueryInfo(fileId, commands.SMB2_0_INFO_SECURITY, 0, uint32(info))
 }
 
 func (b *smb2Backend) DeleteFile(path string) error { return b.engine.DeleteFile(path) }

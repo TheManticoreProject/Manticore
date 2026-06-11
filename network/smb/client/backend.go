@@ -51,6 +51,12 @@ type Backend interface {
 	// match pattern (e.g. "*").
 	ListDirectory(path, pattern string) ([]FileInfo, error)
 
+	// QuerySecurityDescriptor returns the raw self-relative SECURITY_DESCRIPTOR
+	// bytes for path on the current tree. info selects which parts (owner, group,
+	// DACL, SACL) to retrieve. The bytes can be parsed with
+	// github.com/TheManticoreProject/winacl.
+	QuerySecurityDescriptor(path string, info SecurityInformation) ([]byte, error)
+
 	// DeleteFile deletes a file on the current tree.
 	DeleteFile(path string) error
 
