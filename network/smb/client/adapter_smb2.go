@@ -85,13 +85,16 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	}
 	defer b.engine.CloseFile(fileId)
 
-	// Page through QUERY_DIRECTORY: the pattern applies to the first call, and
-	// subsequent calls continue from the server's cursor until it reports no more
-	// files (an empty buffer).
+	// Page through QUERY_DIRECTORY. The search pattern is re-sent on every call:
+	// the server only restarts the enumeration when SMB2_RESTART_SCANS is set
+	// (which we never set), so repeating the pattern continues from the server's
+	// cursor (MS-SMB2 3.3.5.18). Sending an empty pattern on continuation works
+	// against Windows but Samba rejects it with STATUS_OBJECT_NAME_INVALID, so we
+	// keep the pattern. Enumeration ends when the server reports STATUS_NO_MORE_FILES
+	// (surfaced as an empty buffer by QueryDirectory).
 	var out []FileInfo
-	search := pattern
 	for {
-		buf, err := b.engine.QueryDirectory(fileId, fileBothDirectoryInformation, search, 0)
+		buf, err := b.engine.QueryDirectory(fileId, fileBothDirectoryInformation, pattern, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +102,6 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 			break
 		}
 		out = append(out, parseBothDirectoryInfo(buf)...)
-		search = "" // continuation
 	}
 	return out, nil
 }

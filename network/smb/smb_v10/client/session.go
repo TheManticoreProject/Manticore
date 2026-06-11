@@ -18,6 +18,11 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
+// ntStatusMoreProcessingRequired (STATUS_MORE_PROCESSING_REQUIRED) is the status
+// a server returns on the challenge leg of an extended-security session setup to
+// signal that it expects the follow-up AUTHENTICATE message.
+const ntStatusMoreProcessingRequired = 0xC0000016
+
 // Session represents an established session between the client and server
 type Session struct {
 	// The SMB connection associated with this session
@@ -282,6 +287,34 @@ func (s *Session) SessionSetup() error {
 	sessionSetupStep2Cmd.VcNumber = sessionSetupCmd.VcNumber
 	sessionSetupStep2Cmd.SessionKey = sessionSetupCmd.SessionKey
 	sessionSetupStep2Cmd.Capabilities = sessionSetupCmd.Capabilities
+	// The AUTHENTICATE (second) leg is a full SESSION_SETUP_ANDX request and MUST
+	// repeat the connection parameters from the first leg. In particular the
+	// server validates MaxBufferSize against its minimum on every leg
+	// ([MS-CIFS] 2.2.4.6; Samba's smbd/sesssetup.c rejects smb_bufsize <
+	// SMB_BUFFER_SIZE_MIN with ERRSRV/ERRerror), so leaving it at the zero value
+	// makes a server that already accepted the NTLM credentials still fail the
+	// session setup. Carry over MaxBufferSize, MaxMpxCount and the native OS/LanMan
+	// strings just as the first leg sent them.
+	sessionSetupStep2Cmd.MaxBufferSize = sessionSetupCmd.MaxBufferSize
+	sessionSetupStep2Cmd.MaxMpxCount = sessionSetupCmd.MaxMpxCount
+	sessionSetupStep2Cmd.NativeOS = sessionSetupCmd.NativeOS
+	sessionSetupStep2Cmd.NativeLanMan = sessionSetupCmd.NativeLanMan
+
+	// The extended-security challenge leg MUST come back with
+	// STATUS_MORE_PROCESSING_REQUIRED (or, on some servers, STATUS_SUCCESS) and a
+	// non-empty NTLMSSP CHALLENGE security blob. If the server instead rejected our
+	// NEGOTIATE token it returns an error status and/or an empty blob; surface that
+	// directly here rather than feeding an empty buffer to the SPNEGO parser, which
+	// would otherwise fail with the opaque "asn1: syntax error: sequence truncated".
+	if responseMsg.Header.Status != 0x00000000 && responseMsg.Header.Status != ntStatusMoreProcessingRequired {
+		if name, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(responseMsg.Header.Status)]; ok {
+			return fmt.Errorf("session setup challenge failed: %s (0x%08x)", name, responseMsg.Header.Status)
+		}
+		return fmt.Errorf("session setup challenge failed: 0x%08x", responseMsg.Header.Status)
+	}
+	if len(challengeResponse.SecurityBlob) == 0 {
+		return fmt.Errorf("server returned an empty security blob in the session setup challenge (status 0x%08x); the server rejected the SPNEGO/NTLMSSP negotiate token", responseMsg.Header.Status)
+	}
 
 	authenticateToken, err := authCtx.CreateAuthenticateTokenFromChallengeToken(challengeResponse.SecurityBlob)
 	if err != nil {
