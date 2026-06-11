@@ -31,6 +31,15 @@ func newSMB2Backend(engine *smb2.Client) *smb2Backend {
 
 func (b *smb2Backend) Dialect() smb.SMBProtocolVersion { return b.dialect }
 
+func (b *smb2Backend) ConnectionInfo() ConnectionInfo {
+	s := b.engine.Connection.Server
+	return ConnectionInfo{
+		SigningRequired: s.SecurityMode.IsSigningRequired(),
+		MaxReadSize:     s.MaxReadSize,
+		MaxWriteSize:    s.MaxWriteSize,
+	}
+}
+
 func (b *smb2Backend) Login(creds *credentials.Credentials) error {
 	return b.engine.SessionSetup(creds)
 }

@@ -107,3 +107,16 @@ type FileInfo struct {
 func (fi FileInfo) IsDir() bool {
 	return fi.FileAttributes&fileflags.FILE_ATTRIBUTE_DIRECTORY != 0
 }
+
+// ConnectionInfo holds the connection capabilities negotiated with the server,
+// normalized across dialects. SMB1 negotiates a single MaxBufferSize rather than
+// separate read/write maxima, so on SMB1 both MaxReadSize and MaxWriteSize report
+// that value.
+type ConnectionInfo struct {
+	// SigningRequired reports whether the server requires SMB message signing.
+	SigningRequired bool
+	// MaxReadSize is the largest read the server will accept, in bytes.
+	MaxReadSize uint32
+	// MaxWriteSize is the largest write the server will accept, in bytes.
+	MaxWriteSize uint32
+}
