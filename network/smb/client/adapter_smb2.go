@@ -106,35 +106,27 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return out, nil
 }
 
-func (b *smb2Backend) CreateDirectory(path string) error {
-	return b.engine.CreateDirectory(path)
-}
+func (b *smb2Backend) DeleteFile(path string) error { return b.engine.DeleteFile(path) }
 
-func (b *smb2Backend) DeleteDirectory(path string) error {
-	return b.engine.DeleteDirectory(path)
-}
+func (b *smb2Backend) CreateDirectory(path string) error { return b.engine.CreateDirectory(path) }
 
-func (b *smb2Backend) DeleteFile(path string) error {
-	return b.engine.DeleteFile(path)
-}
+func (b *smb2Backend) DeleteDirectory(path string) error { return b.engine.DeleteDirectory(path) }
 
 func (b *smb2Backend) RenameFile(oldPath, newPath string) error {
-	// Match the SMB1 behavior, which replaces an existing target.
-	return b.engine.RenameFile(oldPath, newPath, true)
+	// replaceIfExists=false: fail rather than clobber an existing target, matching
+	// the generic contract.
+	return b.engine.RenameFile(oldPath, newPath, false)
 }
 
 func (b *smb2Backend) CheckDirectory(path string) error {
-	// The SMB2 engine has no dedicated directory probe; open the path with the
-	// directory-file option (which fails for a non-directory) and close it.
-	fileId, err := b.engine.CreateFile(path,
-		fileflags.FILE_READ_ATTRIBUTES,
-		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE,
-		fileflags.FILE_OPEN,
-		fileflags.FILE_DIRECTORY_FILE)
+	st, err := b.engine.Stat(path)
 	if err != nil {
 		return err
 	}
-	return b.engine.CloseFile(fileId)
+	if !st.IsDirectory {
+		return fmt.Errorf("%q is not a directory", path)
+	}
+	return nil
 }
 
 func (b *smb2Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }

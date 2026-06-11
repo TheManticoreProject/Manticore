@@ -120,22 +120,23 @@ func (c *Client) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return c.backend.ListDirectory(path, pattern)
 }
 
-// CreateDirectory creates a directory at the share-relative path on the current tree.
-func (c *Client) CreateDirectory(path string) error { return c.backend.CreateDirectory(path) }
-
-// DeleteDirectory removes the directory at the share-relative path on the current tree.
-func (c *Client) DeleteDirectory(path string) error { return c.backend.DeleteDirectory(path) }
-
-// DeleteFile removes the file at the share-relative path on the current tree.
+// DeleteFile deletes a file on the current tree.
 func (c *Client) DeleteFile(path string) error { return c.backend.DeleteFile(path) }
 
-// RenameFile renames/moves a file or directory on the current tree.
+// CreateDirectory creates a directory on the current tree.
+func (c *Client) CreateDirectory(path string) error { return c.backend.CreateDirectory(path) }
+
+// DeleteDirectory removes an empty directory on the current tree.
+func (c *Client) DeleteDirectory(path string) error { return c.backend.DeleteDirectory(path) }
+
+// RenameFile renames (or moves) a file or directory on the current tree. It fails
+// if newPath already exists.
 func (c *Client) RenameFile(oldPath, newPath string) error {
 	return c.backend.RenameFile(oldPath, newPath)
 }
 
-// CheckDirectory returns nil if the share-relative path is an existing directory
-// on the current tree, or an error otherwise.
+// CheckDirectory returns nil if path names an existing directory on the current
+// tree, and an error otherwise.
 func (c *Client) CheckDirectory(path string) error { return c.backend.CheckDirectory(path) }
 
 // TreeDisconnect disconnects the current tree.

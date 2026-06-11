@@ -41,20 +41,21 @@ type Backend interface {
 	// match pattern (e.g. "*").
 	ListDirectory(path, pattern string) ([]FileInfo, error)
 
-	// CreateDirectory creates a directory at the share-relative path.
-	CreateDirectory(path string) error
-
-	// DeleteDirectory removes the directory at the share-relative path.
-	DeleteDirectory(path string) error
-
-	// DeleteFile removes the file at the share-relative path.
+	// DeleteFile deletes a file on the current tree.
 	DeleteFile(path string) error
 
-	// RenameFile renames/moves a file or directory on the current tree.
+	// CreateDirectory creates a directory on the current tree.
+	CreateDirectory(path string) error
+
+	// DeleteDirectory removes an empty directory on the current tree.
+	DeleteDirectory(path string) error
+
+	// RenameFile renames (or moves) a file or directory on the current tree. It
+	// fails if newPath already exists.
 	RenameFile(oldPath, newPath string) error
 
-	// CheckDirectory returns nil if the share-relative path is an existing
-	// directory on the current tree, or an error otherwise.
+	// CheckDirectory returns nil if path names an existing directory on the
+	// current tree, and an error otherwise.
 	CheckDirectory(path string) error
 
 	// TreeDisconnect disconnects the current tree.

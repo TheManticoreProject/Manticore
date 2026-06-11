@@ -7,7 +7,33 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/authenticate"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
+
+// TestDomainNamePreservesCase guards against re-introducing the bug where the
+// AUTHENTICATE DomainName field was upper-cased. NTLMv2 folds the domain into NTOWFv2
+// with its original case (only the username is upper-cased, MS-NLMP 3.3.2), so the
+// DomainName field MUST carry the same case; upper-casing it made the server compute a
+// different NTProofStr and reject mixed/lower-case domains (e.g. an FQDN) with
+// STATUS_LOGON_FAILURE.
+func TestDomainNamePreservesCase(t *testing.T) {
+	challengeMsg := &challenge.ChallengeMessage{
+		NegotiateFlags: flags.NTLMSSP_NEGOTIATE_UNICODE | flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY,
+	}
+	copy(challengeMsg.ServerChallenge[:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+
+	const domain = "TMP-W-2016.local" // mixed case, as an FQDN is typically supplied
+	authMsg, err := authenticate.CreateAuthenticateMessage(challengeMsg, "Administrator", "pass", domain, "WORKSTATION")
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessage: %v", err)
+	}
+
+	want := utf16.EncodeUTF16LE(domain)
+	if !bytes.Equal(authMsg.DomainName, want) {
+		t.Errorf("DomainName field was altered (case not preserved)\n got %q\nwant %q",
+			utf16.DecodeUTF16LE(authMsg.DomainName), domain)
+	}
+}
 
 func TestMarshalUnmarshal(t *testing.T) {
 	// Create a challenge message with some flags
