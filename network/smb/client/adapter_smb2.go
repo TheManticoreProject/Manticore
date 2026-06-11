@@ -3,6 +3,8 @@ package client
 import (
 	"fmt"
 
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	dcerpcsmb2 "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb2"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
@@ -127,6 +129,10 @@ func (b *smb2Backend) CheckDirectory(path string) error {
 		return fmt.Errorf("%q is not a directory", path)
 	}
 	return nil
+}
+
+func (b *smb2Backend) RPCTransport(pipeName string) (dcerpctransport.Transport, error) {
+	return dcerpcsmb2.New(b.engine, pipeName), nil
 }
 
 func (b *smb2Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }

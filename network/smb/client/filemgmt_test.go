@@ -3,6 +3,7 @@ package client
 import (
 	"testing"
 
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -24,9 +25,12 @@ func (r *recordingBackend) ReadFile(FileHandle, uint64, uint32) ([]byte, error) 
 func (r *recordingBackend) WriteFile(FileHandle, uint64, []byte) (uint32, error) { return 0, nil }
 func (r *recordingBackend) CloseFile(FileHandle) error                           { return nil }
 func (r *recordingBackend) ListDirectory(string, string) ([]FileInfo, error)     { return nil, nil }
-func (r *recordingBackend) TreeDisconnect() error                                { return nil }
-func (r *recordingBackend) Logoff() error                                        { return nil }
-func (r *recordingBackend) Disconnect() error                                    { return nil }
+func (r *recordingBackend) RPCTransport(string) (dcerpctransport.Transport, error) {
+	return nil, nil
+}
+func (r *recordingBackend) TreeDisconnect() error { return nil }
+func (r *recordingBackend) Logoff() error         { return nil }
+func (r *recordingBackend) Disconnect() error     { return nil }
 
 func (r *recordingBackend) DeleteFile(path string) error {
 	r.calls, r.args = append(r.calls, "DeleteFile"), append(r.args, path)

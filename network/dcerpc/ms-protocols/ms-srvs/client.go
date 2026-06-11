@@ -20,8 +20,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
-	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
-	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 )
 
 // MaxPreferredLength is passed as the preferred maximum reply length of the Netr*Enum
@@ -29,23 +28,38 @@ import (
 // resume-handle paging is needed; this matches impacket's enumeration usage.
 const MaxPreferredLength uint32 = 0xFFFFFFFF
 
-// Client exposes MS-SRVS workflows over an established SMB v1 session. The supplied SMB
-// client MUST already be connected, have an authenticated session (SessionSetup), and
-// have a tree connected to IPC$ (TreeConnect) before any method is called.
-type Client struct {
-	smb *smbclient.Client
+// PipeDialer opens a fresh DCE/RPC named-pipe transport for the given pipe over an
+// established, IPC$-tree-connected SMB session. It is the only capability MS-SRVS needs
+// from the SMB layer, so depending on this interface (rather than a concrete SMB
+// client) keeps mssrvs independent of the SMB dialect: the generic
+// network/smb/client.Client satisfies it (via its RPCTransport method) and routes to an
+// SMB1 or SMB2 named-pipe transport according to what was negotiated.
+type PipeDialer interface {
+	RPCTransport(pipeName string) (dcerpctransport.Transport, error)
 }
 
-// New returns an MS-SRVS client over the given SMB v1 client.
-func New(smb *smbclient.Client) *Client {
-	return &Client{smb: smb}
+// Client exposes MS-SRVS workflows over an established SMB session. The supplied dialer
+// MUST be backed by a client that is connected, authenticated, and tree-connected to
+// IPC$ before any method is called.
+type Client struct {
+	dialer PipeDialer
+}
+
+// New returns an MS-SRVS client over the given pipe dialer (typically a
+// *network/smb/client.Client).
+func New(dialer PipeDialer) *Client {
+	return &Client{dialer: dialer}
 }
 
 // bind opens a fresh \srvsvc pipe and binds the srvsvc abstract syntax over it. srvsvc
 // calls are mutually independent, so each workflow runs on its own pipe and bind: a
 // fault on one cannot desync the next. The returned close function tears the pipe down.
 func (c *Client) bind() (*dcerpcclient.Client, func() error, error) {
-	rpc := dcerpcclient.NewClient(dcerpcsmb.New(c.smb, srvsvc.PipeName))
+	transport, err := c.dialer.RPCTransport(srvsvc.PipeName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("mssrvs: open srvsvc pipe: %w", err)
+	}
+	rpc := dcerpcclient.NewClient(transport)
 	if err := rpc.Bind(srvsvc.SyntaxID()); err != nil {
 		return nil, nil, fmt.Errorf("mssrvs: bind srvsvc: %w", err)
 	}

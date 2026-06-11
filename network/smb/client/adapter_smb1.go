@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
@@ -126,6 +128,10 @@ func (b *smb1Backend) RenameFile(oldPath, newPath string) error {
 
 func (b *smb1Backend) CheckDirectory(path string) error {
 	return b.engine.CheckDirectory(smb1WirePath(path))
+}
+
+func (b *smb1Backend) RPCTransport(pipeName string) (dcerpctransport.Transport, error) {
+	return dcerpcsmb.New(b.engine, pipeName), nil
 }
 
 func (b *smb1Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }
