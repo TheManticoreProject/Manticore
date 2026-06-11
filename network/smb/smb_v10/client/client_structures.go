@@ -133,4 +133,15 @@ type Server struct {
 
 	// ServerGUID is the GUID of the server
 	ServerGUID guid.GUID
+
+	// Server identity advertised in the NTLM CHALLENGE during the extended-security
+	// session setup: the NetBIOS/DNS computer and domain names and the OS version.
+	// Populated by SessionSetup; empty/zero before authentication.
+	NetBIOSComputerName string
+	NetBIOSDomainName   string
+	DNSComputerName     string
+	DNSDomainName       string
+	OSVersionMajor      uint8
+	OSVersionMinor      uint8
+	OSVersionBuild      uint16
 }

@@ -98,6 +98,10 @@ func (c *Client) ConnectionInfo() ConnectionInfo { return c.backend.ConnectionIn
 // Login authenticates a session with the server.
 func (c *Client) Login(creds *credentials.Credentials) error { return c.backend.Login(creds) }
 
+// ServerIdentity reports the server identity (NetBIOS/DNS computer and domain
+// names, OS version) advertised during NTLM authentication. Call it after Login.
+func (c *Client) ServerIdentity() ServerIdentity { return c.backend.ServerIdentity() }
+
 // TreeConnect connects to a share by name (e.g. "C$"), making it the current tree.
 func (c *Client) TreeConnect(share string) error { return c.backend.TreeConnect(share) }
 

@@ -115,6 +115,17 @@ type Server struct {
 	// SecurityBuffer is the GSS (SPNEGO) token returned in the NEGOTIATE response,
 	// used to seed authentication.
 	SecurityBuffer []byte
+
+	// Server identity advertised in the NTLM CHALLENGE during authentication: the
+	// NetBIOS/DNS computer and domain names and the OS version. Populated by
+	// SessionSetup; empty/zero before a successful authentication.
+	NetBIOSComputerName string
+	NetBIOSDomainName   string
+	DNSComputerName     string
+	DNSDomainName       string
+	OSVersionMajor      uint8
+	OSVersionMinor      uint8
+	OSVersionBuild      uint16
 }
 
 // Session represents an authenticated SMB2 session.

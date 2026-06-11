@@ -162,6 +162,19 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 	// server enables or requires it.
 	session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
 
+	// Retain the server identity (NetBIOS/DNS names, OS version) advertised in the
+	// NTLM CHALLENGE so callers can read it after authentication.
+	if id, ok := authCtx.ServerIdentity(); ok {
+		srv := c.Connection.Server
+		srv.NetBIOSComputerName = id.NetBIOSComputerName
+		srv.NetBIOSDomainName = id.NetBIOSDomainName
+		srv.DNSComputerName = id.DNSComputerName
+		srv.DNSDomainName = id.DNSDomainName
+		srv.OSVersionMajor = id.OSVersionMajor
+		srv.OSVersionMinor = id.OSVersionMinor
+		srv.OSVersionBuild = id.OSVersionBuild
+	}
+
 	if c.Connection.SessionTable == nil {
 		c.Connection.SessionTable = make(map[uint64]*Session)
 	}

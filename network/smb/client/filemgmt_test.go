@@ -14,10 +14,12 @@ type recordingBackend struct {
 	calls    []string
 	args     []string
 	connInfo ConnectionInfo
+	identity ServerIdentity
 }
 
 func (r *recordingBackend) Dialect() smb.SMBProtocolVersion      { return smb.SMB_VERSION_2_0_2 }
 func (r *recordingBackend) ConnectionInfo() ConnectionInfo       { return r.connInfo }
+func (r *recordingBackend) ServerIdentity() ServerIdentity       { return r.identity }
 func (r *recordingBackend) Login(*credentials.Credentials) error { return nil }
 func (r *recordingBackend) TreeConnect(string) error             { return nil }
 func (r *recordingBackend) OpenFile(string, OpenOptions) (FileHandle, error) {
@@ -104,5 +106,23 @@ func TestClientConnectionInfoDelegation(t *testing.T) {
 	c := &Client{backend: &recordingBackend{connInfo: want}}
 	if got := c.ConnectionInfo(); got != want {
 		t.Errorf("ConnectionInfo() = %+v, want %+v", got, want)
+	}
+}
+
+// TestClientServerIdentityDelegation verifies Client.ServerIdentity forwards the
+// backend's captured identity unchanged.
+func TestClientServerIdentityDelegation(t *testing.T) {
+	want := ServerIdentity{
+		NetBIOSComputerName: "FILESRV",
+		NetBIOSDomainName:   "CORP",
+		DNSComputerName:     "filesrv.corp.example",
+		DNSDomainName:       "corp.example",
+		OSVersionMajor:      10,
+		OSVersionMinor:      0,
+		OSVersionBuild:      17763,
+	}
+	c := &Client{backend: &recordingBackend{identity: want}}
+	if got := c.ServerIdentity(); got != want {
+		t.Errorf("ServerIdentity() = %+v, want %+v", got, want)
 	}
 }
