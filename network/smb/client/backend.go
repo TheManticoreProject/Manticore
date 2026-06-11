@@ -1,6 +1,7 @@
 package client
 
 import (
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -57,6 +58,13 @@ type Backend interface {
 	// CheckDirectory returns nil if path names an existing directory on the
 	// current tree, and an error otherwise.
 	CheckDirectory(path string) error
+
+	// RPCTransport opens a named pipe on the current tree (IPC$) and returns it as
+	// a DCE/RPC PDU transport, framed for the negotiated dialect. It is the bridge
+	// from the version-agnostic SMB client to the DCE/RPC stack, so callers can run
+	// MS-RPC interfaces (srvsvc, lsarpc, …) without knowing whether SMB1 or SMB2 was
+	// negotiated. The current tree must be IPC$.
+	RPCTransport(pipeName string) (dcerpctransport.Transport, error)
 
 	// TreeDisconnect disconnects the current tree.
 	TreeDisconnect() error

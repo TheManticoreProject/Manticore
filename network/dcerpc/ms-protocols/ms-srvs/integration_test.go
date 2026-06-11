@@ -9,18 +9,18 @@
 package mssrvs_test
 
 import (
-	"net"
 	"os"
 	"strconv"
 	"testing"
 
 	mssrvs "github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/ms-srvs"
-	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	smbclient "github.com/TheManticoreProject/Manticore/network/smb/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
-// liveClient builds an MS-SRVS client over a live SMB session. It skips the test unless
-// DCERPC_TEST_HOST is set.
+// liveClient builds an MS-SRVS client over a live SMB session using the generic,
+// version-agnostic SMB client (so it runs over whichever dialect the server
+// negotiates — SMB1 or SMB2). It skips the test unless DCERPC_TEST_HOST is set.
 func liveClient(t *testing.T) (*mssrvs.Client, func()) {
 	t.Helper()
 	host := os.Getenv("DCERPC_TEST_HOST")
@@ -35,22 +35,18 @@ func liveClient(t *testing.T) (*mssrvs.Client, func()) {
 		}
 		port = n
 	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		t.Fatalf("DCERPC_TEST_HOST %q is not a valid IP", host)
-	}
 	creds, err := credentials.NewCredentials(os.Getenv("DCERPC_TEST_DOMAIN"), os.Getenv("DCERPC_TEST_USER"), os.Getenv("DCERPC_TEST_PASS"), "")
 	if err != nil {
 		t.Fatalf("NewCredentials: %v", err)
 	}
 
-	smb := smbclient.NewClientUsingTCPTransport(ip, port)
-	if err := smb.Connect(ip, port); err != nil {
-		t.Fatalf("SMB Connect: %v", err)
+	smb, err := smbclient.Dial(host, port, smbclient.Options{})
+	if err != nil {
+		t.Fatalf("SMB Dial: %v", err)
 	}
-	smb.NativeOS, smb.NativeLanMan = "Unix", "Samba"
-	if err := smb.SessionSetup(creds); err != nil {
-		t.Fatalf("SMB SessionSetup: %v", err)
+	t.Logf("negotiated %s", smb.Dialect())
+	if err := smb.Login(creds); err != nil {
+		t.Fatalf("SMB Login: %v", err)
 	}
 	if err := smb.TreeConnect("IPC$"); err != nil {
 		t.Fatalf("SMB TreeConnect(IPC$): %v", err)
