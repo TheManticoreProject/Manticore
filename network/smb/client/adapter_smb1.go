@@ -31,6 +31,7 @@ func (b *smb1Backend) ConnectionInfo() ConnectionInfo {
 		SigningRequired: s.SecurityMode.IsSecuritySignatureRequired(),
 		MaxReadSize:     s.MaxBufferSize,
 		MaxWriteSize:    s.MaxBufferSize,
+		SupportsNTLMv2:  s.SupportsNTLMv2,
 	}
 }
 
@@ -48,6 +49,7 @@ func (b *smb1Backend) ServerIdentity() ServerIdentity {
 		OSVersionMajor:      s.OSVersionMajor,
 		OSVersionMinor:      s.OSVersionMinor,
 		OSVersionBuild:      s.OSVersionBuild,
+		OSName:              s.OSName,
 	}
 }
 

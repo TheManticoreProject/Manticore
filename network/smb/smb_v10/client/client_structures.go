@@ -3,9 +3,9 @@ package client
 import (
 	"net"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
-	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -144,4 +144,12 @@ type Server struct {
 	OSVersionMajor      uint8
 	OSVersionMinor      uint8
 	OSVersionBuild      uint16
+
+	// OSName is the server's native operating-system string from the SESSION_SETUP
+	// response (NativeOS). SMB1 only; populated by SessionSetup.
+	OSName string
+
+	// SupportsNTLMv2 reports whether the server's NTLM CHALLENGE advertised
+	// extended session security (NTLM2 / NTLMv2). Populated by SessionSetup.
+	SupportsNTLMv2 bool
 }

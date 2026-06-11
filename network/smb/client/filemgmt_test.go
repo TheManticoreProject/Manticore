@@ -102,7 +102,7 @@ func TestSMB1WirePath(t *testing.T) {
 // TestClientConnectionInfoDelegation verifies Client.ConnectionInfo forwards the
 // backend's negotiated capabilities unchanged.
 func TestClientConnectionInfoDelegation(t *testing.T) {
-	want := ConnectionInfo{SigningRequired: true, MaxReadSize: 0x100000, MaxWriteSize: 0x80000}
+	want := ConnectionInfo{SigningRequired: true, MaxReadSize: 0x100000, MaxWriteSize: 0x80000, SupportsNTLMv2: true}
 	c := &Client{backend: &recordingBackend{connInfo: want}}
 	if got := c.ConnectionInfo(); got != want {
 		t.Errorf("ConnectionInfo() = %+v, want %+v", got, want)
@@ -117,6 +117,7 @@ func TestClientServerIdentityDelegation(t *testing.T) {
 		NetBIOSDomainName:   "CORP",
 		DNSComputerName:     "filesrv.corp.example",
 		DNSDomainName:       "corp.example",
+		OSName:              "Windows Server 2019",
 		OSVersionMajor:      10,
 		OSVersionMinor:      0,
 		OSVersionBuild:      17763,

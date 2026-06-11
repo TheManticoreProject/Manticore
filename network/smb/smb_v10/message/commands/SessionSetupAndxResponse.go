@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/andx"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
@@ -75,6 +76,16 @@ func NewSessionSetupAndxResponse() *SessionSetupAndxResponse {
 	c.Command.SetCommandCode(codes.SMB_COM_SESSION_SETUP_ANDX)
 
 	return c
+}
+
+// NativeOSString returns the server's NativeOS as a Go string, decoding it from
+// UTF-16LE when the response used Unicode (SMB_FLAGS2_UNICODE) and from raw OEM
+// bytes otherwise. NativeOS is stored as the wire bytes up to its NUL terminator.
+func (c *SessionSetupAndxResponse) NativeOSString() string {
+	if c.IsUnicode() {
+		return utf16.DecodeUTF16LE(c.NativeOS)
+	}
+	return string(c.NativeOS)
 }
 
 // IsAndX returns true if the command is an AndX

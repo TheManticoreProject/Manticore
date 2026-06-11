@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/avpair"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
 	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
@@ -57,5 +58,24 @@ func TestAuthContextServerIdentityNoChallenge(t *testing.T) {
 	ctx := &spnego.AuthContext{}
 	if _, ok := ctx.ServerIdentity(); ok {
 		t.Error("ServerIdentity ok = true with no challenge, want false")
+	}
+}
+
+func TestAuthContextSupportsExtendedSessionSecurity(t *testing.T) {
+	with := &spnego.AuthContext{NTLMChallenge: &challenge.ChallengeMessage{
+		NegotiateFlags: flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | flags.NTLMSSP_NEGOTIATE_UNICODE,
+	}}
+	if !with.SupportsExtendedSessionSecurity() {
+		t.Error("SupportsExtendedSessionSecurity = false with the flag set, want true")
+	}
+	without := &spnego.AuthContext{NTLMChallenge: &challenge.ChallengeMessage{
+		NegotiateFlags: flags.NTLMSSP_NEGOTIATE_UNICODE,
+	}}
+	if without.SupportsExtendedSessionSecurity() {
+		t.Error("SupportsExtendedSessionSecurity = true without the flag, want false")
+	}
+	none := &spnego.AuthContext{}
+	if none.SupportsExtendedSessionSecurity() {
+		t.Error("SupportsExtendedSessionSecurity = true with no challenge, want false")
 	}
 }
