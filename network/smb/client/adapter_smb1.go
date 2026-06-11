@@ -38,6 +38,19 @@ func (b *smb1Backend) Login(creds *credentials.Credentials) error {
 	return b.engine.SessionSetup(creds)
 }
 
+func (b *smb1Backend) ServerIdentity() ServerIdentity {
+	s := b.engine.Connection.Server
+	return ServerIdentity{
+		NetBIOSComputerName: s.NetBIOSComputerName,
+		NetBIOSDomainName:   s.NetBIOSDomainName,
+		DNSComputerName:     s.DNSComputerName,
+		DNSDomainName:       s.DNSDomainName,
+		OSVersionMajor:      s.OSVersionMajor,
+		OSVersionMinor:      s.OSVersionMinor,
+		OSVersionBuild:      s.OSVersionBuild,
+	}
+}
+
 func (b *smb1Backend) TreeConnect(share string) error {
 	return b.engine.TreeConnect(share)
 }

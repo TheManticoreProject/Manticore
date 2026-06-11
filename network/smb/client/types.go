@@ -120,3 +120,17 @@ type ConnectionInfo struct {
 	// MaxWriteSize is the largest write the server will accept, in bytes.
 	MaxWriteSize uint32
 }
+
+// ServerIdentity is the server identity learned during NTLM authentication: the
+// NetBIOS and DNS computer/domain names advertised in the CHALLENGE TargetInfo,
+// and the OS version from the CHALLENGE Version field. Fields are empty/zero when
+// the server did not advertise them or when authentication has not occurred.
+type ServerIdentity struct {
+	NetBIOSComputerName string
+	NetBIOSDomainName   string
+	DNSComputerName     string
+	DNSDomainName       string
+	OSVersionMajor      uint8
+	OSVersionMinor      uint8
+	OSVersionBuild      uint16
+}

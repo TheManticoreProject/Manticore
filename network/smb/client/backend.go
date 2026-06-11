@@ -25,6 +25,11 @@ type Backend interface {
 	// Login authenticates a session with the server.
 	Login(creds *credentials.Credentials) error
 
+	// ServerIdentity reports the server identity (NetBIOS/DNS names, OS version)
+	// learned during authentication. It is meaningful only after a successful Login;
+	// fields are empty/zero otherwise or when the server did not advertise them.
+	ServerIdentity() ServerIdentity
+
 	// TreeConnect connects to a share by name (e.g. "C$"), making it the current
 	// tree for subsequent file operations. The backend forms the full UNC path.
 	TreeConnect(share string) error

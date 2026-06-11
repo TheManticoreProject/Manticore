@@ -321,6 +321,19 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("failed to process challenge token: %v", err)
 	}
 
+	// Retain the server identity (NetBIOS/DNS names, OS version) advertised in the
+	// NTLM CHALLENGE so callers can read it after authentication.
+	if id, ok := authCtx.ServerIdentity(); ok {
+		srv := s.Client.Connection.Server
+		srv.NetBIOSComputerName = id.NetBIOSComputerName
+		srv.NetBIOSDomainName = id.NetBIOSDomainName
+		srv.DNSComputerName = id.DNSComputerName
+		srv.DNSDomainName = id.DNSDomainName
+		srv.OSVersionMajor = id.OSVersionMajor
+		srv.OSVersionMinor = id.OSVersionMinor
+		srv.OSVersionBuild = id.OSVersionBuild
+	}
+
 	sessionSetupStep2Cmd.SecurityBlob = authenticateToken
 
 	requestStep2Msg.AddCommand(sessionSetupStep2Cmd)
