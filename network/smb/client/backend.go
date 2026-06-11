@@ -41,6 +41,23 @@ type Backend interface {
 	// match pattern (e.g. "*").
 	ListDirectory(path, pattern string) ([]FileInfo, error)
 
+	// DeleteFile deletes a file on the current tree.
+	DeleteFile(path string) error
+
+	// CreateDirectory creates a directory on the current tree.
+	CreateDirectory(path string) error
+
+	// DeleteDirectory removes an empty directory on the current tree.
+	DeleteDirectory(path string) error
+
+	// RenameFile renames (or moves) a file or directory on the current tree. It
+	// fails if newPath already exists.
+	RenameFile(oldPath, newPath string) error
+
+	// CheckDirectory returns nil if path names an existing directory on the
+	// current tree, and an error otherwise.
+	CheckDirectory(path string) error
+
 	// TreeDisconnect disconnects the current tree.
 	TreeDisconnect() error
 

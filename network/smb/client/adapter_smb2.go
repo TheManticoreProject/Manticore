@@ -104,6 +104,29 @@ func (b *smb2Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return out, nil
 }
 
+func (b *smb2Backend) DeleteFile(path string) error { return b.engine.DeleteFile(path) }
+
+func (b *smb2Backend) CreateDirectory(path string) error { return b.engine.CreateDirectory(path) }
+
+func (b *smb2Backend) DeleteDirectory(path string) error { return b.engine.DeleteDirectory(path) }
+
+func (b *smb2Backend) RenameFile(oldPath, newPath string) error {
+	// replaceIfExists=false: fail rather than clobber an existing target, matching
+	// the generic contract.
+	return b.engine.RenameFile(oldPath, newPath, false)
+}
+
+func (b *smb2Backend) CheckDirectory(path string) error {
+	st, err := b.engine.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !st.IsDirectory {
+		return fmt.Errorf("%q is not a directory", path)
+	}
+	return nil
+}
+
 func (b *smb2Backend) TreeDisconnect() error { return b.engine.TreeDisconnect() }
 func (b *smb2Backend) Logoff() error         { return b.engine.Logoff() }
 func (b *smb2Backend) Disconnect() error     { return b.engine.Disconnect() }
