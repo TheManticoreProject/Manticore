@@ -37,6 +37,7 @@ func (b *smb2Backend) ConnectionInfo() ConnectionInfo {
 		SigningRequired: s.SecurityMode.IsSigningRequired(),
 		MaxReadSize:     s.MaxReadSize,
 		MaxWriteSize:    s.MaxWriteSize,
+		SupportsNTLMv2:  s.SupportsNTLMv2,
 	}
 }
 

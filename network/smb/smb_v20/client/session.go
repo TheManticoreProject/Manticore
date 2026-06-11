@@ -174,6 +174,7 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		srv.OSVersionMinor = id.OSVersionMinor
 		srv.OSVersionBuild = id.OSVersionBuild
 	}
+	c.Connection.Server.SupportsNTLMv2 = authCtx.SupportsExtendedSessionSecurity()
 
 	if c.Connection.SessionTable == nil {
 		c.Connection.SessionTable = make(map[uint64]*Session)

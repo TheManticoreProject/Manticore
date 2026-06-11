@@ -119,6 +119,9 @@ type ConnectionInfo struct {
 	MaxReadSize uint32
 	// MaxWriteSize is the largest write the server will accept, in bytes.
 	MaxWriteSize uint32
+	// SupportsNTLMv2 reports whether the server advertised NTLM2 / extended session
+	// security (NTLMv2) in its NTLM CHALLENGE. Meaningful only after Login.
+	SupportsNTLMv2 bool
 }
 
 // ServerIdentity is the server identity learned during NTLM authentication: the
@@ -133,4 +136,8 @@ type ServerIdentity struct {
 	OSVersionMajor      uint8
 	OSVersionMinor      uint8
 	OSVersionBuild      uint16
+	// OSName is the server's native OS string from the SMB1 SESSION_SETUP response.
+	// It is populated for SMB1 only; SMB2/SMB3 do not transmit an OS name on the wire
+	// (use the OSVersion* fields there).
+	OSName string
 }

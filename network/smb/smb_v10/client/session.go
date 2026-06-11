@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	spnego_ntlm_negotiate_flags "github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -13,7 +14,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
@@ -333,6 +333,7 @@ func (s *Session) SessionSetup() error {
 		srv.OSVersionMinor = id.OSVersionMinor
 		srv.OSVersionBuild = id.OSVersionBuild
 	}
+	s.Client.Connection.Server.SupportsNTLMv2 = authCtx.SupportsExtendedSessionSecurity()
 
 	sessionSetupStep2Cmd.SecurityBlob = authenticateToken
 
@@ -382,7 +383,7 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("unexpected response command: %d", authResponseMsg.Header.Command)
 	}
 
-	_, ok := authResponseMsg.Command.(*commands.SessionSetupAndxResponse)
+	authResponse, ok := authResponseMsg.Command.(*commands.SessionSetupAndxResponse)
 	if !ok {
 		return fmt.Errorf("failed to cast response command to SessionSetupAndxResponse")
 	}
@@ -393,6 +394,15 @@ func (s *Session) SessionSetup() error {
 		} else {
 			return fmt.Errorf("session setup failed: 0x%08x", authResponseMsg.Header.Status)
 		}
+	}
+
+	// Retain the server's native OS string from the SESSION_SETUP response. The final
+	// (AUTHENTICATE) response is authoritative; fall back to the challenge response if
+	// the server only populated it there.
+	if osName := authResponse.NativeOSString(); osName != "" {
+		s.Client.Connection.Server.OSName = osName
+	} else if osName := challengeResponse.NativeOSString(); osName != "" {
+		s.Client.Connection.Server.OSName = osName
 	}
 
 	// Persist the derived session key and, when signing was activated, verify the

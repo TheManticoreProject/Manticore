@@ -2,6 +2,7 @@ package spnego
 
 import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/avpair"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/targetinfo"
 	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
@@ -45,4 +46,15 @@ func (ctx *AuthContext) ServerIdentity() (ServerIdentity, bool) {
 		id.OSVersionBuild = ch.Version.ProductBuild
 	}
 	return id, true
+}
+
+// SupportsExtendedSessionSecurity reports whether the server's NTLM CHALLENGE
+// advertised NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY — i.e. NTLM2 / NTLMv2
+// session security. It returns false when no NTLM challenge has been processed.
+func (ctx *AuthContext) SupportsExtendedSessionSecurity() bool {
+	ch := ctx.NTLMChallenge
+	if ch == nil {
+		return false
+	}
+	return ch.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY)
 }

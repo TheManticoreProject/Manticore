@@ -126,6 +126,10 @@ type Server struct {
 	OSVersionMajor      uint8
 	OSVersionMinor      uint8
 	OSVersionBuild      uint16
+
+	// SupportsNTLMv2 reports whether the server's NTLM CHALLENGE advertised
+	// extended session security (NTLM2 / NTLMv2). Populated by SessionSetup.
+	SupportsNTLMv2 bool
 }
 
 // Session represents an authenticated SMB2 session.
