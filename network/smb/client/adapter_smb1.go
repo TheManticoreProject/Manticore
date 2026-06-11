@@ -23,6 +23,17 @@ func newSMB1Backend(engine *smb1.Client) *smb1Backend {
 
 func (b *smb1Backend) Dialect() smb.SMBProtocolVersion { return smb.SMB_VERSION_1_0 }
 
+func (b *smb1Backend) ConnectionInfo() ConnectionInfo {
+	s := b.engine.Connection.Server
+	// SMB1 negotiates a single MaxBufferSize, not separate read/write maxima, so it
+	// is reported for both.
+	return ConnectionInfo{
+		SigningRequired: s.SecurityMode.IsSecuritySignatureRequired(),
+		MaxReadSize:     s.MaxBufferSize,
+		MaxWriteSize:    s.MaxBufferSize,
+	}
+}
+
 func (b *smb1Backend) Login(creds *credentials.Credentials) error {
 	return b.engine.SessionSetup(creds)
 }

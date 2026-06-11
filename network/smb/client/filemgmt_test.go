@@ -11,11 +11,13 @@ import (
 // recordingBackend is a no-op Backend that records the file-management calls the
 // generic Client delegates to it.
 type recordingBackend struct {
-	calls []string
-	args  []string
+	calls    []string
+	args     []string
+	connInfo ConnectionInfo
 }
 
 func (r *recordingBackend) Dialect() smb.SMBProtocolVersion      { return smb.SMB_VERSION_2_0_2 }
+func (r *recordingBackend) ConnectionInfo() ConnectionInfo       { return r.connInfo }
 func (r *recordingBackend) Login(*credentials.Credentials) error { return nil }
 func (r *recordingBackend) TreeConnect(string) error             { return nil }
 func (r *recordingBackend) OpenFile(string, OpenOptions) (FileHandle, error) {
@@ -92,5 +94,15 @@ func TestSMB1WirePath(t *testing.T) {
 		if got := smb1WirePath(in); got != want {
 			t.Errorf("smb1WirePath(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestClientConnectionInfoDelegation verifies Client.ConnectionInfo forwards the
+// backend's negotiated capabilities unchanged.
+func TestClientConnectionInfoDelegation(t *testing.T) {
+	want := ConnectionInfo{SigningRequired: true, MaxReadSize: 0x100000, MaxWriteSize: 0x80000}
+	c := &Client{backend: &recordingBackend{connInfo: want}}
+	if got := c.ConnectionInfo(); got != want {
+		t.Errorf("ConnectionInfo() = %+v, want %+v", got, want)
 	}
 }

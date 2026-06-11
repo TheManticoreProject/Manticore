@@ -18,6 +18,10 @@ type Backend interface {
 	// Dialect reports the negotiated protocol version this backend speaks.
 	Dialect() smb.SMBProtocolVersion
 
+	// ConnectionInfo reports the connection capabilities negotiated with the server
+	// (signing requirement, maximum read/write sizes), normalized across dialects.
+	ConnectionInfo() ConnectionInfo
+
 	// Login authenticates a session with the server.
 	Login(creds *credentials.Credentials) error
 

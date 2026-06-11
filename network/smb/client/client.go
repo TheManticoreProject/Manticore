@@ -91,6 +91,10 @@ func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
 // Dialect reports the negotiated protocol version.
 func (c *Client) Dialect() smb.SMBProtocolVersion { return c.backend.Dialect() }
 
+// ConnectionInfo reports the connection capabilities negotiated with the server:
+// whether signing is required and the maximum read/write sizes.
+func (c *Client) ConnectionInfo() ConnectionInfo { return c.backend.ConnectionInfo() }
+
 // Login authenticates a session with the server.
 func (c *Client) Login(creds *credentials.Credentials) error { return c.backend.Login(creds) }
 
