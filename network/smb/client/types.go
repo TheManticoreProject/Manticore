@@ -141,3 +141,19 @@ type ServerIdentity struct {
 	// (use the OSVersion* fields there).
 	OSName string
 }
+
+// SecurityInformation selects which parts of a SECURITY_DESCRIPTOR a
+// QuerySecurityDescriptor call retrieves. The values are the SECURITY_INFORMATION
+// bits from [MS-DTYP] 2.4.7; combine them with bitwise OR.
+type SecurityInformation uint32
+
+const (
+	// OwnerSecurityInformation requests the owner SID.
+	OwnerSecurityInformation SecurityInformation = 0x00000001
+	// GroupSecurityInformation requests the primary-group SID.
+	GroupSecurityInformation SecurityInformation = 0x00000002
+	// DaclSecurityInformation requests the discretionary ACL.
+	DaclSecurityInformation SecurityInformation = 0x00000004
+	// SaclSecurityInformation requests the system ACL (requires extra privilege).
+	SaclSecurityInformation SecurityInformation = 0x00000008
+)

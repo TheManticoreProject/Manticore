@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"testing"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
@@ -15,6 +16,7 @@ type recordingBackend struct {
 	args     []string
 	connInfo ConnectionInfo
 	identity ServerIdentity
+	sd       []byte
 }
 
 func (r *recordingBackend) Dialect() smb.SMBProtocolVersion      { return smb.SMB_VERSION_2_0_2 }
@@ -29,6 +31,10 @@ func (r *recordingBackend) ReadFile(FileHandle, uint64, uint32) ([]byte, error) 
 func (r *recordingBackend) WriteFile(FileHandle, uint64, []byte) (uint32, error) { return 0, nil }
 func (r *recordingBackend) CloseFile(FileHandle) error                           { return nil }
 func (r *recordingBackend) ListDirectory(string, string) ([]FileInfo, error)     { return nil, nil }
+func (r *recordingBackend) QuerySecurityDescriptor(path string, info SecurityInformation) ([]byte, error) {
+	r.calls, r.args = append(r.calls, "QuerySecurityDescriptor"), append(r.args, path)
+	return r.sd, nil
+}
 func (r *recordingBackend) RPCTransport(string) (dcerpctransport.Transport, error) {
 	return nil, nil
 }
@@ -125,5 +131,23 @@ func TestClientServerIdentityDelegation(t *testing.T) {
 	c := &Client{backend: &recordingBackend{identity: want}}
 	if got := c.ServerIdentity(); got != want {
 		t.Errorf("ServerIdentity() = %+v, want %+v", got, want)
+	}
+}
+
+// TestClientQuerySecurityDescriptorDelegation verifies Client.QuerySecurityDescriptor
+// forwards the path to the backend and returns its bytes unchanged.
+func TestClientQuerySecurityDescriptorDelegation(t *testing.T) {
+	rb := &recordingBackend{sd: []byte{0x01, 0x00, 0x04, 0x80, 0xde, 0xad}}
+	c := &Client{backend: rb}
+
+	got, err := c.QuerySecurityDescriptor("dir\\secret.txt", OwnerSecurityInformation|GroupSecurityInformation|DaclSecurityInformation)
+	if err != nil {
+		t.Fatalf("QuerySecurityDescriptor() error = %v", err)
+	}
+	if !bytes.Equal(got, rb.sd) {
+		t.Errorf("descriptor bytes = %x, want %x", got, rb.sd)
+	}
+	if len(rb.calls) != 1 || rb.calls[0] != "QuerySecurityDescriptor" || rb.args[0] != "dir\\secret.txt" {
+		t.Errorf("backend call = (%v, %v), want one QuerySecurityDescriptor for dir\\secret.txt", rb.calls, rb.args)
 	}
 }

@@ -138,6 +138,13 @@ func (b *smb1Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 	return out, nil
 }
 
+// QuerySecurityDescriptor is not yet supported on SMB1. The SMB1 security-descriptor
+// query (NT_TRANSACT_QUERY_SECURITY_DESC) is not wired into the engine; callers that
+// need it should negotiate SMB2 or higher.
+func (b *smb1Backend) QuerySecurityDescriptor(path string, info SecurityInformation) ([]byte, error) {
+	return nil, fmt.Errorf("QuerySecurityDescriptor is not supported over SMB1; negotiate SMB2 or higher")
+}
+
 func (b *smb1Backend) DeleteFile(path string) error { return b.engine.DeleteFile(smb1WirePath(path)) }
 
 func (b *smb1Backend) CreateDirectory(path string) error {
