@@ -52,6 +52,14 @@ type Client struct {
 	// derived from the bind_ack.
 	sendFragMax uint16
 
+	// preferNDR64 makes Bind additionally propose the NDR64 transfer syntax and prefer
+	// it when the server accepts it. Default false: NDR20 only, identical to before.
+	preferNDR64 bool
+
+	// negotiatedSyntax is the transfer syntax the server accepted at Bind; Invoke
+	// marshals and unmarshals stubs under it. Default NDR20.
+	negotiatedSyntax ndr.Syntax
+
 	bound bool
 }
 
@@ -62,29 +70,52 @@ func NewClient(t transport.Transport) *Client {
 	return &Client{transport: t}
 }
 
+// PreferNDR64 controls whether Bind proposes the NDR64 transfer syntax in addition to
+// NDR 2.0 and uses it when the server accepts it. It must be called before Bind. The
+// default is false (NDR 2.0 only).
+func (c *Client) PreferNDR64(enable bool) { c.preferNDR64 = enable }
+
+// NegotiatedSyntax reports the transfer syntax the server accepted at Bind. It is
+// meaningful only after a successful Bind.
+func (c *Client) NegotiatedSyntax() ndr.Syntax { return c.negotiatedSyntax }
+
 // Bind connects the transport and binds to the interface identified by
-// abstractSyntax, negotiating the NDR 2.0 transfer syntax in a single presentation
-// context. It returns an error if the server rejects the bind (bind_nak) or accepts
-// no context.
+// abstractSyntax. It proposes the NDR 2.0 transfer syntax in presentation context 0,
+// and — when PreferNDR64 is enabled — NDR64 in a second context (the established
+// negotiation pattern: one transfer syntax per context, [MS-RPCE] 2.2.2.4). The
+// transfer syntax the server accepts is recorded for subsequent calls, preferring
+// NDR64 when both are accepted. It returns an error if the server rejects the bind
+// (bind_nak) or accepts no context.
 func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	if err := c.transport.Connect(); err != nil {
 		return fmt.Errorf("dcerpc bind: %w", err)
 	}
 
 	c.callID = 1
-	c.contextID = 0
+
+	// Context 0 is always NDR 2.0; an optional context 1 offers NDR64. Each context
+	// carries a single transfer syntax so the bind_ack's per-context result identifies
+	// exactly which one the server chose.
+	contexts := []pdu.ContextElement{
+		{
+			ContextID:        0,
+			AbstractSyntax:   abstractSyntax,
+			TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+		},
+	}
+	if c.preferNDR64 {
+		contexts = append(contexts, pdu.ContextElement{
+			ContextID:        1,
+			AbstractSyntax:   abstractSyntax,
+			TransferSyntaxes: []syntax.SyntaxID{syntax.NDR64TransferSyntax()},
+		})
+	}
 
 	bind := &pdu.Bind{
 		MaxXmitFrag:  c.transport.MaxXmitFrag(),
 		MaxRecvFrag:  c.transport.MaxRecvFrag(),
 		AssocGroupID: 0,
-		ContextList: []pdu.ContextElement{
-			{
-				ContextID:        c.contextID,
-				AbstractSyntax:   abstractSyntax,
-				TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
-			},
-		},
+		ContextList:  contexts,
 	}
 	bind.Header = pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, c.callID)
 
@@ -111,9 +142,12 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		if _, err := ack.Unmarshal(respFrag); err != nil {
 			return fmt.Errorf("dcerpc bind: parse bind_ack: %w", err)
 		}
-		if !ack.Accepted() {
+		ctxID, negotiated, ok := selectContext(bind.ContextList, ack.Results)
+		if !ok {
 			return fmt.Errorf("dcerpc bind: server accepted no presentation context: %s", ack.String())
 		}
+		c.contextID = ctxID
+		c.negotiatedSyntax = negotiated
 		c.sendFragMax = negotiateSendMax(c.transport.MaxXmitFrag(), ack.MaxXmitFrag, ack.MaxRecvFrag)
 		c.bound = true
 		return nil
@@ -155,7 +189,7 @@ func (c *Client) Call(opnum uint16, stub []byte) ([]byte, error) {
 // the [out] parameter structure). out may be nil when the response carries no data.
 // A fault PDU is returned as a *pdu.Fault error, as with Call.
 func (c *Client) Invoke(in ndr.Call, out any) error {
-	stub, err := ndr.Request(in)
+	stub, err := ndr.RequestAs(in, c.negotiatedSyntax)
 	if err != nil {
 		return fmt.Errorf("dcerpc invoke (opnum %d): marshal request: %w", in.Opnum(), err)
 	}
@@ -166,10 +200,37 @@ func (c *Client) Invoke(in ndr.Call, out any) error {
 	if out == nil {
 		return nil
 	}
-	if err := ndr.Response(resp, out); err != nil {
+	if err := ndr.ResponseAs(resp, out, c.negotiatedSyntax); err != nil {
 		return fmt.Errorf("dcerpc invoke (opnum %d): unmarshal response: %w", in.Opnum(), err)
 	}
 	return nil
+}
+
+// selectContext chooses the accepted presentation context from a bind_ack, preferring
+// NDR64 when the server accepted it. It returns the context id to use on subsequent
+// requests and the negotiated transfer syntax. The result list is positional with the
+// proposed context list ([C706] section 12.6.3.1), so result i answers context i.
+func selectContext(contexts []pdu.ContextElement, results []pdu.PresentationResult) (uint16, ndr.Syntax, bool) {
+	var ndr20Ctx, ndr64Ctx uint16
+	var ndr20OK, ndr64OK bool
+	for i, r := range results {
+		if r.Result != pdu.ResultAcceptance || i >= len(contexts) {
+			continue
+		}
+		switch {
+		case r.TransferSyntax.Equal(syntax.NDR64TransferSyntax()):
+			ndr64Ctx, ndr64OK = contexts[i].ContextID, true
+		case r.TransferSyntax.Equal(syntax.NDRTransferSyntax()):
+			ndr20Ctx, ndr20OK = contexts[i].ContextID, true
+		}
+	}
+	if ndr64OK {
+		return ndr64Ctx, ndr.NDR64, true
+	}
+	if ndr20OK {
+		return ndr20Ctx, ndr.NDR20, true
+	}
+	return 0, ndr.NDR20, false
 }
 
 // sendRequest fragments stub into request PDUs no larger than the negotiated send
