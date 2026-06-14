@@ -12,12 +12,18 @@ import (
 // referent id inline with their referent body deferred to the end of the enclosing
 // construction, per the deferral rule in [C706] section 14.3.10:
 // https://pubs.opengroup.org/onlinepubs/9629399/chap14.htm
-func Marshal(v any) ([]byte, error) {
+func Marshal(v any) ([]byte, error) { return MarshalAs(v, NDR20) }
+
+// MarshalAs is Marshal under an explicit transfer syntax. NDR64 widens counts and
+// referent ids to 8 octets and aligns them to 8 ([MS-RPCE] section 2.2.5). NDR64
+// unions and pipes are not yet supported and marshalling a value that contains one
+// returns an error rather than emitting an unverified encoding.
+func MarshalAs(v any, syntax Syntax) ([]byte, error) {
 	rv, err := structValue(reflect.ValueOf(v))
 	if err != nil {
 		return nil, err
 	}
-	e := NewEncoder()
+	e := NewEncoderForSyntax(syntax)
 	if err := marshalStruct(e, rv, false); err != nil {
 		return nil, err
 	}
@@ -26,7 +32,11 @@ func Marshal(v any) ([]byte, error) {
 
 // Unmarshal decodes an NDR octet stream into v, which must be a non-nil pointer to a
 // struct.
-func Unmarshal(data []byte, v any) error {
+func Unmarshal(data []byte, v any) error { return UnmarshalAs(data, v, NDR20) }
+
+// UnmarshalAs is Unmarshal under an explicit transfer syntax. See MarshalAs for the
+// NDR64 semantics and the union/pipe limitation.
+func UnmarshalAs(data []byte, v any, syntax Syntax) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("ndr: Unmarshal requires a non-nil pointer, got %T", v)
@@ -35,7 +45,7 @@ func Unmarshal(data []byte, v any) error {
 	if err != nil {
 		return err
 	}
-	return unmarshalStruct(NewDecoder(data), sv, false)
+	return unmarshalStruct(NewDecoderForSyntax(data, syntax), sv, false)
 }
 
 // structValue dereferences pointers/interfaces to reach a struct value.
@@ -99,10 +109,10 @@ func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *
 	// representation ([C706] section 14.2.2). The first member self-aligns to its own
 	// size, which is insufficient when a later member is wider (e.g. RPC_UNICODE_STRING,
 	// whose Buffer pointer makes it 4-aligned, following a 2-byte discriminant).
-	e.Align(ndrAlignment(rt))
+	e.Align(ndrAlignment(rt, e.syntax))
 	confIdx := embeddedConformantIndex(rt, rv)
 	if confIdx >= 0 {
-		e.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
+		e.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem(), e.syntax))
 		e.writeCount(uint64(rv.Field(confIdx).Len())) // hoisted maximum_count
 	}
 	// A field named by another field's size_is/length_is is the array's count; its
@@ -358,11 +368,11 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 // marshalStructFields for why arrays need this. Returns the `retval` field index or -1.
 func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
-	d.Align(ndrAlignment(rt)) // a structure is aligned to its largest member ([C706] 14.2.2)
+	d.Align(ndrAlignment(rt, d.syntax)) // a structure is aligned to its largest member ([C706] 14.2.2)
 	confIdx := embeddedConformantIndex(rt, rv)
 	var confCount uint64
 	if confIdx >= 0 {
-		d.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem()))
+		d.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem(), d.syntax))
 		c, err := d.readCount() // hoisted maximum_count
 		if err != nil {
 			return -1, err
@@ -706,8 +716,12 @@ func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
 	return fv.Kind() == reflect.Slice && !tag.pipe && !isPointerLike(fv, tag)
 }
 
-// ndrAlignment returns the NDR alignment, in octets, of a value of type t.
-func ndrAlignment(t reflect.Type) int {
+// ndrAlignment returns the NDR alignment, in octets, of a value of type t under the
+// given transfer syntax. Strings, pointers, and slices lead with a referent id or a
+// conformance count, which widen from 4 octets 4-aligned (NDR20) to 8 octets 8-aligned
+// (NDR64), so those kinds align to 8 under NDR64 ([MS-RPCE] section 2.2.5). Fixed scalar
+// kinds keep their natural alignment in both syntaxes.
+func ndrAlignment(t reflect.Type, syntax Syntax) int {
 	if reflect.PointerTo(t).Implements(marshalerType) {
 		return reflect.New(t).Interface().(Marshaler).AlignmentNDR()
 	}
@@ -716,17 +730,45 @@ func ndrAlignment(t reflect.Type) int {
 		return 1
 	case reflect.Uint16, reflect.Int16:
 		return 2
-	case reflect.Uint32, reflect.Int32, reflect.Uint, reflect.Int, reflect.String, reflect.Pointer:
+	case reflect.Uint32, reflect.Int32, reflect.Uint, reflect.Int:
 		return 4
 	case reflect.Uint64, reflect.Int64:
 		return 8
+	case reflect.String, reflect.Pointer, reflect.Slice:
+		// A string/slice begins with a conformance count and a pointer with a referent
+		// id; both are 8-octet 8-aligned under NDR64 and 4-octet 4-aligned under NDR20.
+		if syntax == NDR64 {
+			return 8
+		}
+		return 4
+	case reflect.Array:
+		// A fixed array aligns to its element. Under NDR20 the historical behaviour is
+		// the catch-all alignment of 4, preserved to keep NDR20 output byte-identical.
+		if syntax == NDR64 {
+			return ndrAlignment(t.Elem(), syntax)
+		}
+		return 4
 	case reflect.Struct:
 		a := 1
 		for i := 0; i < t.NumField(); i++ {
-			if t.Field(i).PkgPath != "" {
+			f := t.Field(i)
+			if f.PkgPath != "" {
 				continue
 			}
-			if fa := ndrAlignment(t.Field(i).Type); fa > a {
+			// NDR20 aligns to the widest member type, ignoring tags (preserved exactly).
+			// NDR64 is tag-aware: a value field tagged as a pointer ([unique]/[ref]/[ptr])
+			// is a referent id inline, so it aligns to 8 regardless of the value's layout.
+			var fa int
+			if syntax == NDR64 {
+				tag := parseTag(f.Tag.Get("ndr"))
+				if tag.skip {
+					continue
+				}
+				fa = fieldNDRAlignment(f.Type, tag, syntax)
+			} else {
+				fa = ndrAlignment(f.Type, syntax)
+			}
+			if fa > a {
 				a = fa
 			}
 		}
@@ -736,28 +778,46 @@ func ndrAlignment(t reflect.Type) int {
 	}
 }
 
+// fieldNDRAlignment returns the alignment of a struct field, accounting for a pointer
+// tag on a non-pointer Go type (e.g. a value struct tagged [unique]), whose inline
+// representation is a referent id rather than the field's own layout.
+func fieldNDRAlignment(t reflect.Type, tag fieldTag, syntax Syntax) int {
+	if tag.ptr != ptrNone && t.Kind() != reflect.Pointer {
+		if syntax == NDR64 {
+			return 8
+		}
+		return 4
+	}
+	return ndrAlignment(t, syntax)
+}
+
 // conformantArrayAlignment returns the alignment of a conformant array of the given
-// element type: the larger of the size determinant's alignment (4) and the element
-// alignment ([C706] section 14.3.3.1).
-func conformantArrayAlignment(elemType reflect.Type) int {
-	if a := ndrAlignment(elemType); a > 4 {
+// element type under the given syntax: the larger of the size determinant's alignment
+// (4 under NDR20, 8 under NDR64) and the element alignment ([C706] section 14.3.3.1,
+// [MS-RPCE] section 2.2.5).
+func conformantArrayAlignment(elemType reflect.Type, syntax Syntax) int {
+	det := 4
+	if syntax == NDR64 {
+		det = 8
+	}
+	if a := ndrAlignment(elemType, syntax); a > det {
 		return a
 	}
-	return 4
+	return det
 }
 
 // marshalConformantArray writes a conformant array: a maximum_count followed by the
 // elements, per [MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
 func marshalConformantArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
-	e.Align(conformantArrayAlignment(slice.Type().Elem()))
+	e.Align(conformantArrayAlignment(slice.Type().Elem(), e.syntax))
 	e.writeCount(uint64(maxCount))
 	return marshalElements(e, slice, elemTag)
 }
 
 // unmarshalConformantArray reads a maximum_count-prefixed array into slice.
 func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
-	d.Align(conformantArrayAlignment(slice.Type().Elem()))
+	d.Align(conformantArrayAlignment(slice.Type().Elem(), d.syntax))
 	n, err := d.readCount()
 	if err != nil {
 		return err
@@ -776,7 +836,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, ac
 	if int(actualCount) > slice.Len() {
 		actualCount = uint32(slice.Len())
 	}
-	e.Align(conformantArrayAlignment(slice.Type().Elem()))
+	e.Align(conformantArrayAlignment(slice.Type().Elem(), e.syntax))
 	e.writeCount(uint64(maxCount))    // maximum_count
 	e.writeCount(0)                   // offset
 	e.writeCount(uint64(actualCount)) // actual_count
@@ -786,7 +846,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, ac
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the
 // actual_count to size the result.
 func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
-	d.Align(conformantArrayAlignment(slice.Type().Elem()))
+	d.Align(conformantArrayAlignment(slice.Type().Elem(), d.syntax))
 	if _, err := d.readCount(); err != nil { // maximum_count
 		return err
 	}
@@ -812,10 +872,13 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fi
 // of a scalar (e.g. EFS_EXIM_PIPE = pipe of bytes) goes through marshalElements, which
 // has a byte fast path.
 //
-// The chunk count is kept a 4-octet value here regardless of syntax: NDR64 pipe framing
-// is not yet verified against [MS-RPCE] section 2.2.5 and is handled in a later phase,
-// so it deliberately does not route through writeCount.
+// NDR64 pipe framing is not yet verified against [MS-RPCE] section 2.2.5 and is handled
+// in a later phase, so marshalling a pipe under NDR64 returns an error rather than
+// emitting an unverified encoding.
 func marshalPipe(e *Encoder, fv reflect.Value, tag fieldTag) error {
+	if e.syntax == NDR64 {
+		return fmt.Errorf("ndr: NDR64 pipes are not yet supported")
+	}
 	if fv.Kind() != reflect.Slice {
 		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
 	}
@@ -833,6 +896,9 @@ func marshalPipe(e *Encoder, fv reflect.Value, tag fieldTag) error {
 // 0-count chunk, concatenating the chunks into the slice. unmarshalElements bounds each
 // chunk's count against the remaining input, so a hostile count cannot over-allocate.
 func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
+	if d.syntax == NDR64 {
+		return fmt.Errorf("ndr: NDR64 pipes are not yet supported")
+	}
 	if fv.Kind() != reflect.Slice {
 		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
 	}
