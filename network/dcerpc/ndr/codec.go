@@ -6,8 +6,14 @@
 // primitive encoding; the reflection walker in marshal.go drives it from struct tags
 // so callers can declare an RPC call as a Go struct (see Call, Marshal, Unmarshal).
 //
-// Scope: NDR20, little-endian (the standard Windows data representation, DREP 0x10).
-// Big-endian and NDR64 (8-byte counts/referents) are out of scope.
+// The codec is transfer-syntax aware: an Encoder/Decoder carries a Syntax (NDR20 or
+// NDR64) that governs the width and alignment of NDR counts and referent ids (4 octets
+// 4-aligned for NDR20, 8 octets 8-aligned for NDR64; [MS-RPCE] section 2.2.5). Scalar
+// primitives keep their natural width in both syntaxes. The declarative walker
+// (Marshal/Unmarshal) and the v5 client still default to NDR20; the NDR64 path is being
+// introduced incrementally and is reachable through NewEncoderForSyntax/
+// NewDecoderForSyntax. Both syntaxes are little-endian (the standard Windows data
+// representation, DREP 0x10); big-endian is out of scope.
 //
 // References:
 //   - [C706] DCE 1.1: RPC, Chapter 14 "Transfer Syntax NDR":
@@ -35,21 +41,50 @@ type Marshaler interface {
 	UnmarshalNDR(*Decoder) error
 }
 
+// Syntax selects the NDR transfer syntax an Encoder/Decoder operates under. It governs
+// the on-the-wire width and alignment of NDR counts (maximum_count, offset,
+// actual_count) and referent ids, which differ between the two syntaxes ([MS-RPCE]
+// section 2.2.5). NDR20 is the zero value, so an Encoder/Decoder built without an
+// explicit syntax behaves as the classic NDR 2.0 codec.
+type Syntax int
+
+const (
+	// NDR20 is NDR transfer syntax version 2.0: 4-octet counts and referent ids.
+	NDR20 Syntax = iota
+	// NDR64 is the NDR64 transfer syntax: 8-octet counts and referent ids.
+	NDR64
+)
+
+// String returns the syntax name for diagnostics.
+func (s Syntax) String() string {
+	if s == NDR64 {
+		return "NDR64"
+	}
+	return "NDR20"
+}
+
 // Encoder builds an NDR octet stream. Alignment is computed relative to the start of
 // the stream, as required by [C706] section 14.2.2.
 type Encoder struct {
 	buf     []byte
-	nextRef uint32
+	nextRef uint64
+	syntax  Syntax
 }
 
 // firstReferentID is the referent id assigned to the first non-null pointer. The
 // exact value is irrelevant on the wire (a receiver only checks non-null for
 // unique/full pointers); an arbitrary non-zero base matching common implementations
 // is used.
-const firstReferentID uint32 = 0x00020000
+const firstReferentID uint64 = 0x00020000
 
-// NewEncoder returns an empty encoder.
+// NewEncoder returns an empty encoder for the NDR20 transfer syntax.
 func NewEncoder() *Encoder { return &Encoder{nextRef: firstReferentID} }
+
+// NewEncoderForSyntax returns an empty encoder for the given transfer syntax.
+func NewEncoderForSyntax(s Syntax) *Encoder { return &Encoder{nextRef: firstReferentID, syntax: s} }
+
+// Syntax reports the transfer syntax the encoder operates under.
+func (e *Encoder) Syntax() Syntax { return e.syntax }
 
 // Bytes returns the accumulated octet stream.
 func (e *Encoder) Bytes() []byte { return e.buf }
@@ -92,10 +127,37 @@ func (e *Encoder) WriteUint64(v uint64) {
 	e.buf = binary.LittleEndian.AppendUint64(e.buf, v)
 }
 
-// nextReferent returns the next referent id for a non-null pointer.
-func (e *Encoder) nextReferent() uint32 {
+// writeCount writes an NDR count or length determinant — a maximum_count, offset, or
+// actual_count — as a 4-octet value 4-aligned under NDR20, or an 8-octet value
+// 8-aligned under NDR64 ([MS-RPCE] section 2.2.5). Counts are non-negative, so a uint64
+// carries either width.
+func (e *Encoder) writeCount(v uint64) {
+	if e.syntax == NDR64 {
+		e.WriteUint64(v)
+		return
+	}
+	e.WriteUint32(uint32(v))
+}
+
+// writeReferent writes a pointer referent id at the syntax's referent width: 4 octets
+// under NDR20, 8 octets under NDR64.
+func (e *Encoder) writeReferent(id uint64) {
+	if e.syntax == NDR64 {
+		e.WriteUint64(id)
+		return
+	}
+	e.WriteUint32(uint32(id))
+}
+
+// nextReferent returns the next referent id for a non-null pointer, advancing by the
+// syntax's referent width.
+func (e *Encoder) nextReferent() uint64 {
 	id := e.nextRef
-	e.nextRef += 4
+	if e.syntax == NDR64 {
+		e.nextRef += 8
+	} else {
+		e.nextRef += 4
+	}
 	return id
 }
 
@@ -105,10 +167,10 @@ func (e *Encoder) nextReferent() uint32 {
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/db6a89db-2c88-4ae7-90de-fca23929abab
 func (e *Encoder) writeWString(s string) {
 	units := utf16.EncodeUTF16LE(s) // 2 octets per code unit, no terminator
-	count := uint32(len(units)/2) + 1
-	e.WriteUint32(count) // maximum_count
-	e.WriteUint32(0)     // offset
-	e.WriteUint32(count) // actual_count
+	count := uint64(len(units)/2) + 1
+	e.writeCount(count) // maximum_count
+	e.writeCount(0)     // offset
+	e.writeCount(count) // actual_count
 	e.WriteBytes(units)
 	e.WriteUint16(0) // NUL terminator
 }
@@ -116,10 +178,10 @@ func (e *Encoder) writeWString(s string) {
 // writeAString writes a char string ([string]) as a conformant+varying array of
 // octets. The counts include the NUL terminator.
 func (e *Encoder) writeAString(s string) {
-	count := uint32(len(s)) + 1
-	e.WriteUint32(count) // maximum_count
-	e.WriteUint32(0)     // offset
-	e.WriteUint32(count) // actual_count
+	count := uint64(len(s)) + 1
+	e.writeCount(count) // maximum_count
+	e.writeCount(0)     // offset
+	e.writeCount(count) // actual_count
 	e.WriteBytes([]byte(s))
 	e.WriteUint8(0) // NUL terminator
 }
@@ -128,19 +190,26 @@ func (e *Encoder) writeAString(s string) {
 // elements ([MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03).
 func (e *Encoder) writeConformantBytes(b []byte) {
-	e.WriteUint32(uint32(len(b)))
+	e.writeCount(uint64(len(b)))
 	e.WriteBytes(b)
 }
 
 // Decoder reads an NDR octet stream produced under the little-endian data
 // representation.
 type Decoder struct {
-	data []byte
-	pos  int
+	data   []byte
+	pos    int
+	syntax Syntax
 }
 
-// NewDecoder returns a decoder over data.
+// NewDecoder returns a decoder over data for the NDR20 transfer syntax.
 func NewDecoder(data []byte) *Decoder { return &Decoder{data: data} }
+
+// NewDecoderForSyntax returns a decoder over data for the given transfer syntax.
+func NewDecoderForSyntax(data []byte, s Syntax) *Decoder { return &Decoder{data: data, syntax: s} }
+
+// Syntax reports the transfer syntax the decoder operates under.
+func (d *Decoder) Syntax() Syntax { return d.syntax }
 
 // Pos returns the current read offset.
 func (d *Decoder) Pos() int { return d.pos }
@@ -207,16 +276,36 @@ func (d *Decoder) ReadUint64() (uint64, error) {
 	return binary.LittleEndian.Uint64(b), nil
 }
 
+// readCount reads an NDR count or length determinant at the syntax's width: 4 octets
+// 4-aligned under NDR20, or 8 octets 8-aligned under NDR64 ([MS-RPCE] section 2.2.5).
+func (d *Decoder) readCount() (uint64, error) {
+	if d.syntax == NDR64 {
+		return d.ReadUint64()
+	}
+	v, err := d.ReadUint32()
+	return uint64(v), err
+}
+
+// readReferent reads a pointer referent id at the syntax's referent width: 4 octets
+// under NDR20, 8 octets under NDR64.
+func (d *Decoder) readReferent() (uint64, error) {
+	if d.syntax == NDR64 {
+		return d.ReadUint64()
+	}
+	v, err := d.ReadUint32()
+	return uint64(v), err
+}
+
 // readWString reads a conformant+varying UTF-16LE string and returns it with the NUL
 // terminator removed.
 func (d *Decoder) readWString() (string, error) {
-	if _, err := d.ReadUint32(); err != nil { // maximum_count
+	if _, err := d.readCount(); err != nil { // maximum_count
 		return "", err
 	}
-	if _, err := d.ReadUint32(); err != nil { // offset
+	if _, err := d.readCount(); err != nil { // offset
 		return "", err
 	}
-	actual, err := d.ReadUint32() // actual_count (code units, incl. terminator)
+	actual, err := d.readCount() // actual_count (code units, incl. terminator)
 	if err != nil {
 		return "", err
 	}
@@ -230,13 +319,13 @@ func (d *Decoder) readWString() (string, error) {
 // readAString reads a conformant+varying ASCII string and returns it with the NUL
 // terminator removed.
 func (d *Decoder) readAString() (string, error) {
-	if _, err := d.ReadUint32(); err != nil { // maximum_count
+	if _, err := d.readCount(); err != nil { // maximum_count
 		return "", err
 	}
-	if _, err := d.ReadUint32(); err != nil { // offset
+	if _, err := d.readCount(); err != nil { // offset
 		return "", err
 	}
-	actual, err := d.ReadUint32() // actual_count (octets, incl. terminator)
+	actual, err := d.readCount() // actual_count (octets, incl. terminator)
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +338,7 @@ func (d *Decoder) readAString() (string, error) {
 
 // readConformantBytes reads a maximum_count-prefixed byte array.
 func (d *Decoder) readConformantBytes() ([]byte, error) {
-	n, err := d.ReadUint32()
+	n, err := d.readCount()
 	if err != nil {
 		return nil, err
 	}
