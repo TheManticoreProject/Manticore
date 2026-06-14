@@ -65,10 +65,21 @@ func Request(call Call) ([]byte, error) {
 	return Marshal(call)
 }
 
+// RequestAs is Request under an explicit transfer syntax, used by a client that has
+// negotiated NDR64 ([MS-RPCE] section 2.2.5).
+func RequestAs(call Call, syntax Syntax) ([]byte, error) {
+	return MarshalAs(call, syntax)
+}
+
 // Response unmarshals an RPC response stub into out (a pointer to the [out] parameter
 // structure).
 func Response(stub []byte, out any) error {
 	return Unmarshal(stub, out)
+}
+
+// ResponseAs is Response under an explicit transfer syntax.
+func ResponseAs(stub []byte, out any, syntax Syntax) error {
+	return UnmarshalAs(stub, out, syntax)
 }
 
 // ptrKind is the NDR pointer attribute of a field.
