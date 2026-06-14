@@ -1,6 +1,9 @@
 package ndr
 
-import "reflect"
+import (
+	"fmt"
+	"reflect"
+)
 
 // NDR discriminated unions, declared with struct tags rather than the Marshaler escape
 // hatch. A union is a Go struct with one field tagged `switch` (the discriminant) and
@@ -78,7 +81,7 @@ func unionArm(rt reflect.Type, disc reflect.Value) int {
 // unionArmAlignment returns the largest NDR alignment among the union's arms (the
 // case/default fields), which is the alignment applied to the selected arm so its
 // position does not depend on which arm was sent ([C706] section 14.3.8).
-func unionArmAlignment(rt reflect.Type) int {
+func unionArmAlignment(rt reflect.Type, syntax Syntax) int {
 	a := 1
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -89,7 +92,7 @@ func unionArmAlignment(rt reflect.Type) int {
 		if !tag.hasCase && !tag.isDefault {
 			continue
 		}
-		if fa := ndrAlignment(f.Type); fa > a {
+		if fa := ndrAlignment(f.Type, syntax); fa > a {
 			a = fa
 		}
 	}
@@ -101,6 +104,9 @@ func unionArmAlignment(rt reflect.Type) int {
 // a [unique]/[ref] pointer to a structure) emits a referent id with its body deferred to
 // the end of the union construction.
 func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
+	if e.syntax == NDR64 {
+		return fmt.Errorf("ndr: NDR64 unions are not yet supported")
+	}
 	rt := rv.Type()
 	disc := rv.Field(swIdx)
 	// The discriminant is aligned to its own alignment. The selected arm is then aligned
@@ -109,7 +115,7 @@ func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
 	// LSAPR_POLICY_INFORMATION's 2-byte server-role arm still starts 8-aligned because
 	// other arms carry 8-byte LARGE_INTEGER members. (Note this padding follows the tag,
 	// so it does not over-align the discriminant itself.)
-	e.Align(ndrAlignment(disc.Type()))
+	e.Align(ndrAlignment(disc.Type(), e.syntax))
 	if err := marshalScalar(e, disc); err != nil {
 		return err
 	}
@@ -117,7 +123,7 @@ func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
 	if armIdx < 0 {
 		return nil // discriminant value with no arm and no default: empty body
 	}
-	e.Align(unionArmAlignment(rt))
+	e.Align(unionArmAlignment(rt, e.syntax))
 	f := rt.Field(armIdx)
 	var deferred []func() error
 	if err := marshalFieldInline(e, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &deferred, true); err != nil {
@@ -129,9 +135,12 @@ func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
 // unmarshalUnion reads the discriminant, selects the matching arm, and leaves the other
 // arm fields zero.
 func unmarshalUnion(d *Decoder, rv reflect.Value, swIdx int) error {
+	if d.syntax == NDR64 {
+		return fmt.Errorf("ndr: NDR64 unions are not yet supported")
+	}
 	rt := rv.Type()
 	disc := rv.Field(swIdx)
-	d.Align(ndrAlignment(disc.Type())) // discriminant aligned to itself
+	d.Align(ndrAlignment(disc.Type(), d.syntax)) // discriminant aligned to itself
 	if err := unmarshalScalar(d, disc); err != nil {
 		return err
 	}
@@ -139,7 +148,7 @@ func unmarshalUnion(d *Decoder, rv reflect.Value, swIdx int) error {
 	if armIdx < 0 {
 		return nil
 	}
-	d.Align(unionArmAlignment(rt)) // arm aligned to the largest alignment among all arms
+	d.Align(unionArmAlignment(rt, d.syntax)) // arm aligned to the largest alignment among all arms
 	f := rt.Field(armIdx)
 	var deferred []func() error
 	if err := unmarshalFieldInline(d, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &deferred, true); err != nil {
