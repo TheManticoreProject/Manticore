@@ -2,7 +2,6 @@ package structures
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
-	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
 // LSAPR_POLICY_DNS_DOMAIN_INFO contains DNS information about the primary domain
@@ -11,6 +10,6 @@ type LSAPR_POLICY_DNS_DOMAIN_INFO struct {
 	Name          dtyp.RPC_UNICODE_STRING
 	DnsDomainName dtyp.RPC_UNICODE_STRING
 	DnsForestName dtyp.RPC_UNICODE_STRING
-	DomainGuid    guid.GUID
+	DomainGuid    dtyp.GUID
 	Sid           *dtyp.RPC_SID `ndr:"unique"`
 }

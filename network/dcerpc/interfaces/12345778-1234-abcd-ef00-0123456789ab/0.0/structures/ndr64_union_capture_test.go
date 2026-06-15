@@ -51,4 +51,24 @@ func TestNDR64_PolicyInformationUnion_FromCapture(t *testing.T) {
 	if sid := info.DomainSid.String(); sid != "S-1-5-21-2802240253-752003275-3968249406" {
 		t.Errorf("account-domain: DomainSid = %q, want %q", sid, "S-1-5-21-2802240253-752003275-3968249406")
 	}
+
+	// DNS-domain arm (class 12): three counted strings, a 16-octet GUID, and a SID.
+	dnsStub, _ := hex.DecodeString("00000200000000000c00000000000000160018000000000000000200000000002000220000000000000002000000000020002200000000000000020000000000480250a6c11c894eb2bfebe99677d08400000200000000000c0000000000000000000000000000000b0000000000000054004d0050002d0057002d0032003000310036003000000011000000000000000000000000000000100000000000000054004d0050002d0057002d0032003000310036002e006c006f00630061006c0011000000000000000000000000000000100000000000000054004d0050002d0057002d0032003000310036002e006c006f00630061006c000400000000000000010400000000000515000000fdca06a7cba8d22c3eae86ec00000000")
+	var dns policyInfoResponse
+	if err := ndr.UnmarshalAs(dnsStub, &dns, ndr.NDR64); err != nil {
+		t.Fatalf("decode dns-domain union: %v", err)
+	}
+	if dns.PolicyInformation == nil || dns.PolicyInformation.Class != PolicyDnsDomainInformation {
+		t.Fatalf("dns-domain: Class = %v, want %d", dns.PolicyInformation, PolicyDnsDomainInformation)
+	}
+	d := dns.PolicyInformation.PolicyDnsDomainInfo
+	if d.Name.String() != "TMP-W-20160" || d.DnsDomainName.String() != "TMP-W-2016.local" || d.DnsForestName.String() != "TMP-W-2016.local" {
+		t.Errorf("dns-domain: names = %q / %q / %q", d.Name.String(), d.DnsDomainName.String(), d.DnsForestName.String())
+	}
+	if g := d.DomainGuid.String(); g != "a6500248-1cc1-4e89-b2bf-ebe99677d084" {
+		t.Errorf("dns-domain: DomainGuid = %q, want %q", g, "a6500248-1cc1-4e89-b2bf-ebe99677d084")
+	}
+	if d.Sid == nil || d.Sid.String() != "S-1-5-21-2802240253-752003275-3968249406" {
+		t.Errorf("dns-domain: Sid = %v", d.Sid)
+	}
 }
