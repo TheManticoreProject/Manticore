@@ -12,7 +12,7 @@ import (
 // an open policy handle and the information class selecting which union arm is returned.
 type lsarQueryInformationPolicyRequest struct {
 	PolicyHandle     structures.LSAPR_HANDLE
-	InformationClass structures.POLICY_INFORMATION_CLASS
+	InformationClass structures.POLICY_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryInformationPolicyRequest) Opnum() uint16 {

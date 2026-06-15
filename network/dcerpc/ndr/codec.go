@@ -139,6 +139,17 @@ func (e *Encoder) writeCount(v uint64) {
 	e.WriteUint32(uint32(v))
 }
 
+// writeEnum writes an NDR enumerated value: 2 octets 2-aligned under NDR20, or 4 octets
+// 4-aligned under NDR64 ([MS-RPCE] section 2.2.5; an NDR enum is a 16-bit value that
+// NDR64 widens to 32 bits).
+func (e *Encoder) writeEnum(v uint64) {
+	if e.syntax == NDR64 {
+		e.WriteUint32(uint32(v))
+		return
+	}
+	e.WriteUint16(uint16(v))
+}
+
 // writeReferent writes a pointer referent id at the syntax's referent width: 4 octets
 // under NDR20, 8 octets under NDR64.
 func (e *Encoder) writeReferent(id uint64) {
@@ -283,6 +294,17 @@ func (d *Decoder) readCount() (uint64, error) {
 		return d.ReadUint64()
 	}
 	v, err := d.ReadUint32()
+	return uint64(v), err
+}
+
+// readEnum reads an NDR enumerated value at the syntax's width: 2 octets under NDR20, 4
+// octets under NDR64.
+func (d *Decoder) readEnum() (uint64, error) {
+	if d.syntax == NDR64 {
+		v, err := d.ReadUint32()
+		return uint64(v), err
+	}
+	v, err := d.ReadUint16()
 	return uint64(v), err
 }
 
