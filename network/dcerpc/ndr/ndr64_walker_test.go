@@ -2,7 +2,6 @@ package ndr
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 )
 
@@ -189,15 +188,42 @@ func TestNDR64_UnionEnumDiscriminant(t *testing.T) {
 	}
 }
 
-// TestNDR64_PipeRejected verifies a pipe is rejected under NDR64 rather than emitting an
-// unverified encoding, while NDR20 still works.
-func TestNDR64_PipeRejected(t *testing.T) {
-	v := hasPipe64{P: []byte{1, 2, 3}}
-	if _, err := MarshalAs(v, NDR20); err != nil {
-		t.Fatalf("NDR20 pipe should still marshal: %v", err)
+// TestNDR64_Pipe pins the NDR64 pipe framing — [+count(8)][elements][-count(8)] per
+// chunk, then a 0(8) terminator — and round-trips, while NDR20 stays [+count(4)][elements]
+// + 0(4). The byte layout matches the Windows Server 2016 EfsRpcReadFileRaw capture.
+func TestNDR64_Pipe(t *testing.T) {
+	v := hasPipe64{P: []byte{0xaa, 0xbb, 0xcc}}
+
+	// NDR20: count(4)=3, 3 bytes, then 0(4) terminator.
+	n20, err := MarshalAs(v, NDR20)
+	if err != nil {
+		t.Fatalf("NDR20 pipe marshal: %v", err)
 	}
-	_, err := MarshalAs(v, NDR64)
-	if err == nil || !strings.Contains(err.Error(), "NDR64 pipes") {
-		t.Errorf("NDR64 pipe: err = %v, want a 'NDR64 pipes' error", err)
+	want20 := []byte{0x03, 0x00, 0x00, 0x00, 0xaa, 0xbb, 0xcc, 0x00 /*pad*/, 0x00, 0x00, 0x00, 0x00}
+	if !bytes.Equal(n20, want20) {
+		t.Errorf("NDR20 pipe:\n got  %x\nwant %x", n20, want20)
+	}
+
+	// NDR64: count(8)=3, 3 bytes, pad to 8, -count(8) = 0xFFFFFFFFFFFFFFFD, then 0(8).
+	n64, err := MarshalAs(v, NDR64)
+	if err != nil {
+		t.Fatalf("NDR64 pipe marshal: %v", err)
+	}
+	want64 := []byte{
+		0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // +count = 3
+		0xaa, 0xbb, 0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, // 3 elements + pad to 8
+		0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // -count = -3
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0 terminator
+	}
+	if !bytes.Equal(n64, want64) {
+		t.Errorf("NDR64 pipe:\n got  %x\nwant %x", n64, want64)
+	}
+
+	var got hasPipe64
+	if err := UnmarshalAs(n64, &got, NDR64); err != nil {
+		t.Fatalf("NDR64 pipe unmarshal: %v", err)
+	}
+	if !bytes.Equal(got.P, v.P) {
+		t.Errorf("NDR64 pipe round trip: got %x want %x", got.P, v.P)
 	}
 }

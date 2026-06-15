@@ -909,45 +909,45 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fi
 // a position after the entire array body, so an array of pointers, or of structs that
 // themselves contain pointers, cannot be encoded by recursing fully into each element
 // in turn ([C706] section 14.3.10).
-// marshalPipe writes an NDR pipe ([C706] section 14.7): a sequence of chunks, each a
-// uint32 element count followed by that many element representations, terminated by an
-// empty chunk (a count of 0). The whole slice is transmitted as a single chunk. A pipe
-// of a scalar (e.g. EFS_EXIM_PIPE = pipe of bytes) goes through marshalElements, which
-// has a byte fast path.
+// marshalPipe writes an NDR pipe ([C706] section 14.7): a sequence of chunks terminated
+// by an empty chunk (a count of 0). The whole slice is transmitted as a single chunk. A
+// pipe of a scalar (e.g. EFS_EXIM_PIPE = pipe of bytes) goes through marshalElements,
+// which has a byte fast path.
 //
-// NDR64 pipe framing is not yet verified against [MS-RPCE] section 2.2.5 and is handled
-// in a later phase, so marshalling a pipe under NDR64 returns an error rather than
-// emitting an unverified encoding.
+// The chunk count widens with the syntax (4 octets under NDR20, 8 under NDR64) like any
+// NDR count. Under NDR64, each chunk's elements are additionally followed by the two's-
+// complement negation of the count (an 8-octet trailer): [+count][elements][-count],
+// then a 0 terminator. This bracketing is NDR64-specific — verified on the wire against a
+// Windows Server 2016 EfsRpcReadFileRaw response, whose chunks decoded identically under
+// both syntaxes (see network/dcerpc/ndr/ndr64_pipe_test.go).
 func marshalPipe(e *Encoder, fv reflect.Value, tag fieldTag) error {
-	if e.syntax == NDR64 {
-		return fmt.Errorf("ndr: NDR64 pipes are not yet supported")
-	}
 	if fv.Kind() != reflect.Slice {
 		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
 	}
 	if n := fv.Len(); n > 0 {
-		e.WriteUint32(uint32(n))
+		e.writeCount(uint64(n))
 		if err := marshalElements(e, fv, elementTag(tag)); err != nil {
 			return err
 		}
+		if e.syntax == NDR64 {
+			e.WriteUint64(^uint64(n) + 1) // -count trailer
+		}
 	}
-	e.WriteUint32(0) // terminating empty chunk
+	e.writeCount(0) // terminating empty chunk
 	return nil
 }
 
-// unmarshalPipe reads an NDR pipe: chunks of (uint32 count, count elements) until a
-// 0-count chunk, concatenating the chunks into the slice. unmarshalElements bounds each
+// unmarshalPipe reads an NDR pipe: chunks of (count, count elements) until a 0-count
+// chunk, concatenating the chunks into the slice. Under NDR64 it also consumes the
+// 8-octet -count trailer after each chunk's elements. unmarshalElements bounds each
 // chunk's count against the remaining input, so a hostile count cannot over-allocate.
 func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
-	if d.syntax == NDR64 {
-		return fmt.Errorf("ndr: NDR64 pipes are not yet supported")
-	}
 	if fv.Kind() != reflect.Slice {
 		return fmt.Errorf("ndr: pipe field must be a slice, got %s", fv.Kind())
 	}
 	acc := reflect.MakeSlice(fv.Type(), 0, 0)
 	for {
-		count, err := d.ReadUint32()
+		count, err := d.readCount()
 		if err != nil {
 			return err
 		}
@@ -959,6 +959,11 @@ func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
 			return err
 		}
 		acc = reflect.AppendSlice(acc, chunk)
+		if d.syntax == NDR64 {
+			if _, err := d.ReadUint64(); err != nil { // -count trailer
+				return err
+			}
+		}
 	}
 	fv.Set(acc)
 	return nil
