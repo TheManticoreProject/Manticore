@@ -250,6 +250,10 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		return m.MarshalNDR(e)
 	}
 
+	if tag.isEnum {
+		return marshalEnum(e, fv)
+	}
+
 	if isString, wide := stringMode(fv, tag); isString {
 		if wide {
 			e.writeWString(fv.String())
@@ -304,6 +308,35 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 	default:
 		return marshalScalar(e, fv)
 	}
+}
+
+// marshalEnum writes an integer-kinded value as an NDR enum (2 octets under NDR20, 4
+// under NDR64), regardless of the Go integer width. An NDR enum is always a 16-bit
+// value on the wire under NDR20.
+func marshalEnum(e *Encoder, fv reflect.Value) error {
+	switch {
+	case isUintKind(fv.Kind()):
+		e.writeEnum(fv.Uint())
+	case fv.CanInt():
+		e.writeEnum(uint64(fv.Int()))
+	default:
+		return fmt.Errorf("ndr: enum field must be an integer, got %s", fv.Kind())
+	}
+	return nil
+}
+
+// unmarshalEnum reads an NDR enum into an integer-kinded value.
+func unmarshalEnum(d *Decoder, fv reflect.Value) error {
+	v, err := d.readEnum()
+	if err != nil {
+		return err
+	}
+	if isUintKind(fv.Kind()) {
+		fv.SetUint(v)
+	} else {
+		fv.SetInt(int64(v))
+	}
+	return nil
 }
 
 // marshalScalar writes an integer or boolean primitive with NDR alignment.
@@ -482,6 +515,10 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 	if m, ok := asMarshalerAddr(fv); ok {
 		d.Align(m.AlignmentNDR())
 		return m.UnmarshalNDR(d)
+	}
+
+	if tag.isEnum {
+		return unmarshalEnum(d, fv)
 	}
 
 	if isString, wide := stringMode(fv, tag); isString {
@@ -778,10 +815,16 @@ func ndrAlignment(t reflect.Type, syntax Syntax) int {
 	}
 }
 
-// fieldNDRAlignment returns the alignment of a struct field, accounting for a pointer
-// tag on a non-pointer Go type (e.g. a value struct tagged [unique]), whose inline
-// representation is a referent id rather than the field's own layout.
+// fieldNDRAlignment returns the alignment of a struct field, accounting for tags whose
+// wire representation differs from the field's Go layout: a pointer tag on a non-pointer
+// type (a referent id) and an enum (2 octets under NDR20, 4 under NDR64).
 func fieldNDRAlignment(t reflect.Type, tag fieldTag, syntax Syntax) int {
+	if tag.isEnum {
+		if syntax == NDR64 {
+			return 4
+		}
+		return 2
+	}
 	if tag.ptr != ptrNone && t.Kind() != reflect.Pointer {
 		if syntax == NDR64 {
 			return 8
