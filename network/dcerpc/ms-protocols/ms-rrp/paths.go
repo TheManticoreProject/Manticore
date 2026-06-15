@@ -174,7 +174,9 @@ func (r *RemoteRegistry) EnumKeys(h Handle) ([]string, error) {
 			}
 			return names, err
 		}
-		names = append(names, nameOut.String())
+		// The server counts the terminating NUL in the returned name's Length, so strip it
+		// to yield a clean Go string usable as a subkey name / path component.
+		names = append(names, strings.TrimRight(nameOut.String(), "\x00"))
 		i++
 	}
 	return names, nil
@@ -225,7 +227,9 @@ func (r *RemoteRegistry) EnumValues(h Handle) ([]ValueEntry, error) {
 		if rTyp != nil {
 			val.Type = uint32(*rTyp)
 		}
-		entries = append(entries, ValueEntry{Name: nameOut.String(), Value: val})
+		// The server counts the terminating NUL in the returned name's Length; strip it so
+		// the value name is a clean Go string.
+		entries = append(entries, ValueEntry{Name: strings.TrimRight(nameOut.String(), "\x00"), Value: val})
 		i++
 	}
 	return entries, nil
