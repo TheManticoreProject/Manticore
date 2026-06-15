@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
@@ -17,7 +18,7 @@ import (
 type netrDfsCreateLocalPartitionRequest struct {
 	ServerName   *ndr.WSTR `ndr:"unique"`
 	ShareName    ndr.WSTR
-	EntryUid     guid.GUID
+	EntryUid     dtyp.GUID
 	EntryPrefix  ndr.WSTR
 	ShortName    ndr.WSTR
 	RelationInfo structures.NET_DFS_ENTRY_ID_CONTAINER
@@ -34,7 +35,7 @@ func NetrDfsCreateLocalPartition(rpc ndr.Invoker, serverName, shareName string, 
 	req := &netrDfsCreateLocalPartitionRequest{
 		ServerName:   optWStr(serverName),
 		ShareName:    ndr.WSTR(shareName),
-		EntryUid:     entryUid,
+		EntryUid:     dtyp.NewGUID(entryUid),
 		EntryPrefix:  ndr.WSTR(entryPrefix),
 		ShortName:    ndr.WSTR(shortName),
 		RelationInfo: relationInfo,

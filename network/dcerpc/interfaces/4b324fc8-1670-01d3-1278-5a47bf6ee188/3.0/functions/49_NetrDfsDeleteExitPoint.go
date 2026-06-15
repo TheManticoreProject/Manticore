@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -13,7 +14,7 @@ import (
 // prefix, and the exit-point type.
 type netrDfsDeleteExitPointRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
-	Uid        guid.GUID
+	Uid        dtyp.GUID
 	Prefix     ndr.WSTR
 	Type       ndr.DWORD
 }
@@ -25,7 +26,7 @@ func (*netrDfsDeleteExitPointRequest) Opnum() uint16 { return srvsvc.OpnumNetrDf
 func NetrDfsDeleteExitPoint(rpc ndr.Invoker, serverName string, uid guid.GUID, prefix string, typ uint32) error {
 	req := &netrDfsDeleteExitPointRequest{
 		ServerName: optWStr(serverName),
-		Uid:        uid,
+		Uid:        dtyp.NewGUID(uid),
 		Prefix:     ndr.WSTR(prefix),
 		Type:       ndr.DWORD(typ),
 	}
