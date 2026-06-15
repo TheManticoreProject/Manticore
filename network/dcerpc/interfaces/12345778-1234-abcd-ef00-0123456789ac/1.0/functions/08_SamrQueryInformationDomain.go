@@ -12,7 +12,7 @@ import (
 // a domain handle and the information class selecting the union arm to return.
 type samrQueryInformationDomainRequest struct {
 	DomainHandle           structures.SAMPR_HANDLE
-	DomainInformationClass structures.DOMAIN_INFORMATION_CLASS
+	DomainInformationClass structures.DOMAIN_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationDomainRequest) Opnum() uint16 {

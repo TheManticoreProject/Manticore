@@ -13,7 +13,7 @@ import (
 // is written to the user object.
 type samrSetInformationUserRequest struct {
 	UserHandle           structures.SAMPR_HANDLE
-	UserInformationClass structures.USER_INFORMATION_CLASS
+	UserInformationClass structures.USER_INFORMATION_CLASS `ndr:"enum"`
 	Buffer               structures.SAMPR_USER_INFO_BUFFER
 }
 

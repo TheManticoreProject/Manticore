@@ -12,7 +12,7 @@ import (
 // selecting which arm of the returned union is populated.
 type samrQueryInformationGroupRequest struct {
 	GroupHandle           structures.SAMPR_HANDLE
-	GroupInformationClass structures.GROUP_INFORMATION_CLASS
+	GroupInformationClass structures.GROUP_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationGroupRequest) Opnum() uint16 {

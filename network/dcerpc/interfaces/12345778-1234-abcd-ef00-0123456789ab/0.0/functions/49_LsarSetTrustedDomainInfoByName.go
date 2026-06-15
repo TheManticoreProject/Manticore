@@ -16,7 +16,7 @@ import (
 type lsarSetTrustedDomainInfoByNameRequest struct {
 	PolicyHandle             structures.LSAPR_HANDLE
 	TrustedDomainName        dtyp.RPC_UNICODE_STRING
-	InformationClass         structures.TRUSTED_INFORMATION_CLASS
+	InformationClass         structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 	TrustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFO
 }
 

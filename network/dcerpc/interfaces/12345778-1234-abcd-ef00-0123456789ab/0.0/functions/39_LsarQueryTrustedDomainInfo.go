@@ -14,8 +14,8 @@ import (
 // class selecting which union arm is returned.
 type lsarQueryTrustedDomainInfoRequest struct {
 	PolicyHandle     structures.LSAPR_HANDLE
-	TrustedDomainSid *dtyp.RPC_SID `ndr:"unique"`
-	InformationClass structures.TRUSTED_INFORMATION_CLASS
+	TrustedDomainSid *dtyp.RPC_SID                        `ndr:"unique"`
+	InformationClass structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryTrustedDomainInfoRequest) Opnum() uint16 {

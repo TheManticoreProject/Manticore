@@ -9,7 +9,7 @@ import (
 // translation result ([MS-LSAT] 2.2.26). Use is an NDR enum (16-bit on the wire); Sid is
 // a [unique] pointer to an RPC_SID; DomainIndex is a signed long.
 type LSAPR_TRANSLATED_SID_EX2 struct {
-	Use         SID_NAME_USE
+	Use         SID_NAME_USE  `ndr:"enum"`
 	Sid         *dtyp.RPC_SID `ndr:"unique"`
 	DomainIndex int32
 	Flags       ndr.DWORD

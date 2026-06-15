@@ -8,7 +8,7 @@ package structures
 // The TrustedDomainInformationBasic arm (case 5) is a LSAPR_TRUST_INFORMATION, since
 // LSAPR_TRUSTED_DOMAIN_INFORMATION_BASIC is an IDL typedef of that existing type.
 type LSAPR_TRUSTED_DOMAIN_INFO struct {
-	Class                   TRUSTED_INFORMATION_CLASS                      `ndr:"switch"`
+	Class                   TRUSTED_INFORMATION_CLASS                      `ndr:"switch,enum"`
 	TrustedDomainNameInfo   LSAPR_TRUSTED_DOMAIN_NAME_INFO                 `ndr:"case=1"`
 	TrustedControllersInfo  LSAPR_TRUSTED_CONTROLLERS_INFO                 `ndr:"case=2"`
 	TrustedPosixOffsetInfo  TRUSTED_POSIX_OFFSET_INFO                      `ndr:"case=3"`

@@ -14,7 +14,7 @@ import (
 // length of the returned buffer.
 type samrQueryDisplayInformation2Request struct {
 	DomainHandle            structures.SAMPR_HANDLE
-	DisplayInformationClass structures.DOMAIN_DISPLAY_INFORMATION
+	DisplayInformationClass structures.DOMAIN_DISPLAY_INFORMATION `ndr:"enum"`
 	Index                   ndr.DWORD
 	EntryCount              ndr.DWORD
 	PreferredMaximumLength  ndr.DWORD

@@ -13,7 +13,7 @@ import (
 // [in, unique] union pointer carrying the new policy domain information (NULL deletes it).
 type lsarSetDomainInformationPolicyRequest struct {
 	PolicyHandle            structures.LSAPR_HANDLE
-	InformationClass        structures.POLICY_DOMAIN_INFORMATION_CLASS
+	InformationClass        structures.POLICY_DOMAIN_INFORMATION_CLASS  `ndr:"enum"`
 	PolicyDomainInformation *structures.LSAPR_POLICY_DOMAIN_INFORMATION `ndr:"unique"`
 }
 

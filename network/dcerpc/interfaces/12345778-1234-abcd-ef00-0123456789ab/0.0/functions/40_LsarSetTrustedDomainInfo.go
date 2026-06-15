@@ -14,8 +14,8 @@ import (
 // and the inline [ref] union value carrying the new trusted-domain information.
 type lsarSetTrustedDomainInfoRequest struct {
 	PolicyHandle             structures.LSAPR_HANDLE
-	TrustedDomainSid         *dtyp.RPC_SID `ndr:"unique"`
-	InformationClass         structures.TRUSTED_INFORMATION_CLASS
+	TrustedDomainSid         *dtyp.RPC_SID                        `ndr:"unique"`
+	InformationClass         structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 	TrustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFO
 }
 

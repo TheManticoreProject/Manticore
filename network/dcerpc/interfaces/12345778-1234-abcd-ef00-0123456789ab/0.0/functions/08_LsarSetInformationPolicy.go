@@ -13,7 +13,7 @@ import (
 // new policy information.
 type lsarSetInformationPolicyRequest struct {
 	PolicyHandle      structures.LSAPR_HANDLE
-	InformationClass  structures.POLICY_INFORMATION_CLASS
+	InformationClass  structures.POLICY_INFORMATION_CLASS `ndr:"enum"`
 	PolicyInformation structures.LSAPR_POLICY_INFORMATION
 }
 

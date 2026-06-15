@@ -13,7 +13,7 @@ import (
 // (inline) carrying the new values.
 type samrSetInformationDomainRequest struct {
 	DomainHandle           structures.SAMPR_HANDLE
-	DomainInformationClass structures.DOMAIN_INFORMATION_CLASS
+	DomainInformationClass structures.DOMAIN_INFORMATION_CLASS `ndr:"enum"`
 	DomainInformation      structures.SAMPR_DOMAIN_INFO_BUFFER
 }
 

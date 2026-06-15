@@ -15,7 +15,7 @@ type lsarLookupSidsRequest struct {
 	PolicyHandle    structures.LSAPR_HANDLE
 	SidEnumBuffer   structures.LSAPR_SID_ENUM_BUFFER
 	TranslatedNames structures.LSAPR_TRANSLATED_NAMES
-	LookupLevel     structures.LSAP_LOOKUP_LEVEL
+	LookupLevel     structures.LSAP_LOOKUP_LEVEL `ndr:"enum"`
 	MappedCount     ndr.DWORD
 }
 
