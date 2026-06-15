@@ -14,7 +14,7 @@ type guidWrap struct{ G GUID }
 // NDR wire format: NewGUID(g) marshals to exactly 16 octets — identical to g.ToBytes()
 // — under both NDR20 and NDR64, and round-trips back to the original GUID.
 func TestGUID_WireFormatFromGuidGUID(t *testing.T) {
-	g, err := guid.FromString("a6500248-1cc1-4e89-b2bf-ebe99677d084")
+	g, err := guid.FromString("11223344-5566-7788-99aa-bbccddeeff00")
 	if err != nil {
 		t.Fatalf("parse guid: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestGUID_WireFormatFromGuidGUID(t *testing.T) {
 	if back := d.GUID(); !bytes.Equal(back.ToBytes(), want) {
 		t.Errorf("round trip: got %x want %x", back.ToBytes(), want)
 	}
-	if d.String() != "a6500248-1cc1-4e89-b2bf-ebe99677d084" {
+	if d.String() != "11223344-5566-7788-99aa-bbccddeeff00" {
 		t.Errorf("String() = %q", d.String())
 	}
 }
