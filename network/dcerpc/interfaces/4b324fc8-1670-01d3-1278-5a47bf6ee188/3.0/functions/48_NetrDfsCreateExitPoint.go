@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -13,7 +14,7 @@ import (
 // prefix, the exit-point type, and the output prefix length sizing ShortPrefix.
 type netrDfsCreateExitPointRequest struct {
 	ServerName     *ndr.WSTR `ndr:"unique"`
-	Uid            guid.GUID
+	Uid            dtyp.GUID
 	Prefix         ndr.WSTR
 	Type           ndr.DWORD
 	ShortPrefixLen ndr.DWORD
@@ -33,7 +34,7 @@ type netrDfsCreateExitPointResponse struct {
 func NetrDfsCreateExitPoint(rpc ndr.Invoker, serverName string, uid guid.GUID, prefix string, typ, shortPrefixLen uint32) ([]uint16, error) {
 	req := &netrDfsCreateExitPointRequest{
 		ServerName:     optWStr(serverName),
-		Uid:            uid,
+		Uid:            dtyp.NewGUID(uid),
 		Prefix:         ndr.WSTR(prefix),
 		Type:           ndr.DWORD(typ),
 		ShortPrefixLen: ndr.DWORD(shortPrefixLen),

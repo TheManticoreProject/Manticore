@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -13,7 +14,7 @@ import (
 // single [in] pointer in the IDL), and the (ref) prefix.
 type netrDfsDeleteLocalPartitionRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
-	Uid        guid.GUID
+	Uid        dtyp.GUID
 	Prefix     ndr.WSTR
 }
 
@@ -26,7 +27,7 @@ func (*netrDfsDeleteLocalPartitionRequest) Opnum() uint16 {
 func NetrDfsDeleteLocalPartition(rpc ndr.Invoker, serverName string, uid guid.GUID, prefix string) error {
 	req := &netrDfsDeleteLocalPartitionRequest{
 		ServerName: optWStr(serverName),
-		Uid:        uid,
+		Uid:        dtyp.NewGUID(uid),
 		Prefix:     ndr.WSTR(prefix),
 	}
 	var resp statusResponse

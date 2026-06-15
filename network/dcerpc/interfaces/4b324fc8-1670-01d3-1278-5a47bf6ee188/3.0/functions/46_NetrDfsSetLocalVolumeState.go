@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -13,7 +14,7 @@ import (
 // [in] pointer in the IDL), the (ref) prefix, and the new state.
 type netrDfsSetLocalVolumeStateRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
-	Uid        guid.GUID
+	Uid        dtyp.GUID
 	Prefix     ndr.WSTR
 	State      ndr.DWORD
 }
@@ -27,7 +28,7 @@ func (*netrDfsSetLocalVolumeStateRequest) Opnum() uint16 {
 func NetrDfsSetLocalVolumeState(rpc ndr.Invoker, serverName string, uid guid.GUID, prefix string, state uint32) error {
 	req := &netrDfsSetLocalVolumeStateRequest{
 		ServerName: optWStr(serverName),
-		Uid:        uid,
+		Uid:        dtyp.NewGUID(uid),
 		Prefix:     ndr.WSTR(prefix),
 		State:      ndr.DWORD(state),
 	}

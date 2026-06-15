@@ -3,6 +3,7 @@ package functions
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
@@ -20,7 +21,7 @@ type netrDfsFixLocalVolumeRequest struct {
 	EntryType         ndr.DWORD
 	ServiceType       ndr.DWORD
 	StgId             ndr.WSTR
-	EntryUid          guid.GUID
+	EntryUid          dtyp.GUID
 	EntryPrefix       ndr.WSTR
 	RelationInfo      structures.NET_DFS_ENTRY_ID_CONTAINER
 	CreateDisposition ndr.DWORD
@@ -37,7 +38,7 @@ func NetrDfsFixLocalVolume(rpc ndr.Invoker, serverName, volumeName string, entry
 		EntryType:         ndr.DWORD(entryType),
 		ServiceType:       ndr.DWORD(serviceType),
 		StgId:             ndr.WSTR(stgId),
-		EntryUid:          entryUid,
+		EntryUid:          dtyp.NewGUID(entryUid),
 		EntryPrefix:       ndr.WSTR(entryPrefix),
 		RelationInfo:      relationInfo,
 		CreateDisposition: ndr.DWORD(createDisposition),
