@@ -5,7 +5,7 @@ package structures
 // form is the discriminant followed by the single selected arm ([C706] section 14.3.8).
 // The numeric case values follow the DOMAIN_INFORMATION_CLASS enum.
 type SAMPR_DOMAIN_INFO_BUFFER struct {
-	Tag         DOMAIN_INFORMATION_CLASS             `ndr:"switch"`
+	Tag         DOMAIN_INFORMATION_CLASS             `ndr:"switch,enum"`
 	Password    DOMAIN_PASSWORD_INFORMATION          `ndr:"case=1"`
 	General     SAMPR_DOMAIN_GENERAL_INFORMATION     `ndr:"case=2"`
 	Logoff      DOMAIN_LOGOFF_INFORMATION            `ndr:"case=3"`

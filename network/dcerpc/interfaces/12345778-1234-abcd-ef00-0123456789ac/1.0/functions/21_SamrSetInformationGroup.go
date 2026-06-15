@@ -12,7 +12,7 @@ import (
 // the [in,switch_is] group info buffer whose populated arm matches that class.
 type samrSetInformationGroupRequest struct {
 	GroupHandle           structures.SAMPR_HANDLE
-	GroupInformationClass structures.GROUP_INFORMATION_CLASS
+	GroupInformationClass structures.GROUP_INFORMATION_CLASS `ndr:"enum"`
 	Buffer                structures.SAMPR_GROUP_INFO_BUFFER
 }
 

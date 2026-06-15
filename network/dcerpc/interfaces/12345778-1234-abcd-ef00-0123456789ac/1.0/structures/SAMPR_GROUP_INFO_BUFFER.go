@@ -7,7 +7,7 @@ package structures
 // The DoNotUse arm (case GroupReplicationInformation=5) reuses the
 // SAMPR_GROUP_GENERAL_INFORMATION type, as specified in the IDL.
 type SAMPR_GROUP_INFO_BUFFER struct {
-	Tag          GROUP_INFORMATION_CLASS             `ndr:"switch"`
+	Tag          GROUP_INFORMATION_CLASS             `ndr:"switch,enum"`
 	General      SAMPR_GROUP_GENERAL_INFORMATION     `ndr:"case=1"`
 	Name         SAMPR_GROUP_NAME_INFORMATION        `ndr:"case=2"`
 	Attribute    GROUP_ATTRIBUTE_INFORMATION         `ndr:"case=3"`

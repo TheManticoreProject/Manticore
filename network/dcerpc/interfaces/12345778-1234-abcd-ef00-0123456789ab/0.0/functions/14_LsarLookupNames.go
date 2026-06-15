@@ -21,7 +21,7 @@ type lsarLookupNamesRequest struct {
 	Count          ndr.DWORD
 	Names          []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
 	TranslatedSids structures.LSAPR_TRANSLATED_SIDS
-	LookupLevel    structures.LSAP_LOOKUP_LEVEL
+	LookupLevel    structures.LSAP_LOOKUP_LEVEL `ndr:"enum"`
 	MappedCount    ndr.DWORD
 }
 

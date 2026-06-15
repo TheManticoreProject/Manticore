@@ -5,7 +5,7 @@ package structures
 // the wire form is the discriminant followed by the single selected arm ([C706] section
 // 14.3.8). The numeric case values follow the DOMAIN_DISPLAY_INFORMATION enum.
 type SAMPR_DISPLAY_INFO_BUFFER struct {
-	Tag                 DOMAIN_DISPLAY_INFORMATION            `ndr:"switch"`
+	Tag                 DOMAIN_DISPLAY_INFORMATION            `ndr:"switch,enum"`
 	UserInformation     SAMPR_DOMAIN_DISPLAY_USER_BUFFER      `ndr:"case=1"`
 	MachineInformation  SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER   `ndr:"case=2"`
 	GroupInformation    SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER     `ndr:"case=3"`

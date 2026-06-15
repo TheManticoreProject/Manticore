@@ -14,7 +14,7 @@ import (
 // prefix (inline, single pointer) to search for.
 type samrGetDisplayEnumerationIndexRequest struct {
 	DomainHandle            structures.SAMPR_HANDLE
-	DisplayInformationClass structures.DOMAIN_DISPLAY_INFORMATION
+	DisplayInformationClass structures.DOMAIN_DISPLAY_INFORMATION `ndr:"enum"`
 	Prefix                  dtyp.RPC_UNICODE_STRING
 }
 

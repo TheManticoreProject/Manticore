@@ -13,7 +13,7 @@ import (
 // the inline [ref] union value carrying the new trusted-domain information.
 type lsarSetInformationTrustedDomainRequest struct {
 	TrustedDomainHandle      structures.LSAPR_HANDLE
-	InformationClass         structures.TRUSTED_INFORMATION_CLASS
+	InformationClass         structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 	TrustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFO
 }
 

@@ -13,7 +13,7 @@ import (
 // the union arm and InputArg is the [ref, switch_is(ValidationType)] input union
 // (modeled inline).
 type samrValidatePasswordRequest struct {
-	ValidationType structures.PASSWORD_POLICY_VALIDATION_TYPE
+	ValidationType structures.PASSWORD_POLICY_VALIDATION_TYPE `ndr:"enum"`
 	InputArg       structures.SAM_VALIDATE_INPUT_ARG
 }
 

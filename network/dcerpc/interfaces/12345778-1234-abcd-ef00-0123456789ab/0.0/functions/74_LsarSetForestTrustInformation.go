@@ -17,7 +17,7 @@ import (
 type lsarSetForestTrustInformationRequest struct {
 	PolicyHandle      structures.LSAPR_HANDLE
 	TrustedDomainName dtyp.RPC_UNICODE_STRING
-	HighestRecordType structures.LSA_FOREST_TRUST_RECORD_TYPE
+	HighestRecordType structures.LSA_FOREST_TRUST_RECORD_TYPE `ndr:"enum"`
 	ForestTrustInfo   structures.LSA_FOREST_TRUST_INFORMATION
 	CheckOnly         uint8
 }

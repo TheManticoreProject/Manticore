@@ -12,7 +12,7 @@ import (
 // that selects the arm of the returned union.
 type samrQueryInformationAliasRequest struct {
 	AliasHandle           structures.SAMPR_HANDLE
-	AliasInformationClass structures.ALIAS_INFORMATION_CLASS
+	AliasInformationClass structures.ALIAS_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationAliasRequest) Opnum() uint16 {

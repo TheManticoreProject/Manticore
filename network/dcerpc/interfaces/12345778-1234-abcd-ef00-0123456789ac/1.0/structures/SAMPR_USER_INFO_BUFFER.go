@@ -4,7 +4,7 @@ package structures
 // discriminated by a USER_INFORMATION_CLASS ([MS-SAMR] 2.2.6.29). Tag carries
 // the discriminant inline; exactly one arm is valid per the selected case.
 type SAMPR_USER_INFO_BUFFER struct {
-	Tag USER_INFORMATION_CLASS `ndr:"switch"`
+	Tag USER_INFORMATION_CLASS `ndr:"switch,enum"`
 
 	General      SAMPR_USER_GENERAL_INFORMATION       `ndr:"case=1"`
 	Preferences  SAMPR_USER_PREFERENCES_INFORMATION   `ndr:"case=2"`

@@ -12,7 +12,7 @@ import (
 // selecting which arm of the returned union is populated.
 type samrQueryInformationUserRequest struct {
 	UserHandle           structures.SAMPR_HANDLE
-	UserInformationClass structures.USER_INFORMATION_CLASS
+	UserInformationClass structures.USER_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationUserRequest) Opnum() uint16 {

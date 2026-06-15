@@ -13,7 +13,7 @@ import (
 // which union arm is returned.
 type lsarQueryInformationPolicy2Request struct {
 	PolicyHandle     structures.LSAPR_HANDLE
-	InformationClass structures.POLICY_INFORMATION_CLASS
+	InformationClass structures.POLICY_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryInformationPolicy2Request) Opnum() uint16 {

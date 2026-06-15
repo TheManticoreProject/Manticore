@@ -13,7 +13,7 @@ import (
 // the same LSA_UNICODE_STRING (RPC_UNICODE_STRING) type, one per case value. The
 // [default] arm carries an LSA_FOREST_TRUST_BINARY_DATA.
 type LSA_FOREST_TRUST_DATA struct {
-	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE `ndr:"switch"`
+	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE `ndr:"switch,enum"`
 	TopLevelName    dtyp.RPC_UNICODE_STRING      `ndr:"case=0"`
 	TopLevelNameEx  dtyp.RPC_UNICODE_STRING      `ndr:"case=1"`
 	DomainInfo      LSA_FOREST_TRUST_DOMAIN_INFO `ndr:"case=2"`
@@ -24,7 +24,7 @@ type LSA_FOREST_TRUST_DATA struct {
 // 2.2.7.21). ForestTrustData is a union switched on ForestTrustType.
 type LSA_FOREST_TRUST_RECORD struct {
 	Flags           ndr.DWORD
-	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE
+	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE `ndr:"enum"`
 	Time            dtyp.LARGE_INTEGER
 	ForestTrustData LSA_FOREST_TRUST_DATA
 }

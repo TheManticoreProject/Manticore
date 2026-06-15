@@ -13,7 +13,7 @@ import (
 // returned.
 type lsarQueryInfoTrustedDomainRequest struct {
 	TrustedDomainHandle structures.LSAPR_HANDLE
-	InformationClass    structures.TRUSTED_INFORMATION_CLASS
+	InformationClass    structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryInfoTrustedDomainRequest) Opnum() uint16 {

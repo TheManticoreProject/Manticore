@@ -15,7 +15,7 @@ import (
 type lsarQueryTrustedDomainInfoByNameRequest struct {
 	PolicyHandle      structures.LSAPR_HANDLE
 	TrustedDomainName dtyp.RPC_UNICODE_STRING
-	InformationClass  structures.TRUSTED_INFORMATION_CLASS
+	InformationClass  structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryTrustedDomainInfoByNameRequest) Opnum() uint16 {

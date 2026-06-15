@@ -12,7 +12,7 @@ import (
 // the [in, switch_is] alias info buffer (the discriminated union, transmitted inline).
 type samrSetInformationAliasRequest struct {
 	AliasHandle           structures.SAMPR_HANDLE
-	AliasInformationClass structures.ALIAS_INFORMATION_CLASS
+	AliasInformationClass structures.ALIAS_INFORMATION_CLASS `ndr:"enum"`
 	Buffer                structures.SAMPR_ALIAS_INFO_BUFFER
 }
 
