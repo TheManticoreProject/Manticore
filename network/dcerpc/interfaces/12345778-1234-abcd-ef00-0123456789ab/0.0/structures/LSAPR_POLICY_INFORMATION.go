@@ -10,7 +10,7 @@ package structures
 // are distinct discriminant values, as are PolicyAccountDomainInfo (5) and
 // PolicyLocalAccountDomainInfo (14), which share LSAPR_POLICY_ACCOUNT_DOM_INFO.
 type LSAPR_POLICY_INFORMATION struct {
-	Class                        POLICY_INFORMATION_CLASS       `ndr:"switch"`
+	Class                        POLICY_INFORMATION_CLASS       `ndr:"switch,enum"`
 	PolicyAuditLogInfo           POLICY_AUDIT_LOG_INFO          `ndr:"case=1"`
 	PolicyAuditEventsInfo        LSAPR_POLICY_AUDIT_EVENTS_INFO `ndr:"case=2"`
 	PolicyPrimaryDomainInfo      LSAPR_POLICY_PRIMARY_DOM_INFO  `ndr:"case=3"`

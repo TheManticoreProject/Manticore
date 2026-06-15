@@ -139,16 +139,53 @@ type hasPipe64 struct {
 	P []byte `ndr:"pipe"`
 }
 
-// TestNDR64_UnionRejected verifies a union is rejected under NDR64 (deferred to a later
-// phase) rather than emitting an unverified encoding, while NDR20 still works.
-func TestNDR64_UnionRejected(t *testing.T) {
+type enumDiscUnion struct {
+	Kind uint16 `ndr:"switch,enum"`
+	A    uint32 `ndr:"case=1"`
+}
+
+type hasEnumUnion struct {
+	U enumDiscUnion
+}
+
+// TestNDR64_Union verifies a declarative union marshals and round-trips under NDR64.
+func TestNDR64_Union(t *testing.T) {
 	v := hasUnion64{U: unionArm64{Tag: 1, A: 7}}
+	b, err := MarshalAs(v, NDR64)
+	if err != nil {
+		t.Fatalf("NDR64 union marshal: %v", err)
+	}
+	var got hasUnion64
+	if err := UnmarshalAs(b, &got, NDR64); err != nil {
+		t.Fatalf("NDR64 union unmarshal: %v", err)
+	}
+	if got.U.Tag != 1 || got.U.A != 7 {
+		t.Errorf("NDR64 union round trip: got %+v want %+v", got, v)
+	}
 	if _, err := MarshalAs(v, NDR20); err != nil {
 		t.Fatalf("NDR20 union should still marshal: %v", err)
 	}
-	_, err := MarshalAs(v, NDR64)
-	if err == nil || !strings.Contains(err.Error(), "NDR64 unions") {
-		t.Errorf("NDR64 union: err = %v, want a 'NDR64 unions' error", err)
+}
+
+// TestNDR64_UnionEnumDiscriminant pins the enum discriminant to 4 octets under NDR64 and
+// round-trips. (A 2-octet discriminant is what NDR20 uses; NDR64 widens it.)
+func TestNDR64_UnionEnumDiscriminant(t *testing.T) {
+	v := hasEnumUnion{U: enumDiscUnion{Kind: 1, A: 0xAABBCCDD}}
+	b, err := MarshalAs(v, NDR64)
+	if err != nil {
+		t.Fatalf("NDR64 marshal: %v", err)
+	}
+	// disc enum = 4 octets (01 00 00 00), then the uint32 arm (4-aligned).
+	want := []byte{0x01, 0x00, 0x00, 0x00, 0xDD, 0xCC, 0xBB, 0xAA}
+	if !bytes.Equal(b, want) {
+		t.Fatalf("NDR64 enum-discriminant union:\n got  %x\nwant %x", b, want)
+	}
+	var got hasEnumUnion
+	if err := UnmarshalAs(b, &got, NDR64); err != nil {
+		t.Fatalf("NDR64 unmarshal: %v", err)
+	}
+	if got.U.Kind != 1 || got.U.A != 0xAABBCCDD {
+		t.Errorf("round trip: got %+v want %+v", got, v)
 	}
 }
 
