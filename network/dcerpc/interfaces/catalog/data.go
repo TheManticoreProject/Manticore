@@ -153,7 +153,7 @@ var builtin = []Interface{
 		UUID: mustGUID("f309ad18-d86a-11d0-a075-00c04fb68820"), Version: v(0, 0),
 		Name: "IWbemLevel1Login", Title: "Windows Management Instrumentation",
 		Description: "WMI remoting login interface (over DCOM).",
-		Service: "Winmgmt", Protocol: "MS-WMI",
+		Executable:  "wmiprvse.exe", Service: "Winmgmt", Protocol: "MS-WMI",
 	},
 	{
 		UUID: mustGUID("50abc2a4-574d-40b3-9d66-ee4fd5fba076"), Version: v(5, 0),
