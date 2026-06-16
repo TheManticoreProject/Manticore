@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -39,6 +41,15 @@ const (
 	// FloorProtoIP identifies the DOD IP floor; its RHS is a 4-octet IPv4 address in
 	// big-endian order.
 	FloorProtoIP = 0x09
+	// FloorProtoNamedPipe identifies the named-pipe floor of an ncacn_np tower; its RHS
+	// is the NUL-terminated pipe name (e.g. "\PIPE\srvsvc").
+	FloorProtoNamedPipe = 0x0F
+	// FloorProtoNetBIOS identifies the NetBIOS host-name floor (the address floor of an
+	// ncacn_np tower); its RHS is the NUL-terminated host name.
+	FloorProtoNetBIOS = 0x11
+	// FloorProtoHTTP identifies the RPC-over-HTTP floor of an ncacn_http tower; its RHS is
+	// a 16-bit port in big-endian order.
+	FloorProtoHTTP = 0x1F
 )
 
 // Floor is one floor of a protocol tower: a length-prefixed left-hand side (protocol
@@ -181,6 +192,31 @@ func IPFloor(ip net.IP) Floor {
 	return Floor{LHS: []byte{FloorProtoIP}, RHS: rhs}
 }
 
+// nameFloor builds a single-identifier floor whose RHS is a NUL-terminated name (the
+// shared shape of the named-pipe and NetBIOS floors).
+func nameFloor(proto byte, name string) Floor {
+	rhs := make([]byte, 0, len(name)+1)
+	rhs = append(rhs, name...)
+	rhs = append(rhs, 0) // NUL terminator
+	return Floor{LHS: []byte{proto}, RHS: rhs}
+}
+
+// NamedPipeFloor builds the named-pipe floor of an ncacn_np tower; the RHS is the
+// NUL-terminated pipe name (e.g. "\PIPE\srvsvc").
+func NamedPipeFloor(name string) Floor { return nameFloor(FloorProtoNamedPipe, name) }
+
+// NetBIOSFloor builds the NetBIOS host-name floor; the RHS is the NUL-terminated host
+// name.
+func NetBIOSFloor(host string) Floor { return nameFloor(FloorProtoNetBIOS, host) }
+
+// HTTPFloor builds the RPC-over-HTTP floor; the RHS is the 16-bit port in big-endian
+// order.
+func HTTPFloor(port uint16) Floor {
+	rhs := make([]byte, 2)
+	binary.BigEndian.PutUint16(rhs, port)
+	return Floor{LHS: []byte{FloorProtoHTTP}, RHS: rhs}
+}
+
 // BuildMapTowerTCP builds the 5-floor ncacn_ip_tcp tower used as the ept_map input: the
 // interface and NDR transfer-syntax floors describe what is wanted, and the
 // connection-oriented/TCP/IP floors with a zero port and address request that the
@@ -206,7 +242,8 @@ func (e Endpoint) String() string { return fmt.Sprintf("%s:%d", e.IP, e.Port) }
 
 // Endpoint extracts the TCP port and IPv4 address from the tower's transport floors. ok
 // is false unless a TCP floor is present; the IP is left zero if the tower carries no IP
-// floor.
+// floor. It is the ncacn_ip_tcp fast path used by ept_map's Map; for any other transport
+// use Binding.
 func (t Tower) Endpoint() (ep Endpoint, ok bool) {
 	var gotPort bool
 	for _, f := range t.Floors {
@@ -223,4 +260,83 @@ func (t Tower) Endpoint() (ep Endpoint, ok bool) {
 		}
 	}
 	return ep, gotPort
+}
+
+// BindingKind identifies the transport (protocol sequence) a tower describes.
+type BindingKind uint8
+
+const (
+	// BindingUnknown marks a tower with no recognized transport/endpoint floor.
+	BindingUnknown BindingKind = iota
+	// BindingTCP is ncacn_ip_tcp (RPC over TCP).
+	BindingTCP
+	// BindingUDP is ncadg_ip_udp (connectionless RPC over UDP).
+	BindingUDP
+	// BindingNamedPipe is ncacn_np (RPC over an SMB named pipe).
+	BindingNamedPipe
+	// BindingHTTP is ncacn_http (RPC over HTTP / RPC proxy).
+	BindingHTTP
+)
+
+// Binding is a tower decoded into the components of a DCE string binding
+// (protseq:network_address[endpoint]).
+type Binding struct {
+	Kind BindingKind
+	// ProtSeq is the protocol sequence, e.g. "ncacn_ip_tcp" or "ncacn_np".
+	ProtSeq string
+	// NetworkAddress is the host: an IPv4 address (ncacn_ip_tcp/http, ncadg_ip_udp) or a
+	// NetBIOS host name (ncacn_np). It may be empty if the tower carries no address floor.
+	NetworkAddress string
+	// Endpoint is the per-transport endpoint: a decimal port (TCP/UDP/HTTP) or a pipe name
+	// (named pipe).
+	Endpoint string
+}
+
+// String renders the canonical DCE string binding, protseq:network_address[endpoint]
+// (e.g. "ncacn_ip_tcp:10.0.0.1[49664]", "ncacn_np:HOST[\\PIPE\\srvsvc]").
+func (b Binding) String() string {
+	return fmt.Sprintf("%s:%s[%s]", b.ProtSeq, b.NetworkAddress, b.Endpoint)
+}
+
+// Binding decodes the tower's transport and address floors into a Binding. It supports
+// ncacn_ip_tcp, ncadg_ip_udp, ncacn_np, and ncacn_http. ok-style failure is reported as an
+// error when no recognized transport (endpoint) floor is present.
+func (t Tower) Binding() (Binding, error) {
+	var b Binding
+	for _, f := range t.Floors {
+		switch f.Protocol() {
+		case FloorProtoTCP:
+			b.Kind, b.ProtSeq, b.Endpoint = BindingTCP, "ncacn_ip_tcp", portString(f.RHS)
+		case FloorProtoUDP:
+			b.Kind, b.ProtSeq, b.Endpoint = BindingUDP, "ncadg_ip_udp", portString(f.RHS)
+		case FloorProtoHTTP:
+			b.Kind, b.ProtSeq, b.Endpoint = BindingHTTP, "ncacn_http", portString(f.RHS)
+		case FloorProtoNamedPipe:
+			b.Kind, b.ProtSeq, b.Endpoint = BindingNamedPipe, "ncacn_np", trimName(f.RHS)
+		case FloorProtoIP:
+			if len(f.RHS) >= 4 {
+				b.NetworkAddress = net.IPv4(f.RHS[0], f.RHS[1], f.RHS[2], f.RHS[3]).String()
+			}
+		case FloorProtoNetBIOS:
+			b.NetworkAddress = trimName(f.RHS)
+		}
+	}
+	if b.Kind == BindingUnknown {
+		return b, fmt.Errorf("epm: tower has no recognized transport floor")
+	}
+	return b, nil
+}
+
+// portString decodes a big-endian 16-bit port RHS to its decimal string, or "" if the RHS
+// is too short.
+func portString(rhs []byte) string {
+	if len(rhs) < 2 {
+		return ""
+	}
+	return strconv.Itoa(int(binary.BigEndian.Uint16(rhs)))
+}
+
+// trimName decodes a NUL-terminated name RHS (pipe or host) to a Go string.
+func trimName(rhs []byte) string {
+	return strings.TrimRight(string(rhs), "\x00")
 }

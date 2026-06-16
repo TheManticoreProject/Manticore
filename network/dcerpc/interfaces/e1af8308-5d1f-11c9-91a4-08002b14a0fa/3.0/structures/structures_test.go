@@ -64,6 +64,77 @@ func TestTower_EndpointNoTCPFloor(t *testing.T) {
 	}
 }
 
+func TestTower_Binding(t *testing.T) {
+	base := []Floor{
+		InterfaceFloor(sampleIface(), 1, 0),
+		TransferSyntaxFloor(),
+		{LHS: []byte{FloorProtoNCACN}, RHS: []byte{0, 0}},
+	}
+	withTransport := func(transport ...Floor) Tower {
+		return Tower{Floors: append(append([]Floor{}, base...), transport...)}
+	}
+
+	cases := []struct {
+		name    string
+		tower   Tower
+		kind    BindingKind
+		binding string
+	}{
+		{
+			name:    "ncacn_ip_tcp",
+			tower:   withTransport(TCPFloor(49664), IPFloor(net.IPv4(10, 0, 0, 30))),
+			kind:    BindingTCP,
+			binding: "ncacn_ip_tcp:10.0.0.30[49664]",
+		},
+		{
+			name:    "ncadg_ip_udp",
+			tower:   withTransport(Floor{LHS: []byte{FloorProtoUDP}, RHS: []byte{0x00, 0x87}}, IPFloor(net.IPv4(192, 0, 2, 5))),
+			kind:    BindingUDP,
+			binding: "ncadg_ip_udp:192.0.2.5[135]",
+		},
+		{
+			name:    "ncacn_np",
+			tower:   withTransport(NamedPipeFloor(`\PIPE\srvsvc`), NetBIOSFloor(`\\FILESERVER`)),
+			kind:    BindingNamedPipe,
+			binding: `ncacn_np:\\FILESERVER[\PIPE\srvsvc]`,
+		},
+		{
+			name:    "ncacn_http",
+			tower:   withTransport(HTTPFloor(593), IPFloor(net.IPv4(203, 0, 113, 9))),
+			kind:    BindingHTTP,
+			binding: "ncacn_http:203.0.113.9[593]",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Exercise the builders through a full Marshal/UnmarshalTower round trip so the
+			// decode path sees real wire bytes.
+			tw, err := UnmarshalTower(c.tower.Marshal())
+			if err != nil {
+				t.Fatalf("UnmarshalTower: %v", err)
+			}
+			b, err := tw.Binding()
+			if err != nil {
+				t.Fatalf("Binding() error = %v", err)
+			}
+			if b.Kind != c.kind {
+				t.Errorf("Kind = %d, want %d", b.Kind, c.kind)
+			}
+			if got := b.String(); got != c.binding {
+				t.Errorf("binding = %q, want %q", got, c.binding)
+			}
+		})
+	}
+}
+
+func TestTower_BindingNoTransportFloor(t *testing.T) {
+	tower := Tower{Floors: []Floor{InterfaceFloor(sampleIface(), 1, 0), TransferSyntaxFloor()}}
+	if _, err := tower.Binding(); err == nil {
+		t.Error("Binding() error = nil for a tower with no transport floor, want non-nil")
+	}
+}
+
 func TestUnmarshalTower_Truncated(t *testing.T) {
 	if _, err := UnmarshalTower([]byte{0x05}); err == nil {
 		t.Error("UnmarshalTower(truncated) error = nil, want non-nil")
