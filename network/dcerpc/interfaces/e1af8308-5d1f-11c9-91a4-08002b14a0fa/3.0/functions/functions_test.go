@@ -91,21 +91,25 @@ func pad4(b []byte) []byte {
 	return b
 }
 
-// eptMapResponseStub assembles the [out] NDR stub of an ept_map call that returns a
-// single tower resolving to the given TCP endpoint. The layout is: 20-octet context
-// handle, num_towers, the ITowers full pointer, the conformant-varying array header,
-// one element referent, the twr_t body, then the status.
+// eptMapResponseStub assembles the [out] NDR stub of an ept_map call that returns a single
+// tower resolving to the given TCP endpoint, octet by octet, to pin the real wire layout
+// (verified live against 192.168.1.31, NDR20). ITowers is a bare, non-pointer, top-level
+// conformant-varying array of twr_p_t ([C706] Appendix O; [MS-RPCE] 2.2.1.2.5), so its
+// maximum_count is written inline right after num_towers — there is NO array referent id
+// and no hoisting. The layout is: 20-octet context handle, num_towers, the inline
+// conformant-varying header (max_count, offset, actual_count), one element referent id,
+// the twr_t body, then the status. max_count is set larger than actual_count (as a server
+// echoing the requested max_towers does) to pin that the decoder sizes from actual_count.
 func eptMapResponseStub(tower structures.Tower, maxTowers uint32) []byte {
 	towerBytes := tower.Marshal()
 
 	var b []byte
 	b = append(b, make([]byte, structures.ContextHandleSize)...) // entry_handle
 	b = le32(b, 1)                                               // num_towers
-	b = le32(b, 0x00020000)                                      // ITowers referent id (non-null)
-	b = le32(b, maxTowers)                                       // array maximum_count (size_is)
+	b = le32(b, maxTowers)                                       // array maximum_count (size_is) — inline, no referent id
 	b = le32(b, 0)                                               // array offset
 	b = le32(b, 1)                                               // array actual_count (length_is)
-	b = le32(b, 0x00020004)                                      // element[0] referent id (non-null)
+	b = le32(b, 0x00020004)                                      // element[0] twr_p_t referent id (non-null)
 	// twr_t body: hoisted maximum_count, tower_length, octet string, pad to 4.
 	b = le32(b, uint32(len(towerBytes)))
 	b = le32(b, uint32(len(towerBytes)))
