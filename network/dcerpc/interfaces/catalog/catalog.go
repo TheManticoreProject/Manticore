@@ -99,9 +99,9 @@ func New(entries []Interface) (*Database, error) {
 	}
 	var zero guid.GUID
 	for _, e := range entries {
-		// Name is optional: bulk entries imported from impacket are identified by UUID,
-		// protocol, and executable rather than a short handle. A zero UUID, however, is
-		// always a bug, as is a duplicate (UUID, version).
+		if e.Name == "" {
+			return nil, fmt.Errorf("catalog: entry %s has an empty Name", e.UUID.ToFormatD())
+		}
 		if e.UUID == zero {
 			return nil, fmt.Errorf("catalog: entry %q has a zero UUID", e.Name)
 		}
