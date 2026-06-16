@@ -143,10 +143,10 @@ func TestIntegration_EptLookup(t *testing.T) {
 			continue
 		}
 		obj := e.Object.GUID()
-		// Endpoint() renders the ncacn_ip_tcp case; #623's Tower.Binding() generalizes this
-		// to named-pipe/HTTP towers once merged.
-		if ep, ok := tw.Endpoint(); ok {
-			t.Logf("[ok] %s  iface=%s  %q", ep, obj.ToFormatD(), e.Annotation)
+		// Binding() renders every transport (ncacn_ip_tcp, ncacn_np, ncacn_http, ...); fall
+		// back to a floor-count summary for any tower it does not recognize.
+		if b, err := tw.Binding(); err == nil {
+			t.Logf("[ok] %s  iface=%s  %q", b, obj.ToFormatD(), e.Annotation)
 		} else {
 			t.Logf("[ok] %d-floor tower  iface=%s  %q", len(tw.Floors), obj.ToFormatD(), e.Annotation)
 		}
