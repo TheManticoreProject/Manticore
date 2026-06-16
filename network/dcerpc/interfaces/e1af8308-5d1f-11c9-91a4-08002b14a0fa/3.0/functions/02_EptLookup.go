@@ -26,13 +26,22 @@ type eptLookupRequest struct {
 func (*eptLookupRequest) Opnum() uint16 { return epm.OpnumEptLookup }
 
 // eptLookupResponse carries the [out] parameters of ept_lookup: the advanced context
-// handle, the number of entries returned, the entries themselves (a full pointer to a
-// conformant-varying array of ept_entry_t — size_is(max_ents), length_is(num_ents)), and
-// the status.
+// handle, the number of entries returned, the entries themselves, and the status.
+//
+// In the IDL ([C706] Appendix O; [MS-RPCE] 2.2.1.2.4) entries is a bare, non-pointer,
+// top-level conformant-varying array:
+//
+//	[out, length_is(*num_ents), size_is(max_ents)] ept_entry_t entries[]
+//
+// Its conformance (maximum_count) is therefore transmitted inline, immediately before the
+// array (right after num_ents), with no referent id and no hoisting to the front of the
+// parameter structure. The "inline" tag selects exactly that framing; "varying" supplies
+// the offset/actual_count words. (ept_map's ITowers is "ptr,..." because its element type
+// twr_p_t is a pointer; ept_entry_t is not, so entries[] is not pointer-prefixed.)
 type eptLookupResponse struct {
 	EntryHandle structures.ContextHandle
 	NumEnts     ndr.DWORD
-	Entries     []structures.EptEntry `ndr:"ptr,varying"`
+	Entries     []structures.EptEntry `ndr:"varying,inline"`
 	Status      ndr.DWORD
 }
 

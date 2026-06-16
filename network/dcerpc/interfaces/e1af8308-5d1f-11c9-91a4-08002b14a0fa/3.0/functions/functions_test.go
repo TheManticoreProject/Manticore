@@ -10,7 +10,6 @@ import (
 	epm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
@@ -198,28 +197,63 @@ func TestEptMap_StatusError(t *testing.T) {
 
 // --- ept_lookup ---
 
-// lookupRespMirror mirrors the [out] layout of ept_lookup's response so a test can build a
-// wire stub by marshalling it through the real NDR codec (the production response type is
-// unexported). Same field types/tags => the production decoder reads it back identically.
-type lookupRespMirror struct {
-	EntryHandle structures.ContextHandle
-	NumEnts     uint32
-	Entries     []structures.EptEntry `ndr:"ptr,varying"`
-	Status      uint32
-}
-
-// eptLookupStub marshals one ept_lookup response (entry handle, entries, status).
+// eptLookupStub hand-assembles the [out] NDR stub of an ept_lookup call, octet by octet,
+// to pin the real wire layout independently of the production codec (mirroring
+// eptMapResponseStub). The layout per [C706] Appendix O / [MS-RPCE] 2.2.1.2.4 is:
+//
+//	entry_handle(20) | num_ents | max_count | offset | actual_count |
+//	  per entry: object uuid(16) | tower referent id(4) | annotation(varying char array)
+//	  per entry: tower body (hoisted max_count | tower_length | octet string | pad to 4)
+//	| status
+//
+// entries[] is a bare, non-pointer, top-level conformant-varying array, so its
+// maximum_count is written inline right after num_ents (no referent id, no hoisting). The
+// tower referent bodies are deferred to after every entry's inline part. max_count is set
+// to a value larger than actual_count (as a real server echoing the requested max_ents
+// does) so the test also pins that the decoder sizes the result from actual_count, not
+// max_count.
 func eptLookupStub(t *testing.T, handle structures.ContextHandle, status uint32, entries []structures.EptEntry) []byte {
 	t.Helper()
-	b, err := ndr.Marshal(&lookupRespMirror{
-		EntryHandle: handle,
-		NumEnts:     uint32(len(entries)),
-		Entries:     entries,
-		Status:      status,
-	})
-	if err != nil {
-		t.Fatalf("marshal lookup response: %v", err)
+	var b []byte
+	b = append(b, handle[:]...)           // entry_handle (20 octets)
+	b = le32(b, uint32(len(entries)))     // num_ents
+	b = le32(b, functions.DefaultMaxEnts) // array maximum_count (size_is = max_ents) — inline, no referent id
+	b = le32(b, 0)                        // array offset
+	b = le32(b, uint32(len(entries)))     // array actual_count (length_is = num_ents)
+
+	// Element inline parts, in order: object uuid, tower referent id, annotation.
+	refid := uint32(0x00020000)
+	for _, e := range entries {
+		b = append(b, e.Object.Octets[:]...) // uuid_t object (16 octets)
+		if e.Tower != nil {
+			b = le32(b, refid) // twr_p_t referent id (non-null)
+			refid += 4
+		} else {
+			b = le32(b, 0) // null tower pointer
+		}
+		// [string] char annotation[]: a varying char array — offset, actual_count
+		// (characters including the NUL terminator), the bytes, the terminator.
+		ann := string(e.Annotation)
+		b = le32(b, 0)
+		b = le32(b, uint32(len(ann)+1))
+		b = append(b, []byte(ann)...)
+		b = append(b, 0)
+		b = pad4(b) // the next element / the deferred section aligns to 4
 	}
+
+	// Deferred twr_t referent bodies, in element order.
+	for _, e := range entries {
+		if e.Tower == nil {
+			continue
+		}
+		tw := e.Tower.TowerOctetString
+		b = le32(b, uint32(len(tw))) // hoisted maximum_count (size_is(tower_length))
+		b = le32(b, uint32(len(tw))) // tower_length
+		b = append(b, tw...)
+		b = pad4(b)
+	}
+
+	b = le32(b, status) // status
 	return b
 }
 
