@@ -353,3 +353,42 @@ func TestEptLookup_RequestShape(t *testing.T) {
 		t.Errorf("max_ents = %d, want %d", max, functions.DefaultMaxEnts)
 	}
 }
+
+// --- ept_lookup_handle_free ---
+
+// TestEptLookupHandleFree pins the wire contract of ept_lookup_handle_free verified live
+// against 192.168.1.31: it is opnum 4 (not 1, which is ept_delete), the request is the
+// 20-octet context handle, and the response is the nulled handle followed by the status.
+func TestEptLookupHandleFree(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	// [out] stub: 20-octet nulled entry_handle, then status = rpc_s_ok.
+	var stub []byte
+	stub = append(stub, make([]byte, structures.ContextHandleSize)...)
+	stub = le32(stub, epm.EptStatusSuccess)
+	ft.queue(responsePDU(t, 2, stub))
+
+	in := nonNullHandle()
+	freed, err := functions.EptLookupHandleFree(c, in)
+	if err != nil {
+		t.Fatalf("EptLookupHandleFree() error = %v", err)
+	}
+	if !freed.IsNull() {
+		t.Errorf("returned handle = %x, want null", freed[:])
+	}
+
+	var req pdu.Request
+	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
+		t.Fatalf("request does not parse: %v", err)
+	}
+	if req.Opnum != epm.OpnumEptLookupHandleFree {
+		t.Errorf("opnum = %d, want %d", req.Opnum, epm.OpnumEptLookupHandleFree)
+	}
+	if req.Opnum != 4 {
+		t.Errorf("opnum = %d, want 4 (ept_lookup_handle_free; opnum 1 is ept_delete)", req.Opnum)
+	}
+	if got := req.Stub[:structures.ContextHandleSize]; !bytes.Equal(got, in[:]) {
+		t.Errorf("request handle = %x, want %x", got, in[:])
+	}
+}

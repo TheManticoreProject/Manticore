@@ -27,14 +27,16 @@ const PipeName = `\epmapper`
 // Opnums for the on-the-wire ept methods ([C706] Appendix O). Only the operations
 // modelled here are listed.
 const (
-	// OpnumEptLookupHandleFree is ept_lookup_handle_free (opnum 1), which releases a
-	// lookup context handle obtained from ept_lookup.
-	OpnumEptLookupHandleFree uint16 = 1
 	// OpnumEptLookup is ept_lookup (opnum 2), which enumerates endpoint-map entries.
 	OpnumEptLookup uint16 = 2
 	// OpnumEptMap is ept_map (opnum 3), which resolves an interface to its bound
 	// endpoints via a protocol tower.
 	OpnumEptMap uint16 = 3
+	// OpnumEptLookupHandleFree is ept_lookup_handle_free (opnum 4), which releases a
+	// lookup context handle obtained from ept_lookup. Opnums are assigned by IDL
+	// declaration order in [C706] Appendix O: ept_insert(0), ept_delete(1), ept_lookup(2),
+	// ept_map(3), ept_lookup_handle_free(4), ept_inq_object(5), ept_mgmt_delete(6).
+	OpnumEptLookupHandleFree uint16 = 4
 )
 
 // Status codes returned in the ept_map / ept_lookup [out] error_status_t. 0 is success;
