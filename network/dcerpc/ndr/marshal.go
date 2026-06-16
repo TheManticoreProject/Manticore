@@ -785,7 +785,15 @@ func isUintKind(k reflect.Kind) bool {
 func isEmbeddedConformantArray(fv reflect.Value, tag fieldTag) bool {
 	// A pipe is a chunked stream, not a conformant array, so its count must not be
 	// hoisted to the front of the enclosing struct ([C706] 14.7).
-	return fv.Kind() == reflect.Slice && !tag.pipe && !isPointerLike(fv, tag)
+	//
+	// An "inline"-tagged slice is a top-level conformant[-varying] array whose
+	// maximum_count is transmitted in place, immediately before the array, rather than
+	// hoisted to the front of the enclosing struct. This is the form of a bare,
+	// non-pointer, top-level [out] array parameter such as ept_lookup's entries[]
+	// ([C706] Appendix O; [MS-RPCE] 2.2.1.2.4) — the structure-embedded hoist rule
+	// ([MS-RPCE] "Structure Containing a Conformant Varying Array") does not apply, so it
+	// must not be treated as an embedded conformant array.
+	return fv.Kind() == reflect.Slice && !tag.pipe && !tag.inline && !isPointerLike(fv, tag)
 }
 
 // ndrAlignment returns the NDR alignment, in octets, of a value of type t under the

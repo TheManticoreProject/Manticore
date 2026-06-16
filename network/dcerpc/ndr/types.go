@@ -100,6 +100,7 @@ type fieldTag struct {
 	ascii          bool    // [string] ASCII
 	conformant     bool    // conformant array (size_is)
 	varying        bool    // conformant-varying array (offset + actual_count framing)
+	inline         bool    // top-level conformant array whose maximum_count is transmitted in place, not hoisted to the struct front
 	sizeIs         string  // sibling field naming the maximum element count
 	lengthIs       string  // sibling field naming the actual element count
 	sizeDiv        int     // divisor applied to the size_is sibling (size_is(Field/N)); 0 = none
@@ -150,6 +151,8 @@ func parseTag(raw string) fieldTag {
 			t.conformant = true
 		case opt == "varying":
 			t.varying = true
+		case opt == "inline":
+			t.inline = true
 		case opt == "retval":
 			t.retval = true
 		case strings.HasPrefix(opt, "size_is="):

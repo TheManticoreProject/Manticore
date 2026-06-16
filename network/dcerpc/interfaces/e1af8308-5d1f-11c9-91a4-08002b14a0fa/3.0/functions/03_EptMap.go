@@ -22,13 +22,24 @@ type eptMapRequest struct {
 
 func (*eptMapRequest) Opnum() uint16 { return epm.OpnumEptMap }
 
-// eptMapResponse carries the [out] parameters of ept_map: the (advanced) context
-// handle, the number of towers returned, the towers themselves (a full pointer to a
-// conformant-varying array of full pointers to twr_t), and the status.
+// eptMapResponse carries the [out] parameters of ept_map: the (advanced) context handle,
+// the number of towers returned, the towers themselves, and the status.
+//
+// In the IDL ([C706] Appendix O; [MS-RPCE] 2.2.1.2.5) ITowers is a bare, non-pointer,
+// top-level conformant-varying array of full pointers to twr_t:
+//
+//	[out, length_is(*num_towers), size_is(max_towers)] twr_p_t ITowers[]
+//
+// The array itself is not pointer-prefixed — only its elements (twr_p_t) are pointers. So
+// its conformance (maximum_count) is transmitted inline, immediately after num_towers,
+// with no referent id and without being hoisted to the front of the parameter structure;
+// each element then carries its own referent id with the twr_t body deferred. The "inline"
+// tag selects that framing, "varying" supplies the offset/actual_count words, and
+// "elem=ptr" makes the elements full pointers.
 type eptMapResponse struct {
 	EntryHandle structures.ContextHandle
 	NumTowers   ndr.DWORD
-	ITowers     []*structures.Twr `ndr:"ptr,varying,elem=ptr"`
+	ITowers     []*structures.Twr `ndr:"varying,inline,elem=ptr"`
 	Status      ndr.DWORD
 }
 
