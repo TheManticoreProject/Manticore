@@ -104,6 +104,19 @@ func TestTower_Binding(t *testing.T) {
 			kind:    BindingHTTP,
 			binding: "ncacn_http:203.0.113.9[593]",
 		},
+		{
+			// Local RPC: a 0x0C protocol floor (empty RHS) followed by a 0x10 endpoint floor
+			// whose RHS is the NUL-terminated local port name, and no address floor. This is
+			// the floor sequence carried by the majority of real Windows endpoint-map entries
+			// (verified live against 192.168.1.31; issue #636).
+			name: "ncalrpc",
+			tower: withTransport(
+				Floor{LHS: []byte{FloorProtoLRPCAssoc}, RHS: nil},
+				Floor{LHS: []byte{FloorProtoLRPC}, RHS: append([]byte("WindowsShutdown"), 0)},
+			),
+			kind:    BindingLRPC,
+			binding: "ncalrpc:[WindowsShutdown]",
+		},
 	}
 
 	for _, c := range cases {

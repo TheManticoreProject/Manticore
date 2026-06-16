@@ -47,6 +47,15 @@ const (
 	// FloorProtoNetBIOS identifies the NetBIOS host-name floor (the address floor of an
 	// ncacn_np tower); its RHS is the NUL-terminated host name.
 	FloorProtoNetBIOS = 0x11
+	// FloorProtoLRPC identifies the local-RPC (ncalrpc) endpoint floor; its RHS is the
+	// NUL-terminated local port name (e.g. "WindowsShutdown"). It is the transport/endpoint
+	// floor of an ncalrpc tower, accompanied by the 0x0C protocol-identifier floor
+	// (FloorProtoLRPCAssoc). This is the most common transport in a real Windows endpoint
+	// map ([C706] Appendix I; [MS-RPCE] 2.2.1.2 protocol identifiers).
+	FloorProtoLRPC = 0x10
+	// FloorProtoLRPCAssoc is the protocol-identifier floor that accompanies an ncalrpc
+	// endpoint floor (its RHS is empty). The endpoint name lives on the 0x10 floor.
+	FloorProtoLRPCAssoc = 0x0C
 	// FloorProtoHTTP identifies the RPC-over-HTTP floor of an ncacn_http tower; its RHS is
 	// a 16-bit port in big-endian order.
 	FloorProtoHTTP = 0x1F
@@ -276,6 +285,9 @@ const (
 	BindingNamedPipe
 	// BindingHTTP is ncacn_http (RPC over HTTP / RPC proxy).
 	BindingHTTP
+	// BindingLRPC is ncalrpc (local RPC over an ALPC port). Its endpoint is the local port
+	// name and it has no network address.
+	BindingLRPC
 )
 
 // Binding is a tower decoded into the components of a DCE string binding
@@ -299,8 +311,8 @@ func (b Binding) String() string {
 }
 
 // Binding decodes the tower's transport and address floors into a Binding. It supports
-// ncacn_ip_tcp, ncadg_ip_udp, ncacn_np, and ncacn_http. ok-style failure is reported as an
-// error when no recognized transport (endpoint) floor is present.
+// ncacn_ip_tcp, ncadg_ip_udp, ncacn_np, ncacn_http, and ncalrpc. ok-style failure is
+// reported as an error when no recognized transport (endpoint) floor is present.
 func (t Tower) Binding() (Binding, error) {
 	var b Binding
 	for _, f := range t.Floors {
@@ -313,6 +325,10 @@ func (t Tower) Binding() (Binding, error) {
 			b.Kind, b.ProtSeq, b.Endpoint = BindingHTTP, "ncacn_http", portString(f.RHS)
 		case FloorProtoNamedPipe:
 			b.Kind, b.ProtSeq, b.Endpoint = BindingNamedPipe, "ncacn_np", trimName(f.RHS)
+		case FloorProtoLRPC:
+			// Local RPC: the 0x10 floor's RHS is the NUL-terminated local port name; there
+			// is no network address. (The companion 0x0C protocol floor carries no data.)
+			b.Kind, b.ProtSeq, b.Endpoint = BindingLRPC, "ncalrpc", trimName(f.RHS)
 		case FloorProtoIP:
 			if len(f.RHS) >= 4 {
 				b.NetworkAddress = net.IPv4(f.RHS[0], f.RHS[1], f.RHS[2], f.RHS[3]).String()
