@@ -21,10 +21,10 @@ func mustGUID(s string) guid.GUID {
 func v(major, minor uint16) Version { return Version{Major: major, Minor: minor} }
 
 // builtin is the curated catalog of well-known DCE/RPC interfaces. UUIDs are
-// taken from the MS-* protocol documents and cross-checked against impacket's
-// epm.py KNOWN_PROTOCOLS / KNOWN_UUIDS tables; Executable is the implementing
-// image (an .exe, or a .dll loaded into svchost.exe / lsass.exe). Fields that
-// are not well-established are left empty rather than guessed.
+// taken from the MS-* protocol documents and cross-checked against public
+// endpoint-mapper references; Executable is the implementing image (an .exe, or
+// a .dll loaded into svchost.exe / lsass.exe). Fields that are not
+// well-established are left empty rather than guessed.
 var builtin = []Interface{
 	// --- interfaces with a client implementation in this repo ---
 	{
@@ -153,7 +153,7 @@ var builtin = []Interface{
 		UUID: mustGUID("f309ad18-d86a-11d0-a075-00c04fb68820"), Version: v(0, 0),
 		Name: "IWbemLevel1Login", Title: "Windows Management Instrumentation",
 		Description: "WMI remoting login interface (over DCOM).",
-		Executable:  "wmiprvse.exe", Service: "Winmgmt", Protocol: "MS-WMI",
+		Service: "Winmgmt", Protocol: "MS-WMI",
 	},
 	{
 		UUID: mustGUID("50abc2a4-574d-40b3-9d66-ee4fd5fba076"), Version: v(5, 0),

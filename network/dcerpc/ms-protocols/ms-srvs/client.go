@@ -25,7 +25,7 @@ import (
 
 // MaxPreferredLength is passed as the preferred maximum reply length of the Netr*Enum
 // calls. 0xFFFFFFFF asks the server to return every entry in a single response, so no
-// resume-handle paging is needed; this matches impacket's enumeration usage.
+// resume-handle paging is needed; this matches common client enumeration usage.
 const MaxPreferredLength uint32 = 0xFFFFFFFF
 
 // PipeDialer opens a fresh DCE/RPC named-pipe transport for the given pipe over an
