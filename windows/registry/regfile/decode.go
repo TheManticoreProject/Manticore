@@ -243,6 +243,12 @@ func splitLines(text string) []string {
 // foldContinuations joins lines split with a trailing backslash (regedit's long
 // hex-value wrapping) into single logical lines. Leading whitespace on each
 // continuation segment is stripped so the rejoined byte list parses cleanly.
+//
+// A backslash only continues a line within a (possibly multi-line) hex value,
+// so a continuation is never *started* from a comment, header, or key line: a
+// trailing backslash there (e.g. a path at the end of a comment) is literal.
+// Once a continuation is in progress, every following physical line is folded
+// until one does not end with a backslash.
 func foldContinuations(lines []string) []string {
 	var out []string
 	var cur strings.Builder
@@ -251,6 +257,9 @@ func foldContinuations(lines []string) []string {
 	for _, ln := range lines {
 		body := strings.TrimRight(ln, " \t")
 		continues := strings.HasSuffix(body, "\\")
+		if continues && !pending && !canStartContinuation(strings.TrimSpace(ln)) {
+			continues = false
+		}
 		if continues {
 			body = strings.TrimSuffix(body, "\\")
 		}
@@ -271,6 +280,24 @@ func foldContinuations(lines []string) []string {
 		out = append(out, cur.String())
 	}
 	return out
+}
+
+// canStartContinuation reports whether a logical line may begin a backslash
+// continuation. Only value lines wrap in regedit output; comment, header, and
+// key lines never do, so a trailing backslash on those is treated as literal.
+func canStartContinuation(trimmed string) bool {
+	switch {
+	case strings.HasPrefix(trimmed, ";"):
+		return false
+	case strings.HasPrefix(trimmed, "["):
+		return false
+	case trimmed == "REGEDIT4":
+		return false
+	case strings.HasPrefix(trimmed, "Windows Registry Editor Version"):
+		return false
+	default:
+		return true
+	}
 }
 
 // decodeToUTF8 sniffs the byte-order mark / encoding of a ".reg" file and

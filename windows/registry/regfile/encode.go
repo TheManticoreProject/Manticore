@@ -97,7 +97,15 @@ func nameToken(name string) string {
 func valueToken(v registry.Value) string {
 	switch v.Type {
 	case registry.RegSz:
-		return `"` + escaper.Replace(v.String()) + `"`
+		s := v.String()
+		// A quoted REG_SZ cannot represent a string with an interior NUL or a
+		// line break, nor data that is not a clean UTF-16LE pair sequence.
+		// regedit falls back to the raw hex(1) form for those, which also
+		// round-trips losslessly.
+		if len(v.Data)%2 != 0 || strings.ContainsAny(s, "\x00\r\n") {
+			return formatHexBytes("hex(1):", v.Data)
+		}
+		return `"` + escaper.Replace(s) + `"`
 	case registry.RegDword:
 		if n, ok := v.Uint32(); ok {
 			return fmt.Sprintf("dword:%08x", n)

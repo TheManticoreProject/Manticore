@@ -103,6 +103,24 @@ func TestParseDeleteDirectives(t *testing.T) {
 	}
 }
 
+func TestParseCommentWithTrailingBackslashKeepsNextLine(t *testing.T) {
+	// A comment ending in a backslash must not swallow the following key line.
+	src := []byte(Header + "\n" +
+		"; see also C:\\Windows\\\n" +
+		"[HKEY_LOCAL_MACHINE\\K]\n" +
+		"\"v\"=dword:00000001\n")
+	blocks, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(blocks) != 1 || blocks[0].Path != `HKEY_LOCAL_MACHINE\K` {
+		t.Fatalf("comment continuation swallowed the key line: %#v", blocks)
+	}
+	if n, ok := blocks[0].Values[0].Value.Uint32(); !ok || n != 1 {
+		t.Errorf("value lost: %#v", blocks[0].Values)
+	}
+}
+
 func TestParseDefaultValueToken(t *testing.T) {
 	blocks, err := Parse([]byte(Header + "\n[HKEY_X\\K]\n@=\"def\"\n"))
 	if err != nil {

@@ -85,6 +85,23 @@ func foldOne(s string) string {
 	return strings.Join(folded, "")
 }
 
+func TestRegSzInteriorNulFallsBackToHex1(t *testing.T) {
+	// "A\x00B" as UTF-16LE + trailing NUL: an interior NUL makes the quoted form
+	// impossible, so it must be emitted (and parsed back) as hex(1).
+	v := registry.Value{Type: registry.RegSz, Data: []byte{0x41, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00}}
+	line := FormatValueLine("S", v)
+	if !strings.HasPrefix(line, `"S"=hex(1):`) {
+		t.Fatalf("interior-NUL REG_SZ not emitted as hex(1): %q", line)
+	}
+	out, err := Parse(Marshal([]KeyBlock{{Path: `HKEY_X\K`, Values: []ValueLine{{Name: "S", Value: v}}}}))
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if got := out[0].Values[0].Value; !reflect.DeepEqual(got, v) {
+		t.Errorf("hex(1) REG_SZ did not round-trip: got %#v, want %#v", got, v)
+	}
+}
+
 // --- round-trip: Parse(Marshal(x)) == x for every value type ---
 
 func TestRoundTrip(t *testing.T) {
