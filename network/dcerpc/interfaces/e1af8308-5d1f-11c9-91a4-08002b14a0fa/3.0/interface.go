@@ -27,6 +27,9 @@ const PipeName = `\epmapper`
 // Opnums for the on-the-wire ept methods ([C706] Appendix O). Only the operations
 // modelled here are listed.
 const (
+	// OpnumEptLookupHandleFree is ept_lookup_handle_free (opnum 1), which releases a
+	// lookup context handle obtained from ept_lookup.
+	OpnumEptLookupHandleFree uint16 = 1
 	// OpnumEptLookup is ept_lookup (opnum 2), which enumerates endpoint-map entries.
 	OpnumEptLookup uint16 = 2
 	// OpnumEptMap is ept_map (opnum 3), which resolves an interface to its bound
@@ -34,13 +37,35 @@ const (
 	OpnumEptMap uint16 = 3
 )
 
-// Status codes returned in the ept_map [out] error_status_t. 0 is success; the ept
-// specific codes are DCE error-status values ([C706] Appendix O / Appendix E).
+// Status codes returned in the ept_map / ept_lookup [out] error_status_t. 0 is success;
+// the ept specific codes are DCE error-status values ([C706] Appendix O / Appendix E).
+// ept_lookup additionally returns ept_s_not_registered (EptStatusNotRegistered) once no
+// further elements match, which the paging loop treats as a normal end of enumeration.
 const (
-	StatusSuccess          uint32 = 0x00000000 // rpc_s_ok
+	EptStatusSuccess       uint32 = 0x00000000 // rpc_s_ok
 	EptStatusCantPerform   uint32 = 0x16c9a0d8 // ept_s_cant_perform_op
 	EptStatusNotRegistered uint32 = 0x16c9a0d6 // ept_s_not_registered
 	EptStatusInvalidEntry  uint32 = 0x16c9a0d7 // ept_s_invalid_entry
+)
+
+// ept_lookup inquiry_type values ([C706] Appendix O / [MS-RPCE] 2.2.1.2.4): which entries
+// the endpoint mapper returns. EptInquiryAllElts enumerates the whole endpoint map and
+// ignores the object/Ifid/vers_option filters.
+const (
+	EptInquiryAllElts     uint32 = 0x00000000 // RPC_C_EP_ALL_ELTS
+	EptInquiryMatchByIf   uint32 = 0x00000001 // RPC_C_EP_MATCH_BY_IF
+	EptInquiryMatchByObj  uint32 = 0x00000002 // RPC_C_EP_MATCH_BY_OBJ
+	EptInquiryMatchByBoth uint32 = 0x00000003 // RPC_C_EP_MATCH_BY_BOTH
+)
+
+// ept_lookup vers_option values: the interface-version constraint applied when matching by
+// interface ([MS-RPCE] 2.2.1.2.4).
+const (
+	EptVersAll        uint32 = 0x00000001 // RPC_C_VERS_ALL
+	EptVersCompatible uint32 = 0x00000002 // RPC_C_VERS_COMPATIBLE
+	EptVersExact      uint32 = 0x00000003 // RPC_C_VERS_EXACT
+	EptVersMajorOnly  uint32 = 0x00000004 // RPC_C_VERS_MAJOR_ONLY
+	EptVersUpto       uint32 = 0x00000005 // RPC_C_VERS_UPTO
 )
 
 // SyntaxID returns the ept abstract syntax identifier:
@@ -57,7 +82,7 @@ func SyntaxID() syntax.SyntaxID {
 // value.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
+	case EptStatusSuccess:
 		return "rpc_s_ok"
 	case EptStatusCantPerform:
 		return "ept_s_cant_perform_op"
@@ -72,8 +97,9 @@ func StatusString(status uint32) string {
 
 // OpnumToName maps each modelled opnum to its method name; the single source of truth.
 var OpnumToName = map[uint16]string{
-	OpnumEptLookup: "ept_lookup",
-	OpnumEptMap:    "ept_map",
+	OpnumEptLookupHandleFree: "ept_lookup_handle_free",
+	OpnumEptLookup:           "ept_lookup",
+	OpnumEptMap:              "ept_map",
 }
 
 // NameToOpnum is the reverse of OpnumToName, built at init so the two never drift.

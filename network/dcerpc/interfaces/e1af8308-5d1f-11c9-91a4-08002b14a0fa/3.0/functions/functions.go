@@ -13,6 +13,11 @@ import (
 // the endpoints a single interface is typically bound to.
 const DefaultMaxTowers = 4
 
+// DefaultMaxEnts is the batch size Lookup requests per ept_lookup call. ept_lookup caps
+// max_ents at 500 ([MS-RPCE] 2.2.1.2.4 range(0,500)); enumeration pages until the entry
+// handle is exhausted regardless of this value.
+const DefaultMaxEnts = 500
+
 // Map resolves the ncacn_ip_tcp endpoints bound to the given interface UUID and version
 // by building a TCP map tower and calling ept_map, then extracting the endpoints from
 // the returned towers. It is the common path for discovering the dynamic TCP port a

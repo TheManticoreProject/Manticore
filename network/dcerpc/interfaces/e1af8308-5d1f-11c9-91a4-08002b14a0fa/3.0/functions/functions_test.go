@@ -1,6 +1,7 @@
 package functions_test
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -9,6 +10,7 @@ import (
 	epm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
@@ -110,7 +112,7 @@ func eptMapResponseStub(tower structures.Tower, maxTowers uint32) []byte {
 	b = le32(b, uint32(len(towerBytes)))
 	b = append(b, towerBytes...)
 	b = pad4(b)
-	b = le32(b, epm.StatusSuccess) // status
+	b = le32(b, epm.EptStatusSuccess) // status
 	return b
 }
 
@@ -191,5 +193,163 @@ func TestEptMap_StatusError(t *testing.T) {
 
 	if _, err := functions.EptMap(c, nil, structures.BuildMapTowerTCP(sampleIface(), 1, 0), functions.DefaultMaxTowers); err == nil {
 		t.Fatal("EptMap() with ept_s_not_registered: error = nil, want non-nil")
+	}
+}
+
+// --- ept_lookup ---
+
+// lookupRespMirror mirrors the [out] layout of ept_lookup's response so a test can build a
+// wire stub by marshalling it through the real NDR codec (the production response type is
+// unexported). Same field types/tags => the production decoder reads it back identically.
+type lookupRespMirror struct {
+	EntryHandle structures.ContextHandle
+	NumEnts     uint32
+	Entries     []structures.EptEntry `ndr:"ptr,varying"`
+	Status      uint32
+}
+
+// eptLookupStub marshals one ept_lookup response (entry handle, entries, status).
+func eptLookupStub(t *testing.T, handle structures.ContextHandle, status uint32, entries []structures.EptEntry) []byte {
+	t.Helper()
+	b, err := ndr.Marshal(&lookupRespMirror{
+		EntryHandle: handle,
+		NumEnts:     uint32(len(entries)),
+		Entries:     entries,
+		Status:      status,
+	})
+	if err != nil {
+		t.Fatalf("marshal lookup response: %v", err)
+	}
+	return b
+}
+
+// tcpEntry builds an ept_entry_t with an ncacn_ip_tcp tower on the given port.
+func tcpEntry(obj guid.GUID, port uint16, annotation string) structures.EptEntry {
+	tw := structures.NewTwr(structures.Tower{Floors: []structures.Floor{
+		structures.InterfaceFloor(sampleIface(), 1, 0),
+		structures.TransferSyntaxFloor(),
+		{LHS: []byte{structures.FloorProtoNCACN}, RHS: []byte{0, 0}},
+		structures.TCPFloor(port),
+		structures.IPFloor(net.IPv4(10, 0, 0, 1)),
+	}})
+	return structures.EptEntry{
+		Object:     structures.NewEptUUID(obj),
+		Tower:      &tw,
+		Annotation: structures.Annotation(annotation),
+	}
+}
+
+// nonNullHandle returns a context handle with a non-zero UUID portion.
+func nonNullHandle() structures.ContextHandle {
+	var h structures.ContextHandle
+	h[4] = 0xAB // first UUID octet
+	return h
+}
+
+func TestLookup_SingleBatch(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	entries := []structures.EptEntry{
+		tcpEntry(sampleIface(), 49664, "Service A"),
+		tcpEntry(sampleIface(), 135, "Service B"),
+	}
+	// Null handle on the response => enumeration complete after this batch.
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess, entries)))
+
+	got, err := functions.Lookup(c)
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want 2", len(got))
+	}
+	if got[0].Annotation != "Service A" {
+		t.Errorf("entry 0 annotation = %q, want %q", got[0].Annotation, "Service A")
+	}
+	tw, err := got[1].DecodeTower()
+	if err != nil {
+		t.Fatalf("DecodeTower: %v", err)
+	}
+	if ep, ok := tw.Endpoint(); !ok || ep.Port != 135 {
+		t.Errorf("entry 1 endpoint = %v (ok=%v), want port 135", ep, ok)
+	}
+}
+
+func TestLookup_MultiBatch(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	h1 := nonNullHandle()
+	// Batch 1: two entries, non-null handle => more to come.
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, h1, epm.EptStatusSuccess,
+		[]structures.EptEntry{tcpEntry(sampleIface(), 1000, "A"), tcpEntry(sampleIface(), 1001, "B")})))
+	// Batch 2: one entry, null handle => done.
+	ft.queue(responsePDU(t, 3, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess,
+		[]structures.EptEntry{tcpEntry(sampleIface(), 1002, "C")})))
+
+	got, err := functions.Lookup(c)
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries across batches, want 3", len(got))
+	}
+
+	// The second request must carry the entry handle returned by the first batch. Stub
+	// layout: inquiry_type(4) + object ref(4) + Ifid ref(4) + vers_option(4) = 16, then the
+	// 20-octet entry handle.
+	var req2 pdu.Request
+	if _, err := req2.Unmarshal(ft.sent[2]); err != nil {
+		t.Fatalf("second request does not parse: %v", err)
+	}
+	if got := req2.Stub[16:36]; !bytes.Equal(got, h1[:]) {
+		t.Errorf("second request entry handle = %x, want %x", got, h1[:])
+	}
+}
+
+func TestLookup_EmptyRegistry(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+
+	// No entries, null handle, ept_s_not_registered => clean, empty result.
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusNotRegistered, nil)))
+
+	got, err := functions.Lookup(c)
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d entries for an empty registry, want 0", len(got))
+	}
+}
+
+func TestEptLookup_RequestShape(t *testing.T) {
+	ft := &fakeTransport{}
+	c := boundClient(t, ft)
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess, nil)))
+
+	if _, err := functions.Lookup(c); err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+
+	var req pdu.Request
+	if _, err := req.Unmarshal(ft.sent[1]); err != nil {
+		t.Fatalf("request does not parse: %v", err)
+	}
+	if req.Opnum != epm.OpnumEptLookup {
+		t.Errorf("opnum = %d, want %d", req.Opnum, epm.OpnumEptLookup)
+	}
+	if it := binary.LittleEndian.Uint32(req.Stub[:4]); it != epm.EptInquiryAllElts {
+		t.Errorf("inquiry_type = %d, want EptInquiryAllElts", it)
+	}
+	if obj := binary.LittleEndian.Uint32(req.Stub[4:8]); obj != 0 {
+		t.Errorf("object pointer = 0x%08x, want 0 (null)", obj)
+	}
+	if ifid := binary.LittleEndian.Uint32(req.Stub[8:12]); ifid != 0 {
+		t.Errorf("Ifid pointer = 0x%08x, want 0 (null)", ifid)
+	}
+	if max := binary.LittleEndian.Uint32(req.Stub[36:40]); max != functions.DefaultMaxEnts {
+		t.Errorf("max_ents = %d, want %d", max, functions.DefaultMaxEnts)
 	}
 }
