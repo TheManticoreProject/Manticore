@@ -673,10 +673,16 @@ func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
 		// A divisor form (size_is(Field/N)) names a field in different units than the
 		// elements — its value is not the element count, so it is resolved separately by
 		// resolveSiblingCounts and must not be overwritten with the slice length here.
-		if tag.sizeIs != "" && tag.sizeDiv == 0 {
+		//
+		// Independent bounds (a varying array whose size_is and length_is name *different*
+		// sibling fields — e.g. RPC_SECURITY_DESCRIPTOR's CbIn/CbOut, LSAPR_CR_CIPHER_VALUE's
+		// MaximumLength/Length) are likewise caller-owned: the maximum_count (capacity) and
+		// the actual_count (valid length) genuinely differ, so neither may be clobbered with
+		// the slice length. They are resolved from the field values in resolveSiblingCounts.
+		if tag.sizeIs != "" && tag.sizeDiv == 0 && !independentVaryingBounds(tag) {
 			m[tag.sizeIs] = n
 		}
-		if tag.lengthIs != "" && tag.lengthDiv == 0 {
+		if tag.lengthIs != "" && tag.lengthDiv == 0 && !independentVaryingBounds(tag) {
 			m[tag.lengthIs] = n
 		}
 	}
@@ -691,6 +697,23 @@ func countTargets(rt reflect.Type, rv reflect.Value) map[string]uint64 {
 // ([MS-DTYP] 2.3.10). Plain sibling size_is/length_is (no divisor) are left untouched;
 // their counts are derived from the array length by countTargets.
 func resolveSiblingCounts(tag *fieldTag, rt reflect.Type, rv reflect.Value) {
+	// Independent bounds: a varying array whose size_is and length_is name distinct
+	// sibling fields. The maximum_count (capacity) and actual_count (valid length) are
+	// taken verbatim from those fields rather than from the slice length, so a caller can
+	// transmit fewer valid elements than the buffer's capacity — the case the key-security
+	// RPC_SECURITY_DESCRIPTOR (CbIn/CbOut) and LSAPR_CR_CIPHER_VALUE (MaximumLength/Length)
+	// require ([MS-RRP] 2.2.8, [MS-LSAD] 2.2.6.1).
+	if independentVaryingBounds(*tag) {
+		if v, ok := siblingUint(rt, rv, tag.sizeIs); ok {
+			tag.sizeConst = uint32(v)
+			tag.sizeConstSet = true
+		}
+		if v, ok := siblingUint(rt, rv, tag.lengthIs); ok {
+			tag.lengthConst = uint32(v)
+			tag.lengthConstSet = true
+		}
+		return
+	}
 	if tag.sizeIs != "" && tag.sizeDiv > 0 {
 		if v, ok := siblingUint(rt, rv, tag.sizeIs); ok {
 			tag.sizeConst = uint32(v / uint64(tag.sizeDiv))
@@ -703,6 +726,18 @@ func resolveSiblingCounts(tag *fieldTag, rt reflect.Type, rv reflect.Value) {
 			tag.lengthConstSet = true
 		}
 	}
+}
+
+// independentVaryingBounds reports whether an array's size_is and length_is name two
+// *different* plain sibling fields (no divisor): the conformant-varying case where the
+// maximum_count (capacity) and the actual_count (valid length) are independent values the
+// caller owns, rather than both being derived from the slice length. Divisor forms
+// (size_is(Field/N)) and the common size_is==length_is form are excluded.
+func independentVaryingBounds(tag fieldTag) bool {
+	return tag.varying &&
+		tag.sizeIs != "" && tag.lengthIs != "" &&
+		tag.sizeIs != tag.lengthIs &&
+		tag.sizeDiv == 0 && tag.lengthDiv == 0
 }
 
 // siblingUint reads the unsigned integer value of the named field of struct value rv,
