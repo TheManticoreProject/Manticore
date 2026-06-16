@@ -13,20 +13,37 @@ var (
 func TestDefault_BuildsAndIsConsistent(t *testing.T) {
 	db := Default() // panics if the seed table is malformed
 	all := db.All()
-	if len(all) == 0 {
-		t.Fatal("Default().All() is empty")
+	// Curated (~26) plus the impacket-derived bulk table.
+	if len(all) < 500 {
+		t.Fatalf("Default().All() = %d entries, want >= 500 (curated + impacket)", len(all))
 	}
-	// Indexes must agree with the entry list.
+	// Every entry must be reachable by its exact (UUID, version).
 	for _, e := range all {
-		if got, ok := db.Lookup(e.UUID, e.Version.Major, e.Version.Minor); !ok || got.Name != e.Name {
-			t.Errorf("Lookup(%s v%s) = (%q, %v), want %q", e.UUID.ToFormatD(), e.Version, got.Name, ok, e.Name)
+		if got, ok := db.Lookup(e.UUID, e.Version.Major, e.Version.Minor); !ok || got.UUID != e.UUID {
+			t.Errorf("Lookup(%s v%s) ok=%v", e.UUID.ToFormatD(), e.Version, ok)
 		}
 	}
-	// All() is sorted by name.
+	// All() is sorted by name (empty names, from bulk entries, sort first).
 	for i := 1; i < len(all); i++ {
 		if all[i-1].Name > all[i].Name {
 			t.Errorf("All() not sorted: %q before %q", all[i-1].Name, all[i].Name)
 		}
+	}
+}
+
+func TestCuratedWinsOverImpacket(t *testing.T) {
+	// winreg is in both tables; the curated entry (with Name/Service/Pipes) must win.
+	e, ok := Lookup(mustGUID("338cd001-2244-31f1-aaaa-900038001003"), 1, 0)
+	if !ok || e.Name != "winreg" || e.Service != "RemoteRegistry" || len(e.Pipes) == 0 {
+		t.Errorf("winreg resolved to non-curated entry: %+v", e)
+	}
+}
+
+func TestImpacketEntryPresent(t *testing.T) {
+	// A UUID only present in the impacket table resolves with its executable.
+	e, ok := Lookup(mustGUID("04eeb297-cbf4-466b-8a2a-bfd6a2f10bba"), 1, 0)
+	if !ok || e.Executable == "" {
+		t.Errorf("impacket-sourced entry missing: ok=%v exe=%q", ok, e.Executable)
 	}
 }
 
@@ -62,24 +79,37 @@ func TestResolveFallback(t *testing.T) {
 }
 
 func TestSearchByFields(t *testing.T) {
-	if got := SearchByExecutable("SPOOLSV.EXE"); len(got) != 2 { // spoolss + IRemoteWinspool, case-insensitive
-		t.Errorf("SearchByExecutable(spoolsv.exe) = %d entries, want 2: %v", len(got), names(got))
+	// spoolsv.exe hosts the curated print interfaces plus impacket-sourced ones.
+	got := SearchByExecutable("SPOOLSV.EXE") // case-insensitive
+	if !hasName(got, "spoolss") || !hasName(got, "IRemoteWinspool") {
+		t.Errorf("SearchByExecutable(spoolsv.exe) missing print interfaces: %v", names(got))
 	}
-	if got := SearchByService("Spooler"); len(got) != 2 {
-		t.Errorf("SearchByService(Spooler) = %d, want 2: %v", len(got), names(got))
+	// Service/Name/Pipe are only set on curated entries, so these stay exact.
+	if g := SearchByService("Spooler"); len(g) != 2 {
+		t.Errorf("SearchByService(Spooler) = %d, want 2: %v", len(g), names(g))
 	}
-	if got := SearchByProtocol("MS-EFSR"); len(got) != 2 { // two EFSR interface UUIDs
-		t.Errorf("SearchByProtocol(MS-EFSR) = %d, want 2: %v", len(got), names(got))
+	if g := SearchByName("efsrpc"); len(g) != 2 { // both EFSR entries share the name
+		t.Errorf("SearchByName(efsrpc) = %d, want 2: %v", len(g), names(g))
 	}
-	if got := SearchByName("efsrpc"); len(got) != 2 { // both EFSR entries share the name
-		t.Errorf("SearchByName(efsrpc) = %d, want 2: %v", len(got), names(got))
+	if g := SearchByPipe(`\pipe\spoolss`); len(g) != 2 {
+		t.Errorf("SearchByPipe(spoolss) = %d, want 2: %v", len(g), names(g))
 	}
-	if got := SearchByPipe(`\pipe\spoolss`); len(got) != 2 {
-		t.Errorf("SearchByPipe(spoolss) = %d, want 2: %v", len(got), names(got))
+	if g := SearchByProtocol("MS-EFSR"); len(g) < 2 { // at least the two curated EFSR UUIDs
+		t.Errorf("SearchByProtocol(MS-EFSR) = %d, want >= 2: %v", len(g), names(g))
 	}
-	if got := SearchByExecutable("nope.exe"); got != nil {
-		t.Errorf("SearchByExecutable(nope.exe) = %v, want nil", names(got))
+	if g := SearchByExecutable("nope.exe"); g != nil {
+		t.Errorf("SearchByExecutable(nope.exe) = %v, want nil", names(g))
 	}
+}
+
+// hasName reports whether any entry in s has the given Name.
+func hasName(s []Interface, name string) bool {
+	for _, e := range s {
+		if e.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSearchSubstring(t *testing.T) {
@@ -102,9 +132,9 @@ func TestNewValidation(t *testing.T) {
 	}); err == nil {
 		t.Error("New with duplicate (UUID, version): err = nil, want error")
 	}
-	// Empty name.
-	if _, err := New([]Interface{{UUID: good, Version: v(1, 0)}}); err == nil {
-		t.Error("New with empty Name: err = nil, want error")
+	// Empty name is allowed (bulk entries are identified by UUID/protocol/executable).
+	if _, err := New([]Interface{{UUID: good, Version: v(1, 0), Executable: "x.dll"}}); err != nil {
+		t.Errorf("New with empty Name should be allowed, got %v", err)
 	}
 	// Zero UUID.
 	if _, err := New([]Interface{{Version: v(1, 0), Name: "a"}}); err == nil {
