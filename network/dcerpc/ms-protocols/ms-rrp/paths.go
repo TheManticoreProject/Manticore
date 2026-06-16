@@ -150,20 +150,34 @@ func (r *RemoteRegistry) DeleteValueByPath(keyPath, valueName string) error {
 }
 
 // EnumKeys returns the names of all immediate subkeys of an open key, looping
-// BaseRegEnumKey until ERROR_NO_MORE_ITEMS.
+// BaseRegEnumKey until ERROR_NO_MORE_ITEMS. Subkey names are capped at 255 UTF-16 code
+// units by the registry, but the name/class buffers grow and retry the same index on
+// ERROR_MORE_DATA to stay robust if a server reports a longer name. The server counts the
+// terminating NUL in the returned name's length, so it is stripped to yield a clean Go
+// string usable as a path component.
 func (r *RemoteRegistry) EnumKeys(h Handle) ([]string, error) {
 	var names []string
-	for i := uint32(0); ; i++ {
-		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: 512, Buffer: make([]uint16, 256)}
-		classIn := structures.RRP_UNICODE_STRING{MaximumLength: 512, Buffer: make([]uint16, 256)}
+	// bufLen counts UTF-16 code units; MaximumLength is that count in bytes (×2). The cap
+	// keeps MaximumLength within its uint16 field while far exceeding the 255-char limit.
+	bufLen := uint32(256)
+	const maxBufLen = uint32(16 * 1024)
+	for i := uint32(0); ; {
+		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
+		classIn := structures.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
 		nameOut, _, _, err := r.BaseRegEnumKey(h, ndr.DWORD(i), nameIn, &classIn, nil)
 		if err != nil {
 			if isStatus(err, winreg.ErrorNoMoreItems) {
 				break
 			}
+			if isStatus(err, winreg.ErrorMoreData) && bufLen < maxBufLen {
+				// The name (or class) did not fit: grow the buffers and retry the same index.
+				bufLen *= 2
+				continue
+			}
 			return names, err
 		}
-		names = append(names, nameOut.String())
+		names = append(names, strings.TrimRight(nameOut.String(), "\x00"))
+		i++
 	}
 	return names, nil
 }
@@ -179,19 +193,30 @@ func (r *RemoteRegistry) EnumKeysByPath(keyPath string) ([]string, error) {
 }
 
 // EnumValues returns all values of an open key, looping BaseRegEnumValue until
-// ERROR_NO_MORE_ITEMS.
+// ERROR_NO_MORE_ITEMS. The data buffer is negotiated per value: it grows and retries the
+// same index on ERROR_MORE_DATA (e.g. values whose data exceeds the initial buffer). The
+// server counts the terminating NUL in the returned value name's length, so it is stripped.
 func (r *RemoteRegistry) EnumValues(h Handle) ([]ValueEntry, error) {
 	var entries []ValueEntry
-	for i := uint32(0); ; i++ {
-		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: 1024, Buffer: make([]uint16, 512)}
+	dataLen := uint32(1024)
+	for i := uint32(0); ; {
+		// A registry value name fits in 1023 UTF-16 code units here; only the data buffer
+		// needs to grow, so the name buffer is fixed and the data buffer is negotiated.
+		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: 2048, Buffer: make([]uint16, 1024)}
 		typ := ndr.DWORD(0)
-		buf := make([]byte, 1024)
-		cb := ndr.DWORD(len(buf))
-		ln := ndr.DWORD(len(buf))
+		buf := make([]byte, dataLen)
+		cb := ndr.DWORD(dataLen)
+		ln := ndr.DWORD(dataLen)
 		nameOut, rTyp, rData, rcb, _, err := r.BaseRegEnumValue(h, ndr.DWORD(i), nameIn, &typ, buf, &cb, &ln)
 		if err != nil {
 			if isStatus(err, winreg.ErrorNoMoreItems) {
 				break
+			}
+			if isStatus(err, winreg.ErrorMoreData) && rcb != nil && uint32(*rcb) > dataLen {
+				// The value's data is larger than the current buffer: grow it and retry the
+				// same index without advancing.
+				dataLen = uint32(*rcb)
+				continue
 			}
 			return entries, err
 		}
@@ -203,7 +228,8 @@ func (r *RemoteRegistry) EnumValues(h Handle) ([]ValueEntry, error) {
 		if rTyp != nil {
 			val.Type = uint32(*rTyp)
 		}
-		entries = append(entries, ValueEntry{Name: nameOut.String(), Value: val})
+		entries = append(entries, ValueEntry{Name: strings.TrimRight(nameOut.String(), "\x00"), Value: val})
+		i++
 	}
 	return entries, nil
 }
