@@ -53,7 +53,7 @@ func EptMap(rpc ndr.Invoker, object *guid.GUID, mapTower structures.Tower, maxTo
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return nil, fmt.Errorf("ept_map: %w", err)
 	}
-	if uint32(resp.Status) != epm.StatusSuccess {
+	if uint32(resp.Status) != epm.EptStatusSuccess {
 		return nil, fmt.Errorf("ept_map failed: %s", epm.StatusString(uint32(resp.Status)))
 	}
 

@@ -20,6 +20,18 @@ type ContextHandle [ContextHandleSize]byte
 // Compile-time assertion that ContextHandle encodes itself as NDR.
 var _ ndr.Marshaler = (*ContextHandle)(nil)
 
+// IsNull reports whether the handle is the null context handle, i.e. its 16-octet UUID
+// (the octets after the 4-octet attributes word) is all zero. ept_lookup signals the end
+// of a paged enumeration by returning a null entry handle.
+func (h ContextHandle) IsNull() bool {
+	for _, b := range h[4:] {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // AlignmentNDR reports the 4-octet alignment of a context handle (its first field is the
 // 4-octet attributes word).
 func (*ContextHandle) AlignmentNDR() int { return 4 }

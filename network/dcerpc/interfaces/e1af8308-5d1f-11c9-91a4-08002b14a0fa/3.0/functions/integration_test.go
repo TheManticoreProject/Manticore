@@ -84,3 +84,72 @@ func TestIntegration_EptMap(t *testing.T) {
 		t.Logf("[ok] srvsvc bound at %s", ep)
 	}
 }
+
+func TestIntegration_EptLookup(t *testing.T) {
+	host := os.Getenv("DCERPC_TEST_HOST")
+	if host == "" {
+		t.Skip("DCERPC_TEST_HOST not set; skipping live ept_lookup test")
+	}
+	port := 445
+	if p := os.Getenv("DCERPC_TEST_PORT"); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			t.Fatalf("invalid DCERPC_TEST_PORT %q: %v", p, err)
+		}
+		port = n
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		t.Fatalf("DCERPC_TEST_HOST %q is not a valid IP", host)
+	}
+	creds, err := credentials.NewCredentials(os.Getenv("DCERPC_TEST_DOMAIN"), os.Getenv("DCERPC_TEST_USER"), os.Getenv("DCERPC_TEST_PASS"), "")
+	if err != nil {
+		t.Fatalf("NewCredentials: %v", err)
+	}
+
+	smb := smbclient.NewClientUsingTCPTransport(ip, port)
+	if err := smb.Connect(ip, port); err != nil {
+		t.Fatalf("SMB Connect: %v", err)
+	}
+	defer smb.Disconnect()
+	smb.NativeOS, smb.NativeLanMan = "Unix", "Samba"
+	if err := smb.SessionSetup(creds); err != nil {
+		t.Fatalf("SMB SessionSetup: %v", err)
+	}
+	defer smb.Logoff()
+	if err := smb.TreeConnect("IPC$"); err != nil {
+		t.Fatalf("SMB TreeConnect(IPC$): %v", err)
+	}
+	defer smb.TreeDisconnect()
+
+	rpc := client.NewClient(dcerpcsmb.New(smb, epm.PipeName))
+	if err := rpc.Bind(epm.SyntaxID()); err != nil {
+		t.Fatalf("DCE/RPC Bind(ept): %v", err)
+	}
+	defer rpc.Close()
+
+	// Enumerate the whole endpoint map and render each entry as a string binding.
+	entries, err := functions.Lookup(rpc)
+	if err != nil {
+		t.Fatalf("[WIRE FAIL] ept_lookup: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("[WIRE FAIL] ept_lookup returned no entries")
+	}
+	for _, e := range entries {
+		tw, err := e.DecodeTower()
+		if err != nil {
+			t.Errorf("[WIRE FAIL] decode tower: %v", err)
+			continue
+		}
+		obj := e.Object.GUID()
+		// Endpoint() renders the ncacn_ip_tcp case; #623's Tower.Binding() generalizes this
+		// to named-pipe/HTTP towers once merged.
+		if ep, ok := tw.Endpoint(); ok {
+			t.Logf("[ok] %s  iface=%s  %q", ep, obj.ToFormatD(), e.Annotation)
+		} else {
+			t.Logf("[ok] %d-floor tower  iface=%s  %q", len(tw.Floors), obj.ToFormatD(), e.Annotation)
+		}
+	}
+	t.Logf("[ok] ept_lookup enumerated %d endpoint-map entries", len(entries))
+}

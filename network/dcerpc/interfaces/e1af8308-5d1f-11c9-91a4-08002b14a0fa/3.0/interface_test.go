@@ -15,7 +15,7 @@ func TestSyntaxID(t *testing.T) {
 
 func TestStatusString(t *testing.T) {
 	cases := map[uint32]string{
-		StatusSuccess:          "rpc_s_ok",
+		EptStatusSuccess:       "rpc_s_ok",
 		EptStatusNotRegistered: "ept_s_not_registered",
 		0xdeadbeef:             "0xdeadbeef",
 	}
