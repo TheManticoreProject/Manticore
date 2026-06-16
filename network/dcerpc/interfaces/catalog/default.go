@@ -12,11 +12,15 @@ var (
 	defaultDB   *Database
 )
 
-// Default returns the built-in catalog of well-known interfaces. It panics if
-// the seed table is malformed (a programmer error caught by the package tests).
+// Default returns the built-in catalog of well-known interfaces: the curated
+// builtin table plus the local/host-service table. It panics if the seed is
+// malformed (a programmer error caught by the package tests).
 func Default() *Database {
 	defaultOnce.Do(func() {
-		db, err := New(builtin)
+		seed := make([]Interface, 0, len(builtin)+len(local))
+		seed = append(seed, builtin...)
+		seed = append(seed, local...)
+		db, err := New(seed)
 		if err != nil {
 			panic("catalog: invalid built-in data: " + err.Error())
 		}

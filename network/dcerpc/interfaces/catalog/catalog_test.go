@@ -10,6 +10,30 @@ var (
 	unknownUUID = mustGUID("00000000-0000-0000-0000-0000000000ff")
 )
 
+func TestLocalInterfacesPresent(t *testing.T) {
+	// A few of the local/host-service interfaces added from endpoint enumeration.
+	cases := []struct {
+		uuid          string
+		major, minor  uint16
+		name, service string
+	}{
+		{"b25a52bf-e5dd-4f4a-aea6-8ca7272a0e86", 2, 0, "KeyIso", "KeyIso"},
+		{"0767a036-0d22-48aa-ba69-b619480f38cb", 1, 0, "PcaSvc", "PcaSvc"},
+		{"0e3ae095-8a23-48f4-9782-03c1594a890e", 1, 0, "NgcKsp", "NgcSvc"},
+		{"378e52b0-c0a9-11cf-822d-00aa0051e40f", 1, 0, "SASec", "Schedule"},
+	}
+	for _, c := range cases {
+		e, ok := Lookup(mustGUID(c.uuid), c.major, c.minor)
+		if !ok || e.Name != c.name || e.Service != c.service {
+			t.Errorf("Lookup(%s) = (%q/%q, %v), want (%q/%q)", c.uuid, e.Name, e.Service, ok, c.name, c.service)
+		}
+	}
+	// Service search reaches the new entries.
+	if got := SearchByService("NgcSvc"); len(got) < 5 {
+		t.Errorf("SearchByService(NgcSvc) = %d, want >= 5", len(got))
+	}
+}
+
 func TestDefault_BuildsAndIsConsistent(t *testing.T) {
 	db := Default() // panics if the seed table is malformed
 	all := db.All()
