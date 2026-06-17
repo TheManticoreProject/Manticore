@@ -31,16 +31,24 @@ const rpcNTLMNegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
 
 // SetAuth enables RPC-level authentication for subsequent binds. authType selects the
 // security provider (only NTLM, pdu.AuthTypeNTLMSSP, is supported) and authLevel the
-// protection applied to each PDU: pdu.AuthLevelConnect authenticates the bind only,
-// while pdu.AuthLevelPktIntegrity signs and pdu.AuthLevelPktPrivacy signs and seals
-// every request. creds may carry a cleartext password or, for pass-the-hash, an NT
-// hash with no password. It must be called before Bind.
+// protection applied to each PDU: pdu.AuthLevelConnect authenticates the bind only;
+// pdu.AuthLevelCall and pdu.AuthLevelPkt attach a per-PDU authenticity verifier;
+// pdu.AuthLevelPktIntegrity additionally signs the request data; and
+// pdu.AuthLevelPktPrivacy signs and seals it. creds may carry a cleartext password or,
+// for pass-the-hash, an NT hash with no password. It must be called before Bind.
+//
+// AuthLevelCall is promoted to AuthLevelPkt: it has no distinct meaning for the
+// connection-oriented protocol, where the runtime uses packet-level protection instead
+// ([MS-RPCE] 2.2.1.1.8).
 func (c *Client) SetAuth(authType, authLevel uint8, creds *credentials.Credentials) error {
 	if authType != pdu.AuthTypeNTLMSSP {
 		return fmt.Errorf("dcerpc auth: unsupported auth_type 0x%02x (only NTLM 0x%02x is supported)", authType, pdu.AuthTypeNTLMSSP)
 	}
+	if authLevel == pdu.AuthLevelCall {
+		authLevel = pdu.AuthLevelPkt
+	}
 	switch authLevel {
-	case pdu.AuthLevelConnect, pdu.AuthLevelPktIntegrity, pdu.AuthLevelPktPrivacy:
+	case pdu.AuthLevelConnect, pdu.AuthLevelPkt, pdu.AuthLevelPktIntegrity, pdu.AuthLevelPktPrivacy:
 	default:
 		return fmt.Errorf("dcerpc auth: unsupported auth_level %d", authLevel)
 	}
@@ -56,11 +64,13 @@ func (c *Client) SetAuth(authType, authLevel uint8, creds *credentials.Credentia
 // authConfigured reports whether SetAuth selected an authenticated bind.
 func (c *Client) authConfigured() bool { return c.creds != nil && c.authType != pdu.AuthTypeNone }
 
-// protectsRequests reports whether each request PDU must carry a signed (or sealed)
-// auth verifier, which is the case once an integrity- or privacy-level security
-// context has been established.
+// protectsRequests reports whether each request PDU must carry a per-PDU auth verifier.
+// PKT, PKT_INTEGRITY, and PKT_PRIVACY all attach one (NTLM produces the same signature
+// for the first two; only PKT_PRIVACY additionally seals the stub); CONNECT
+// authenticates the bind alone. The levels are an ascending scale ([MS-RPCE]
+// 2.2.1.1.8), so a single threshold separates the per-PDU levels from CONNECT.
 func (c *Client) protectsRequests() bool {
-	return c.sec != nil && (c.authLevel == pdu.AuthLevelPktIntegrity || c.authLevel == pdu.AuthLevelPktPrivacy)
+	return c.sec != nil && c.authLevel >= pdu.AuthLevelPkt
 }
 
 // authVerifierOverhead is the worst-case number of bytes an authenticated request PDU
