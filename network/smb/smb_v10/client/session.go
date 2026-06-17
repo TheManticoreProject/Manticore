@@ -143,6 +143,8 @@ func (s *Session) SessionSetup() error {
 				s.Client.Workstation,
 				useUnicode,
 			)
+			// Pass-the-hash: when an NT hash is supplied, authenticate from it instead of the password.
+			authCtx.NTHash = s.Credentials.GetNTHash()
 
 			negotiateFlags := spnego_ntlm_negotiate_flags.NegotiateFlags(
 				spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_NTLM |
@@ -270,6 +272,8 @@ func (s *Session) SessionSetup() error {
 		s.Client.Workstation,
 		useUnicode,
 	)
+	// Pass-the-hash: when an NT hash is supplied, authenticate from it instead of the password.
+	authCtx.NTHash = s.Credentials.GetNTHash()
 
 	requestStep2Msg := message.NewMessage()
 	requestStep2Msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX

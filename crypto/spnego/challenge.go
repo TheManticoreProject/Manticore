@@ -1,12 +1,28 @@
 package spnego
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/authenticate"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
 )
+
+// decodeNTHash decodes a hex-encoded NT hash (32 hex characters) into the 16-byte array
+// the NTLMv2 pass-the-hash path expects.
+func decodeNTHash(ntHashHex string) ([16]byte, error) {
+	var ntHash [16]byte
+	raw, err := hex.DecodeString(ntHashHex)
+	if err != nil {
+		return ntHash, err
+	}
+	if len(raw) != 16 {
+		return ntHash, fmt.Errorf("NT hash must be 16 bytes (32 hex chars), got %d bytes", len(raw))
+	}
+	copy(ntHash[:], raw)
+	return ntHash, nil
+}
 
 // CreateAuthenticateTokenFromChallengeToken processes the server's challenge token and creates an authenticate token
 // Parameters:
@@ -63,8 +79,18 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 	// Store the challenge for later use
 	ctx.NTLMChallenge = challenge
 
-	// Create NTLM AUTHENTICATE message
-	ntlmAuth, err := authenticate.CreateAuthenticateMessage(challenge, ctx.Username, ctx.Password, ctx.Domain, ctx.Workstation)
+	// Create NTLM AUTHENTICATE message. When an NT hash is supplied (pass-the-hash),
+	// compute the response from it instead of the password.
+	var ntlmAuth *authenticate.AuthenticateMessage
+	if ctx.NTHash != "" {
+		ntHash, derr := decodeNTHash(ctx.NTHash)
+		if derr != nil {
+			return nil, fmt.Errorf("invalid NT hash for pass-the-hash: %v", derr)
+		}
+		ntlmAuth, err = authenticate.CreateAuthenticateMessageWithNTHash(challenge, ctx.Username, ntHash, ctx.Domain, ctx.Workstation)
+	} else {
+		ntlmAuth, err = authenticate.CreateAuthenticateMessage(challenge, ctx.Username, ctx.Password, ctx.Domain, ctx.Workstation)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NTLM AUTHENTICATE message: %v", err)
 	}
