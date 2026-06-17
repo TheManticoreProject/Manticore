@@ -18,7 +18,7 @@ func (ldapSession *Session) GetAllCertificates() ([]string, error) {
 
 	ldapResults, err := ldapSession.QueryWholeSubtree("configurationNamingContext", query, attributes)
 	if err != nil {
-		return distinguishedNames, nil
+		return distinguishedNames, fmt.Errorf("error querying LDAP: %w", err)
 	}
 
 	if len(ldapResults) != 0 {
