@@ -229,10 +229,9 @@ func (ldapSession *Session) OverwriteAttributeValue(distinguishedName string, at
 //
 // Example usage:
 //
-//	session := &Session{}
-//	err := session.InitSession("ldap.example.com", 389, false, true, "EXAMPLE", "user", "password", false)
+//	session, err := NewSession("ldap.example.com", 389, credentials, false, false)
 //	if err != nil {
-//		logger.Error(fmt.Sprintf("Failed to initialize session: %s", err))
+//		logger.Error(fmt.Sprintf("Failed to create session: %s", err))
 //		return
 //	}
 //	success, err := session.Connect()

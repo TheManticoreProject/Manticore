@@ -28,14 +28,13 @@ import (
 //
 // Example:
 //
-//	session := &Session{}
-//	err := session.InitSession("ldap.example.com", 389, false, true, "EXAMPLE", "user", "password", false)
+//	session, err := NewSession("ldap.example.com", 389, credentials, false, false)
 //	if err != nil {
-//		log.Fatalf("Failed to initialize session: %s", err)
+//		log.Fatalf("Failed to create session: %s", err)
 //	}
-//	success := session.Connect()
+//	success, err := session.Connect()
 //	if !success {
-//		log.Fatalf("Failed to connect to LDAP server")
+//		log.Fatalf("Failed to connect to LDAP server: %s", err)
 //	}
 type Session struct {
 	// Network
