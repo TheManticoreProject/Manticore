@@ -20,8 +20,8 @@ const ds_repl_kcc_dsa_failurew_blob_header_size = 36
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/93083f06-d18a-407b-b906-630ed214a7ff
 type DS_REPL_KCC_DSA_FAILUREW_BLOB struct {
-	// DsaDN is the DN of the nTDSDSA object of the source server (oszDsaDN).
-	DsaDN string
+	// DsaDN is the DN of the nTDSDSA object of the source server (oszDsaDN). nil if NULL.
+	DsaDN *string
 	// DsaObjGuid is the objectGUID of the object represented by DsaDN (uuidDsaObjGuid).
 	DsaObjGuid guid.GUID
 	// FirstFailure is the time the first failure occurred (ftimeFirstFailure).
@@ -97,7 +97,7 @@ func (b *DS_REPL_KCC_DSA_FAILUREW_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_KCC_DSA_FAILUREW_BLOB structure.
 func (b *DS_REPL_KCC_DSA_FAILUREW_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_KCC_DSA_FAILUREW_BLOB: DsaDN=%q, NumFailures=%d, LastResult=%d", b.DsaDN, b.NumFailures, b.LastResult)
+	return fmt.Sprintf("DS_REPL_KCC_DSA_FAILUREW_BLOB: DsaDN=%s, NumFailures=%d, LastResult=%d", describeOszString(b.DsaDN), b.NumFailures, b.LastResult)
 }
 
 // Describe prints the DS_REPL_KCC_DSA_FAILUREW_BLOB structure to the console.
@@ -107,7 +107,7 @@ func (b *DS_REPL_KCC_DSA_FAILUREW_BLOB) String() string {
 func (b *DS_REPL_KCC_DSA_FAILUREW_BLOB) Describe(indent int) {
 	indentPrompt := strings.Repeat(" │ ", indent)
 	fmt.Printf("%s<\x1b[93mDS_REPL_KCC_DSA_FAILUREW_BLOB\x1b[0m>\n", indentPrompt)
-	fmt.Printf("%s │ \x1b[93mDsaDN\x1b[0m: %q\n", indentPrompt, b.DsaDN)
+	fmt.Printf("%s │ \x1b[93mDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.DsaDN))
 	fmt.Printf("%s │ \x1b[93mDsaObjGuid\x1b[0m: %s\n", indentPrompt, b.DsaObjGuid.ToFormatD())
 	fmt.Printf("%s │ \x1b[93mFirstFailure\x1b[0m: %s\n", indentPrompt, b.FirstFailure.String())
 	fmt.Printf("%s │ \x1b[93mNumFailures\x1b[0m: %d\n", indentPrompt, b.NumFailures)

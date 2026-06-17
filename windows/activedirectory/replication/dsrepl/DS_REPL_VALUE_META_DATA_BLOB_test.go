@@ -13,8 +13,8 @@ func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
 	g, _ := guid.FromString("fedcba98-7654-3210-fedc-ba9876543210")
 
 	original := &dsrepl.DS_REPL_VALUE_META_DATA_BLOB{
-		AttributeName:                  "member",
-		ObjectDn:                       "CN=Group,DC=example,DC=com",
+		AttributeName:                  strptr("member"),
+		ObjectDn:                       strptr("CN=Group,DC=example,DC=com"),
 		Data:                           []byte{0x01, 0x02, 0x03, 0x04, 0x05},
 		Deleted:                        data_structures.FILETIME{DwLowDateTime: 0, DwHighDateTime: 0},
 		Created:                        data_structures.FILETIME{DwLowDateTime: 0xAAAA, DwHighDateTime: 0x01D00001},
@@ -23,7 +23,7 @@ func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
 		LastOriginatingDsaInvocationID: *g,
 		OriginatingChange:              111,
 		LocalChange:                    222,
-		LastOriginatingDsaDN:           "CN=NTDS Settings,CN=DC06",
+		LastOriginatingDsaDN:           strptr("CN=NTDS Settings,CN=DC06"),
 	}
 
 	marshalled, err := original.Marshal()
@@ -36,11 +36,11 @@ func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	if parsed.AttributeName != original.AttributeName {
-		t.Errorf("AttributeName = %q, want %q", parsed.AttributeName, original.AttributeName)
+	if !sameStr(parsed.AttributeName, original.AttributeName) {
+		t.Errorf("AttributeName = %v, want %v", parsed.AttributeName, original.AttributeName)
 	}
-	if parsed.ObjectDn != original.ObjectDn {
-		t.Errorf("ObjectDn = %q, want %q", parsed.ObjectDn, original.ObjectDn)
+	if !sameStr(parsed.ObjectDn, original.ObjectDn) {
+		t.Errorf("ObjectDn = %v, want %v", parsed.ObjectDn, original.ObjectDn)
 	}
 	if !bytes.Equal(parsed.Data, original.Data) {
 		t.Errorf("Data = %v, want %v", parsed.Data, original.Data)
@@ -60,15 +60,15 @@ func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
 	if parsed.LocalChange != original.LocalChange {
 		t.Errorf("LocalChange = %d, want %d", parsed.LocalChange, original.LocalChange)
 	}
-	if parsed.LastOriginatingDsaDN != original.LastOriginatingDsaDN {
-		t.Errorf("LastOriginatingDsaDN = %q, want %q", parsed.LastOriginatingDsaDN, original.LastOriginatingDsaDN)
+	if !sameStr(parsed.LastOriginatingDsaDN, original.LastOriginatingDsaDN) {
+		t.Errorf("LastOriginatingDsaDN = %v, want %v", parsed.LastOriginatingDsaDN, original.LastOriginatingDsaDN)
 	}
 }
 
 func TestDS_REPL_VALUE_META_DATA_BLOB_NoData(t *testing.T) {
 	original := &dsrepl.DS_REPL_VALUE_META_DATA_BLOB{
-		AttributeName: "member",
-		ObjectDn:      "CN=Group,DC=example,DC=com",
+		AttributeName: strptr("member"),
+		ObjectDn:      strptr("CN=Group,DC=example,DC=com"),
 		Data:          nil,
 	}
 

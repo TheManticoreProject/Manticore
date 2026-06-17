@@ -20,14 +20,14 @@ const ds_repl_neighborw_blob_header_size = 128
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/58877402-4bf1-4b40-b405-fd9d11691752
 type DS_REPL_NEIGHBORW_BLOB struct {
-	// NamingContext is the NC to which this replication state data pertains (oszNamingContext).
-	NamingContext string
-	// SourceDsaDN is the DN of the nTDSDSA object of the source server (oszSourceDsaDN).
-	SourceDsaDN string
-	// SourceDsaAddress is the transport-specific network address of the source server (oszSourceDsaAddress).
-	SourceDsaAddress string
-	// AsyncIntersiteTransportDN is the DN of the interSiteTransport object, or NULL for RPC/IP (oszAsyncIntersiteTransportDN).
-	AsyncIntersiteTransportDN string
+	// NamingContext is the NC to which this replication state data pertains (oszNamingContext). nil if NULL.
+	NamingContext *string
+	// SourceDsaDN is the DN of the nTDSDSA object of the source server (oszSourceDsaDN). nil if NULL.
+	SourceDsaDN *string
+	// SourceDsaAddress is the transport-specific network address of the source server (oszSourceDsaAddress). nil if NULL.
+	SourceDsaAddress *string
+	// AsyncIntersiteTransportDN is the DN of the interSiteTransport object, or nil for RPC/IP (oszAsyncIntersiteTransportDN).
+	AsyncIntersiteTransportDN *string
 	// ReplicaFlags is a set of DS_REPL_NBR_* flags (dwReplicaFlags).
 	ReplicaFlags uint32
 	// Reserved is reserved for future use (dwReserved).
@@ -161,7 +161,7 @@ func (b *DS_REPL_NEIGHBORW_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_NEIGHBORW_BLOB structure.
 func (b *DS_REPL_NEIGHBORW_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_NEIGHBORW_BLOB: NamingContext=%q, SourceDsaDN=%q, ReplicaFlags=0x%08x", b.NamingContext, b.SourceDsaDN, b.ReplicaFlags)
+	return fmt.Sprintf("DS_REPL_NEIGHBORW_BLOB: NamingContext=%s, SourceDsaDN=%s, ReplicaFlags=0x%08x", describeOszString(b.NamingContext), describeOszString(b.SourceDsaDN), b.ReplicaFlags)
 }
 
 // Describe prints the DS_REPL_NEIGHBORW_BLOB structure to the console.
@@ -171,10 +171,10 @@ func (b *DS_REPL_NEIGHBORW_BLOB) String() string {
 func (b *DS_REPL_NEIGHBORW_BLOB) Describe(indent int) {
 	indentPrompt := strings.Repeat(" │ ", indent)
 	fmt.Printf("%s<\x1b[93mDS_REPL_NEIGHBORW_BLOB\x1b[0m>\n", indentPrompt)
-	fmt.Printf("%s │ \x1b[93mNamingContext\x1b[0m: %q\n", indentPrompt, b.NamingContext)
-	fmt.Printf("%s │ \x1b[93mSourceDsaDN\x1b[0m: %q\n", indentPrompt, b.SourceDsaDN)
-	fmt.Printf("%s │ \x1b[93mSourceDsaAddress\x1b[0m: %q\n", indentPrompt, b.SourceDsaAddress)
-	fmt.Printf("%s │ \x1b[93mAsyncIntersiteTransportDN\x1b[0m: %q\n", indentPrompt, b.AsyncIntersiteTransportDN)
+	fmt.Printf("%s │ \x1b[93mNamingContext\x1b[0m: %s\n", indentPrompt, describeOszString(b.NamingContext))
+	fmt.Printf("%s │ \x1b[93mSourceDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.SourceDsaDN))
+	fmt.Printf("%s │ \x1b[93mSourceDsaAddress\x1b[0m: %s\n", indentPrompt, describeOszString(b.SourceDsaAddress))
+	fmt.Printf("%s │ \x1b[93mAsyncIntersiteTransportDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.AsyncIntersiteTransportDN))
 	fmt.Printf("%s │ \x1b[93mReplicaFlags\x1b[0m: 0x%08x\n", indentPrompt, b.ReplicaFlags)
 	fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: 0x%08x\n", indentPrompt, b.Reserved)
 	fmt.Printf("%s │ \x1b[93mNamingContextObjGuid\x1b[0m: %s\n", indentPrompt, b.NamingContextObjGuid.ToFormatD())

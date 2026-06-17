@@ -39,12 +39,12 @@ type DS_REPL_OPW_BLOB struct {
 	OpType uint32
 	// Options is zero or more DRS option bits, interpreted per OpType (ulOptions).
 	Options uint32
-	// NamingContext is the DN of the NC associated with this operation (oszNamingContext).
-	NamingContext string
-	// DsaDN is the DN of the nTDSDSA object of the remote server (oszDsaDN).
-	DsaDN string
-	// DsaAddress is the transport-specific network address of the remote server (oszDsaAddress).
-	DsaAddress string
+	// NamingContext is the DN of the NC associated with this operation (oszNamingContext). nil if NULL.
+	NamingContext *string
+	// DsaDN is the DN of the nTDSDSA object of the remote server (oszDsaDN). nil if NULL.
+	DsaDN *string
+	// DsaAddress is the transport-specific network address of the remote server (oszDsaAddress). nil if NULL.
+	DsaAddress *string
 	// NamingContextObjGuid is the objectGUID of the NC identified by NamingContext (uuidNamingContextObjGuid).
 	NamingContextObjGuid guid.GUID
 	// DsaObjGuid is the objectGUID of the DSA object identified by DsaDN (uuidDsaObjGuid).
@@ -132,7 +132,7 @@ func (b *DS_REPL_OPW_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_OPW_BLOB structure.
 func (b *DS_REPL_OPW_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_OPW_BLOB: SerialNumber=%d, OpType=%d, NamingContext=%q, DsaDN=%q", b.SerialNumber, b.OpType, b.NamingContext, b.DsaDN)
+	return fmt.Sprintf("DS_REPL_OPW_BLOB: SerialNumber=%d, OpType=%d, NamingContext=%s, DsaDN=%s", b.SerialNumber, b.OpType, describeOszString(b.NamingContext), describeOszString(b.DsaDN))
 }
 
 // Describe prints the DS_REPL_OPW_BLOB structure to the console.
@@ -147,9 +147,9 @@ func (b *DS_REPL_OPW_BLOB) Describe(indent int) {
 	fmt.Printf("%s │ \x1b[93mPriority\x1b[0m: %d\n", indentPrompt, b.Priority)
 	fmt.Printf("%s │ \x1b[93mOpType\x1b[0m: %d\n", indentPrompt, b.OpType)
 	fmt.Printf("%s │ \x1b[93mOptions\x1b[0m: 0x%08x\n", indentPrompt, b.Options)
-	fmt.Printf("%s │ \x1b[93mNamingContext\x1b[0m: %q\n", indentPrompt, b.NamingContext)
-	fmt.Printf("%s │ \x1b[93mDsaDN\x1b[0m: %q\n", indentPrompt, b.DsaDN)
-	fmt.Printf("%s │ \x1b[93mDsaAddress\x1b[0m: %q\n", indentPrompt, b.DsaAddress)
+	fmt.Printf("%s │ \x1b[93mNamingContext\x1b[0m: %s\n", indentPrompt, describeOszString(b.NamingContext))
+	fmt.Printf("%s │ \x1b[93mDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.DsaDN))
+	fmt.Printf("%s │ \x1b[93mDsaAddress\x1b[0m: %s\n", indentPrompt, describeOszString(b.DsaAddress))
 	fmt.Printf("%s │ \x1b[93mNamingContextObjGuid\x1b[0m: %s\n", indentPrompt, b.NamingContextObjGuid.ToFormatD())
 	fmt.Printf("%s │ \x1b[93mDsaObjGuid\x1b[0m: %s\n", indentPrompt, b.DsaObjGuid.ToFormatD())
 	fmt.Printf("%s └───\n", indentPrompt)

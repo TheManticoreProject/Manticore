@@ -12,7 +12,7 @@ func TestDS_REPL_KCC_DSA_FAILUREW_BLOB_RoundTrip(t *testing.T) {
 	g, _ := guid.FromString("deadbeef-1234-5678-9abc-def012345678")
 
 	original := &dsrepl.DS_REPL_KCC_DSA_FAILUREW_BLOB{
-		DsaDN:        "CN=NTDS Settings,CN=DC02",
+		DsaDN:        strptr("CN=NTDS Settings,CN=DC02"),
 		DsaObjGuid:   *g,
 		FirstFailure: data_structures.FILETIME{DwLowDateTime: 0xAABBCCDD, DwHighDateTime: 0x01D12345},
 		NumFailures:  7,
@@ -33,8 +33,8 @@ func TestDS_REPL_KCC_DSA_FAILUREW_BLOB_RoundTrip(t *testing.T) {
 		t.Errorf("Unmarshal consumed %d bytes, expected %d", n, len(marshalled))
 	}
 
-	if parsed.DsaDN != original.DsaDN {
-		t.Errorf("DsaDN = %q, want %q", parsed.DsaDN, original.DsaDN)
+	if !sameStr(parsed.DsaDN, original.DsaDN) {
+		t.Errorf("DsaDN = %v, want %v", parsed.DsaDN, original.DsaDN)
 	}
 	if !parsed.DsaObjGuid.Equal(&original.DsaObjGuid) {
 		t.Errorf("DsaObjGuid mismatch")

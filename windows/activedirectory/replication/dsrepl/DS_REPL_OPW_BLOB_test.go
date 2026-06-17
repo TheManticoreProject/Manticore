@@ -18,9 +18,9 @@ func TestDS_REPL_OPW_BLOB_RoundTrip(t *testing.T) {
 		Priority:             100,
 		OpType:               dsrepl.DS_REPL_OP_TYPE_SYNC,
 		Options:              0x00000010,
-		NamingContext:        "DC=example,DC=com",
-		DsaDN:                "CN=NTDS Settings,CN=DC03",
-		DsaAddress:           "dc03.example.com",
+		NamingContext:        strptr("DC=example,DC=com"),
+		DsaDN:                strptr("CN=NTDS Settings,CN=DC03"),
+		DsaAddress:           strptr("dc03.example.com"),
 		NamingContextObjGuid: *g1,
 		DsaObjGuid:           *g2,
 	}
@@ -50,14 +50,14 @@ func TestDS_REPL_OPW_BLOB_RoundTrip(t *testing.T) {
 	if parsed.Options != original.Options {
 		t.Errorf("Options = 0x%08x, want 0x%08x", parsed.Options, original.Options)
 	}
-	if parsed.NamingContext != original.NamingContext {
-		t.Errorf("NamingContext = %q, want %q", parsed.NamingContext, original.NamingContext)
+	if !sameStr(parsed.NamingContext, original.NamingContext) {
+		t.Errorf("NamingContext = %v, want %v", parsed.NamingContext, original.NamingContext)
 	}
-	if parsed.DsaDN != original.DsaDN {
-		t.Errorf("DsaDN = %q, want %q", parsed.DsaDN, original.DsaDN)
+	if !sameStr(parsed.DsaDN, original.DsaDN) {
+		t.Errorf("DsaDN = %v, want %v", parsed.DsaDN, original.DsaDN)
 	}
-	if parsed.DsaAddress != original.DsaAddress {
-		t.Errorf("DsaAddress = %q, want %q", parsed.DsaAddress, original.DsaAddress)
+	if !sameStr(parsed.DsaAddress, original.DsaAddress) {
+		t.Errorf("DsaAddress = %v, want %v", parsed.DsaAddress, original.DsaAddress)
 	}
 	if !parsed.NamingContextObjGuid.Equal(&original.NamingContextObjGuid) {
 		t.Errorf("NamingContextObjGuid mismatch")

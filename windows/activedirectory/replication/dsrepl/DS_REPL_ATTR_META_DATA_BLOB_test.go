@@ -12,13 +12,13 @@ func TestDS_REPL_ATTR_META_DATA_BLOB_RoundTrip(t *testing.T) {
 	g, _ := guid.FromString("01234567-89ab-cdef-0123-456789abcdef")
 
 	original := &dsrepl.DS_REPL_ATTR_META_DATA_BLOB{
-		AttributeName:                  "objectClass",
+		AttributeName:                  strptr("objectClass"),
 		Version:                        4,
 		LastOriginatingChange:          data_structures.FILETIME{DwLowDateTime: 0x11223344, DwHighDateTime: 0x01D05566},
 		LastOriginatingDsaInvocationID: *g,
 		OriginatingChange:              555000,
 		LocalChange:                    556000,
-		LastOriginatingDsaDN:           "CN=NTDS Settings,CN=DC05",
+		LastOriginatingDsaDN:           strptr("CN=NTDS Settings,CN=DC05"),
 	}
 
 	marshalled, err := original.Marshal()
@@ -31,8 +31,8 @@ func TestDS_REPL_ATTR_META_DATA_BLOB_RoundTrip(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	if parsed.AttributeName != original.AttributeName {
-		t.Errorf("AttributeName = %q, want %q", parsed.AttributeName, original.AttributeName)
+	if parsed.AttributeName == nil || *parsed.AttributeName != *original.AttributeName {
+		t.Errorf("AttributeName = %v, want %q", parsed.AttributeName, *original.AttributeName)
 	}
 	if parsed.Version != original.Version {
 		t.Errorf("Version = %d, want %d", parsed.Version, original.Version)
@@ -49,8 +49,8 @@ func TestDS_REPL_ATTR_META_DATA_BLOB_RoundTrip(t *testing.T) {
 	if parsed.LocalChange != original.LocalChange {
 		t.Errorf("LocalChange = %d, want %d", parsed.LocalChange, original.LocalChange)
 	}
-	if parsed.LastOriginatingDsaDN != original.LastOriginatingDsaDN {
-		t.Errorf("LastOriginatingDsaDN = %q, want %q", parsed.LastOriginatingDsaDN, original.LastOriginatingDsaDN)
+	if parsed.LastOriginatingDsaDN == nil || *parsed.LastOriginatingDsaDN != *original.LastOriginatingDsaDN {
+		t.Errorf("LastOriginatingDsaDN = %v, want %q", parsed.LastOriginatingDsaDN, *original.LastOriginatingDsaDN)
 	}
 }
 

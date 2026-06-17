@@ -20,8 +20,8 @@ const ds_repl_attr_meta_data_blob_header_size = 52
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/63fabec7-cb4b-47ed-ab45-9a20e4397d55
 type DS_REPL_ATTR_META_DATA_BLOB struct {
-	// AttributeName is the LDAP display name of the attribute (oszAttributeName).
-	AttributeName string
+	// AttributeName is the LDAP display name of the attribute (oszAttributeName). nil if NULL.
+	AttributeName *string
 	// Version is the dwVersion of the attribute's AttributeStamp (dwVersion).
 	Version uint32
 	// LastOriginatingChange is the timeChanged of the AttributeStamp (ftimeLastOriginatingChange).
@@ -32,8 +32,8 @@ type DS_REPL_ATTR_META_DATA_BLOB struct {
 	OriginatingChange int64
 	// LocalChange is the USN on the destination server of the last applied change (usnLocalChange).
 	LocalChange int64
-	// LastOriginatingDsaDN is the DN of the nTDSDSA object that originated the last replication (oszLastOriginatingDsaDN).
-	LastOriginatingDsaDN string
+	// LastOriginatingDsaDN is the DN of the nTDSDSA object that originated the last replication (oszLastOriginatingDsaDN). nil if NULL.
+	LastOriginatingDsaDN *string
 }
 
 // NewDS_REPL_ATTR_META_DATA_BLOB creates a new, empty DS_REPL_ATTR_META_DATA_BLOB structure.
@@ -112,7 +112,7 @@ func (b *DS_REPL_ATTR_META_DATA_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_ATTR_META_DATA_BLOB structure.
 func (b *DS_REPL_ATTR_META_DATA_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_ATTR_META_DATA_BLOB: AttributeName=%q, Version=%d, LastOriginatingDsaDN=%q", b.AttributeName, b.Version, b.LastOriginatingDsaDN)
+	return fmt.Sprintf("DS_REPL_ATTR_META_DATA_BLOB: AttributeName=%s, Version=%d, LastOriginatingDsaDN=%s", describeOszString(b.AttributeName), b.Version, describeOszString(b.LastOriginatingDsaDN))
 }
 
 // Describe prints the DS_REPL_ATTR_META_DATA_BLOB structure to the console.
@@ -122,12 +122,12 @@ func (b *DS_REPL_ATTR_META_DATA_BLOB) String() string {
 func (b *DS_REPL_ATTR_META_DATA_BLOB) Describe(indent int) {
 	indentPrompt := strings.Repeat(" │ ", indent)
 	fmt.Printf("%s<\x1b[93mDS_REPL_ATTR_META_DATA_BLOB\x1b[0m>\n", indentPrompt)
-	fmt.Printf("%s │ \x1b[93mAttributeName\x1b[0m: %q\n", indentPrompt, b.AttributeName)
+	fmt.Printf("%s │ \x1b[93mAttributeName\x1b[0m: %s\n", indentPrompt, describeOszString(b.AttributeName))
 	fmt.Printf("%s │ \x1b[93mVersion\x1b[0m: %d\n", indentPrompt, b.Version)
 	fmt.Printf("%s │ \x1b[93mLastOriginatingChange\x1b[0m: %s\n", indentPrompt, b.LastOriginatingChange.String())
 	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaInvocationID\x1b[0m: %s\n", indentPrompt, b.LastOriginatingDsaInvocationID.ToFormatD())
 	fmt.Printf("%s │ \x1b[93mOriginatingChange\x1b[0m: %d\n", indentPrompt, b.OriginatingChange)
 	fmt.Printf("%s │ \x1b[93mLocalChange\x1b[0m: %d\n", indentPrompt, b.LocalChange)
-	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaDN\x1b[0m: %q\n", indentPrompt, b.LastOriginatingDsaDN)
+	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.LastOriginatingDsaDN))
 	fmt.Printf("%s └───\n", indentPrompt)
 }

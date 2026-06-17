@@ -15,10 +15,10 @@ func TestDS_REPL_NEIGHBORW_BLOB_RoundTrip(t *testing.T) {
 	g4, _ := guid.FromString("44444444-4444-4444-4444-444444444444")
 
 	original := &dsrepl.DS_REPL_NEIGHBORW_BLOB{
-		NamingContext:                  "DC=example,DC=com",
-		SourceDsaDN:                    "CN=NTDS Settings,CN=DC01",
-		SourceDsaAddress:               "abcd.example.com",
-		AsyncIntersiteTransportDN:      "CN=IP,CN=Inter-Site Transports",
+		NamingContext:                  strptr("DC=example,DC=com"),
+		SourceDsaDN:                    strptr("CN=NTDS Settings,CN=DC01"),
+		SourceDsaAddress:               strptr("abcd.example.com"),
+		AsyncIntersiteTransportDN:      strptr("CN=IP,CN=Inter-Site Transports"),
 		ReplicaFlags:                   0x00000050,
 		Reserved:                       0,
 		NamingContextObjGuid:           *g1,
@@ -47,17 +47,17 @@ func TestDS_REPL_NEIGHBORW_BLOB_RoundTrip(t *testing.T) {
 		t.Errorf("Unmarshal consumed %d bytes, expected %d", n, len(marshalled))
 	}
 
-	if parsed.NamingContext != original.NamingContext {
-		t.Errorf("NamingContext = %q, want %q", parsed.NamingContext, original.NamingContext)
+	if !sameStr(parsed.NamingContext, original.NamingContext) {
+		t.Errorf("NamingContext = %v, want %v", parsed.NamingContext, original.NamingContext)
 	}
-	if parsed.SourceDsaDN != original.SourceDsaDN {
-		t.Errorf("SourceDsaDN = %q, want %q", parsed.SourceDsaDN, original.SourceDsaDN)
+	if !sameStr(parsed.SourceDsaDN, original.SourceDsaDN) {
+		t.Errorf("SourceDsaDN = %v, want %v", parsed.SourceDsaDN, original.SourceDsaDN)
 	}
-	if parsed.SourceDsaAddress != original.SourceDsaAddress {
-		t.Errorf("SourceDsaAddress = %q, want %q", parsed.SourceDsaAddress, original.SourceDsaAddress)
+	if !sameStr(parsed.SourceDsaAddress, original.SourceDsaAddress) {
+		t.Errorf("SourceDsaAddress = %v, want %v", parsed.SourceDsaAddress, original.SourceDsaAddress)
 	}
-	if parsed.AsyncIntersiteTransportDN != original.AsyncIntersiteTransportDN {
-		t.Errorf("AsyncIntersiteTransportDN = %q, want %q", parsed.AsyncIntersiteTransportDN, original.AsyncIntersiteTransportDN)
+	if !sameStr(parsed.AsyncIntersiteTransportDN, original.AsyncIntersiteTransportDN) {
+		t.Errorf("AsyncIntersiteTransportDN = %v, want %v", parsed.AsyncIntersiteTransportDN, original.AsyncIntersiteTransportDN)
 	}
 	if parsed.ReplicaFlags != original.ReplicaFlags {
 		t.Errorf("ReplicaFlags = 0x%08x, want 0x%08x", parsed.ReplicaFlags, original.ReplicaFlags)
@@ -88,11 +88,14 @@ func TestDS_REPL_NEIGHBORW_BLOB_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDS_REPL_NEIGHBORW_BLOB_NullStrings(t *testing.T) {
-	// AsyncIntersiteTransportDN is NULL for RPC/IP replication: empty string must
-	// round-trip as an offset of 0.
+func TestDS_REPL_NEIGHBORW_BLOB_NullVsEmptyStrings(t *testing.T) {
+	// AsyncIntersiteTransportDN is NULL for RPC/IP replication: a nil pointer must
+	// round-trip as an offset of 0 (absent), while a present-but-empty string must
+	// round-trip as a non-nil pointer to "" — the distinction *string preserves.
 	original := &dsrepl.DS_REPL_NEIGHBORW_BLOB{
-		NamingContext: "DC=example,DC=com",
+		NamingContext:             strptr("DC=example,DC=com"),
+		SourceDsaDN:               strptr(""), // present but empty
+		AsyncIntersiteTransportDN: nil,        // absent (NULL)
 	}
 
 	marshalled, err := original.Marshal()
@@ -104,11 +107,14 @@ func TestDS_REPL_NEIGHBORW_BLOB_NullStrings(t *testing.T) {
 	if _, err := parsed.Unmarshal(marshalled); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
-	if parsed.AsyncIntersiteTransportDN != "" {
-		t.Errorf("AsyncIntersiteTransportDN = %q, want empty", parsed.AsyncIntersiteTransportDN)
+	if parsed.AsyncIntersiteTransportDN != nil {
+		t.Errorf("AsyncIntersiteTransportDN = %v, want nil (NULL)", parsed.AsyncIntersiteTransportDN)
 	}
-	if parsed.NamingContext != "DC=example,DC=com" {
-		t.Errorf("NamingContext = %q, want %q", parsed.NamingContext, "DC=example,DC=com")
+	if parsed.SourceDsaDN == nil || *parsed.SourceDsaDN != "" {
+		t.Errorf("SourceDsaDN = %v, want non-nil pointer to empty string", parsed.SourceDsaDN)
+	}
+	if !sameStr(parsed.NamingContext, original.NamingContext) {
+		t.Errorf("NamingContext = %v, want %v", parsed.NamingContext, original.NamingContext)
 	}
 }
 

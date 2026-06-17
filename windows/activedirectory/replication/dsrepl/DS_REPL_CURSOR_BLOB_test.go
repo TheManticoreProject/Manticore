@@ -15,7 +15,7 @@ func TestDS_REPL_CURSOR_BLOB_RoundTrip(t *testing.T) {
 		SourceDsaInvocationID: *g,
 		AttributeFilter:       987654321,
 		LastSyncSuccess:       data_structures.FILETIME{DwLowDateTime: 0xCAFEBABE, DwHighDateTime: 0x01D0FACE},
-		SourceDsaDN:           "CN=NTDS Settings,CN=DC04",
+		SourceDsaDN:           strptr("CN=NTDS Settings,CN=DC04"),
 	}
 
 	marshalled, err := original.Marshal()
@@ -37,8 +37,8 @@ func TestDS_REPL_CURSOR_BLOB_RoundTrip(t *testing.T) {
 	if parsed.LastSyncSuccess != original.LastSyncSuccess {
 		t.Errorf("LastSyncSuccess = %+v, want %+v", parsed.LastSyncSuccess, original.LastSyncSuccess)
 	}
-	if parsed.SourceDsaDN != original.SourceDsaDN {
-		t.Errorf("SourceDsaDN = %q, want %q", parsed.SourceDsaDN, original.SourceDsaDN)
+	if !sameStr(parsed.SourceDsaDN, original.SourceDsaDN) {
+		t.Errorf("SourceDsaDN = %v, want %v", parsed.SourceDsaDN, original.SourceDsaDN)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestDS_REPL_CURSOR_BLOB_FixedBytes(t *testing.T) {
 	if parsed.LastSyncSuccess.DwLowDateTime != 10 || parsed.LastSyncSuccess.DwHighDateTime != 20 {
 		t.Errorf("LastSyncSuccess = %+v, want {Low:10 High:20}", parsed.LastSyncSuccess)
 	}
-	if parsed.SourceDsaDN != "DC" {
-		t.Errorf("SourceDsaDN = %q, want %q", parsed.SourceDsaDN, "DC")
+	if !sameStr(parsed.SourceDsaDN, strptr("DC")) {
+		t.Errorf("SourceDsaDN = %v, want %q", parsed.SourceDsaDN, "DC")
 	}
 }
 

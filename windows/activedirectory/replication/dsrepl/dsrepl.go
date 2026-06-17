@@ -24,22 +24,24 @@ import (
 // the given 32-bit offset relative to the start of blob.
 //
 // Per [MS-ADTS], an offset of 0 denotes a NULL string (the field is absent); in
-// that case the empty string is returned with no error.
+// that case nil is returned. A non-zero offset that points directly at a null
+// terminator yields a non-nil pointer to an empty string, preserving the
+// distinction between an absent and a present-but-empty value.
 //
 // Parameters:
 // - blob: The full structure bytes (offsets are relative to its start).
 // - offset: The 32-bit offset of the string, as stored in a header field.
 //
 // Returns:
-// - The decoded string ("" if the offset is 0).
+// - A pointer to the decoded string, or nil if the offset is 0.
 // - An error if the offset is out of range or the string is not null-terminated.
-func readOffsetString(blob []byte, offset uint32) (string, error) {
+func readOffsetString(blob []byte, offset uint32) (*string, error) {
 	if offset == 0 {
-		return "", nil
+		return nil, nil
 	}
 
 	if int(offset) > len(blob) {
-		return "", fmt.Errorf("string offset %d is out of range (blob is %d bytes)", offset, len(blob))
+		return nil, fmt.Errorf("string offset %d is out of range (blob is %d bytes)", offset, len(blob))
 	}
 
 	// Scan for the UTF-16LE null terminator (two 0x00 bytes on an even boundary).
@@ -51,10 +53,20 @@ func readOffsetString(blob []byte, offset uint32) (string, error) {
 		}
 	}
 	if end == -1 {
-		return "", fmt.Errorf("string at offset %d is not null-terminated", offset)
+		return nil, fmt.Errorf("string at offset %d is not null-terminated", offset)
 	}
 
-	return utf16.DecodeUTF16LE(blob[offset:end]), nil
+	s := utf16.DecodeUTF16LE(blob[offset:end])
+	return &s, nil
+}
+
+// describeOszString formats an optional offset string for human-readable output,
+// rendering a NULL (nil) value as <null> and any present value quoted.
+func describeOszString(s *string) string {
+	if s == nil {
+		return "<null>"
+	}
+	return fmt.Sprintf("%q", *s)
 }
 
 // dataRegion accumulates the variable-length trailing data of a DS_REPL_*_BLOB
@@ -75,16 +87,17 @@ func newDataRegion(headerLen int) *dataRegion {
 }
 
 // addString appends s as a null-terminated UTF-16LE string and returns the
-// 32-bit offset to use in the header. An empty string is encoded as a NULL
-// pointer (offset 0) and nothing is appended, matching the [MS-ADTS] semantics
-// that an absent optional string is represented by a zero offset.
-func (d *dataRegion) addString(s string) uint32 {
-	if s == "" {
+// 32-bit offset to use in the header. A nil pointer is encoded as a NULL pointer
+// (offset 0) with nothing appended, matching the [MS-ADTS] semantics that an
+// absent optional string is represented by a zero offset. A non-nil pointer to an
+// empty string is encoded as a present, zero-length string (just a terminator).
+func (d *dataRegion) addString(s *string) uint32 {
+	if s == nil {
 		return 0
 	}
 
 	offset := d.base + uint32(len(d.buf))
-	d.buf = append(d.buf, utf16.EncodeUTF16LE(s)...)
+	d.buf = append(d.buf, utf16.EncodeUTF16LE(*s)...)
 	// UTF-16LE null terminator.
 	d.buf = append(d.buf, 0x00, 0x00)
 

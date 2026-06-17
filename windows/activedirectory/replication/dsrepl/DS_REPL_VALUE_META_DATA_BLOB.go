@@ -20,10 +20,10 @@ const ds_repl_value_meta_data_blob_header_size = 80
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/5d421689-808b-466d-8d9f-106cda2dbcce
 type DS_REPL_VALUE_META_DATA_BLOB struct {
-	// AttributeName is the LDAP display name of the attribute (oszAttributeName).
-	AttributeName string
-	// ObjectDn is the DN of the object that this attribute belongs to (oszObjectDn).
-	ObjectDn string
+	// AttributeName is the LDAP display name of the attribute (oszAttributeName). nil if NULL.
+	AttributeName *string
+	// ObjectDn is the DN of the object that this attribute belongs to (oszObjectDn). nil if NULL.
+	ObjectDn *string
 	// Data is the attribute replication metadata buffer (cbData / pbData).
 	Data []byte
 	// Deleted is the timeDeleted of the LinkValueStamp (ftimeDeleted).
@@ -40,8 +40,8 @@ type DS_REPL_VALUE_META_DATA_BLOB struct {
 	OriginatingChange int64
 	// LocalChange is the USN on the destination server of the last applied change (usnLocalChange).
 	LocalChange int64
-	// LastOriginatingDsaDN is the DN of the nTDSDSA object that originated the last replication (oszLastOriginatingDsaDN).
-	LastOriginatingDsaDN string
+	// LastOriginatingDsaDN is the DN of the nTDSDSA object that originated the last replication (oszLastOriginatingDsaDN). nil if NULL.
+	LastOriginatingDsaDN *string
 }
 
 // NewDS_REPL_VALUE_META_DATA_BLOB creates a new, empty DS_REPL_VALUE_META_DATA_BLOB structure.
@@ -158,7 +158,7 @@ func (b *DS_REPL_VALUE_META_DATA_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_VALUE_META_DATA_BLOB structure.
 func (b *DS_REPL_VALUE_META_DATA_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_VALUE_META_DATA_BLOB: AttributeName=%q, ObjectDn=%q, Version=%d, DataLen=%d", b.AttributeName, b.ObjectDn, b.Version, len(b.Data))
+	return fmt.Sprintf("DS_REPL_VALUE_META_DATA_BLOB: AttributeName=%s, ObjectDn=%s, Version=%d, DataLen=%d", describeOszString(b.AttributeName), describeOszString(b.ObjectDn), b.Version, len(b.Data))
 }
 
 // Describe prints the DS_REPL_VALUE_META_DATA_BLOB structure to the console.
@@ -168,8 +168,8 @@ func (b *DS_REPL_VALUE_META_DATA_BLOB) String() string {
 func (b *DS_REPL_VALUE_META_DATA_BLOB) Describe(indent int) {
 	indentPrompt := strings.Repeat(" │ ", indent)
 	fmt.Printf("%s<\x1b[93mDS_REPL_VALUE_META_DATA_BLOB\x1b[0m>\n", indentPrompt)
-	fmt.Printf("%s │ \x1b[93mAttributeName\x1b[0m: %q\n", indentPrompt, b.AttributeName)
-	fmt.Printf("%s │ \x1b[93mObjectDn\x1b[0m: %q\n", indentPrompt, b.ObjectDn)
+	fmt.Printf("%s │ \x1b[93mAttributeName\x1b[0m: %s\n", indentPrompt, describeOszString(b.AttributeName))
+	fmt.Printf("%s │ \x1b[93mObjectDn\x1b[0m: %s\n", indentPrompt, describeOszString(b.ObjectDn))
 	fmt.Printf("%s │ \x1b[93mData\x1b[0m: (%d bytes)\n", indentPrompt, len(b.Data))
 	fmt.Printf("%s │ \x1b[93mDeleted\x1b[0m: %s\n", indentPrompt, b.Deleted.String())
 	fmt.Printf("%s │ \x1b[93mCreated\x1b[0m: %s\n", indentPrompt, b.Created.String())
@@ -178,6 +178,6 @@ func (b *DS_REPL_VALUE_META_DATA_BLOB) Describe(indent int) {
 	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaInvocationID\x1b[0m: %s\n", indentPrompt, b.LastOriginatingDsaInvocationID.ToFormatD())
 	fmt.Printf("%s │ \x1b[93mOriginatingChange\x1b[0m: %d\n", indentPrompt, b.OriginatingChange)
 	fmt.Printf("%s │ \x1b[93mLocalChange\x1b[0m: %d\n", indentPrompt, b.LocalChange)
-	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaDN\x1b[0m: %q\n", indentPrompt, b.LastOriginatingDsaDN)
+	fmt.Printf("%s │ \x1b[93mLastOriginatingDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.LastOriginatingDsaDN))
 	fmt.Printf("%s └───\n", indentPrompt)
 }

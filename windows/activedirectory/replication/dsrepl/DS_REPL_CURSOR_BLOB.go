@@ -26,8 +26,8 @@ type DS_REPL_CURSOR_BLOB struct {
 	AttributeFilter int64
 	// LastSyncSuccess is the time of the last successful synchronization (fTimeLastSyncSuccess).
 	LastSyncSuccess data_structures.FILETIME
-	// SourceDsaDN is the DN of the DSA of the source server (oszSourceDsaDN).
-	SourceDsaDN string
+	// SourceDsaDN is the DN of the DSA of the source server (oszSourceDsaDN). nil if NULL.
+	SourceDsaDN *string
 }
 
 // NewDS_REPL_CURSOR_BLOB creates a new, empty DS_REPL_CURSOR_BLOB structure.
@@ -93,7 +93,7 @@ func (b *DS_REPL_CURSOR_BLOB) Marshal() ([]byte, error) {
 
 // String returns a string representation of the DS_REPL_CURSOR_BLOB structure.
 func (b *DS_REPL_CURSOR_BLOB) String() string {
-	return fmt.Sprintf("DS_REPL_CURSOR_BLOB: SourceDsaInvocationID=%s, AttributeFilter=%d, SourceDsaDN=%q", b.SourceDsaInvocationID.ToFormatD(), b.AttributeFilter, b.SourceDsaDN)
+	return fmt.Sprintf("DS_REPL_CURSOR_BLOB: SourceDsaInvocationID=%s, AttributeFilter=%d, SourceDsaDN=%s", b.SourceDsaInvocationID.ToFormatD(), b.AttributeFilter, describeOszString(b.SourceDsaDN))
 }
 
 // Describe prints the DS_REPL_CURSOR_BLOB structure to the console.
@@ -106,6 +106,6 @@ func (b *DS_REPL_CURSOR_BLOB) Describe(indent int) {
 	fmt.Printf("%s │ \x1b[93mSourceDsaInvocationID\x1b[0m: %s\n", indentPrompt, b.SourceDsaInvocationID.ToFormatD())
 	fmt.Printf("%s │ \x1b[93mAttributeFilter\x1b[0m: %d\n", indentPrompt, b.AttributeFilter)
 	fmt.Printf("%s │ \x1b[93mLastSyncSuccess\x1b[0m: %s\n", indentPrompt, b.LastSyncSuccess.String())
-	fmt.Printf("%s │ \x1b[93mSourceDsaDN\x1b[0m: %q\n", indentPrompt, b.SourceDsaDN)
+	fmt.Printf("%s │ \x1b[93mSourceDsaDN\x1b[0m: %s\n", indentPrompt, describeOszString(b.SourceDsaDN))
 	fmt.Printf("%s └───\n", indentPrompt)
 }
