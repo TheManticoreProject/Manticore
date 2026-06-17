@@ -27,6 +27,7 @@ const (
 	PacketTypeBindNak          PacketType = 13
 	PacketTypeAlterContext     PacketType = 14
 	PacketTypeAlterContextResp PacketType = 15
+	PacketTypeAuth3            PacketType = 16
 	PacketTypeShutdown         PacketType = 17
 	PacketTypeCoCancel         PacketType = 18
 	PacketTypeOrphaned         PacketType = 19
@@ -67,6 +68,8 @@ func (t PacketType) String() string {
 		return "alter_context"
 	case PacketTypeAlterContextResp:
 		return "alter_context_resp"
+	case PacketTypeAuth3:
+		return "auth3"
 	case PacketTypeShutdown:
 		return "shutdown"
 	case PacketTypeCoCancel:
