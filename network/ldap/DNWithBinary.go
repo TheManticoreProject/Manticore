@@ -20,9 +20,17 @@ const (
 )
 
 func (d *DNWithBinary) Unmarshal(rawBytes []byte) (int, error) {
-	parts := bytes.Split(rawBytes, []byte(StringFormatSeparator))
+	// Format: B:<hex-digit-count>:<hex>:<DN>. Only the first three colons are
+	// structural separators; the distinguished name may itself contain colons,
+	// so the split is limited to four fields to preserve them in the DN.
+	parts := bytes.SplitN(rawBytes, []byte(StringFormatSeparator), 4)
 	if len(parts) != 4 {
-		return 0, errors.New("rawBytes should have exactly four parts separated by colons (:)")
+		return 0, errors.New("rawBytes should have four parts separated by colons (:)")
+	}
+
+	expectedPrefix := strings.TrimSuffix(StringFormatPrefix, StringFormatSeparator)
+	if string(parts[0]) != expectedPrefix {
+		return 0, fmt.Errorf("invalid format prefix %q, expected %q", string(parts[0]), expectedPrefix)
 	}
 
 	size, err := strconv.Atoi(string(parts[1]))
