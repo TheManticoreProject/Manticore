@@ -31,6 +31,34 @@ func TestConvertSecondsToLDAPDuration(t *testing.T) {
 	}
 }
 
+func TestConvertLDAPTimeStampToUnixTimeStamp(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int64
+	}{
+		{"Empty value", "", 0},
+		{"Epoch", "116444736000000000", 0},
+		{"One day after epoch", "116445600000000000", 86400},
+		{"Known time", "133444736000000000", 1700000000},
+		{"Before epoch (year 1601)", "0", 0},
+		// 0x7FFFFFFFFFFFFFFF "never" sentinel: must not overflow int64.
+		{"Max int64 never sentinel", "9223372036854775807", 910692730085},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ldap.ConvertLDAPTimeStampToUnixTimeStamp(tt.input)
+			if err != nil {
+				t.Fatalf("ConvertLDAPTimeStampToUnixTimeStamp(%q) returned error: %s", tt.input, err)
+			}
+			if result != tt.expected {
+				t.Errorf("ConvertLDAPTimeStampToUnixTimeStamp(%q) = %d; want %d", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestConvertUnixTimeStampToLDAPTimeStamp(t *testing.T) {
 	tests := []struct {
 		name     string
