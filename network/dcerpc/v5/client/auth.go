@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/authenticate"
@@ -32,7 +33,8 @@ const rpcNTLMNegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
 // security provider (only NTLM, pdu.AuthTypeNTLMSSP, is supported) and authLevel the
 // protection applied to each PDU: pdu.AuthLevelConnect authenticates the bind only,
 // while pdu.AuthLevelPktIntegrity signs and pdu.AuthLevelPktPrivacy signs and seals
-// every request. It must be called before Bind.
+// every request. creds may carry a cleartext password or, for pass-the-hash, an NT
+// hash with no password. It must be called before Bind.
 func (c *Client) SetAuth(authType, authLevel uint8, creds *credentials.Credentials) error {
 	if authType != pdu.AuthTypeNTLMSSP {
 		return fmt.Errorf("dcerpc auth: unsupported auth_type 0x%02x (only NTLM 0x%02x is supported)", authType, pdu.AuthTypeNTLMSSP)
@@ -75,6 +77,25 @@ func (c *Client) negotiateToken() ([]byte, error) {
 	return neg.Marshal()
 }
 
+// buildAuthenticate constructs the NTLM AUTHENTICATE message for the configured
+// credentials. When the credentials carry an NT hash but no password it authenticates
+// by pass-the-hash; otherwise it uses the cleartext password.
+func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authenticate.AuthenticateMessage, error) {
+	if c.creds.GetPassword() == "" && c.creds.CanPassTheHash() {
+		raw, err := hex.DecodeString(c.creds.GetNTHash())
+		if err != nil {
+			return nil, fmt.Errorf("decode NT hash: %w", err)
+		}
+		if len(raw) != 16 {
+			return nil, fmt.Errorf("NT hash must be 16 bytes, got %d", len(raw))
+		}
+		var ntHash [16]byte
+		copy(ntHash[:], raw)
+		return authenticate.CreateAuthenticateMessageWithNTHash(chal, c.creds.GetUsername(), ntHash, c.creds.GetDomain(), c.workstation)
+	}
+	return authenticate.CreateAuthenticateMessage(chal, c.creds.GetUsername(), c.creds.GetPassword(), c.creds.GetDomain(), c.workstation)
+}
+
 // completeAuth finishes the NTLM exchange after a bind_ack: it parses the server's
 // CHALLENGE from the bind_ack's auth_value, sends an auth3 carrying the AUTHENTICATE
 // token (to which the server sends no reply), and builds the per-message security
@@ -93,7 +114,7 @@ func (c *Client) completeAuth(bindAckFrag []byte) error {
 		return fmt.Errorf("parse challenge: %w", err)
 	}
 
-	auth, err := authenticate.CreateAuthenticateMessage(&chal, c.creds.GetUsername(), c.creds.GetPassword(), c.creds.GetDomain(), c.workstation)
+	auth, err := c.buildAuthenticate(&chal)
 	if err != nil {
 		return fmt.Errorf("build authenticate: %w", err)
 	}
