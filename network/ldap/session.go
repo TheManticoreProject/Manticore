@@ -46,6 +46,10 @@ type Session struct {
 	// Config
 	useldaps    bool
 	usekerberos bool
+	// tlsSkipVerify controls whether the server certificate is verified for
+	// LDAPS connections. It defaults to true (verification disabled) to preserve
+	// the historical behavior; use SetTLSSkipVerify to enable verification.
+	tlsSkipVerify bool
 }
 
 // NewSession creates a new LDAP session with the provided configuration and credentials.
@@ -88,8 +92,24 @@ func NewSession(host string, port int, credentials *credentials.Credentials, use
 	// Config
 	s.useldaps = useldaps
 	s.usekerberos = usekerberos
+	// Preserve the historical default of not verifying the server certificate.
+	s.tlsSkipVerify = true
 
 	return s, nil
+}
+
+// SetTLSSkipVerify controls whether the server certificate is verified when
+// establishing an LDAPS connection.
+//
+// Parameters:
+//
+//	skip (bool): When true (the default), the server certificate is not verified.
+//	             When false, the certificate chain and hostname are validated and
+//	             the connection fails if validation does not succeed.
+//
+// This must be called before Connect to take effect.
+func (s *Session) SetTLSSkipVerify(skip bool) {
+	s.tlsSkipVerify = skip
 }
 
 // Connect establishes a connection to the LDAP server. It supports both regular LDAP and LDAPS connections,
@@ -124,7 +144,7 @@ func (s *Session) Connect() (bool, error) {
 			fmt.Sprintf("ldaps://%s:%d", s.host, s.port),
 			ldap.DialWithTLSConfig(
 				&tls.Config{
-					InsecureSkipVerify: true,
+					InsecureSkipVerify: s.tlsSkipVerify,
 				},
 			),
 		)
