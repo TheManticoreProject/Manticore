@@ -85,8 +85,50 @@ type AuthenticateMessage struct {
 	SessionKey []byte
 }
 
-// CreateAuthenticateMessage creates an NTLM AUTHENTICATE message
+// CreateAuthenticateMessage creates an NTLM AUTHENTICATE message from a cleartext
+// password. When the server negotiated extended session security it uses NTLMv2;
+// otherwise it falls back to NTLMv1.
 func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string) (*AuthenticateMessage, error) {
+	var v2 *ntlmv2.NTLMv2Ctx
+	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) != 0 {
+		clientChallenge := [8]byte{}
+		if _, err := rand.Read(clientChallenge[:]); err != nil {
+			return nil, err
+		}
+		var err error
+		v2, err = ntlmv2.NewNTLMv2CtxWithPassword(domain, username, password, challenge.ServerChallenge, clientChallenge)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return newAuthenticateMessage(challenge, username, password, domain, workstation, v2)
+}
+
+// CreateAuthenticateMessageWithNTHash creates an NTLM AUTHENTICATE message from an NT
+// hash instead of a cleartext password (pass-the-hash). It requires the server to have
+// negotiated extended session security, as the derived session key needed for RPC/SMB
+// signing and sealing only exists on the NTLMv2 path; NTLMv1 pass-the-hash is not
+// supported.
+func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, username string, ntHash [16]byte, domain, workstation string) (*AuthenticateMessage, error) {
+	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) == 0 {
+		return nil, fmt.Errorf("pass-the-hash requires NTLMv2: server did not negotiate extended session security")
+	}
+	clientChallenge := [8]byte{}
+	if _, err := rand.Read(clientChallenge[:]); err != nil {
+		return nil, err
+	}
+	v2, err := ntlmv2.NewNTLMv2CtxWithNTHash(domain, username, ntHash, challenge.ServerChallenge, clientChallenge)
+	if err != nil {
+		return nil, err
+	}
+	return newAuthenticateMessage(challenge, username, "", domain, workstation, v2)
+}
+
+// newAuthenticateMessage builds the AUTHENTICATE message shared by the password and
+// pass-the-hash entry points. When v2 is non-nil the NTLMv2 (extended session security)
+// responses and session key are computed from it; otherwise it falls back to NTLMv1,
+// which is driven by the cleartext password.
+func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string, v2 *ntlmv2.NTLMv2Ctx) (*AuthenticateMessage, error) {
 	// Create the AuthenticateMessage struct
 	msg := AuthenticateMessage{}
 
@@ -130,18 +172,8 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	// Calculate NT response
 	var err error
 
-	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) != 0 {
+	if v2 != nil {
 		// Use NTLMv2 (MS-NLMP 3.3.2)
-		clientChallenge := [8]byte{}
-		_, err = rand.Read(clientChallenge[:])
-		if err != nil {
-			return nil, err
-		}
-
-		ctx, err := ntlmv2.NewNTLMv2CtxWithPassword(domain, username, password, challenge.ServerChallenge, clientChallenge)
-		if err != nil {
-			return nil, err
-		}
 
 		// Prepare TargetInfo for the blob: add the MsvAvTargetName (SPN) AVPair, as
 		// the Windows client does. This server (Server 2016, signing required)
@@ -158,16 +190,16 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 		}
 
 		var ntProofStr []byte
-		msg.NtChallengeResponse, ntProofStr, err = ctx.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
+		msg.NtChallengeResponse, ntProofStr, err = v2.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
 		if err != nil {
 			return nil, err
 		}
 		// Send a real LMv2 response (the Windows client does, even with a timestamp).
-		msg.LmChallengeResponse = ctx.ComputeLMChallengeResponse(false)
+		msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(false)
 
 		// EXPERIMENT: no key exchange. The exported session key (the SMB signing MAC
 		// key) equals the SessionBaseKey.
-		msg.SessionKey = ctx.ComputeSessionBaseKey(ntProofStr)
+		msg.SessionKey = v2.ComputeSessionBaseKey(ntProofStr)
 	} else {
 		// Use NTLMv1
 		ntlmv1Ctx, err := ntlmv1.NewNTLMv1CtxWithPassword(domain, username, password, challenge.ServerChallenge)

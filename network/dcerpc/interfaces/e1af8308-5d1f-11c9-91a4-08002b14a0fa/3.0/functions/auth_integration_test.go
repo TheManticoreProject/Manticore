@@ -30,7 +30,9 @@ func TestIntegration_AuthenticatedBind(t *testing.T) {
 	if host == "" {
 		t.Skip("DCERPC_TEST_HOST not set; skipping live authenticated bind test")
 	}
-	creds, err := credentials.NewCredentials(os.Getenv("DCERPC_TEST_DOMAIN"), os.Getenv("DCERPC_TEST_USER"), os.Getenv("DCERPC_TEST_PASS"), "")
+	// DCERPC_TEST_HASHES (LM:NT or NT) exercises pass-the-hash; leave it empty to use
+	// DCERPC_TEST_PASS.
+	creds, err := credentials.NewCredentials(os.Getenv("DCERPC_TEST_DOMAIN"), os.Getenv("DCERPC_TEST_USER"), os.Getenv("DCERPC_TEST_PASS"), os.Getenv("DCERPC_TEST_HASHES"))
 	if err != nil {
 		t.Fatalf("NewCredentials: %v", err)
 	}
