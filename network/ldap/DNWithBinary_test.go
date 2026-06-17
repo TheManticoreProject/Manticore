@@ -34,6 +34,18 @@ func TestUnmarshal(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:        "DN containing a colon",
+			rawBytes:    []byte("B:10:48656c6c6f:CN=a:b,OU=Users,DC=example,DC=com"),
+			expectError: false,
+			expectedDN:  "CN=a:b,OU=Users,DC=example,DC=com",
+			expectedBin: []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f},
+		},
+		{
+			name:        "Invalid format prefix",
+			rawBytes:    []byte("X:10:48656c6c6f:CN=John Doe,DC=example,DC=com"),
+			expectError: true,
+		},
+		{
 			name:        "Invalid parts count",
 			rawBytes:    []byte("B:10:48656c6c6f"),
 			expectError: true,
