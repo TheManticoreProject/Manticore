@@ -175,13 +175,11 @@ func (s *Session) Connect() (bool, error) {
 	} else {
 		// Use NTLM authentification or null auth
 		if s.credentials.CanPassTheHash() {
-			// Bind with Pass the NT Hash
-			if len(s.credentials.GetPassword()) > 0 {
-				// Binding with credentials
-				err = ldapConnection.Bind(fmt.Sprintf("%s@%s", s.credentials.GetUsername(), s.credentials.GetDomain()), s.credentials.GetPassword())
-				if err != nil {
-					return false, fmt.Errorf("error binding with Pass the NT Hash: %w", err)
-				}
+			// Bind with Pass the NT Hash using an NTLMSSP bind keyed on the NT hash,
+			// not a cleartext simple bind keyed on the password.
+			err = ldapConnection.NTLMBindWithHash(s.credentials.GetDomain(), s.credentials.GetUsername(), s.credentials.GetNTHash())
+			if err != nil {
+				return false, fmt.Errorf("error binding with Pass the NT Hash: %w", err)
 			}
 		} else if len(s.credentials.GetPassword()) > 0 {
 			// Binding with credentials
