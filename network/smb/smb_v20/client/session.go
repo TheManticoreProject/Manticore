@@ -63,6 +63,8 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		c.Workstation,
 		true,
 	)
+	// Pass-the-hash: when an NT hash is supplied, authenticate from it instead of the password.
+	authCtx.NTHash = creds.GetNTHash()
 
 	negotiateFlags := spnego_ntlm_negotiate_flags.NegotiateFlags(
 		spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_UNICODE |

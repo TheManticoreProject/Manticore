@@ -22,6 +22,11 @@ type AuthContext struct {
 	Workstation string
 	UseUnicode  bool
 
+	// NTHash is the hex-encoded (32 hex chars) NT hash used for pass-the-hash. When set,
+	// the NTLM AUTHENTICATE is computed from this hash instead of Password, so a caller
+	// can authenticate with only the NT hash. Empty means authenticate with Password.
+	NTHash string
+
 	// NTLM specific fields
 	NTLMChallenge *challenge.ChallengeMessage
 
