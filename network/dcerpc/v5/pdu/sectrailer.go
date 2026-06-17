@@ -14,7 +14,12 @@ const (
 	AuthTypeNone         uint8 = 0x00
 	AuthTypeGSSNegotiate uint8 = 0x09 // SPNEGO
 	AuthTypeNTLMSSP      uint8 = 0x0A // RPC_C_AUTHN_WINNT
+	AuthTypeGSSSchannel  uint8 = 0x0E // RPC_C_AUTHN_GSS_SCHANNEL
 	AuthTypeGSSKerberos  uint8 = 0x10
+	AuthTypeNetlogon     uint8 = 0x44 // RPC_C_AUTHN_NETLOGON
+	// AuthTypeDefault selects the implementation default provider; it is an SSPI
+	// selector value, not a value that appears in a sec_trailer on the wire.
+	AuthTypeDefault uint8 = 0xFF // RPC_C_AUTHN_DEFAULT
 )
 
 // Authentication levels (auth_level), as carried in the sec_trailer. Higher levels
