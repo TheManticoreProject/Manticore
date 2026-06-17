@@ -228,7 +228,9 @@ func (s *Session) Connect() (bool, error) {
 //
 //	This function assumes that the Session struct has a valid connection object and that the Connect method is implemented correctly.
 func (s *Session) ReConnect() (bool, error) {
-	s.connection.Close()
+	if s.connection != nil {
+		s.connection.Close()
+	}
 	return s.Connect()
 }
 
@@ -243,5 +245,7 @@ func (s *Session) ReConnect() (bool, error) {
 //
 //	This function assumes that the Session struct has a valid connection object.
 func (s *Session) Close() {
-	s.connection.Close()
+	if s.connection != nil {
+		s.connection.Close()
+	}
 }
