@@ -41,6 +41,8 @@ func TestIntegration_AuthenticatedBind(t *testing.T) {
 		name  string
 		level uint8
 	}{
+		{"CALL", pdu.AuthLevelCall},
+		{"PKT", pdu.AuthLevelPkt},
 		{"PKT_INTEGRITY", pdu.AuthLevelPktIntegrity},
 		{"PKT_PRIVACY", pdu.AuthLevelPktPrivacy},
 	}
