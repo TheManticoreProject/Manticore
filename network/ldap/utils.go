@@ -86,8 +86,10 @@ func ConvertLDAPTimeStampToUnixTimeStamp(value string) (int64, error) {
 			// Typically for dates on year 1601
 			convertedValue = 0
 		} else {
-			delta := int64((valueInt - UnixTimestampStart) * 100)
-			convertedValue = int64(time.Unix(0, delta).Unix())
+			// Reduce the 100-nanosecond interval count to seconds directly.
+			// Scaling to nanoseconds first (* 100) overflows int64 for large
+			// values such as the 0x7FFFFFFFFFFFFFFF "never" sentinel.
+			convertedValue = (valueInt - UnixTimestampStart) / int64(1e7)
 		}
 	}
 
