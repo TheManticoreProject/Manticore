@@ -27,10 +27,12 @@ package client
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/security"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
 // requestHeaderOverhead is the fixed size of a request PDU before the stub data: the
@@ -61,6 +63,15 @@ type Client struct {
 	negotiatedSyntax ndr.Syntax
 
 	bound bool
+
+	// Authentication state, configured by SetAuth and established during Bind. When
+	// authType is pdu.AuthTypeNone the bind and calls are anonymous, exactly as before.
+	authType      uint8
+	authLevel     uint8
+	authContextID uint32
+	workstation   string
+	creds         *credentials.Credentials
+	sec           *security.Context // non-nil once an authenticated bind completes
 }
 
 // NewClient returns a DCE/RPC client over the supplied transport. The transport must
@@ -119,6 +130,18 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	}
 	bind.Header = pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, c.callID)
 
+	// For an authenticated bind, carry an NTLM NEGOTIATE token in the bind's auth
+	// verifier; the server's CHALLENGE comes back in the bind_ack and is completed with
+	// an auth3 below.
+	if c.authConfigured() {
+		negToken, err := c.negotiateToken()
+		if err != nil {
+			return fmt.Errorf("dcerpc bind: ntlm negotiate: %w", err)
+		}
+		bind.SecTrailer = pdu.SecTrailer{AuthType: c.authType, AuthLevel: c.authLevel, AuthContextID: c.authContextID}
+		bind.AuthValue = negToken
+	}
+
 	raw, err := bind.Marshal()
 	if err != nil {
 		return fmt.Errorf("dcerpc bind: marshal: %w", err)
@@ -149,6 +172,11 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		c.contextID = ctxID
 		c.negotiatedSyntax = negotiated
 		c.sendFragMax = negotiateSendMax(c.transport.MaxXmitFrag(), ack.MaxXmitFrag, ack.MaxRecvFrag)
+		if c.authConfigured() {
+			if err := c.completeAuth(respFrag); err != nil {
+				return fmt.Errorf("dcerpc bind: ntlm auth: %w", err)
+			}
+		}
 		c.bound = true
 		return nil
 	case pdu.PacketTypeBindNak:
@@ -236,8 +264,13 @@ func selectContext(contexts []pdu.ContextElement, results []pdu.PresentationResu
 // sendRequest fragments stub into request PDUs no larger than the negotiated send
 // size and writes each one.
 func (c *Client) sendRequest(opnum uint16, stub []byte) error {
-	// Largest stub chunk per fragment.
-	budget := int(c.sendFragMax) - requestHeaderOverhead
+	// Largest stub chunk per fragment, reserving room for the auth verifier when each
+	// request is signed or sealed.
+	overhead := requestHeaderOverhead
+	if c.protectsRequests() {
+		overhead += authVerifierOverhead
+	}
+	budget := int(c.sendFragMax) - overhead
 	if budget <= 0 {
 		return fmt.Errorf("negotiated fragment size %d too small for a request", c.sendFragMax)
 	}
@@ -266,7 +299,13 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 		}
 		req.Header = pdu.NewHeader(pdu.PacketTypeRequest, flags, c.callID)
 
-		raw, err := req.Marshal()
+		var raw []byte
+		var err error
+		if c.protectsRequests() {
+			raw, err = c.marshalProtectedRequest(req)
+		} else {
+			raw, err = req.Marshal()
+		}
 		if err != nil {
 			return fmt.Errorf("marshal request fragment: %w", err)
 		}
@@ -305,7 +344,14 @@ func (c *Client) readResponse() ([]byte, error) {
 			if resp.Header.CallID != c.callID {
 				return nil, fmt.Errorf("response call_id %d does not match request call_id %d", resp.Header.CallID, c.callID)
 			}
-			stub = append(stub, resp.Stub...)
+			chunk := resp.Stub
+			if c.protectsRequests() && resp.Header.AuthLength > 0 {
+				chunk, err = c.unprotectResponseStub(frag)
+				if err != nil {
+					return nil, fmt.Errorf("unprotect response: %w", err)
+				}
+			}
+			stub = append(stub, chunk...)
 			if hdr.PacketFlags.Has(pdu.PFCLastFrag) {
 				return stub, nil
 			}

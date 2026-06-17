@@ -175,16 +175,16 @@ func (r *Response) String() string {
 }
 
 // stubEnd returns the index at which the stub data ends, derived from the header's
-// frag_length and auth_length. It clamps to the available buffer so a truncated read
-// does not produce an out-of-bounds slice.
+// frag_length and auth_length. When the PDU carries an authentication verifier, the
+// trailing bytes are laid out as [stub][auth_pad][sec_trailer][auth_value], so the stub
+// ends auth_length + SecTrailerSize bytes before frag_length. The caller strips the
+// auth padding (recorded in the sec_trailer's auth_pad_length) separately, since this
+// helper does not parse the trailer. It clamps to the available buffer so a truncated
+// read does not produce an out-of-bounds slice.
 func stubEnd(h *Header, available int) (int, error) {
-	end := int(h.FragLength) - int(h.AuthLength)
+	end := int(h.FragLength)
 	if h.AuthLength > 0 {
-		// The auth verifier is preceded by sec_trailer (8 bytes); both sit after the
-		// stub. Subtracting auth_length alone leaves the 8-byte sec_trailer attributed
-		// to the stub, which is acceptable for v1 (no auth is negotiated) but flagged
-		// here for the future auth work.
-		end -= 8
+		end -= int(h.AuthLength) + SecTrailerSize
 	}
 	if end > available {
 		end = available

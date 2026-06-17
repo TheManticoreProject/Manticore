@@ -126,10 +126,17 @@ type Bind struct {
 	MaxRecvFrag  uint16
 	AssocGroupID uint32
 	ContextList  []ContextElement
+
+	// SecTrailer and AuthValue carry an optional authentication verifier. When
+	// AuthValue is non-empty, Marshal pads the body to a 4-byte boundary, appends the
+	// sec_trailer and the auth_value (e.g. an NTLM NEGOTIATE token), and sets the
+	// header's auth_length. They are nil/empty for an unauthenticated bind.
+	SecTrailer SecTrailer
+	AuthValue  []byte
 }
 
-// Marshal serializes the complete bind PDU, filling in the header's packet type and
-// frag_length.
+// Marshal serializes the complete bind PDU, filling in the header's packet type,
+// frag_length, and — when an auth_value is present — auth_length.
 func (b *Bind) Marshal() ([]byte, error) {
 	if len(b.ContextList) == 0 {
 		return nil, fmt.Errorf("bind PDU has no presentation contexts")
@@ -155,10 +162,13 @@ func (b *Bind) Marshal() ([]byte, error) {
 	}
 	body = append(body, cl...)
 
+	body = appendAuthVerifier(body, &b.SecTrailer, b.AuthValue)
+
 	if b.Header.RPCVersion == 0 && b.Header.DataRepresentation == ([4]byte{}) {
 		b.Header = NewHeader(PacketTypeBind, b.Header.PacketFlags, b.Header.CallID)
 	}
 	b.Header.PacketType = PacketTypeBind
+	b.Header.AuthLength = uint16(len(b.AuthValue))
 	b.Header.FragLength = uint16(HeaderSize + len(body))
 
 	hdr, err := b.Header.Marshal()
