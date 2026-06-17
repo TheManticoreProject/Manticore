@@ -18,7 +18,7 @@ import (
 //   - A map where the keys are the distinguished names of the domain objects and the values are
 //     pointers to Domain objects representing the retrieved domain objects.
 func (ldapSession *Session) GetAllDomains() (map[string]*objects.Domain, error) {
-	attributes := []string{"distinguishedName", "objectSid"}
+	attributes := []string{"distinguishedName", "objectSid", "dc"}
 	query := "(objectClass=domain)"
 
 	ldapResults, err := ldapSession.QueryWholeSubtree("", query, attributes)
