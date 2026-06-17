@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/TheManticoreProject/Manticore/logger"
-
 	"github.com/go-ldap/ldap/v3"
 )
 
@@ -31,8 +29,6 @@ import (
 // If the search is successful, it returns the search results. If an error occurs, it logs a warning
 // and returns an empty slice.
 func (ldapSession *Session) Query(searchBase string, query string, attributes []string, scope int) ([]*ldap.Entry, error) {
-	debug := false
-
 	// Parsing parameters
 	if len(searchBase) == 0 {
 		searchBase = "defaultNamingContext"
@@ -42,19 +38,10 @@ func (ldapSession *Session) Query(searchBase string, query string, attributes []
 		return nil, fmt.Errorf("error fetching RootDSE: %w", err)
 	}
 	if strings.ToLower(searchBase) == "defaultnamingcontext" {
-		if debug {
-			logger.Debug(fmt.Sprintf("Using defaultNamingContext %s ...\n", rootDSE.GetAttributeValue("defaultNamingContext")))
-		}
 		searchBase = rootDSE.GetAttributeValue("defaultNamingContext")
 	} else if strings.ToLower(searchBase) == "configurationnamingcontext" {
-		if debug {
-			logger.Debug(fmt.Sprintf("Using configurationNamingContext %s ...\n", rootDSE.GetAttributeValue("configurationNamingContext")))
-		}
 		searchBase = rootDSE.GetAttributeValue("configurationNamingContext")
 	} else if strings.ToLower(searchBase) == "schemanamingcontext" {
-		if debug {
-			logger.Debug(fmt.Sprintf("Using schemaNamingContext CN=Schema,%s ...\n", rootDSE.GetAttributeValue("configurationNamingContext")))
-		}
 		searchBase = fmt.Sprintf("CN=Schema,%s", rootDSE.GetAttributeValue("configurationNamingContext"))
 	}
 
