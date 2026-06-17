@@ -3,27 +3,35 @@ package ldap
 import (
 	"fmt"
 	"net"
-	"strings"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap/ldap_attributes"
 )
+
+// dnsProbeTimeout bounds each TCP connection attempt to a domain controller's
+// DNS port so a single unresponsive host cannot stall the whole enumeration.
+const dnsProbeTimeout = 2 * time.Second
 
 // GetDomainDNSServers retrieves the IP addresses of DNS servers from both read-only domain controllers
 // and domain controllers in the LDAP session. It attempts to establish a TCP connection to port 53
 // (DNS service) on each hostname found in the domain controllers. If the connection is successful,
 // it extracts the IP address of the DNS server and adds it to the list of DNS servers.
 //
+// A domain controller that is unreachable or not serving DNS is skipped rather
+// than treated as a fatal error: the function returns the DNS servers it could
+// reach. An error is only returned when the domain controllers themselves cannot
+// be listed.
+//
 // Returns:
-// - A slice of strings containing the IP addresses of the DNS servers.
-// - An error if any issues occur during the retrieval process.
+// - A slice of strings containing the IP addresses of the reachable DNS servers.
+// - An error if the domain controllers could not be listed.
 func (ldapSession *Session) GetDomainDNSServers() ([]string, error) {
 	dnsServers := []string{}
-	var errList []string
 
 	probe := func(hostname string) {
-		conn, err := net.Dial("tcp", hostname+":53")
+		conn, err := net.DialTimeout("tcp", hostname+":53", dnsProbeTimeout)
 		if err != nil {
-			errList = append(errList, fmt.Sprintf("Error connecting to %s: %s", hostname, err))
+			// Host is unreachable or not serving DNS; skip it.
 			return
 		}
 		defer conn.Close()
@@ -32,7 +40,6 @@ func (ldapSession *Session) GetDomainDNSServers() ([]string, error) {
 		// Use net.SplitHostPort so IPv6 addresses ("[::1]:53") are handled correctly.
 		host, _, splitErr := net.SplitHostPort(conn.RemoteAddr().String())
 		if splitErr != nil {
-			errList = append(errList, fmt.Sprintf("Error parsing remote address for %s: %s", hostname, splitErr))
 			return
 		}
 		dnsServers = append(dnsServers, host)
@@ -60,10 +67,6 @@ func (ldapSession *Session) GetDomainDNSServers() ([]string, error) {
 		for _, hostname := range readOnlyDomainControllersMap[distinguishedName] {
 			probe(hostname)
 		}
-	}
-
-	if len(errList) > 0 {
-		return dnsServers, fmt.Errorf("encountered errors: %s", strings.Join(errList, "; "))
 	}
 
 	return dnsServers, nil
