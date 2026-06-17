@@ -33,16 +33,23 @@ func (ldapSession *Session) Query(searchBase string, query string, attributes []
 	if len(searchBase) == 0 {
 		searchBase = "defaultNamingContext"
 	}
-	rootDSE, err := ldapSession.GetRootDSE()
-	if err != nil {
-		return nil, fmt.Errorf("error fetching RootDSE: %w", err)
-	}
-	if strings.ToLower(searchBase) == "defaultnamingcontext" {
-		searchBase = rootDSE.GetAttributeValue("defaultNamingContext")
-	} else if strings.ToLower(searchBase) == "configurationnamingcontext" {
-		searchBase = rootDSE.GetAttributeValue("configurationNamingContext")
-	} else if strings.ToLower(searchBase) == "schemanamingcontext" {
-		searchBase = fmt.Sprintf("CN=Schema,%s", rootDSE.GetAttributeValue("configurationNamingContext"))
+	// Resolve the special naming-context placeholders against the RootDSE.
+	// The RootDSE is only fetched when one of these placeholders is supplied,
+	// so a query against a concrete DN does not incur an extra round-trip.
+	switch strings.ToLower(searchBase) {
+	case "defaultnamingcontext", "configurationnamingcontext", "schemanamingcontext":
+		rootDSE, err := ldapSession.GetRootDSE()
+		if err != nil {
+			return nil, fmt.Errorf("error fetching RootDSE: %w", err)
+		}
+		switch strings.ToLower(searchBase) {
+		case "defaultnamingcontext":
+			searchBase = rootDSE.GetAttributeValue("defaultNamingContext")
+		case "configurationnamingcontext":
+			searchBase = rootDSE.GetAttributeValue("configurationNamingContext")
+		case "schemanamingcontext":
+			searchBase = fmt.Sprintf("CN=Schema,%s", rootDSE.GetAttributeValue("configurationNamingContext"))
+		}
 	}
 
 	if (scope != ldap.ScopeBaseObject) && (scope != ldap.ScopeSingleLevel) && (scope != ldap.ScopeWholeSubtree) {
