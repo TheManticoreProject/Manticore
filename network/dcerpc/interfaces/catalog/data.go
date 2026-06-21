@@ -69,6 +69,18 @@ var builtin = []Interface{
 		Description: "Maps interface UUIDs to transport endpoints (port 135).",
 		Executable:  "rpcss.dll", Service: "RpcEptMapper", Protocol: "C706", Pipes: []string{`\pipe\epmapper`},
 	},
+	{
+		UUID: mustGUID("e3514235-4b06-11d1-ab04-00c04fc2dcd2"), Version: v(4, 0),
+		Name: "drsuapi", Title: "Directory Replication Service",
+		Description: "AD replication; abused for DCSync. Bound over ncacn_ip_tcp (no named pipe).",
+		Executable:  "ntdsai.dll", Service: "NTDS", Protocol: "MS-DRSR",
+	},
+	{
+		UUID: mustGUID("7c44d7d4-31d5-424c-bd5e-2b3e1f323d22"), Version: v(1, 0),
+		Name: "dsaop", Title: "Directory Service Administration",
+		Description: "RODC demotion scripting (MS-DRSR). Bound over ncacn_ip_tcp (no named pipe).",
+		Executable:  "ntdsai.dll", Service: "NTDS", Protocol: "MS-DRSR",
+	},
 
 	// --- other well-known interfaces ---
 	{
@@ -88,12 +100,6 @@ var builtin = []Interface{
 		Name: "netlogon", Title: "Netlogon Remote Protocol",
 		Description: "Domain authentication; abused via Zerologon.",
 		Executable:  "netlogon.dll", Service: "Netlogon", Protocol: "MS-NRPC", Pipes: []string{`\pipe\netlogon`},
-	},
-	{
-		UUID: mustGUID("e3514235-4b06-11d1-ab04-00c04fc2dcd2"), Version: v(4, 0),
-		Name: "drsuapi", Title: "Directory Replication Service",
-		Description: "Active Directory replication (DCSync).",
-		Executable:  "ntdsai.dll", Service: "NTDS", Protocol: "MS-DRSR",
 	},
 	{
 		UUID: mustGUID("6bffd098-a112-3610-9833-46c3f87e345a"), Version: v(1, 0),
@@ -153,7 +159,7 @@ var builtin = []Interface{
 		UUID: mustGUID("f309ad18-d86a-11d0-a075-00c04fb68820"), Version: v(0, 0),
 		Name: "IWbemLevel1Login", Title: "Windows Management Instrumentation",
 		Description: "WMI remoting login interface (over DCOM).",
-		Service: "Winmgmt", Protocol: "MS-WMI",
+		Service:     "Winmgmt", Protocol: "MS-WMI",
 	},
 	{
 		UUID: mustGUID("50abc2a4-574d-40b3-9d66-ee4fd5fba076"), Version: v(5, 0),
@@ -165,7 +171,7 @@ var builtin = []Interface{
 		UUID: mustGUID("a8e0653c-2744-4389-a61d-7373df8b2292"), Version: v(1, 0),
 		Name: "FssagentRpc", Title: "File Server Remote VSS",
 		Description: "File Server VSS agent; abused for coercion.",
-		Service: "FileServerVssAgent", Protocol: "MS-FSRVP", Pipes: []string{`\pipe\FssagentRpc`},
+		Service:     "FileServerVssAgent", Protocol: "MS-FSRVP", Pipes: []string{`\pipe\FssagentRpc`},
 	},
 	{
 		UUID: mustGUID("3919286a-b10c-11d0-9ba8-00c04fd92ef5"), Version: v(0, 0),
