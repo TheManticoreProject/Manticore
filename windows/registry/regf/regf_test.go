@@ -272,19 +272,41 @@ func TestSampleHiveNavigation(t *testing.T) {
 		t.Errorf("root class = %q, want %q", class, "classdata")
 	}
 
-	// SK record: ROOT and Sub share one security descriptor.
+	// SK record: ROOT and Sub share one security descriptor. Verify both the raw bytes and
+	// the winacl-decoded owner/group/DACL.
 	for _, key := range []string{"", "Sub"} {
-		sd, err := h.GetSecurity(key)
+		raw, err := h.GetSecurity(key)
 		if err != nil {
 			t.Fatalf("GetSecurity(%q): %v", key, err)
 		}
-		if len(sd) != 20 {
-			t.Errorf("GetSecurity(%q) returned %d bytes, want 20", key, len(sd))
+		if len(raw) == 0 || raw[0] != 1 {
+			t.Errorf("GetSecurity(%q) raw descriptor invalid: %d bytes, revision %d", key, len(raw), firstByte(raw))
 		}
-		if sd[0] != 1 {
-			t.Errorf("GetSecurity(%q) revision = %d, want 1", key, sd[0])
+
+		sd, err := h.GetSecurityDescriptor(key)
+		if err != nil {
+			t.Fatalf("GetSecurityDescriptor(%q): %v", key, err)
+		}
+		if sd == nil {
+			t.Fatalf("GetSecurityDescriptor(%q) = nil, want a descriptor", key)
+		}
+		if owner := sd.GetOwner(); owner == nil || owner.SID.String() != "S-1-5-32-544" {
+			t.Errorf("%q owner = %v, want S-1-5-32-544", key, owner)
+		}
+		if group := sd.GetGroup(); group == nil || group.SID.String() != "S-1-5-18" {
+			t.Errorf("%q group = %v, want S-1-5-18", key, group)
+		}
+		if dacl := sd.GetDacl(); dacl == nil || len(dacl.Entries) != 2 {
+			t.Errorf("%q DACL ACE count = %v, want 2", key, dacl)
 		}
 	}
+}
+
+func firstByte(b []byte) int {
+	if len(b) == 0 {
+		return -1
+	}
+	return int(b[0])
 }
 
 func TestOpenBytesRejectsGarbage(t *testing.T) {
