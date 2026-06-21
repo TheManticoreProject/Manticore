@@ -115,4 +115,18 @@ func TestCrackAndReplicate(t *testing.T) {
 	if len(obj.Attributes) == 0 {
 		t.Error("object returned with no attributes")
 	}
+
+	secrets, err := c.DecryptSecrets(res)
+	if err != nil {
+		t.Fatalf("DecryptSecrets: %v", err)
+	}
+	if len(secrets) == 0 {
+		t.Fatal("no secrets decrypted (object had no objectSid?)")
+	}
+	s := secrets[0]
+	if !s.HasNT {
+		t.Error("no NT hash decrypted for the target account")
+	}
+	// secretsdump-style line: sAMAccountName:RID:LMHash:NTHash:::
+	t.Logf("%s:%d:%x:%x:::", s.SAMAccountName, s.RID, s.LMHash, s.NTHash)
 }
