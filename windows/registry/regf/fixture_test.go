@@ -3,7 +3,29 @@ package regf
 import (
 	"encoding/binary"
 	"unicode/utf16"
+
+	"github.com/TheManticoreProject/winacl/securitydescriptor"
 )
+
+// fixtureSDDL is the security descriptor embedded in the sample hive's SK record: owner
+// Administrators (BA = S-1-5-32-544), group Local System (SY = S-1-5-18), and a DACL with
+// two allow ACEs (Administrators and SYSTEM).
+const fixtureSDDL = "O:BAG:SYD:(A;;KA;;;BA)(A;;KR;;;SY)"
+
+// sampleSecurityDescriptorBytes builds the fixture's self-relative SECURITY_DESCRIPTOR
+// from fixtureSDDL using winacl, so the bytes stored in the hive are a faithful Windows
+// descriptor that the read path re-parses with the same library.
+func sampleSecurityDescriptorBytes() []byte {
+	sd := securitydescriptor.NewSecurityDescriptor()
+	if _, err := sd.FromSDDLString(fixtureSDDL); err != nil {
+		panic("regf fixture: FromSDDLString: " + err.Error())
+	}
+	b, err := sd.Marshal()
+	if err != nil {
+		panic("regf fixture: Marshal SD: " + err.Error())
+	}
+	return b
+}
 
 // This file builds a small but complete, structurally valid REGF hive image entirely in
 // memory, used both as the source for the committed golden fixture (testdata/sample.hive,
@@ -100,11 +122,11 @@ func buildSampleHive() []byte {
 
 	classOff := a.addCell([]byte("classdata"))
 
-	// SK record with a minimal valid self-relative SECURITY_DESCRIPTOR (revision 1,
-	// SE_SELF_RELATIVE control, no owner/group/SACL/DACL). Shared by ROOT and Sub.
-	sd := make([]byte, 20)
-	sd[0] = 1                                      // Revision
-	binary.LittleEndian.PutUint16(sd[2:4], 0x8000) // Control: SE_SELF_RELATIVE
+	// SK record with a real self-relative SECURITY_DESCRIPTOR built via winacl:
+	// owner Administrators (S-1-5-32-544), group Local System (S-1-5-18), and a DACL with
+	// two allow ACEs. Shared by ROOT and Sub. Built from SDDL so the bytes are a faithful
+	// Windows descriptor that winacl re-parses on the read path.
+	sd := sampleSecurityDescriptorBytes()
 	sk := &SecurityKey{Signature: skSignature, ReferenceCount: 2, SecurityDescriptorSize: uint32(len(sd)), SecurityDescriptor: sd}
 	skb, _ := sk.Marshal()
 	skOff := a.addCell(skb)
