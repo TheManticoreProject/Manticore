@@ -39,6 +39,9 @@ func sampleSecurityDescriptorBytes() []byte {
 //	       ├─ StrVal   = "hello"           REG_SZ, external data cell
 //	       └─ BigVal   = 20000 bytes       REG_BINARY, big-data (db) record, 2 segments
 //
+// Plus two unallocated ("deleted") cells not referenced by the live tree — a key node
+// "GhostKey" and an inline value "GhostVal" — for the recovery scan.
+//
 // Cells are framed with the standard 4-byte size prefix (negative = allocated) and
 // 8-byte aligned, inside a single hive bin. Offsets are computed as cells are appended, so
 // the layout never has to be hand-counted.
@@ -83,13 +86,28 @@ func newHiveAsm() *hiveAsm {
 // addCell appends content as one allocated cell and returns the cell's offset relative to
 // the start of hive-bins data (i.e. the offset stored in NK/VK/list records).
 func (a *hiveAsm) addCell(content []byte) uint32 {
+	return a.addCellWithState(content, true)
+}
+
+// addFreeCell appends content as one unallocated (free / "deleted") cell — its size prefix
+// is positive. Such cells are not referenced by the live tree and are only reachable via
+// the recovery scan.
+func (a *hiveAsm) addFreeCell(content []byte) uint32 {
+	return a.addCellWithState(content, false)
+}
+
+func (a *hiveAsm) addCellWithState(content []byte, allocated bool) uint32 {
 	off := uint32(len(a.bins))
 	size := 4 + len(content)
 	if r := size % 8; r != 0 {
 		size += 8 - r
 	}
 	cell := make([]byte, size)
-	binary.LittleEndian.PutUint32(cell[0:4], uint32(-int32(size))) // negative => allocated
+	prefix := int32(size) // positive => free
+	if allocated {
+		prefix = -prefix // negative => allocated
+	}
+	binary.LittleEndian.PutUint32(cell[0:4], uint32(prefix))
 	copy(cell[4:], content)
 	a.bins = append(a.bins, cell...)
 	return off
@@ -207,6 +225,33 @@ func buildSampleHive() []byte {
 	binary.LittleEndian.PutUint32(lh.Elements[0:4], subOff) // bytes [4:8] are the name hash, ignored
 	lhb, _ := lh.Marshal()
 	lhOff := a.addCell(lhb)
+
+	// Deleted (free) records for recovery testing: a key node "GhostKey" and an inline
+	// value "GhostVal", both in unallocated cells not referenced by the live tree.
+	ghostNK := &KeyNode{
+		Signature:         nkSignature,
+		Flags:             KeyCompName,
+		SubKeysListOffset: nullCellOffset,
+		ValuesListOffset:  nullCellOffset,
+		SecurityOffset:    nullCellOffset,
+		ClassNameOffset:   nullCellOffset,
+		KeyNameLength:     uint16(len("GhostKey")),
+		KeyNameRaw:        []byte("GhostKey"),
+	}
+	ghostNKb, _ := ghostNK.Marshal()
+	a.addFreeCell(ghostNKb)
+
+	ghostVK := &KeyValue{
+		Signature:  vkSignature,
+		NameLength: uint16(len("GhostVal")),
+		DataSize:   0x80000000 | 4, // inline (self-contained, survives deletion)
+		DataOffset: 0xCAFEBABE,
+		DataType:   RegDword,
+		Flags:      ValueCompName,
+		NameRaw:    []byte("GhostVal"),
+	}
+	ghostVKb, _ := ghostVK.Marshal()
+	a.addFreeCell(ghostVKb)
 
 	// Back-patch the root NK's now-known offsets (SubKeysListOffset at NK+28,
 	// SecurityOffset at NK+44, ClassNameOffset at NK+48).
