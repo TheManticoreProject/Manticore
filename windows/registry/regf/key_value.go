@@ -176,6 +176,12 @@ func (v *KeyValue) Data() ([]byte, error) {
 		return nil, fmt.Errorf("KeyValue not attached to a hive")
 	}
 
+	// Values larger than a single data cell are stored in a big-data (db) record that
+	// chains multiple data segments; reassemble them transparently.
+	if actualSize > bigDataThreshold {
+		return v.hive.readBigData(v.DataOffset, actualSize)
+	}
+
 	return v.hive.readCellData(v.DataOffset, int(actualSize))
 }
 

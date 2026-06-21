@@ -11,14 +11,29 @@ import (
 //
 // The hive it produces:
 //
-//	ROOT                       (root key node, UTF-16LE name, class data "classdata")
-//	  └─ Sub                   (compressed-name subkey)
-//	       ├─ DwordVal = 0x12345678   REG_DWORD, inline
-//	       └─ StrVal   = "hello"      REG_SZ, stored in an external data cell
+//	ROOT                       (root key node, UTF-16LE name, class data "classdata", SK record)
+//	  └─ Sub                   (compressed-name subkey, shares the SK record)
+//	       ├─ DwordVal = 0x12345678        REG_DWORD, inline
+//	       ├─ StrVal   = "hello"           REG_SZ, external data cell
+//	       └─ BigVal   = 20000 bytes       REG_BINARY, big-data (db) record, 2 segments
 //
 // Cells are framed with the standard 4-byte size prefix (negative = allocated) and
-// 8-byte aligned, inside a single 4096-byte hive bin. Offsets are computed as cells are
-// appended, so the layout never has to be hand-counted.
+// 8-byte aligned, inside a single hive bin. Offsets are computed as cells are appended, so
+// the layout never has to be hand-counted.
+
+const (
+	fixtureBinSize = 32768 // multiple of 4096, large enough for the big-data segments
+	bigValSize     = 20000 // > bigDataThreshold, so BigVal needs a db record
+)
+
+// bigValBytes is the deterministic content of the BigVal value.
+func bigValBytes() []byte {
+	b := make([]byte, bigValSize)
+	for i := range b {
+		b[i] = byte(i % 251)
+	}
+	return b
+}
 
 // utf16le encodes s as UTF-16LE bytes (no terminator added).
 func utf16le(s string) []byte {
@@ -37,7 +52,7 @@ type hiveAsm struct {
 
 func newHiveAsm() *hiveAsm {
 	a := &hiveAsm{}
-	hb := &HiveBin{Signature: hbinSignature, Offset: 0, Size: 4096}
+	hb := &HiveBin{Signature: hbinSignature, Offset: 0, Size: fixtureBinSize}
 	hdr, _ := hb.Marshal()
 	a.bins = append(a.bins, hdr...)
 	return a
@@ -73,7 +88,7 @@ func buildSampleHive() []byte {
 		Flags:            KeyHiveEntry, // UTF-16LE name (no compressed-name flag)
 		NumberOfSubKeys:  1,
 		ValuesListOffset: nullCellOffset,
-		SecurityOffset:   nullCellOffset,
+		SecurityOffset:   nullCellOffset, // back-patched to skOff
 		ClassNameLength:  uint16(len("classdata")),
 		Parent:           nullCellOffset,
 		KeyNameLength:    uint16(len(rootName)),
@@ -84,6 +99,15 @@ func buildSampleHive() []byte {
 	rootContent := int(rootOff) + 4 // start of the NK record within a.bins
 
 	classOff := a.addCell([]byte("classdata"))
+
+	// SK record with a minimal valid self-relative SECURITY_DESCRIPTOR (revision 1,
+	// SE_SELF_RELATIVE control, no owner/group/SACL/DACL). Shared by ROOT and Sub.
+	sd := make([]byte, 20)
+	sd[0] = 1                                      // Revision
+	binary.LittleEndian.PutUint16(sd[2:4], 0x8000) // Control: SE_SELF_RELATIVE
+	sk := &SecurityKey{Signature: skSignature, ReferenceCount: 2, SecurityDescriptorSize: uint32(len(sd)), SecurityDescriptor: sd}
+	skb, _ := sk.Marshal()
+	skOff := a.addCell(skb)
 
 	szBytes := utf16le("hello\x00") // value data with NUL terminator: 12 bytes
 	szOff := a.addCell(szBytes)
@@ -112,19 +136,45 @@ func buildSampleHive() []byte {
 	vkSb, _ := vkS.Marshal()
 	vkSOff := a.addCell(vkSb)
 
-	valueList := make([]byte, 8)
+	// Big-data value: 20000 bytes split into two segments (16344 + 3656), a segment-offset
+	// list, and a db record. The VK points at the db record.
+	big := bigValBytes()
+	seg0Off := a.addCell(big[:bigDataThreshold])
+	seg1Off := a.addCell(big[bigDataThreshold:])
+	segList := make([]byte, 8)
+	binary.LittleEndian.PutUint32(segList[0:4], seg0Off)
+	binary.LittleEndian.PutUint32(segList[4:8], seg1Off)
+	segListOff := a.addCell(segList)
+	db := &BigData{Signature: dbSignature, NumberOfSegments: 2, SegmentsListOffset: segListOff}
+	dbb, _ := db.Marshal()
+	dbOff := a.addCell(dbb)
+
+	vkB := &KeyValue{
+		Signature:  vkSignature,
+		NameLength: uint16(len("BigVal")),
+		DataSize:   bigValSize, // not inline; > bigDataThreshold
+		DataOffset: dbOff,
+		DataType:   RegBinary,
+		Flags:      ValueCompName,
+		NameRaw:    []byte("BigVal"),
+	}
+	vkBb, _ := vkB.Marshal()
+	vkBOff := a.addCell(vkBb)
+
+	valueList := make([]byte, 12)
 	binary.LittleEndian.PutUint32(valueList[0:4], vkDOff)
 	binary.LittleEndian.PutUint32(valueList[4:8], vkSOff)
+	binary.LittleEndian.PutUint32(valueList[8:12], vkBOff)
 	valueListOff := a.addCell(valueList)
 
 	sub := &KeyNode{
 		Signature:         nkSignature,
 		Flags:             KeyCompName,
-		NumberOfValues:    2,
+		NumberOfValues:    3,
 		ValuesListOffset:  valueListOff,
 		SubKeysListOffset: nullCellOffset,
 		ClassNameOffset:   nullCellOffset,
-		SecurityOffset:    nullCellOffset,
+		SecurityOffset:    skOff,
 		KeyNameLength:     uint16(len("Sub")),
 		KeyNameRaw:        []byte("Sub"),
 	}
@@ -137,12 +187,13 @@ func buildSampleHive() []byte {
 	lhOff := a.addCell(lhb)
 
 	// Back-patch the root NK's now-known offsets (SubKeysListOffset at NK+28,
-	// ClassNameOffset at NK+48).
+	// SecurityOffset at NK+44, ClassNameOffset at NK+48).
 	binary.LittleEndian.PutUint32(a.bins[rootContent+28:rootContent+32], lhOff)
+	binary.LittleEndian.PutUint32(a.bins[rootContent+44:rootContent+48], skOff)
 	binary.LittleEndian.PutUint32(a.bins[rootContent+48:rootContent+52], classOff)
 
-	if len(a.bins) < 4096 {
-		a.bins = append(a.bins, make([]byte, 4096-len(a.bins))...)
+	if len(a.bins) < fixtureBinSize {
+		a.bins = append(a.bins, make([]byte, fixtureBinSize-len(a.bins))...)
 	}
 
 	bb := &BaseBlock{
