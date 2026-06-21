@@ -185,3 +185,45 @@ func TestDomainControllerInfoAndDCSync(t *testing.T) {
 	}
 	t.Logf("%s:%d:%x:%x:::", sec.SAMAccountName, sec.RID, sec.LMHash, sec.NTHash)
 }
+
+// TestReplInfoRecon exercises the read-only recon wrappers: replication cursors for the
+// NC and site-cost queries. Requires DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC (the NC DN,
+// e.g. "DC=lab,DC=local"); DRSUAPI_TEST_SITE optionally names a site for the cost query.
+func TestReplInfoRecon(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	nc := os.Getenv("DRSUAPI_TEST_NC")
+	if host == "" || nc == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"))
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(15 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	cursors, err := c.ReplicationCursors(nc)
+	if err != nil {
+		t.Fatalf("ReplicationCursors: %v", err)
+	}
+	t.Logf("%d replication cursor(s) for %s", len(cursors), nc)
+	for _, cur := range cursors {
+		t.Logf("  invocationID=%s upToDateUSN=%d", cur.SourceDSAInvocationID.ToFormatD(), cur.UpToDateUSN)
+	}
+
+	if site := os.Getenv("DRSUAPI_TEST_SITE"); site != "" {
+		costs, err := c.QuerySitesByCost(site, []string{site})
+		if err != nil {
+			t.Fatalf("QuerySitesByCost: %v", err)
+		}
+		for _, sc := range costs {
+			t.Logf("site %s -> %s: err=%d cost=%d", site, sc.ToSite, sc.ErrorCode, sc.Cost)
+		}
+	}
+}

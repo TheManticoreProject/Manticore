@@ -44,6 +44,22 @@ const (
 	EXOP_REPL_SECRETS       uint32 = 0x00000007
 )
 
+// DS_REPL_INFO_TYPE selects which replication information IDL_DRSGetReplInfo returns
+// ([MS-DRSR] 4.1.13.3); it is both the request InfoType and the reply union discriminant.
+const (
+	DS_REPL_INFO_NEIGHBORS                 uint32 = 0
+	DS_REPL_INFO_CURSORS_FOR_NC            uint32 = 1
+	DS_REPL_INFO_METADATA_FOR_OBJ          uint32 = 2
+	DS_REPL_INFO_KCC_DSA_CONNECT_FAILURES  uint32 = 3
+	DS_REPL_INFO_KCC_DSA_LINK_FAILURES     uint32 = 4
+	DS_REPL_INFO_PENDING_OPS               uint32 = 5
+	DS_REPL_INFO_METADATA_FOR_ATTR_VALUE   uint32 = 6
+	DS_REPL_INFO_CURSORS_2_FOR_NC          uint32 = 7
+	DS_REPL_INFO_CURSORS_3_FOR_NC          uint32 = 8
+	DS_REPL_INFO_METADATA_2_FOR_OBJ        uint32 = 9
+	DS_REPL_INFO_METADATA_2_FOR_ATTR_VALUE uint32 = 10
+)
+
 // DRS_OPTIONS are the ulFlags bits of IDL_DRSGetNCChanges and related calls
 // ([MS-DRSR] 5.41). A single-object replication uses DRS_INIT_SYNC | DRS_WRIT_REP.
 const (
