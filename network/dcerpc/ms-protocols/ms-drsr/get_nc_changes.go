@@ -53,11 +53,13 @@ func (c *Client) ReplicateSingleObject(objectGUID guid.GUID) (*ReplicationResult
 	msgIn := structures.DRS_MSG_GETCHGREQ{
 		Tag: 8,
 		V8: structures.DRS_MSG_GETCHGREQ_V8{
-			PNC:          &pnc,
-			UlFlags:      ndr.DWORD(structures.DRS_INIT_SYNC | structures.DRS_WRIT_REP),
-			CMaxObjects:  1,
-			CMaxBytes:    0,
-			UlExtendedOp: ndr.DWORD(structures.EXOP_REPL_OBJ),
+			UuidDsaObjDest: c.sourceDSA, // NULL unless SetSourceDSA was called
+			UuidInvocIdSrc: c.sourceDSA,
+			PNC:            &pnc,
+			UlFlags:        ndr.DWORD(structures.DRS_INIT_SYNC | structures.DRS_WRIT_REP),
+			CMaxObjects:    1,
+			CMaxBytes:      0,
+			UlExtendedOp:   ndr.DWORD(structures.EXOP_REPL_OBJ),
 		},
 	}
 
