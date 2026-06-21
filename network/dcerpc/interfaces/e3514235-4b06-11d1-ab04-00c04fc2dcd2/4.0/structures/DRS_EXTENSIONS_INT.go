@@ -80,12 +80,12 @@ const (
 // e24d201a-4fd6-11d1-a3da-0000f875ae0d. The server rejects only the NULL GUID; this
 // value is also the one required if the handle is later used for IDL_DRSWriteSPN
 // ([MS-DRSR] 4.1.3.1).
-func NTDSAPIClientGUID() guid.GUID {
+func NTDSAPIClientGUID() UUID {
 	g, err := guid.FromFormatD("e24d201a-4fd6-11d1-a3da-0000f875ae0d")
 	if err != nil {
 		panic(fmt.Sprintf("drsuapi: bad NTDSAPI client GUID literal: %v", err))
 	}
-	return *g
+	return UUIDFromGUID(*g)
 }
 
 // DefaultClientExtensions returns the DRS_EXTENSIONS_INT a replication client (DCSync)

