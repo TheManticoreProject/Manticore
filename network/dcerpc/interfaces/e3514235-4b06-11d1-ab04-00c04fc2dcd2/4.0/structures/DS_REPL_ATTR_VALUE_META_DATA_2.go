@@ -8,5 +8,5 @@ import (
 type DS_REPL_ATTR_VALUE_META_DATA_2 struct {
 	CNumEntries          ndr.DWORD
 	DwEnumerationContext ndr.DWORD
-	RgMetaData           []DS_REPL_VALUE_META_DATA_2 `ndr:"unique,size_is=CNumEntries"`
+	RgMetaData           []DS_REPL_VALUE_META_DATA_2 `ndr:"conformant,size_is=CNumEntries"`
 }

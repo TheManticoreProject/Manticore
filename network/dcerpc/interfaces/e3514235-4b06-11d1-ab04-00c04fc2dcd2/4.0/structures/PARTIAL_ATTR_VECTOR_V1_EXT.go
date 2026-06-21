@@ -9,5 +9,5 @@ type PARTIAL_ATTR_VECTOR_V1_EXT struct {
 	DwVersion     ndr.DWORD
 	DwReserved1   ndr.DWORD
 	CAttrs        ndr.DWORD
-	RgPartialAttr []ndr.DWORD `ndr:"unique,size_is=CAttrs"`
+	RgPartialAttr []ndr.DWORD `ndr:"conformant,size_is=CAttrs"`
 }

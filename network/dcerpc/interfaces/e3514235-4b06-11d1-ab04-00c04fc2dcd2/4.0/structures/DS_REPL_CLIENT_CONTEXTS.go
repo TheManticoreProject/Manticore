@@ -8,5 +8,5 @@ import (
 type DS_REPL_CLIENT_CONTEXTS struct {
 	CNumContexts ndr.DWORD
 	DwReserved   ndr.DWORD
-	RgContext    []DS_REPL_CLIENT_CONTEXT `ndr:"unique,size_is=CNumContexts"`
+	RgContext    []DS_REPL_CLIENT_CONTEXT `ndr:"conformant,size_is=CNumContexts"`
 }

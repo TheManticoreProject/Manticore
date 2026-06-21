@@ -8,5 +8,5 @@ import (
 type DS_REPL_PENDING_OPSW struct {
 	FtimeCurrentOpStarted FILETIME
 	CNumPendingOps        ndr.DWORD
-	RgPendingOp           []DS_REPL_OPW `ndr:"unique,size_is=CNumPendingOps"`
+	RgPendingOp           []DS_REPL_OPW `ndr:"conformant,size_is=CNumPendingOps"`
 }

@@ -7,16 +7,20 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
-// DRS_EXTENSIONS_INT is the capability structure carried inside DRS_EXTENSIONS.Rgb at
+// DRS_EXTENSIONS_INT is the capability structure carried by DRS_EXTENSIONS at
 // IDL_DRSBind ([MS-DRSR] 5.39). It is NOT an NDR type: it is a fixed little-endian byte
-// layout transported as the opaque BYTE rgb[] blob, so it is (un)marshalled by hand
-// rather than through the ndr codec. Both peers send it to negotiate which request and
-// reply message versions and capabilities they support.
+// layout, (un)marshalled by hand. Both peers send it to negotiate which request/reply
+// message versions and capabilities they support.
 //
-// The fields, in wire order, are dwFlags, SiteObjGuid, Pid, dwReplEpoch, dwFlagsExt,
-// ConfigObjGUID, dwExtCaps (52 bytes total); Cb precedes them and counts those 52 bytes.
-// GUID fields are modelled as raw 16-octet RPC-wire values (guid.GUID.ToBytes order); a
-// non-DC client leaves them zero.
+// Wire relationship (verified against a live DC): DRS_EXTENSIONS is { DWORD cb; BYTE
+// rgb[cb]; }, and the DRS_EXTENSIONS_INT.cb field IS that same DRS_EXTENSIONS.cb — it is
+// NOT repeated inside rgb. So rgb holds only dwFlags..dwExtCaps (52 bytes) and Cb counts
+// exactly those bytes. (An earlier revision wrongly prepended cb to rgb, which shifted
+// dwFlags and made the server miss the client's STRONG_ENCRYPTION flag.) Cb here is
+// informational; Marshal/ToExtensions derive it from the field block length.
+//
+// GUID fields are raw 16-octet RPC-wire values (guid.GUID.ToBytes order); a non-DC
+// client leaves them zero.
 type DRS_EXTENSIONS_INT struct {
 	Cb            uint32
 	DwFlags       uint32
@@ -28,8 +32,8 @@ type DRS_EXTENSIONS_INT struct {
 	DwExtCaps     uint32
 }
 
-// extIntFieldsSize is the byte count of dwFlags..dwExtCaps (the value of Cb per
-// [MS-DRSR] 5.39): 4 + 16 + 4 + 4 + 4 + 16 + 4.
+// extIntFieldsSize is the byte count of dwFlags..dwExtCaps, i.e. the length of rgb and
+// the value of cb: 4 + 16 + 4 + 4 + 4 + 16 + 4.
 const extIntFieldsSize = 52
 
 // dwFlags capability bits ([MS-DRSR] 5.39).
@@ -108,65 +112,60 @@ func DefaultClientExtensions() *DRS_EXTENSIONS_INT {
 	}
 }
 
-// Marshal serializes the structure to its [MS-DRSR] 5.39 little-endian wire bytes (56
-// octets: the 4-octet Cb followed by the 52 octets it counts). Cb is forced to
-// extIntFieldsSize so callers cannot emit an inconsistent count.
-//
-// Note: [MS-DRSR] 5.39 defines Cb as the count of dwFlags..dwExtCaps (52); some clients
-// (impacket) instead send the whole-structure length including Cb (56). Real DCs accept
-// either, as they read the fields forward; this implementation follows the spec value.
+// Marshal serializes the field block dwFlags..dwExtCaps to its [MS-DRSR] 5.39
+// little-endian wire bytes (52 octets). This is the rgb content of DRS_EXTENSIONS; the
+// cb that precedes rgb is the DRS_EXTENSIONS.Cb field, not part of this block.
 func (e *DRS_EXTENSIONS_INT) Marshal() []byte {
-	b := make([]byte, 4+extIntFieldsSize)
-	binary.LittleEndian.PutUint32(b[0:4], extIntFieldsSize)
-	binary.LittleEndian.PutUint32(b[4:8], e.DwFlags)
-	copy(b[8:24], e.SiteObjGuid[:])
-	binary.LittleEndian.PutUint32(b[24:28], uint32(e.Pid))
-	binary.LittleEndian.PutUint32(b[28:32], e.DwReplEpoch)
-	binary.LittleEndian.PutUint32(b[32:36], e.DwFlagsExt)
-	copy(b[36:52], e.ConfigObjGUID[:])
-	binary.LittleEndian.PutUint32(b[52:56], e.DwExtCaps)
+	b := make([]byte, extIntFieldsSize)
+	binary.LittleEndian.PutUint32(b[0:4], e.DwFlags)
+	copy(b[4:20], e.SiteObjGuid[:])
+	binary.LittleEndian.PutUint32(b[20:24], uint32(e.Pid))
+	binary.LittleEndian.PutUint32(b[24:28], e.DwReplEpoch)
+	binary.LittleEndian.PutUint32(b[28:32], e.DwFlagsExt)
+	copy(b[32:48], e.ConfigObjGUID[:])
+	binary.LittleEndian.PutUint32(b[48:52], e.DwExtCaps)
 	return b
 }
 
-// ToExtensions wraps the marshalled structure in a DRS_EXTENSIONS, setting Cb to the
-// byte length of the blob (the value the [size_is(cb)] rgb array is sized by).
+// ToExtensions wraps the marshalled field block in a DRS_EXTENSIONS, setting Cb to the
+// block length (the value the [size_is(cb)] rgb array is sized by).
 func (e *DRS_EXTENSIONS_INT) ToExtensions() DRS_EXTENSIONS {
 	rgb := e.Marshal()
 	return DRS_EXTENSIONS{Cb: uint32(len(rgb)), Rgb: rgb}
 }
 
-// ParseExtensionsInt decodes a DRS_EXTENSIONS_INT from its wire bytes. Fields absent
-// because a shorter Cb was sent are left zero (the structure is forward-extensible, so a
-// peer may omit trailing fields). It requires at least Cb + dwFlags.
+// ParseExtensionsInt decodes a DRS_EXTENSIONS_INT from a DRS_EXTENSIONS rgb block (which
+// begins at dwFlags, not at cb). Trailing fields a shorter peer omitted are left zero
+// (the structure is forward-extensible). Cb is set to the block length.
 func ParseExtensionsInt(b []byte) (*DRS_EXTENSIONS_INT, error) {
-	if len(b) < 8 {
+	if len(b) < 4 {
 		return nil, fmt.Errorf("drsuapi: DRS_EXTENSIONS_INT too short: %d bytes", len(b))
 	}
 	var e DRS_EXTENSIONS_INT
-	e.Cb = binary.LittleEndian.Uint32(b[0:4])
+	e.Cb = uint32(len(b))
 	get := func(off int) (uint32, bool) {
 		if off+4 > len(b) {
 			return 0, false
 		}
 		return binary.LittleEndian.Uint32(b[off : off+4]), true
 	}
-	e.DwFlags, _ = get(4)
-	if len(b) >= 24 {
-		copy(e.SiteObjGuid[:], b[8:24])
+	e.DwFlags, _ = get(0)
+	if len(b) >= 20 {
+		copy(e.SiteObjGuid[:], b[4:20])
 	}
-	if v, ok := get(24); ok {
+	if v, ok := get(20); ok {
 		e.Pid = int32(v)
 	}
-	if v, ok := get(28); ok {
+	if v, ok := get(24); ok {
 		e.DwReplEpoch = v
 	}
-	if v, ok := get(32); ok {
+	if v, ok := get(28); ok {
 		e.DwFlagsExt = v
 	}
-	if len(b) >= 52 {
-		copy(e.ConfigObjGUID[:], b[36:52])
+	if len(b) >= 48 {
+		copy(e.ConfigObjGUID[:], b[32:48])
 	}
-	if v, ok := get(52); ok {
+	if v, ok := get(48); ok {
 		e.DwExtCaps = v
 	}
 	return &e, nil

@@ -8,5 +8,5 @@ import (
 type DS_REPL_KCC_DSA_FAILURESW struct {
 	CNumEntries  ndr.DWORD
 	DwReserved   ndr.DWORD
-	RgDsaFailure []DS_REPL_KCC_DSA_FAILUREW `ndr:"unique,size_is=CNumEntries"`
+	RgDsaFailure []DS_REPL_KCC_DSA_FAILUREW `ndr:"conformant,size_is=CNumEntries"`
 }
