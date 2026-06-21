@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	nkSignature     = 0x6B6E // "nk" in little-endian
-	keyNodeMinSize  = 76
-	nullCellOffset  = 0xFFFFFFFF
+	nkSignature    = 0x6B6E // "nk" in little-endian
+	keyNodeMinSize = 76
+	nullCellOffset = 0xFFFFFFFF
 )
 
 // Key node flags.
@@ -246,6 +246,18 @@ func (k *KeyNode) ClassData() ([]byte, error) {
 		return nil, nil
 	}
 	return k.hive.readCellData(k.ClassNameOffset, int(k.ClassNameLength))
+}
+
+// SecurityDescriptor returns the self-relative SECURITY_DESCRIPTOR bytes for this key
+// from its SK record, or nil if the key references no security record.
+func (k *KeyNode) SecurityDescriptor() ([]byte, error) {
+	if k.hive == nil {
+		return nil, fmt.Errorf("KeyNode not attached to a hive")
+	}
+	if k.SecurityOffset == nullCellOffset {
+		return nil, nil
+	}
+	return k.hive.readSecurityDescriptor(k.SecurityOffset)
 }
 
 // decodeUTF16LE decodes UTF-16LE bytes to a Go string, dropping trailing NULs.

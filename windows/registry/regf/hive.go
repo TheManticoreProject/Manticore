@@ -184,6 +184,22 @@ func (h *Hive) GetValue(keyPath, valueName string) (uint32, []byte, error) {
 	return v.DataType, data, nil
 }
 
+// GetSecurity reads the self-relative SECURITY_DESCRIPTOR for the key at the given path.
+//
+// Parameters:
+//   - keyPath (string): key path relative to the root key.
+//
+// Returns:
+//   - The raw security descriptor bytes, or nil if the key has no SK record.
+//   - An error if the key is not found or the SK record cannot be read.
+func (h *Hive) GetSecurity(keyPath string) ([]byte, error) {
+	nk, err := h.FindKey(keyPath)
+	if err != nil {
+		return nil, err
+	}
+	return nk.SecurityDescriptor()
+}
+
 // GetClass reads the class data for the key at the given path.
 //
 // Parameters:
@@ -279,6 +295,68 @@ func (h *Hive) readValueList(offset, count uint32) ([]*KeyValue, error) {
 		values = append(values, vk)
 	}
 	return values, nil
+}
+
+// readSecurityDescriptor reads the SK record at the given cell offset and returns its
+// embedded self-relative security descriptor bytes.
+func (h *Hive) readSecurityDescriptor(offset uint32) ([]byte, error) {
+	cell, err := h.readCellRaw(offset)
+	if err != nil {
+		return nil, fmt.Errorf("regf: reading security key at 0x%X: %w", offset, err)
+	}
+	sk := NewSecurityKey()
+	if _, err := sk.Unmarshal(cell); err != nil {
+		return nil, fmt.Errorf("regf: parsing security key at 0x%X: %w", offset, err)
+	}
+	return sk.SecurityDescriptor, nil
+}
+
+// readBigData reassembles a value's data from a big-data (db) record at the given offset.
+// totalSize is the value's actual data size (ActualDataSize); the concatenated segments
+// are truncated to it. If the cell is not a db record (e.g. a pre-1.4 large single cell),
+// it falls back to reading totalSize bytes directly from the cell.
+func (h *Hive) readBigData(offset, totalSize uint32) ([]byte, error) {
+	cell, err := h.readCellRaw(offset)
+	if err != nil {
+		return nil, fmt.Errorf("regf: reading big data at 0x%X: %w", offset, err)
+	}
+
+	db := NewBigData()
+	if _, err := db.Unmarshal(cell); err != nil {
+		// Not a big-data record: treat the cell as a single large data cell.
+		return h.readCellData(offset, int(totalSize))
+	}
+
+	listCell, err := h.readCellRaw(db.SegmentsListOffset)
+	if err != nil {
+		return nil, fmt.Errorf("regf: reading big-data segment list at 0x%X: %w", db.SegmentsListOffset, err)
+	}
+
+	result := make([]byte, 0, totalSize)
+	for i := 0; i < int(db.NumberOfSegments); i++ {
+		off := i * 4
+		if off+4 > len(listCell) {
+			break
+		}
+		segOffset := binary.LittleEndian.Uint32(listCell[off : off+4])
+		segCell, err := h.readCellRaw(segOffset)
+		if err != nil {
+			return nil, fmt.Errorf("regf: reading big-data segment %d at 0x%X: %w", i, segOffset, err)
+		}
+		remaining := int(totalSize) - len(result)
+		if remaining <= 0 {
+			break
+		}
+		take := len(segCell)
+		if take > bigDataThreshold {
+			take = bigDataThreshold // each segment carries at most this many data bytes
+		}
+		if take > remaining {
+			take = remaining
+		}
+		result = append(result, segCell[:take]...)
+	}
+	return result, nil
 }
 
 // readKeyValue reads and parses a KeyValue at the given cell offset.

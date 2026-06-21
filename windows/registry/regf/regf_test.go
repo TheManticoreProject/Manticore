@@ -137,6 +137,36 @@ func TestSubKeyListRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSecurityKeyRoundTrip(t *testing.T) {
+	sd := []byte{1, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	orig := SecurityKey{
+		Signature:              skSignature,
+		ReferenceCount:         3,
+		SecurityDescriptorSize: uint32(len(sd)),
+		SecurityDescriptor:     sd,
+	}
+	raw, _ := orig.Marshal()
+	var got SecurityKey
+	if _, err := got.Unmarshal(raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(orig, got) {
+		t.Errorf("round-trip mismatch:\n orig=%+v\n  got=%+v", orig, got)
+	}
+}
+
+func TestBigDataRoundTrip(t *testing.T) {
+	orig := BigData{Signature: dbSignature, NumberOfSegments: 4, SegmentsListOffset: 0x200}
+	raw, _ := orig.Marshal()
+	var got BigData
+	if _, err := got.Unmarshal(raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(orig, got) {
+		t.Errorf("round-trip mismatch:\n orig=%+v\n  got=%+v", orig, got)
+	}
+}
+
 func TestUnmarshalRejectsBadSignature(t *testing.T) {
 	bad := make([]byte, baseBlockSize)
 	var bb BaseBlock
@@ -187,8 +217,8 @@ func TestSampleHiveNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnumValues(Sub): %v", err)
 	}
-	if !reflect.DeepEqual(values, []string{"DwordVal", "StrVal"}) {
-		t.Errorf("EnumValues(Sub) = %v, want [DwordVal StrVal]", values)
+	if !reflect.DeepEqual(values, []string{"DwordVal", "StrVal", "BigVal"}) {
+		t.Errorf("EnumValues(Sub) = %v, want [DwordVal StrVal BigVal]", values)
 	}
 
 	// Inline REG_DWORD.
@@ -221,6 +251,18 @@ func TestSampleHiveNavigation(t *testing.T) {
 		t.Errorf("DwordVal Uint32 = 0x%X (ok=%v), want 0x12345678", n, ok)
 	}
 
+	// Big-data (db) value: 20000 bytes reassembled from two segments.
+	typ, data, err = h.GetValue("Sub", "BigVal")
+	if err != nil {
+		t.Fatalf("GetValue(Sub, BigVal): %v", err)
+	}
+	if typ != RegBinary {
+		t.Errorf("BigVal type = %d, want REG_BINARY(%d)", typ, RegBinary)
+	}
+	if !bytes.Equal(data, bigValBytes()) {
+		t.Errorf("BigVal data mismatch: got %d bytes, want %d bytes (content differs)", len(data), bigValSize)
+	}
+
 	// Class data on the root key.
 	class, err := h.GetClass("")
 	if err != nil {
@@ -228,6 +270,20 @@ func TestSampleHiveNavigation(t *testing.T) {
 	}
 	if string(class) != "classdata" {
 		t.Errorf("root class = %q, want %q", class, "classdata")
+	}
+
+	// SK record: ROOT and Sub share one security descriptor.
+	for _, key := range []string{"", "Sub"} {
+		sd, err := h.GetSecurity(key)
+		if err != nil {
+			t.Fatalf("GetSecurity(%q): %v", key, err)
+		}
+		if len(sd) != 20 {
+			t.Errorf("GetSecurity(%q) returned %d bytes, want 20", key, len(sd))
+		}
+		if sd[0] != 1 {
+			t.Errorf("GetSecurity(%q) revision = %d, want 1", key, sd[0])
+		}
 	}
 }
 
