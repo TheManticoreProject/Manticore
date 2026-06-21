@@ -48,6 +48,7 @@ type Client struct {
 	rpc       *dcerpcclient.Client
 	handle    structures.DRS_HANDLE
 	serverExt *structures.DRS_EXTENSIONS_INT
+	sourceDSA structures.UUID // source DSA GUID for GetNCChanges; zero (NULL) by default
 	bound     bool
 }
 
