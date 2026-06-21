@@ -8,5 +8,5 @@ import (
 type DS_REPL_SERVER_OUTGOING_CALLS struct {
 	CNumCalls  ndr.DWORD
 	DwReserved ndr.DWORD
-	RgCall     []DS_REPL_SERVER_OUTGOING_CALL `ndr:"unique,size_is=CNumCalls"`
+	RgCall     []DS_REPL_SERVER_OUTGOING_CALL `ndr:"conformant,size_is=CNumCalls"`
 }

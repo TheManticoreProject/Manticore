@@ -9,5 +9,5 @@ type VAR_SIZE_BUFFER_WITH_VERSION struct {
 	UlVersion    ndr.DWORD
 	CbByteBuffer ndr.DWORD
 	UllPadding   uint64
-	RgbBuffer    []uint8 `ndr:"unique,size_is=CbByteBuffer"`
+	RgbBuffer    []uint8 `ndr:"conformant,size_is=CbByteBuffer"`
 }

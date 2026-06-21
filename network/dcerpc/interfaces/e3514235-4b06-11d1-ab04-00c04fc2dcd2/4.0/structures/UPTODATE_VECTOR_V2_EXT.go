@@ -10,5 +10,5 @@ type UPTODATE_VECTOR_V2_EXT struct {
 	DwReserved1 ndr.DWORD
 	CNumCursors ndr.DWORD
 	DwReserved2 ndr.DWORD
-	RgCursors   []UPTODATE_CURSOR_V2 `ndr:"unique,size_is=CNumCursors"`
+	RgCursors   []UPTODATE_CURSOR_V2 `ndr:"conformant,size_is=CNumCursors"`
 }

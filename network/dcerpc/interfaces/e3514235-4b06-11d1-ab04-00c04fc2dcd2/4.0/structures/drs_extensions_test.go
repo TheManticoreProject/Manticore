@@ -9,24 +9,22 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 )
 
-// TestExtensionsIntMarshalLayout pins the [MS-DRSR] 5.39 wire layout: a 56-byte blob
-// whose Cb field counts the 52 bytes that follow it, with dwFlags immediately after Cb.
+// TestExtensionsIntMarshalLayout pins the [MS-DRSR] 5.39 rgb wire layout (verified
+// against a live DC): a 52-byte block beginning at dwFlags, with NO leading cb (the cb
+// is the DRS_EXTENSIONS.Cb field, not part of rgb).
 func TestExtensionsIntMarshalLayout(t *testing.T) {
 	e := &DRS_EXTENSIONS_INT{DwFlags: 0x05C08040, Pid: 1234, DwExtCaps: 0xFFFFFFFF}
 	b := e.Marshal()
-	if len(b) != 56 {
-		t.Fatalf("marshalled length = %d, want 56", len(b))
+	if len(b) != 52 {
+		t.Fatalf("marshalled length = %d, want 52", len(b))
 	}
-	if got := binary.LittleEndian.Uint32(b[0:4]); got != extIntFieldsSize {
-		t.Errorf("Cb = %d, want %d", got, extIntFieldsSize)
-	}
-	if got := binary.LittleEndian.Uint32(b[4:8]); got != 0x05C08040 {
+	if got := binary.LittleEndian.Uint32(b[0:4]); got != 0x05C08040 {
 		t.Errorf("dwFlags = 0x%08x, want 0x05C08040", got)
 	}
-	if got := int32(binary.LittleEndian.Uint32(b[24:28])); got != 1234 {
+	if got := int32(binary.LittleEndian.Uint32(b[20:24])); got != 1234 {
 		t.Errorf("Pid = %d, want 1234", got)
 	}
-	if got := binary.LittleEndian.Uint32(b[52:56]); got != 0xFFFFFFFF {
+	if got := binary.LittleEndian.Uint32(b[48:52]); got != 0xFFFFFFFF {
 		t.Errorf("dwExtCaps = 0x%08x, want 0xFFFFFFFF", got)
 	}
 }

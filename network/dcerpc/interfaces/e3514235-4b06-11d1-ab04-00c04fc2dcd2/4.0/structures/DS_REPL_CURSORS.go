@@ -8,5 +8,5 @@ import (
 type DS_REPL_CURSORS struct {
 	CNumCursors ndr.DWORD
 	DwReserved  ndr.DWORD
-	RgCursor    []DS_REPL_CURSOR `ndr:"unique,size_is=CNumCursors"`
+	RgCursor    []DS_REPL_CURSOR `ndr:"conformant,size_is=CNumCursors"`
 }

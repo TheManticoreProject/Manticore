@@ -8,5 +8,5 @@ import (
 type DS_REPL_NEIGHBORSW struct {
 	CNumNeighbors ndr.DWORD
 	DwReserved    ndr.DWORD
-	RgNeighbor    []DS_REPL_NEIGHBORW `ndr:"unique,size_is=CNumNeighbors"`
+	RgNeighbor    []DS_REPL_NEIGHBORW `ndr:"conformant,size_is=CNumNeighbors"`
 }
