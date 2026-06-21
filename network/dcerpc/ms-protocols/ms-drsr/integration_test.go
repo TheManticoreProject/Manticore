@@ -232,11 +232,6 @@ func TestReplInfoRecon(t *testing.T) {
 // and decrypt every security principal. Requires DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC
 // (the NC DN, e.g. "DC=lab,DC=local").
 func TestDCSyncAll(t *testing.T) {
-	// WIP: the full-NC request/paging is correct, but parsing the reply for complex
-	// objects (e.g. the NC head) hits an NDR codec drift in the replication metadata —
-	// see issue #697. Skipped until that is fixed; #695 tracks the full-NC feature.
-	t.Skip("full-NC reply parsing blocked on NDR codec drift (#697)")
-
 	host := os.Getenv("DRSUAPI_TEST_HOST")
 	nc := os.Getenv("DRSUAPI_TEST_NC")
 	if host == "" || nc == "" {

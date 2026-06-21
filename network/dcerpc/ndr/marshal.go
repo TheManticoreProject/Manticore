@@ -112,10 +112,14 @@ func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *
 	confIdx := embeddedConformantIndex(rt, rv)
 	e.Align(leadingAlignment(rt, confIdx, e.syntax))
 	if confIdx >= 0 {
-		// The hoisted maximum_count is a size determinant: it self-aligns to the
-		// determinant width (4 under NDR20). It is NOT aligned to the array element
-		// alignment — only the elements themselves are (each self-aligns when written).
+		// The hoisted maximum_count is a size determinant aligned to the determinant
+		// width (4 under NDR20), NOT the element alignment. After it, the structure body
+		// (its members) begins at the structure's natural alignment ([C706] 14.2.2) —
+		// which, for a conformant array of 8-octet-aligned elements (e.g.
+		// PROPERTY_META_DATA_EXT), is 8. So re-align before the members; without this the
+		// member that follows is written 4-aligned and every record drifts.
 		e.writeCount(uint64(rv.Field(confIdx).Len())) // hoisted maximum_count
+		e.Align(ndrAlignment(rv.Field(confIdx).Type().Elem(), e.syntax))
 	}
 	// A field named by another field's size_is/length_is is the array's count; its
 	// value is derived from the array length so the count and the elements cannot
@@ -412,6 +416,12 @@ func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred
 			return -1, err
 		}
 		confCount = c
+		// After the determinant, the structure body begins at the structure's natural
+		// alignment (8 for a conformant array of 8-octet-aligned elements). ndrAlignment
+		// of the struct under-reports this (a slice field counts as 4), so align to the
+		// element's alignment directly. See the encode side; without this the member
+		// after the count is read 4-aligned and every record drifts.
+		d.Align(ndrAlignment(rv.Field(confIdx).Type().Elem(), d.syntax))
 	}
 	retvalIdx := retvalIndex(rt)
 	for i := 0; i < rt.NumField(); i++ {
