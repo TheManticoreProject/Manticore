@@ -26,8 +26,9 @@ import (
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
-	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 )
 
 // Handle is an open registry key context handle returned by the Open*/BaseRegCreateKey/
@@ -38,32 +39,34 @@ type Handle = structures.RPC_HKEY
 // ErrNotConnected is returned by methods invoked before a successful Connect.
 var ErrNotConnected = errors.New("ms_rrp: not connected; call Connect first")
 
-// PipeDialer opens a fresh DCE/RPC named-pipe transport over an established, IPC$-tree-
-// connected SMB session. It is the only capability MS-RRP needs from the SMB layer, so
-// depending on this interface (rather than a concrete SMB client) keeps ms_rrp
-// independent of the SMB dialect: network/smb/client.Client satisfies it (via its
-// RPCTransport method) and routes to an SMB1 or SMB2 named-pipe transport according to
-// what was negotiated.
-type PipeDialer interface {
-	RPCTransport(pipeName string) (dcerpctransport.Transport, error)
-}
+// PipeDialer is the SMB capability MS-RRP needs: opening a named-pipe transport over an
+// established session. It is an alias of msproto.PipeDialer, shared with the other
+// named-pipe protocols; network/smb/client.Client satisfies it.
+type PipeDialer = msproto.PipeDialer
 
-// RemoteRegistry is the connected MS-RRP client. It carries the session it is reached
-// over (the pipe dialer) and, once Connect has run, the single bound \winreg association
-// that all method calls and chained key handles share.
+// RemoteRegistry is the connected MS-RRP client. It carries the binder for the session it
+// is reached over and, once Connect has run, the single bound \winreg association that all
+// method calls and chained key handles share. It is a msproto.Session: registry handles
+// chain and are scoped to that one association.
 type RemoteRegistry struct {
-	dialer    PipeDialer
+	binder    msproto.Binder
 	rpc       *dcerpcclient.Client
 	closeRPC  func() error
 	connected bool
 }
 
+// compile-time assertion that RemoteRegistry satisfies the session contract.
+var _ msproto.Session = (*RemoteRegistry)(nil)
+
 // New returns a RemoteRegistry over the given pipe dialer (typically a
 // *network/smb/client.Client). The dialer MUST be connected, authenticated, and
 // tree-connected to IPC$ before Connect is called.
 func New(dialer PipeDialer) *RemoteRegistry {
-	return &RemoteRegistry{dialer: dialer}
+	return &RemoteRegistry{binder: msproto.NewPipeBinder(dialer, winreg.PipeName)}
 }
+
+// Interface reports the DCE/RPC abstract syntax MS-RRP speaks (winreg v1.0).
+func (r *RemoteRegistry) Interface() syntax.SyntaxID { return winreg.SyntaxID() }
 
 // Connect opens the \winreg pipe and binds the winreg abstract syntax, establishing the
 // single association that all subsequent calls and key handles use. It is idempotent:
@@ -72,16 +75,12 @@ func (r *RemoteRegistry) Connect() error {
 	if r.connected {
 		return nil
 	}
-	transport, err := r.dialer.RPCTransport(winreg.PipeName)
+	rpc, closeRPC, err := r.binder.Bind(winreg.SyntaxID())
 	if err != nil {
-		return fmt.Errorf("ms_rrp: open winreg pipe: %w", err)
-	}
-	rpc := dcerpcclient.NewClient(transport)
-	if err := rpc.Bind(winreg.SyntaxID()); err != nil {
-		return fmt.Errorf("ms_rrp: bind winreg: %w", err)
+		return fmt.Errorf("ms_rrp: connect winreg: %w", err)
 	}
 	r.rpc = rpc
-	r.closeRPC = rpc.Close
+	r.closeRPC = closeRPC
 	r.connected = true
 	return nil
 }

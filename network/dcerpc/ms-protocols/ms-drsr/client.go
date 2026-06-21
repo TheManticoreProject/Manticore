@@ -22,14 +22,12 @@ import (
 	"fmt"
 	"time"
 
-	eptiface "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
-	eptfunctions "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/functions"
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
@@ -52,12 +50,21 @@ type Client struct {
 	bound     bool
 }
 
+// compile-time assertion that Client satisfies the session contract.
+var _ msproto.Session = (*Client)(nil)
+
 // New returns an MS-DRSR client for the given host (IP or hostname) and credentials. By
 // default the drsuapi TCP endpoint is resolved through the endpoint mapper on TCP/135;
 // call SetPort to skip resolution and dial a known port directly.
 func New(host string, creds *credentials.Credentials) *Client {
 	return &Client{host: host, creds: creds, timeout: DefaultTimeout}
 }
+
+// Interface reports the DCE/RPC abstract syntax MS-DRSR speaks (drsuapi v4.0).
+func (c *Client) Interface() syntax.SyntaxID { return drsuapi.SyntaxID() }
+
+// IsConnected reports whether Connect has succeeded and Close has not yet run.
+func (c *Client) IsConnected() bool { return c.bound }
 
 // SetTimeout bounds each TCP dial and read. It must be called before Connect.
 func (c *Client) SetTimeout(d time.Duration) { c.timeout = d }
@@ -66,59 +73,24 @@ func (c *Client) SetTimeout(d time.Duration) { c.timeout = d }
 // directly. It must be called before Connect.
 func (c *Client) SetPort(port int) { c.port = port }
 
-// resolvePort asks the endpoint mapper on TCP/135 for the dynamic port the drsuapi
-// interface is bound to, returning the first endpoint that carries a TCP port.
-func (c *Client) resolvePort() (int, error) {
-	tr := tcp.New(c.host, tcp.EndpointMapperPort)
-	tr.SetTimeout(c.timeout)
-	ept := dcerpcclient.NewClient(tr)
-	if err := ept.Bind(eptiface.SyntaxID()); err != nil {
-		return 0, fmt.Errorf("bind endpoint mapper: %w", err)
-	}
-	defer ept.Close()
-
-	syntax := drsuapi.SyntaxID()
-	eps, err := eptfunctions.Map(ept, syntax.UUID, syntax.MajorVersion, syntax.MinorVersion)
-	if err != nil {
-		return 0, fmt.Errorf("ept_map drsuapi: %w", err)
-	}
-	for _, ep := range eps {
-		if ep.Port != 0 {
-			return int(ep.Port), nil
-		}
-	}
-	return 0, fmt.Errorf("endpoint mapper returned no TCP endpoint for drsuapi")
-}
-
 // Connect resolves the drsuapi endpoint (unless a port was set), dials it over
 // ncacn_ip_tcp, authenticates with NTLM at packet-privacy level, binds the drsuapi
 // abstract syntax, and performs the IDL_DRSBind capability handshake. On success the
 // negotiated context handle and the server's extensions are available via Handle and
 // ServerExtensions, and the connection is ready for replication calls.
+//
+// The endpoint resolution, NTLM packet-privacy setup (drsuapi rejects lower levels), and
+// bind are handled by an msproto.TCPBinder; only the drsuapi-specific IDL_DRSBind
+// capability handshake lives here.
 func (c *Client) Connect() error {
 	if c.bound {
 		return fmt.Errorf("msdrsr: already connected")
 	}
 
-	port := c.port
-	if port == 0 {
-		resolved, err := c.resolvePort()
-		if err != nil {
-			return fmt.Errorf("msdrsr: resolve drsuapi endpoint: %w", err)
-		}
-		port = resolved
-	}
-
-	tr := tcp.New(c.host, port)
-	tr.SetTimeout(c.timeout)
-	rpc := dcerpcclient.NewClient(tr)
-
-	// drsuapi requires packet privacy (sign + seal); the server rejects lower levels.
-	if err := rpc.SetAuth(pdu.AuthTypeNTLMSSP, pdu.AuthLevelPktPrivacy, c.creds); err != nil {
-		return fmt.Errorf("msdrsr: configure auth: %w", err)
-	}
-	if err := rpc.Bind(drsuapi.SyntaxID()); err != nil {
-		return fmt.Errorf("msdrsr: bind drsuapi on %s:%d: %w", c.host, port, err)
+	binder := msproto.NewTCPBinder(c.host, c.port, c.creds, c.timeout)
+	rpc, _, err := binder.Bind(drsuapi.SyntaxID())
+	if err != nil {
+		return fmt.Errorf("msdrsr: %w", err)
 	}
 
 	clientGUID := structures.NTDSAPIClientGUID()
