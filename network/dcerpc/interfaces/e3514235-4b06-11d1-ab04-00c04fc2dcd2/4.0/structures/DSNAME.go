@@ -52,3 +52,22 @@ func NewDSNameFromDN(dn string) DSNAME {
 		StringName: name,
 	}
 }
+
+// NewDSNameFromSID builds a DSNAME that addresses an object by its binary SID (up to 28
+// octets, [MS-DTYP] 2.4.2.2), with no GUID or distinguished name — the form reverse
+// membership (IDL_DRSGetMemberships) computes over. StructLen is the GUID-form fixed
+// prefix (58); SidLen is the SID byte count.
+func NewDSNameFromSID(sid []byte) DSNAME {
+	var d DSNAME
+	d.StructLen = 58
+	d.NameLen = 0
+	d.StringName = []uint16{0}
+	if n := len(sid); n > 0 {
+		if n > len(d.Sid.Data) {
+			n = len(d.Sid.Data)
+		}
+		copy(d.Sid.Data[:], sid[:n])
+		d.SidLen = ndr.DWORD(n)
+	}
+	return d
+}

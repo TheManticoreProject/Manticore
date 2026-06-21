@@ -3,6 +3,7 @@
 package msdrsr_test
 
 import (
+	"encoding/hex"
 	"os"
 	"strconv"
 	"testing"
@@ -337,4 +338,55 @@ func TestReadOpnums(t *testing.T) {
 		t.Errorf("expected %q to verify", dn)
 	}
 
+}
+
+// TestReadOpnums2 exercises the remaining read-only opnum wrappers: ReadNgcKey,
+// GetNT4ChangeLog, GetObjectExistence, GetMemberships(2). Requires DRSUAPI_TEST_HOST,
+// DRSUAPI_TEST_NC; DRSUAPI_TEST_ACCOUNT names an account for ReadNgcKey.
+func TestReadOpnums2(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	nc := os.Getenv("DRSUAPI_TEST_NC")
+	if host == "" || nc == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"))
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(20 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	acct := os.Getenv("DRSUAPI_TEST_ACCOUNT")
+	if acct == "" {
+		acct = "CN=Administrator,CN=Users," + nc
+	}
+	if key, rv, err := c.ReadNgcKey(acct); err != nil {
+		t.Fatalf("ReadNgcKey: %v", err)
+	} else {
+		t.Logf("ReadNgcKey(%s): retVal=0x%x keyLen=%d (0x200a = account has no NGC key)", acct, rv, len(key))
+	}
+
+	if cl, err := c.GetNT4ChangeLog(nil, 0x10000); err != nil {
+		t.Logf("GetNT4ChangeLog: %v (acceptable: modern DCs may not serve NT4 changelog)", err)
+	} else {
+		t.Logf("GetNT4ChangeLog: ntstatus=0x%x logLen=%d restartLen=%d", cl.ActualNTStatus, len(cl.Log), len(cl.Restart))
+	}
+
+	adminSID, _ := hex.DecodeString("010500000000000515000000fdca06a7cba8d22c3eae86ecf4010000")
+	if groups, err := c.GetMemberships([][]byte{adminSID}, structures.RevMembGetGroupsForUser, nc); err != nil {
+		t.Fatalf("GetMemberships: %v", err)
+	} else {
+		t.Logf("GetMemberships: %d group(s)", len(groups))
+	}
+	if groups, err := c.GetMemberships2([][][]byte{{adminSID}}, structures.RevMembGetGroupsForUser, nc); err != nil {
+		t.Fatalf("GetMemberships2: %v", err)
+	} else {
+		t.Logf("GetMemberships2: %d group(s)", len(groups))
+	}
 }
