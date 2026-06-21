@@ -95,3 +95,20 @@ func decodeWCharsForTest(u []uint16) string {
 	}
 	return string(utf16.Decode(u))
 }
+
+// TestNewDSNameFromSID checks the SID-addressed DSNAME used for reverse membership.
+func TestNewDSNameFromSID(t *testing.T) {
+	sid := []byte{0x01, 0x05, 0, 0, 0, 0, 0, 0x05, 0x15, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0xf4, 0x01, 0, 0}
+	d := NewDSNameFromSID(sid)
+	if int(d.SidLen) != len(sid) {
+		t.Errorf("SidLen = %d, want %d", d.SidLen, len(sid))
+	}
+	for i := range sid {
+		if d.Sid.Data[i] != sid[i] {
+			t.Fatalf("Sid byte %d = 0x%02x, want 0x%02x", i, d.Sid.Data[i], sid[i])
+		}
+	}
+	if !d.Guid.IsZero() {
+		t.Error("Guid should be zero for a SID-addressed DSNAME")
+	}
+}
