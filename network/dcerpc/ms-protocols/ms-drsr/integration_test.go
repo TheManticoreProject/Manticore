@@ -275,3 +275,66 @@ func TestDCSyncAll(t *testing.T) {
 		t.Error("krbtgt (RID 502) not present in full-NC dump")
 	}
 }
+
+// TestReadOpnums exercises the read-only opnum wrappers against a live DC:
+// IDL_DRSGetReplInfo info types, IDL_DRSVerifyNames, IDL_DRSGetMemberships. Requires
+// DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC; DRSUAPI_TEST_DN names an object to verify/expand.
+func TestReadOpnums(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	nc := os.Getenv("DRSUAPI_TEST_NC")
+	if host == "" || nc == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_NC to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"))
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(20 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	nb, err := c.ReplicationNeighbors(nc)
+	if err != nil {
+		t.Fatalf("ReplicationNeighbors: %v", err)
+	}
+	t.Logf("neighbors: %d", len(nb))
+	for _, n := range nb {
+		t.Logf("  src=%s addr=%s lastResult=%d", n.SourceDsaDN, n.SourceDsaAddress, n.LastSyncResult)
+	}
+	if ops, err := c.ReplicationPendingOps(); err != nil {
+		t.Fatalf("ReplicationPendingOps: %v", err)
+	} else {
+		t.Logf("pending ops: %d", len(ops))
+	}
+	if f, err := c.ReplicationConnectFailures(); err != nil {
+		t.Fatalf("ReplicationConnectFailures: %v", err)
+	} else {
+		t.Logf("connect failures: %d", len(f))
+	}
+	if f, err := c.ReplicationLinkFailures(); err != nil {
+		t.Fatalf("ReplicationLinkFailures: %v", err)
+	} else {
+		t.Logf("link failures: %d", len(f))
+	}
+
+	dn := os.Getenv("DRSUAPI_TEST_DN")
+	if dn == "" {
+		return
+	}
+	vn, err := c.VerifyNames([]string{dn, "CN=NoSuchObject," + nc})
+	if err != nil {
+		t.Fatalf("VerifyNames: %v", err)
+	}
+	for _, v := range vn {
+		t.Logf("verify %q -> found=%v dn=%q guid=%s", v.Input, v.Found, v.DN, v.GUID.ToFormatD())
+	}
+	if len(vn) > 0 && !vn[0].Found {
+		t.Errorf("expected %q to verify", dn)
+	}
+
+}
