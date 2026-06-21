@@ -1,6 +1,8 @@
 package structures
 
 import (
+	"unicode/utf16"
+
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -32,5 +34,21 @@ func NewDSNameFromGUID(g guid.GUID) DSNAME {
 		Guid:       UUIDFromGUID(g),
 		NameLen:    0,
 		StringName: []uint16{0},
+	}
+}
+
+// NewDSNameFromDN builds a DSNAME that addresses an object by its distinguished name,
+// with no GUID or SID — the form used to name a naming context head for full-NC
+// replication (IDL_DRSGetNCChanges with no EXOP). NameLen is the DN's UTF-16 code-unit
+// count; StringName is the DN plus its NUL terminator (so maximum_count is NameLen+1).
+// StructLen is the fixed prefix (StructLen..NameLen = 56 octets) plus the name bytes.
+func NewDSNameFromDN(dn string) DSNAME {
+	units := utf16.Encode([]rune(dn))
+	name := make([]uint16, len(units)+1)
+	copy(name, units) // trailing element stays 0 (NUL terminator)
+	return DSNAME{
+		StructLen:  ndr.DWORD(56 + 2*len(name)),
+		NameLen:    ndr.DWORD(len(units)),
+		StringName: name,
 	}
 }
