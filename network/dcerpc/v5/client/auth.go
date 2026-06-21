@@ -154,6 +154,7 @@ func (c *Client) completeAuth(bindAckFrag []byte) error {
 		return fmt.Errorf("init security context: %w", err)
 	}
 	c.sec = sec
+	c.sessionKey = append([]byte(nil), auth.SessionKey...)
 	return nil
 }
 

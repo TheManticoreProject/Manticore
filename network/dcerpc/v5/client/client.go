@@ -72,7 +72,14 @@ type Client struct {
 	workstation   string
 	creds         *credentials.Credentials
 	sec           *security.Context // non-nil once an authenticated bind completes
+	sessionKey    []byte            // NTLM exported session key, captured at completeAuth
 }
+
+// SessionKey returns the NTLM exported session key established during an authenticated
+// Bind, or nil if the bind was anonymous or has not completed. It is the key DRSUAPI
+// uses to decrypt replicated secrets (the OID/PEK unwrap in IDL_DRSGetNCChanges); most
+// callers do not need it. The returned slice is the client's own copy — do not mutate it.
+func (c *Client) SessionKey() []byte { return c.sessionKey }
 
 // NewClient returns a DCE/RPC client over the supplied transport. The transport must
 // be ready to Connect (for ncacn_np, its SMB session and IPC$ tree connect are
