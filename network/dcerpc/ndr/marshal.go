@@ -109,10 +109,12 @@ func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *
 	// representation ([C706] section 14.2.2). The first member self-aligns to its own
 	// size, which is insufficient when a later member is wider (e.g. RPC_UNICODE_STRING,
 	// whose Buffer pointer makes it 4-aligned, following a 2-byte discriminant).
-	e.Align(ndrAlignment(rt, e.syntax))
 	confIdx := embeddedConformantIndex(rt, rv)
+	e.Align(leadingAlignment(rt, confIdx, e.syntax))
 	if confIdx >= 0 {
-		e.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem(), e.syntax))
+		// The hoisted maximum_count is a size determinant: it self-aligns to the
+		// determinant width (4 under NDR20). It is NOT aligned to the array element
+		// alignment — only the elements themselves are (each self-aligns when written).
 		e.writeCount(uint64(rv.Field(confIdx).Len())) // hoisted maximum_count
 	}
 	// A field named by another field's size_is/length_is is the array's count; its
@@ -401,12 +403,11 @@ func unmarshalStruct(d *Decoder, rv reflect.Value, embedded bool) error {
 // marshalStructFields for why arrays need this. Returns the `retval` field index or -1.
 func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred *[]func() error) (int, error) {
 	rt := rv.Type()
-	d.Align(ndrAlignment(rt, d.syntax)) // a structure is aligned to its largest member ([C706] 14.2.2)
 	confIdx := embeddedConformantIndex(rt, rv)
+	d.Align(leadingAlignment(rt, confIdx, d.syntax)) // structure aligned to its largest member ([C706] 14.2.2)
 	var confCount uint64
 	if confIdx >= 0 {
-		d.Align(conformantArrayAlignment(rv.Field(confIdx).Type().Elem(), d.syntax))
-		c, err := d.readCount() // hoisted maximum_count
+		c, err := d.readCount() // hoisted maximum_count (determinant-aligned; elements self-align)
 		if err != nil {
 			return -1, err
 		}
@@ -881,6 +882,39 @@ func fieldNDRAlignment(t reflect.Type, tag fieldTag, syntax Syntax) int {
 // element type under the given syntax: the larger of the size determinant's alignment
 // (4 under NDR20, 8 under NDR64) and the element alignment ([C706] section 14.3.3.1,
 // [MS-RPCE] section 2.2.5).
+// leadingAlignment returns the alignment applied at the start of a structure's
+// representation. For a plain structure this is its natural alignment (the largest
+// member's, [C706] 14.2.2). For a structure with an embedded conformant array (confIdx >=
+// 0) the representation begins with the hoisted maximum_count size determinant, which is
+// aligned to the determinant width (4 under NDR20, 8 under NDR64) and the alignment of the
+// NON-array members — but NOT to the array element's alignment. The array elements are
+// aligned to their own type when written/read, so a conformant array of 8-octet-aligned
+// elements (e.g. one whose elements contain a hyper/int64) does not 8-align the
+// maximum_count. This matches observed Windows behaviour (e.g. DS_REPL_CURSORS); inflating
+// the determinant alignment to the element alignment shifts every following field.
+func leadingAlignment(rt reflect.Type, confIdx int, syntax Syntax) int {
+	if confIdx < 0 {
+		return ndrAlignment(rt, syntax)
+	}
+	a := 4
+	if syntax == NDR64 {
+		a = 8
+	}
+	for i := 0; i < rt.NumField(); i++ {
+		if i == confIdx {
+			continue
+		}
+		f := rt.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		if fa := fieldNDRAlignment(f.Type, parseTag(f.Tag.Get("ndr")), syntax); fa > a {
+			a = fa
+		}
+	}
+	return a
+}
+
 func conformantArrayAlignment(elemType reflect.Type, syntax Syntax) int {
 	det := 4
 	if syntax == NDR64 {
