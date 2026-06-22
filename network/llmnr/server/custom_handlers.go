@@ -43,75 +43,73 @@ import (
 // represent the hierarchy of the packet's contents. The logger is locked during the function execution
 // to ensure thread-safe logging.
 func HandlerDescribePacket(server *Server, remoteAddr net.Addr, writer ResponseWriter, message *message.Message) bool {
-	logger.Lock()
-	defer logger.Unlock()
 
-	logger.InfoMicroseconds(fmt.Sprintf("Received LLMNR packet from [%s]", remoteAddr.String()))
+	logger.Infof("Received LLMNR packet from [%s]", remoteAddr.String())
 
 	if len(message.Questions) > 0 {
-		logger.InfoMicroseconds(fmt.Sprintf(" ├─ Questions: (%d)", len(message.Questions)))
+		logger.Infof(" ├─ Questions: (%d)", len(message.Questions))
 		stringLen := len(fmt.Sprintf("%d", len(message.Questions)))
 		formatString := fmt.Sprintf(" │  ├─ Question [%%0%dd/%%0%dd]", stringLen, stringLen)
 		for i, q := range message.Questions {
-			logger.InfoMicroseconds(fmt.Sprintf(formatString, i+1, len(message.Questions)))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Class : 0x%04x (%s)", q.Class, q.Class.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Type  : 0x%04x (%s)", q.Type, q.Type.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  └─ Name  : \"%s\"", q.Name))
+			logger.Infof(formatString, i+1, len(message.Questions))
+			logger.Infof(" │  │  ├─ Class : 0x%04x (%s)", q.Class, q.Class.String())
+			logger.Infof(" │  │  ├─ Type  : 0x%04x (%s)", q.Type, q.Type.String())
+			logger.Infof(" │  │  └─ Name  : \"%s\"", q.Name)
 		}
-		logger.InfoMicroseconds(" │  └─ ")
+		logger.Info(" │  └─ ")
 	}
 
 	if len(message.Answers) > 0 {
-		logger.InfoMicroseconds(fmt.Sprintf(" ├─ Answers: (%d)", len(message.Answers)))
+		logger.Infof(" ├─ Answers: (%d)", len(message.Answers))
 		stringLen := len(fmt.Sprintf("%d", len(message.Answers)))
 		formatString := fmt.Sprintf(" │  ├─ Answer [%%0%dd/%%0%dd]", stringLen, stringLen)
 		for i, r := range message.Answers {
-			logger.InfoMicroseconds(fmt.Sprintf(formatString, i+1, len(message.Answers)))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Name     : \"%s\"", r.Name))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ TTL      : %d", r.TTL))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ RDLENGTH : %d", r.RDLength))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  └─ RDATA    : %s", r.RData))
+			logger.Infof(formatString, i+1, len(message.Answers))
+			logger.Infof(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String())
+			logger.Infof(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String())
+			logger.Infof(" │  │  ├─ Name     : \"%s\"", r.Name)
+			logger.Infof(" │  │  ├─ TTL      : %d", r.TTL)
+			logger.Infof(" │  │  ├─ RDLENGTH : %d", r.RDLength)
+			logger.Infof(" │  │  └─ RDATA    : %s", r.RData)
 		}
-		logger.InfoMicroseconds(" │  └─ ")
+		logger.Info(" │  └─ ")
 	}
 
 	if len(message.Authority) > 0 {
-		logger.InfoMicroseconds(fmt.Sprintf(" ├─ Authority: (%d)", len(message.Authority)))
+		logger.Infof(" ├─ Authority: (%d)", len(message.Authority))
 		stringLen := len(fmt.Sprintf("%d", len(message.Authority)))
 		formatString := fmt.Sprintf(" │  ├─ Authority [%%0%dd/%%0%dd]", stringLen, stringLen)
 		for i, r := range message.Authority {
-			logger.InfoMicroseconds(fmt.Sprintf(formatString, i+1, len(message.Authority)))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Name     : \"%s\"", r.Name))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ TTL      : %d", r.TTL))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ RDLENGTH : %d", r.RDLength))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  └─ RDATA    : %s", r.RData))
+			logger.Infof(formatString, i+1, len(message.Authority))
+			logger.Infof(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String())
+			logger.Infof(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String())
+			logger.Infof(" │  │  ├─ Name     : \"%s\"", r.Name)
+			logger.Infof(" │  │  ├─ TTL      : %d", r.TTL)
+			logger.Infof(" │  │  ├─ RDLENGTH : %d", r.RDLength)
+			logger.Infof(" │  │  └─ RDATA    : %s", r.RData)
 		}
-		logger.InfoMicroseconds(" │  └─ ")
+		logger.Info(" │  └─ ")
 	}
 
 	if len(message.Additional) > 0 {
-		logger.InfoMicroseconds(fmt.Sprintf(" ├─ Additional: (%d)", len(message.Additional)))
+		logger.Infof(" ├─ Additional: (%d)", len(message.Additional))
 		stringLen := len(fmt.Sprintf("%d", len(message.Additional)))
 		formatString := fmt.Sprintf(" │  ├─ Additional [%%0%dd/%%0%dd]", stringLen, stringLen)
 		for i, r := range message.Additional {
-			logger.InfoMicroseconds(fmt.Sprintf(formatString, i+1, len(message.Additional)))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String()))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ Name     : \"%s\"", r.Name))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ TTL      : %d", r.TTL))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  ├─ RDLENGTH : %d", r.RDLength))
-			logger.InfoMicroseconds(fmt.Sprintf(" │  │  └─ RDATA    : %s", r.RData))
+			logger.Infof(formatString, i+1, len(message.Additional))
+			logger.Infof(" │  │  ├─ Class    : 0x%04x (%s)", r.Class, r.Class.String())
+			logger.Infof(" │  │  ├─ Type     : 0x%04x (%s)", r.Type, r.Type.String())
+			logger.Infof(" │  │  ├─ Name     : \"%s\"", r.Name)
+			logger.Infof(" │  │  ├─ TTL      : %d", r.TTL)
+			logger.Infof(" │  │  ├─ RDLENGTH : %d", r.RDLength)
+			logger.Infof(" │  │  └─ RDATA    : %s", r.RData)
 		}
-		logger.InfoMicroseconds(" │  └─ ")
+		logger.Info(" │  └─ ")
 	}
 
-	logger.InfoMicroseconds(" └─ ")
+	logger.Info(" └─ ")
 
-	logger.InfoMicroseconds("")
+	logger.Info("")
 
 	return false
 }

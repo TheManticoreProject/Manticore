@@ -421,34 +421,34 @@ func (s *Server) Serve() error {
 			n, remoteAddr, err := s.Conn.ReadFromUDP(buffer)
 			if err != nil {
 				if s.Debug {
-					logger.Debug(fmt.Sprintf("Error reading from UDP: %s\n", err.Error()))
+					logger.Debugf("Error reading from UDP: %s\n", err.Error())
 				}
 				continue
 			}
 			if s.Debug {
-				logger.Debug(fmt.Sprintf("Received packet from %s\n", remoteAddr.String()))
+				logger.Debugf("Received packet from %s\n", remoteAddr.String())
 			}
 
 			msg := message.Message{}
 			_, err = msg.Unmarshal(buffer[:n])
 			if err != nil {
 				if s.Debug {
-					logger.Debug(fmt.Sprintf("Error decoding message: %s\n", err.Error()))
+					logger.Debugf("Error decoding message: %s\n", err.Error())
 				}
 				continue
 			}
 			if s.Debug {
-				logger.Debug(fmt.Sprintf("Decoded message: %+v\n", msg))
+				logger.Debugf("Decoded message: %+v\n", msg)
 			}
 
 			if !msg.IsQuery() {
 				if s.Debug {
-					logger.Debug(fmt.Sprintf("Received non-query message from %s\n", remoteAddr.String()))
+					logger.Debugf("Received non-query message from %s\n", remoteAddr.String())
 				}
 				continue
 			}
 			if s.Debug {
-				logger.Debug(fmt.Sprintf("Received query message from %s\n", remoteAddr.String()))
+				logger.Debugf("Received query message from %s\n", remoteAddr.String())
 			}
 
 			// Create response writer
