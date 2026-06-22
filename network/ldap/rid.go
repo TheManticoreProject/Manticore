@@ -61,7 +61,7 @@ func (ldapSession *Session) FindObjectSIDByRID(domain string, RID int) (string, 
 		}
 
 		if len(results) > 1 {
-			logger.Warn(fmt.Sprintf("Error: More than one result for SID '%s-%d' in the domain '%s'", domainObject.SID, RID, domain))
+			logger.Warnf("Error: More than one result for SID '%s-%d' in the domain '%s'", domainObject.SID, RID, domain)
 		} else {
 			if len(results) == 1 {
 				// One result found
