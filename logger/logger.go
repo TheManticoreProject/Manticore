@@ -22,7 +22,29 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
+
+// ColorMode controls when colour (and the ANSI it implies) is emitted.
+type ColorMode int
+
+const (
+	// ColorAuto emits colour only when the output is a terminal (the default).
+	ColorAuto ColorMode = iota
+	// ColorAlways always emits colour.
+	ColorAlways
+	// ColorNever never emits colour and strips ANSI sequences from the output.
+	ColorNever
+)
+
+// isTerminal reports whether w is a terminal (an *os.File backed by a tty).
+func isTerminal(w io.Writer) bool {
+	if f, ok := w.(interface{ Fd() uintptr }); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	return false
+}
 
 // Level is a logging level (an alias of slog.Level so the slog ecosystem interoperates).
 type Level = slog.Level
@@ -109,24 +131,37 @@ func colorFor(l slog.Level) string {
 // precision and colour policy. Multiple Logger handles (e.g. timestamped and Plain) point
 // at one config so a single setter reconfigures them together.
 type config struct {
-	mu        sync.Mutex
-	out       io.Writer
-	file      io.Writer
-	fileClose io.Closer
-	levelVar  *slog.LevelVar
-	precision TimePrecision
-	noColors  bool
-	utc       bool
+	mu            sync.Mutex
+	out           io.Writer
+	outIsTerminal bool
+	file          io.Writer
+	fileClose     io.Closer
+	levelVar      *slog.LevelVar
+	precision     TimePrecision
+	colorMode     ColorMode
+	utc           bool
 }
 
 func newConfig() *config {
-	c := &config{out: os.Stderr, levelVar: &slog.LevelVar{}, precision: Microseconds}
+	c := &config{out: os.Stderr, outIsTerminal: isTerminal(os.Stderr), levelVar: &slog.LevelVar{}, precision: Microseconds, colorMode: ColorAuto}
 	c.levelVar.Set(LevelDebug) // emit everything by default
 	return c
 }
 
+// useColor reports whether colour should be emitted (caller holds c.mu).
+func (c *config) useColor() bool {
+	switch c.colorMode {
+	case ColorAlways:
+		return true
+	case ColorNever:
+		return false
+	default: // ColorAuto
+		return c.outIsTerminal
+	}
+}
+
 // emit formats and writes one log line. The level tag is coloured unless colours are
-// disabled; the primary writer receives the line (ANSI-stripped when noColors is set) and
+// disabled; the primary writer receives the line (ANSI-stripped when colour is off) and
 // the optional file receives an always-stripped copy.
 func (c *config) emit(withTimestamp bool, precOverride TimePrecision, level slog.Level, msg string) {
 	c.mu.Lock()
@@ -139,6 +174,7 @@ func (c *config) emit(withTimestamp bool, precOverride TimePrecision, level slog
 		prec = precOverride
 	}
 
+	color := c.useColor()
 	var b strings.Builder
 	if withTimestamp {
 		now := time.Now()
@@ -150,7 +186,7 @@ func (c *config) emit(withTimestamp bool, precOverride TimePrecision, level slog
 		b.WriteString("] ")
 	}
 	if tag := tagFor(level); tag != "" {
-		if !c.noColors {
+		if color {
 			b.WriteString(colorFor(level))
 			b.WriteString(tag)
 			b.WriteString(colorReset)
@@ -164,10 +200,10 @@ func (c *config) emit(withTimestamp bool, precOverride TimePrecision, level slog
 	line := b.String()
 
 	if c.out != nil {
-		if c.noColors {
-			io.WriteString(c.out, stripANSI(line))
-		} else {
+		if color {
 			io.WriteString(c.out, line)
+		} else {
+			io.WriteString(c.out, stripANSI(line)) // strip ANSI embedded in the message too
 		}
 	}
 	if c.file != nil {
@@ -247,14 +283,27 @@ func (l *Logger) Slog() *slog.Logger { return l.sl }
 // Option configures a Logger created with New.
 type Option func(*config, *handler)
 
-func WithOutput(w io.Writer) Option { return func(c *config, _ *handler) { c.out = w } }
-func WithLevel(l Level) Option      { return func(c *config, _ *handler) { c.levelVar.Set(l) } }
-func WithTimestamp(b bool) Option   { return func(_ *config, h *handler) { h.timestamp = b } }
+func WithOutput(w io.Writer) Option {
+	return func(c *config, _ *handler) { c.out = w; c.outIsTerminal = isTerminal(w) }
+}
+func WithLevel(l Level) Option    { return func(c *config, _ *handler) { c.levelVar.Set(l) } }
+func WithTimestamp(b bool) Option { return func(_ *config, h *handler) { h.timestamp = b } }
 func WithTimePrecision(p TimePrecision) Option {
 	return func(c *config, _ *handler) { c.precision = p }
 }
-func WithNoColors(b bool) Option { return func(c *config, _ *handler) { c.noColors = b } }
-func WithUTC(b bool) Option      { return func(c *config, _ *handler) { c.utc = b } }
+func WithColorMode(m ColorMode) Option { return func(c *config, _ *handler) { c.colorMode = m } }
+func WithUTC(b bool) Option            { return func(c *config, _ *handler) { c.utc = b } }
+
+// WithNoColors disables colour (ColorNever) when true, otherwise restores ColorAuto.
+func WithNoColors(b bool) Option {
+	return func(c *config, _ *handler) {
+		if b {
+			c.colorMode = ColorNever
+		} else {
+			c.colorMode = ColorAuto
+		}
+	}
+}
 
 // New creates an independent logger with its own configuration (default: stderr, all
 // levels, microsecond timestamps, colours on). Pass it where isolated logging is needed.
@@ -293,9 +342,11 @@ func Print(msg string)               { std.Print(msg) }
 func Printf(format string, a ...any) { std.Printf(format, a...) }
 
 // SetOutput sets the primary writer of the default logger (and Plain). Default: stderr.
+// Whether colour is emitted in ColorAuto mode is re-evaluated against the new writer.
 func SetOutput(w io.Writer) {
 	sharedConfig.mu.Lock()
 	sharedConfig.out = w
+	sharedConfig.outIsTerminal = isTerminal(w)
 	sharedConfig.mu.Unlock()
 }
 
@@ -309,12 +360,22 @@ func SetTimePrecision(p TimePrecision) {
 	sharedConfig.mu.Unlock()
 }
 
-// SetNoColors enables or disables colour. When enabled, the level tags are not coloured
-// and any ANSI sequences are stripped from the output.
-func SetNoColors(b bool) {
+// SetColorMode sets when colour is emitted: ColorAuto (terminal only, the default),
+// ColorAlways, or ColorNever.
+func SetColorMode(m ColorMode) {
 	sharedConfig.mu.Lock()
-	sharedConfig.noColors = b
+	sharedConfig.colorMode = m
 	sharedConfig.mu.Unlock()
+}
+
+// SetNoColors is a convenience over SetColorMode: true selects ColorNever (no colour, ANSI
+// stripped), false restores ColorAuto (colour only when the output is a terminal).
+func SetNoColors(b bool) {
+	if b {
+		SetColorMode(ColorNever)
+	} else {
+		SetColorMode(ColorAuto)
+	}
 }
 
 // SetUTC selects UTC timestamps for the default logger.
@@ -388,10 +449,10 @@ func (c *config) rawTimestamped(prec TimePrecision, format string, a ...any) {
 	}
 	line := "[" + now.Format(layoutFor(prec)) + "] " + fmt.Sprintf(format, a...)
 	if c.out != nil {
-		if c.noColors {
-			io.WriteString(c.out, stripANSI(line))
-		} else {
+		if c.useColor() {
 			io.WriteString(c.out, line)
+		} else {
+			io.WriteString(c.out, stripANSI(line))
 		}
 	}
 	if c.file != nil {

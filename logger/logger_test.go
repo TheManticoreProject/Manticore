@@ -59,7 +59,8 @@ func TestLevelFiltering(t *testing.T) {
 
 func TestColorsOnAndOff(t *testing.T) {
 	var on, off bytes.Buffer
-	logger.New(logger.WithOutput(&on)).Error("boom")
+	// ColorAlways forces colour even though a buffer is not a terminal.
+	logger.New(logger.WithOutput(&on), logger.WithColorMode(logger.ColorAlways)).Error("boom")
 	if !strings.Contains(on.String(), "\x1b[") {
 		t.Errorf("colours on: expected ANSI in %q", on.String())
 	}
@@ -70,6 +71,19 @@ func TestColorsOnAndOff(t *testing.T) {
 	}
 	if !strings.Contains(off.String(), "INFO: aredb\n") {
 		t.Errorf("noColors: message ANSI should be stripped; got %q", off.String())
+	}
+}
+
+func TestColorAutoDisablesOnNonTTY(t *testing.T) {
+	var buf bytes.Buffer
+	// Default mode is ColorAuto; a bytes.Buffer is not a terminal, so no colour and any
+	// embedded ANSI is stripped.
+	logger.New(logger.WithOutput(&buf)).Error("x\x1b[31my\x1b[0m")
+	if strings.Contains(buf.String(), "\x1b") {
+		t.Errorf("ColorAuto on a non-terminal should not emit/keep ANSI: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "ERROR: xy\n") {
+		t.Errorf("got %q, want stripped \"ERROR: xy\"", buf.String())
 	}
 }
 
@@ -95,11 +109,11 @@ func TestLogToFileTeesAndStrips(t *testing.T) {
 	var term bytes.Buffer
 	// Use the package-level facade; restore global state afterwards.
 	logger.SetOutput(&term)
-	logger.SetNoColors(false) // colours on the terminal
+	logger.SetColorMode(logger.ColorAlways) // force colour even though term is a buffer
 	defer func() {
 		logger.CloseLogFile()
 		logger.SetOutput(os.Stderr)
-		logger.SetNoColors(false)
+		logger.SetColorMode(logger.ColorAuto)
 		logger.SetLevel(logger.LevelDebug)
 	}()
 
