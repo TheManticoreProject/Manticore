@@ -7,13 +7,21 @@ import (
 )
 
 const (
-	hvleSignature = 0x454C7648 // "HvLE" in little-endian
-	// logEntriesOffset is where the first log entry begins in a transaction-log (.LOG1/
-	// .LOG2) file: the log's REGF header occupies the first 512 bytes.
+	hvleSignature = 0x454C7648 // "HvLE" in little-endian (new-format log, hive >= 1.5)
+	dirtSignature = 0x54524944 // "DIRT" in little-endian (legacy log, hive < 1.5)
+	// logEntriesOffset is where the log body begins in a transaction-log (.LOG1/.LOG2)
+	// file: the log's REGF header occupies the first 512 bytes. Both the HvLE entry stream
+	// and the DIRT signature start here.
 	logEntriesOffset = 512
 	// logEntryHeaderSize is the fixed part of an HvLE log entry, before the dirty-page
 	// reference array.
 	logEntryHeaderSize = 40
+	// dirtPageSize is the granularity of a DIRT log's dirty-page bitmap: one bit per this
+	// many bytes of hive-bins data.
+	dirtPageSize = 512
+	// dirtDataOffset is where the DIRT log's dirty-page data begins (after the header,
+	// signature, and bitmap region).
+	dirtDataOffset = 1024
 )
 
 // DirtyPageReference locates one dirty page within a log entry: Offset is relative to the
@@ -198,12 +206,19 @@ func ReplayTransactionLog(hiveData, logData []byte) ([]byte, int, error) {
 	if _, err := bb.Unmarshal(hiveData); err != nil {
 		return nil, 0, fmt.Errorf("regf: replay: %w", err)
 	}
+	image := append([]byte(nil), hiveData...)
+
+	// Dispatch on the log magic at offset 512: legacy DIRT vs modern HvLE.
+	if len(logData) >= logEntriesOffset+4 &&
+		binary.LittleEndian.Uint32(logData[logEntriesOffset:logEntriesOffset+4]) == dirtSignature {
+		return replayDirtLog(image, logData, bb.HiveBinsDataSize)
+	}
+
 	var tl TransactionLog
 	if err := tl.Unmarshal(logData); err != nil {
 		return nil, 0, fmt.Errorf("regf: replay: %w", err)
 	}
 
-	image := append([]byte(nil), hiveData...)
 	expected := bb.SecondarySequenceNumber
 	applied := 0
 	for _, e := range tl.Entries {
@@ -224,6 +239,43 @@ func ReplayTransactionLog(hiveData, logData []byte) ([]byte, int, error) {
 		binary.LittleEndian.PutUint32(image[4:8], expected)
 		binary.LittleEndian.PutUint32(image[8:12], expected)
 		binary.LittleEndian.PutUint32(image[40:44], e.HiveBinsDataSize)
+		applied++
+	}
+	return image, applied, nil
+}
+
+// replayDirtLog applies a legacy "DIRT" transaction log to the primary image. The log
+// carries a dirty-page bitmap (hbinsDataSize/dirtPageSize bits, one per 512-byte block of
+// hive-bins data) at offset 516; each set bit's 512-byte block is packed, in bitmap order,
+// starting at dirtDataOffset and is written to 4096 + bitIndex*512 in the primary. Unlike
+// HvLE, the base block is left untouched (matching the reference implementation).
+func replayDirtLog(image, logData []byte, hbinsDataSize uint32) ([]byte, int, error) {
+	bitmapLen := int(hbinsDataSize) / dirtPageSize / 8
+	if bitmapLen == 0 {
+		return image, 0, nil
+	}
+	bitmapStart := logEntriesOffset + 4 // after the "DIRT" signature
+	if bitmapStart+bitmapLen > len(logData) {
+		return nil, 0, fmt.Errorf("regf: DIRT log truncated: need %d-byte dirty bitmap", bitmapLen)
+	}
+	bitmap := logData[bitmapStart : bitmapStart+bitmapLen]
+
+	applied := 0
+	setIndex := 0
+	for bit := 0; bit < bitmapLen*8; bit++ {
+		if bitmap[bit/8]>>(uint(bit)%8)&1 == 0 {
+			continue
+		}
+		src := dirtDataOffset + setIndex*dirtPageSize
+		dst := baseBlockSize + bit*dirtPageSize
+		if src+dirtPageSize > len(logData) {
+			return nil, 0, fmt.Errorf("regf: DIRT log truncated at dirty block %d", setIndex)
+		}
+		if dst+dirtPageSize > len(image) {
+			image = append(image, make([]byte, dst+dirtPageSize-len(image))...)
+		}
+		copy(image[dst:dst+dirtPageSize], logData[src:src+dirtPageSize])
+		setIndex++
 		applied++
 	}
 	return image, applied, nil
