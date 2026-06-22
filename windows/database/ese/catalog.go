@@ -91,7 +91,13 @@ func (d *Database) addCatalogEntry(payload []byte) {
 		t.columnByID[c.ID] = c
 		t.columnByName[c.Name] = c
 
-	case catalogTypeIndex, catalogTypeLongValue:
+	case catalogTypeLongValue:
+		// The long-value B-tree root (same fixed layout as a table entry).
+		if d.currentTable != nil && len(fixed) >= 14 {
+			d.currentTable.longValuePage = binary.LittleEndian.Uint32(fixed[10:14])
+		}
+
+	case catalogTypeIndex:
 		// Not needed for row reading.
 	}
 }
