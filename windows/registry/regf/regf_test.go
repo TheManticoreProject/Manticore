@@ -309,6 +309,67 @@ func firstByte(b []byte) int {
 	return int(b[0])
 }
 
+func TestRecoverDeleted(t *testing.T) {
+	h, err := Open(goldenPath)
+	if err != nil {
+		t.Fatalf("Open(%s): %v", goldenPath, err)
+	}
+	defer h.Close()
+
+	keys, err := h.RecoverDeletedKeys()
+	if err != nil {
+		t.Fatalf("RecoverDeletedKeys: %v", err)
+	}
+	var names []string
+	for _, k := range keys {
+		names = append(names, k.Name())
+		if k.Name() == "ROOT" || k.Name() == "Sub" {
+			t.Errorf("recovered an allocated (live) key %q; recovery must only return free cells", k.Name())
+		}
+	}
+	if !contains(names, "GhostKey") {
+		t.Errorf("RecoverDeletedKeys did not recover GhostKey; got %v", names)
+	}
+
+	values, err := h.RecoverDeletedValues()
+	if err != nil {
+		t.Fatalf("RecoverDeletedValues: %v", err)
+	}
+	var vnames []string
+	for _, v := range values {
+		vnames = append(vnames, v.Name())
+		if v.Name() == "DwordVal" || v.Name() == "StrVal" || v.Name() == "BigVal" {
+			t.Errorf("recovered an allocated (live) value %q; recovery must only return free cells", v.Name())
+		}
+	}
+	if !contains(vnames, "GhostVal") {
+		t.Errorf("RecoverDeletedValues did not recover GhostVal; got %v", vnames)
+	}
+}
+
+func TestRecoverDeletedClosedHive(t *testing.T) {
+	h, err := Open(goldenPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	h.Close()
+	if _, err := h.RecoverDeletedKeys(); err == nil {
+		t.Error("RecoverDeletedKeys on a closed hive returned nil error")
+	}
+	if _, err := h.RecoverDeletedValues(); err == nil {
+		t.Error("RecoverDeletedValues on a closed hive returned nil error")
+	}
+}
+
+func contains(s []string, want string) bool {
+	for _, v := range s {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestOpenBytesRejectsGarbage(t *testing.T) {
 	if _, err := OpenBytes(make([]byte, 10)); err == nil {
 		t.Error("OpenBytes accepted a 10-byte slice, want error")
