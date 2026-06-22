@@ -5,7 +5,31 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
+
+// filetimeNow returns the current time as a Windows FILETIME (100-ns ticks since 1601).
+func filetimeNow() uint64 {
+	return uint64(time.Now().UnixNano())/100 + 116444736000000000
+}
+
+// touchKey sets a key node's LastWrittenTimestamp (NK content offset 4) to now, as Windows
+// does whenever a key's values or subkeys change.
+func (h *Hive) touchKey(nkOffset uint32) {
+	c := baseBlockSize + int(nkOffset) + 4
+	if c+12 <= len(h.data) {
+		binary.LittleEndian.PutUint64(h.data[c+4:c+12], filetimeNow())
+	}
+}
+
+// growU32 raises the uint32 at absolute position absPos to v if v is larger (used to keep
+// the NK "largest ..." hint fields at least as large as the items they describe; never
+// shrinks, so the hint stays a safe upper bound).
+func (h *Hive) growU32(absPos int, v uint32) {
+	if absPos+4 <= len(h.data) && v > binary.LittleEndian.Uint32(h.data[absPos:absPos+4]) {
+		binary.LittleEndian.PutUint32(h.data[absPos:absPos+4], v)
+	}
+}
 
 // This file implements write support for hives: a cell allocator over the hive's mutable
 // buffer, plus value create/update/delete. Mutations are applied directly to the in-memory
@@ -233,25 +257,30 @@ func (h *Hive) SetValue(keyPath, name string, dataType uint32, data []byte) erro
 		listContent := baseBlockSize + int(nk.ValuesListOffset) + 4
 		binary.LittleEndian.PutUint32(h.data[listContent+existing*4:], vkOff)
 		h.freeValueCell(oldVK)
-		return nil
+	} else {
+		// Append: grow the value list by one slot.
+		newCount := nk.NumberOfValues + 1
+		newList, err := h.allocateCell(int(newCount) * 4)
+		if err != nil {
+			return err
+		}
+		lc := baseBlockSize + int(newList) + 4
+		for i, off := range offsets {
+			binary.LittleEndian.PutUint32(h.data[lc+i*4:], off)
+		}
+		binary.LittleEndian.PutUint32(h.data[lc+len(offsets)*4:], vkOff)
+		if nk.ValuesListOffset != nullCellOffset {
+			h.freeCell(nk.ValuesListOffset)
+		}
+		binary.LittleEndian.PutUint32(h.data[nkContent+36:nkContent+40], newCount) // NumberOfValues
+		binary.LittleEndian.PutUint32(h.data[nkContent+40:nkContent+44], newList)  // ValuesListOffset
 	}
 
-	// Append: grow the value list by one slot.
-	newCount := nk.NumberOfValues + 1
-	newList, err := h.allocateCell(int(newCount) * 4)
-	if err != nil {
-		return err
-	}
-	lc := baseBlockSize + int(newList) + 4
-	for i, off := range offsets {
-		binary.LittleEndian.PutUint32(h.data[lc+i*4:], off)
-	}
-	binary.LittleEndian.PutUint32(h.data[lc+len(offsets)*4:], vkOff)
-	if nk.ValuesListOffset != nullCellOffset {
-		h.freeCell(nk.ValuesListOffset)
-	}
-	binary.LittleEndian.PutUint32(h.data[nkContent+36:nkContent+40], newCount) // NumberOfValues
-	binary.LittleEndian.PutUint32(h.data[nkContent+40:nkContent+44], newList)  // ValuesListOffset
+	// Maintain the key's metadata: timestamp and the value name/data size hints.
+	h.touchKey(nk.offset)
+	h.growU32(nkContent+60, uint32(len(name))) // MaxValueNameLength
+	h.growU32(nkContent+64, uint32(len(data))) // MaxValueDataSize
+	h.dirty = true
 	return nil
 }
 
@@ -285,6 +314,8 @@ func (h *Hive) DeleteValue(keyPath, name string) error {
 		h.freeCell(nk.ValuesListOffset)
 		binary.LittleEndian.PutUint32(h.data[nkContent+36:nkContent+40], 0)
 		binary.LittleEndian.PutUint32(h.data[nkContent+40:nkContent+44], nullCellOffset)
+		h.touchKey(nk.offset)
+		h.dirty = true
 		return nil
 	}
 
@@ -304,6 +335,8 @@ func (h *Hive) DeleteValue(keyPath, name string) error {
 	h.freeCell(nk.ValuesListOffset)
 	binary.LittleEndian.PutUint32(h.data[nkContent+36:nkContent+40], newCount)
 	binary.LittleEndian.PutUint32(h.data[nkContent+40:nkContent+44], newList)
+	h.touchKey(nk.offset)
+	h.dirty = true
 	return nil
 }
 
@@ -335,7 +368,12 @@ func (h *Hive) Bytes() ([]byte, error) {
 	if h.data == nil {
 		return nil, fmt.Errorf("regf: hive is closed")
 	}
-	h.finalize()
+	// Only rewrite the base block (sequence numbers + checksum) when the hive was actually
+	// mutated, so an unmodified hive round-trips byte-for-byte.
+	if h.dirty {
+		h.finalize()
+		h.dirty = false
+	}
 	return append([]byte(nil), h.data...), nil
 }
 

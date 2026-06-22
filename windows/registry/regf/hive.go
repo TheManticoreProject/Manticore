@@ -12,6 +12,7 @@ import (
 type Hive struct {
 	data      []byte
 	baseBlock BaseBlock
+	dirty     bool // set by mutating operations; gates base-block finalization in Bytes
 }
 
 // Open opens and parses a registry hive file from disk.
