@@ -237,10 +237,22 @@ func (h *Hive) DeleteKey(parentPath, name string) error {
 	return nil
 }
 
+// maxKeyTreeDepth bounds the recursion when freeing a key subtree, guarding against a
+// cyclic subkey graph in a corrupt hive (Windows limits key depth well below this).
+const maxKeyTreeDepth = 512
+
 // freeKeyRecursive frees a key node and everything it owns: its values (and their data
 // cells), its value list, its subkeys (recursively) and subkey list, its class cell, and
 // decrements its shared SK record's reference count.
 func (h *Hive) freeKeyRecursive(nkOffset uint32) {
+	h.freeKeyRecursiveDepth(nkOffset, 0)
+}
+
+func (h *Hive) freeKeyRecursiveDepth(nkOffset uint32, depth int) {
+	if depth > maxKeyTreeDepth {
+		h.freeCell(nkOffset)
+		return
+	}
 	nk, err := h.readKeyNode(nkOffset)
 	if err != nil {
 		h.freeCell(nkOffset)
@@ -255,7 +267,7 @@ func (h *Hive) freeKeyRecursive(nkOffset uint32) {
 	if nk.SubKeysListOffset != nullCellOffset && nk.NumberOfSubKeys > 0 {
 		if offs, err := h.collectKeyNodeOffsets(nk.SubKeysListOffset); err == nil {
 			for _, so := range offs {
-				h.freeKeyRecursive(so)
+				h.freeKeyRecursiveDepth(so, depth+1)
 			}
 		}
 		h.freeCell(nk.SubKeysListOffset)

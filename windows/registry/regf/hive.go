@@ -392,8 +392,21 @@ func (h *Hive) enumSubKeys(offset uint32) ([]*KeyNode, error) {
 	return subkeys, nil
 }
 
+// maxSubkeyListDepth bounds the recursion that resolves index-root (ri) subkey lists. Real
+// hives nest ri at most one or two levels; this guards against a cyclic or maliciously
+// deep ri list (which would otherwise recurse until the stack overflows).
+const maxSubkeyListDepth = 32
+
 // collectKeyNodeOffsets reads a subkey list and recursively resolves RI blocks.
 func (h *Hive) collectKeyNodeOffsets(offset uint32) ([]uint32, error) {
+	return h.collectKeyNodeOffsetsDepth(offset, 0)
+}
+
+func (h *Hive) collectKeyNodeOffsetsDepth(offset uint32, depth int) ([]uint32, error) {
+	if depth > maxSubkeyListDepth {
+		return nil, fmt.Errorf("regf: subkey list nesting too deep at 0x%X (possible cycle)", offset)
+	}
+
 	cell, err := h.readCellRaw(offset)
 	if err != nil {
 		return nil, fmt.Errorf("regf: reading subkey list at 0x%X: %w", offset, err)
@@ -408,10 +421,11 @@ func (h *Hive) collectKeyNodeOffsets(offset uint32) ([]uint32, error) {
 		return list.KeyNodeOffsets(), nil
 	}
 
-	// RI: each element points to another subkey list (LF/LH/LI)
+	// RI: each element points to another subkey list (LF/LH/LI). Recurse with a depth
+	// bound so a cyclic ri cannot recurse without limit.
 	var allOffsets []uint32
 	for _, subListOffset := range list.KeyNodeOffsets() {
-		subOffsets, err := h.collectKeyNodeOffsets(subListOffset)
+		subOffsets, err := h.collectKeyNodeOffsetsDepth(subListOffset, depth+1)
 		if err != nil {
 			continue
 		}
