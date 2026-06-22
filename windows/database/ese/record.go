@@ -144,8 +144,18 @@ func decodeRecord(t *Table, payload []byte) (*Row, error) {
 				tagged = parseTaggedItems(payload, taggedBase, t.db.extendedTags())
 				taggedParsed = true
 			}
-			if v, ok := lookupTagged(payload, taggedBase, tagged, id); ok {
-				values[id] = v
+			if v, isLV, ok := lookupTagged(payload, taggedBase, tagged, id); ok {
+				if isLV {
+					// The value is a long-value identifier; reassemble it from the
+					// long-value tree, falling back to the raw reference on failure.
+					if resolved, err := t.resolveLongValue(v); err == nil {
+						values[id] = resolved
+					} else {
+						values[id] = v
+					}
+				} else {
+					values[id] = v
+				}
 			}
 		}
 	}
@@ -180,9 +190,11 @@ func parseTaggedItems(payload []byte, base int, extended bool) []taggedItem {
 }
 
 // lookupTagged returns the value bytes of tagged column id, computing its length from the
-// next tagged entry (or end of record for the last), and skipping a leading flag byte
-// when present. Compressed values are unsupported (reported absent).
-func lookupTagged(payload []byte, base int, items []taggedItem, id uint32) ([]byte, bool) {
+// next tagged entry (or end of record for the last), and skipping a leading flag byte when
+// present. It also reports whether the value is a long-value reference (flag 0x04), in
+// which case the returned bytes are the long-value identifier. Compressed inline values
+// (flag 0x02) are unsupported (reported absent).
+func lookupTagged(payload []byte, base int, items []taggedItem, id uint32) (value []byte, isLongValue bool, ok bool) {
 	for k, it := range items {
 		if it.id != id {
 			continue
@@ -196,26 +208,27 @@ func lookupTagged(payload []byte, base int, items []taggedItem, id uint32) ([]by
 		}
 		if it.flagsPresent {
 			if offsetItem >= len(payload) {
-				return nil, false
+				return nil, false, false
 			}
 			flag := payload[offsetItem]
 			offsetItem++
 			size--
 			if flag&taggedCompressed != 0 {
-				return nil, false // compressed tagged data not supported
+				return nil, false, false // compressed tagged data not supported
 			}
+			isLongValue = flag&taggedLongValue != 0
 		}
 		if size < 0 {
 			size = 0
 		}
 		if offsetItem < 0 || offsetItem > len(payload) {
-			return nil, false
+			return nil, false, false
 		}
 		end := offsetItem + size
 		if end > len(payload) {
 			end = len(payload)
 		}
-		return append([]byte(nil), payload[offsetItem:end]...), true
+		return append([]byte(nil), payload[offsetItem:end]...), isLongValue, true
 	}
-	return nil, false
+	return nil, false, false
 }

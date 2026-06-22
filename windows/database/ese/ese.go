@@ -45,6 +45,7 @@ const (
 
 	// Tagged data type flags.
 	taggedCompressed = 0x02
+	taggedLongValue  = 0x04 // value is a long-value identifier (data lives in the LV tree)
 	taggedMultiValue = 0x08
 )
 
@@ -101,10 +102,14 @@ type Column struct {
 type Table struct {
 	Name           string
 	fatherDataPage uint32
+	longValuePage  uint32 // root of the table's long-value B-tree (0 if none)
 	columns        []*Column
 	columnByID     map[uint32]*Column
 	columnByName   map[string]*Column
 	db             *Database
+
+	lvLeaves []lvEntry // cached leaf entries of the long-value tree (lazy)
+	lvLoaded bool
 }
 
 // Columns returns the table's columns in catalog order.
