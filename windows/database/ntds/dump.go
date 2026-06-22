@@ -12,6 +12,7 @@ import (
 // "ATT<type><id>"; these are the columns needed to recover account secrets.
 const (
 	AttSAMAccountName          = "ATTm590045"
+	AttSAMAccountType          = "ATTj590126"
 	AttObjectSid               = "ATTr589970"
 	AttUserAccountControl      = "ATTj589832"
 	AttUnicodePwd              = "ATTk589914" // NT hash
@@ -25,6 +26,18 @@ const (
 
 // uacAccountDisable is the ADS_UF_ACCOUNTDISABLE bit of userAccountControl.
 const uacAccountDisable = 0x0002
+
+// sAMAccountType values that identify a security principal carrying password material
+// (user / machine / trust). Group and alias objects have other values and are skipped.
+const (
+	samNormalUserAccount = 0x30000000
+	samMachineAccount    = 0x30000001
+	samTrustAccount      = 0x30000002
+)
+
+func isAccountType(t uint32) bool {
+	return t == samNormalUserAccount || t == samMachineAccount || t == samTrustAccount
+}
 
 func hexBytes(s string) []byte { b, _ := hex.DecodeString(s); return b }
 
@@ -80,12 +93,14 @@ func (a *Account) HistoryLines() []string {
 	return lines
 }
 
-// ridFromSID extracts the RID (last sub-authority) from a binary objectSid.
+// ridFromSID extracts the RID (last sub-authority) from a binary objectSid. NTDS stores
+// the objectSid with its sub-authorities big-endian, so the RID is the big-endian uint32
+// of the final four bytes.
 func ridFromSID(sid []byte) uint32 {
 	if len(sid) < 4 {
 		return 0
 	}
-	return binary.LittleEndian.Uint32(sid[len(sid)-4:])
+	return binary.BigEndian.Uint32(sid[len(sid)-4:])
 }
 
 // FindPEKList scans the datatable for the pekList attribute and decrypts it with bootKey.
@@ -125,6 +140,12 @@ func Dump(db *ese.Database, bootKey []byte, fn func(Account) error) error {
 	}
 	for cur.Next() {
 		row := cur.Row()
+		// Only objects that are security principals with password material (user /
+		// machine / trust accounts); skip groups, aliases, and other objects.
+		accountType, ok := row.Uint32(AttSAMAccountType)
+		if !ok || !isAccountType(accountType) {
+			continue
+		}
 		sid, ok := row.Raw(AttObjectSid)
 		if !ok {
 			continue

@@ -19,7 +19,7 @@ const (
 	dvPekList  = "0200000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01eb46cbb54c926d566dc36e44e20d3946a3ad276548def414bf2828cd1559a6f5c526b2917ec2e28bc891bb52d9c16b467b20ae"
 	dvEncNT    = "0000000000000000c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c15222e8fd0bc1751323e9fc9768131b24"
 	dvEncLM    = "0000000000000000c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c235a006c017bb3f114adcda25a2f8256c"
-	dvSID      = "010500000000000515000000010000000200000003000000e8030000"
+	dvSID      = "010500000000000515000000010000000200000003000000000003e8" // RID 1000, big-endian (NTDS storage)
 	dvExpectNT = "8846f7eaee8fb117ad06bdd830b7586c"
 	dvExpectLM = "e52cac67419a9a224a3b108f3fa6cb6d"
 	dvRID      = 1000
@@ -133,6 +133,7 @@ func buildNTDSDIT(t *testing.T) []byte {
 		leafEntry(catColumn(16, 259, colTypeBin, 0, AttUnicodePwd)),
 		leafEntry(catColumn(16, 260, colTypeBin, 0, AttDBCSPwd)),
 		leafEntry(catColumn(16, 261, colTypeLong, 0, AttUserAccountControl)),
+		leafEntry(catColumn(16, 262, colTypeLong, 0, AttSAMAccountType)),
 	})
 	data := buildPage(flagRootLeaf, 0, [][]byte{
 		leafEntry(taggedRecord(map[uint32][]byte{256: hexBytes(dvPekList)})), // pek holder, no sAMAccountName
@@ -141,7 +142,8 @@ func buildNTDSDIT(t *testing.T) []byte {
 			258: hexBytes(dvSID),
 			259: hexBytes(dvEncNT),
 			260: hexBytes(dvEncLM),
-			261: u32(0x200), // userAccountControl: normal account (enabled)
+			261: u32(0x200),      // userAccountControl: normal account (enabled)
+			262: u32(0x30000000), // sAMAccountType: SAM_NORMAL_USER_ACCOUNT
 		})),
 	})
 
