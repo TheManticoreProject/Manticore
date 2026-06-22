@@ -114,7 +114,16 @@ func (h *Hive) CreateKey(parentPath, name string) error {
 	h.writeCellContent(nkOff, nkBytes)
 	h.bumpSKRefCount(parent.SecurityOffset, +1)
 
-	return h.addSubkeyToList(parent, nkOff, name)
+	if err := h.addSubkeyToList(parent, nkOff, name); err != nil {
+		return err
+	}
+	// Stamp both keys and keep the parent's "largest subkey name" hint covering the new key.
+	h.touchKey(parent.offset)
+	h.touchKey(nkOff)
+	pc := baseBlockSize + int(parent.offset) + 4
+	h.growU32(pc+52, uint32(len(name))) // MaxSubKeyNameLength
+	h.dirty = true
+	return nil
 }
 
 // addSubkeyToList inserts a new subkey (offset+name) into the parent's subkey list, keeping
@@ -169,11 +178,14 @@ func (h *Hive) readSubkeyEntries(listOffset uint32) ([]subkeyEntry, uint16, erro
 	}
 	var entries []subkeyEntry
 	for _, off := range list.KeyNodeOffsets() {
-		sub, err := h.readKeyNode(off)
-		if err != nil {
-			continue
+		// Preserve every referenced subkey, even one whose node cannot be read: dropping it
+		// here would silently delete that subkey from the parent when the list is rebuilt.
+		// An unreadable node keeps an empty name (its hint/hash is then approximate).
+		name := ""
+		if sub, err := h.readKeyNode(off); err == nil {
+			name = sub.Name()
 		}
-		entries = append(entries, subkeyEntry{off, sub.Name()})
+		entries = append(entries, subkeyEntry{off, name})
 	}
 	return entries, list.Signature, nil
 }
@@ -223,6 +235,8 @@ func (h *Hive) DeleteKey(parentPath, name string) error {
 		h.freeCell(parent.SubKeysListOffset)
 		binary.LittleEndian.PutUint32(h.data[pc+20:pc+24], 0)
 		binary.LittleEndian.PutUint32(h.data[pc+28:pc+32], nullCellOffset)
+		h.touchKey(parent.offset)
+		h.dirty = true
 		return nil
 	}
 	list := buildSubkeyList(signature, remaining)
@@ -234,6 +248,8 @@ func (h *Hive) DeleteKey(parentPath, name string) error {
 	h.freeCell(parent.SubKeysListOffset)
 	binary.LittleEndian.PutUint32(h.data[pc+20:pc+24], uint32(len(remaining)))
 	binary.LittleEndian.PutUint32(h.data[pc+28:pc+32], lo)
+	h.touchKey(parent.offset)
+	h.dirty = true
 	return nil
 }
 
