@@ -18,6 +18,14 @@ const (
 	maxFullNCPages = 100000
 )
 
+// SetReplicationProgress registers a callback invoked once per page during full-NC
+// replication (ReplicateNC, and therefore DCSyncAll) with the cumulative number of
+// objects received so far. The naming context's total object count is not known in
+// advance, so callers should render the value as a running count, not a percentage.
+// Pass nil to disable. Set it before starting a replication call; it is not safe to
+// change while one is in progress.
+func (c *Client) SetReplicationProgress(fn func(objects int)) { c.onReplicationProgress = fn }
+
 // ReplicateNC replicates an entire naming context (every object in ncDN, e.g.
 // "DC=lab,DC=local") by paging IDL_DRSGetNCChanges, and returns the accumulated objects.
 // Unlike ReplicateSingleObject (EXOP_REPL_OBJ), this issues no extended op and pages the
@@ -73,6 +81,10 @@ func (c *Client) ReplicateNC(ncDN string) (*ReplicationResult, error) {
 		}
 		for node := reply.PObjects; node != nil; node = node.PNextEntInf {
 			result.Objects = append(result.Objects, projectEntInf(node.Entinf))
+		}
+
+		if c.onReplicationProgress != nil {
+			c.onReplicationProgress(len(result.Objects))
 		}
 
 		if reply.FMoreData == 0 {
