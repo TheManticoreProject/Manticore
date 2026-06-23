@@ -177,10 +177,10 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	return entries, nil
 }
 
-// trans2 issues a single SMB_COM_TRANSACTION2 carrying the given subcommand, with
-// the supplied transaction parameter and data buffers, and returns the reassembled
-// response parameter and data buffers. It does not implement Transaction2Secondary
-// fragmentation, so the request must fit in a single message.
+// trans2 issues an SMB_COM_TRANSACTION2 carrying the given subcommand, with the supplied
+// transaction parameter and data buffers, and returns the reassembled response parameter
+// and data buffers. Requests larger than the negotiated buffer are fragmented across
+// TRANSACTION2_SECONDARY messages.
 func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]byte, []byte, error) {
 	// Bound the data the server may return by the negotiated buffer.
 	maxData := 0xFFFF
