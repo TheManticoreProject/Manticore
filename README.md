@@ -13,10 +13,11 @@
 
 ## Features
 
-- [x] **Cross-Platform Support**: Works on Windows, Linux, and macOS.
-- [x] **Multiple Authentication Protocols**: Supports NTLM, Kerberos (soon), and LDAP authentication.
-- [x] **Cryptography**: [cmac](crypto/cmac/), [dcc](crypto/dcc/), [dcc2](crypto/dcc2/), [gppp](crypto/gppp/), [lm](crypto/lm/), [md4](crypto/md4/), [nt](crypto/nt/), [ntlmv1](crypto/ntlmv1/), [ntlmv2](crypto/ntlmv2/), [pkcs7](crypto/pkcs7/), [rc4](crypto/rc4/), [uuid](crypto/uuid/)
-- [x] **Network Protocol Implementations**: Includes SMB, LDAP, and other common Windows protocols.
+- [x] **Cross-Platform Support**: Works on Windows, Linux, and macOS — no Windows API dependency.
+- [x] **Authentication**: NTLM (v1/v2), SPNEGO/GSSAPI, and LDAP bind, with partial Kerberos v5 (AS-REP roasting).
+- [x] **Network Protocols**: SMB 1.0 (CIFS) and SMB 2.0, a full DCE/RPC stack (NDR, EPM, `ncacn_ip_tcp`/`ncacn_np`/`ncacn_http` transports) exposing LSARPC, SAMR, SRVSVC, SVCCTL, DRSUAPI and WINREG, plus LDAP, LLMNR and NetBIOS name services.
+- [x] **Cryptography**: [aescts](crypto/aescts/), [cmac](crypto/cmac/), [dcc](crypto/dcc/), [dcc2](crypto/dcc2/), [gppp](crypto/gppp/), [lm](crypto/lm/), [md4](crypto/md4/), [nfold](crypto/nfold/), [nt](crypto/nt/), [ntlmv1](crypto/ntlmv1/), [ntlmv2](crypto/ntlmv2/), [pkcs7](crypto/pkcs7/), [rc4](crypto/rc4/), [spnego](crypto/spnego/), [uuid](crypto/uuid/)
+- [x] **Windows Internals**: Offline NTDS.dit secret extraction (ESE/JET parser + PEK decryption), REGF registry hive read/write, Active Directory replication metadata (`DS_REPL_*`), KeyCredentialLink, and CNG (bcrypt) key blobs.
 - [x] **Extensible Architecture**: Easily add new modules and functionality.
 
 ## Installation
@@ -26,6 +27,77 @@ To use this framework you can either download the latest release from the [GitHu
 ```bash
 go get github.com/TheManticoreProject/Manticore@latest
 ```
+
+## Roadmap
+
+Legend: :white_check_mark: implemented &nbsp;·&nbsp; :construction: partial / in progress &nbsp;·&nbsp; :x: not yet implemented
+
+- **Network**
+  - SMB
+    - SMB 1.0 (CIFS) :white_check_mark:
+    - SMB 2.0 :construction:
+    - SMB 2.1 :x:
+    - SMB 3.0 :x:
+    - SMB 3.0.2 :x:
+    - SMB 3.1.1 :x:
+  - DCE/RPC
+    - Core (PDU, NDR encoding/decoding, EPM) :white_check_mark:
+    - Transports
+      - `ncacn_ip_tcp` :white_check_mark:
+      - `ncacn_np` (named pipes) :white_check_mark:
+      - `ncacn_http` :white_check_mark:
+    - Interfaces
+      - LSARPC (MS-LSAD / MS-LSAT) :white_check_mark:
+      - SAMR (MS-SAMR) :white_check_mark:
+      - SRVSVC (MS-SRVS) :white_check_mark:
+      - SVCCTL (MS-SCMR) :white_check_mark:
+      - DRSUAPI (MS-DRSR) :white_check_mark:
+      - WINREG (MS-RRP) :construction:
+      - EFSRPC (MS-EFSR) :construction:
+      - EPM (endpoint mapper) :construction:
+      - DSAOP (MS-DSSP) :x:
+  - LDAP :construction:
+  - Kerberos v5 :construction:
+  - GSSAPI / SPNEGO (NTLM) :white_check_mark:
+  - LLMNR :white_check_mark:
+  - NetBIOS
+    - NBNS (name service) :white_check_mark:
+    - NBT (NetBIOS over TCP) :construction:
+    - NBF (NetBIOS frames) :x:
+  - DNS :x:
+  - Raw TCP / IP :x:
+- **Cryptography**
+  - MD4 / NT / LM hashes :white_check_mark:
+  - DCC / DCC2 :white_check_mark:
+  - NTLMv1 / NTLMv2 :white_check_mark:
+  - RC4 :white_check_mark:
+  - AES-CTS (RFC 3962) :white_check_mark:
+  - CMAC :white_check_mark:
+  - N-Fold (RFC 3961) :white_check_mark:
+  - PKCS#7 padding :white_check_mark:
+  - GPPP (Group Policy Preferences) :white_check_mark:
+  - UUID (v1–v8) :white_check_mark:
+  - Kerberos crypto (full suite) :construction:
+- **Windows**
+  - Registry
+    - REGF hive parsing (read) :white_check_mark:
+    - REGF hive writing :white_check_mark:
+    - `.reg` file encode/decode :white_check_mark:
+  - Database
+    - ESE / JET Blue reader :white_check_mark:
+    - NTDS.dit offline parsing + secret decryption :white_check_mark:
+  - Active Directory
+    - Replication metadata (`DS_REPL_*`) :white_check_mark:
+    - KeyCredentialLink :white_check_mark:
+    - Service Principal Names (SPN) :white_check_mark:
+  - Security descriptors (via winacl) :white_check_mark:
+  - CNG bcrypt key blobs (RSA / ECC / DSA) :white_check_mark:
+  - MS-DTYP data types :construction:
+  - Filesystem info classes (FSCC) :construction:
+- **Encoding**
+  - ASCII :white_check_mark:
+  - UTF-16LE :white_check_mark:
+  - EBCDIC (cp037, cp500) :white_check_mark:
 
 ## Contributing
 
