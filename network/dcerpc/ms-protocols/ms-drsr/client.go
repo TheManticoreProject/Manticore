@@ -48,6 +48,11 @@ type Client struct {
 	serverExt *structures.DRS_EXTENSIONS_INT
 	sourceDSA structures.UUID // source DSA GUID for GetNCChanges; zero (NULL) by default
 	bound     bool
+
+	// onReplicationProgress, when non-nil, is invoked once per replicated page during
+	// full-NC replication (ReplicateNC) with the cumulative number of objects received
+	// so far. Registered via SetReplicationProgress.
+	onReplicationProgress func(objects int)
 }
 
 // compile-time assertion that Client satisfies the session contract.
