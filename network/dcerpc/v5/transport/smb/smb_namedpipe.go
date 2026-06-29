@@ -12,10 +12,21 @@ package smb
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+)
+
+// Bounded retry parameters for a transiently empty pipe (see Recv). A response that
+// is not yet queued by the server typically appears within a few milliseconds; the
+// total budget is generous enough for a slow operation (such as a password change)
+// without hanging indefinitely on a genuinely dead pipe.
+const (
+	recvRetryDelay    = 20 * time.Millisecond
+	recvMaxRetryTotal = 5 * time.Second
 )
 
 // Default fragment sizes proposed at Bind time. 4280 (0x10B8) is the classic Windows
@@ -124,15 +135,37 @@ func (p *SMBNamedPipe) Send(pdu []byte) error {
 
 // Recv reads up to MaxRecvFrag bytes from the pipe. The pipe offset is meaningless,
 // so a zero offset is used.
+//
+// Per [MS-RPCE] 2.1.1.2 the response PDU is obtained as a named-pipe read, which can
+// momentarily race the server's write of that response: the read then completes with
+// STATUS_PIPE_EMPTY (0xC00000D9) even though a response is forthcoming. Rather than
+// surface that transient as a hard failure, Recv re-issues the read on the same pipe
+// handle, with a short delay, until the response arrives or the retry budget is spent.
 func (p *SMBNamedPipe) Recv() ([]byte, error) {
 	if !p.opened {
 		return nil, fmt.Errorf("named pipe %q is not open: call Connect first", p.pipeName)
 	}
-	data, err := p.conn.ReadFile(p.fid, 0, uint32(p.maxRecv))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from named pipe %q: %w", p.pipeName, err)
+
+	deadline := time.Now().Add(recvMaxRetryTotal)
+	for {
+		data, err := p.conn.ReadFile(p.fid, 0, uint32(p.maxRecv))
+		if err == nil {
+			return data, nil
+		}
+		if !isPipeEmpty(err) || time.Now().After(deadline) {
+			return nil, fmt.Errorf("failed to read from named pipe %q: %w", p.pipeName, err)
+		}
+		time.Sleep(recvRetryDelay)
 	}
-	return data, nil
+}
+
+// isPipeEmpty reports whether err is the transient "no data yet" condition on a named
+// pipe read: STATUS_PIPE_EMPTY (0xC00000D9) or its RPC equivalent RPC_NT_PIPE_EMPTY
+// (0xC0030061). ReadFile surfaces the SMB status as a lowercase hex string in the error
+// text, so the status code is matched there.
+func isPipeEmpty(err error) bool {
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "c00000d9") || strings.Contains(s, "c0030061")
 }
 
 // Close closes the pipe handle. The underlying SMB session and tree connect are left
