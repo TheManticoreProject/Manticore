@@ -1,0 +1,50 @@
+package functions
+
+import (
+	"fmt"
+
+	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// rpcGetJobRequest carries the [in] parameters of RpcGetJob.
+type rpcGetJobRequest struct {
+	HPrinter structures.PRINTER_HANDLE
+	JobId    ndr.DWORD
+	Level    ndr.DWORD
+	PJob     []uint8 `ndr:"unique,size_is=CbBuf"`
+	CbBuf    ndr.DWORD
+}
+
+func (*rpcGetJobRequest) Opnum() uint16 { return winspool.OpnumRpcGetJob }
+
+// rpcGetJobResponse carries the [out] parameters and return value of RpcGetJob.
+type rpcGetJobResponse struct {
+	PJob      []uint8 `ndr:"unique,size_is=CbBuf"`
+	PcbNeeded ndr.DWORD
+	Status    ndr.DWORD `ndr:"retval"`
+}
+
+// RpcGetJob calls RpcGetJob (opnum 3) ([MS-RPRN] — verify the parameter
+// modeling and status handling).
+func RpcGetJob(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, level ndr.DWORD, pJob []uint8, cbBuf ndr.DWORD) (PJob []uint8, PcbNeeded ndr.DWORD, err error) {
+	req := &rpcGetJobRequest{
+		HPrinter: hPrinter,
+		JobId:    jobId,
+		Level:    level,
+		PJob:     pJob,
+		CbBuf:    cbBuf,
+	}
+	var resp rpcGetJobResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RpcGetJob: %w", err)
+		return
+	}
+	PJob = resp.PJob
+	PcbNeeded = resp.PcbNeeded
+	if uint32(resp.Status) != winspool.StatusSuccess {
+		err = fmt.Errorf("RpcGetJob failed: %s", winspool.StatusString(uint32(resp.Status)))
+	}
+	return
+}
