@@ -753,12 +753,23 @@ func independentVaryingBounds(tag fieldTag) bool {
 
 // siblingUint reads the unsigned integer value of the named field of struct value rv,
 // reporting false if there is no such field or it is not an unsigned integer kind.
+//
+// A size_is/length_is target may itself be a pointer to an integer: MS-RRP models the
+// count parameters of methods like BaseRegQueryValue as [in, out, unique] LPDWORD, so the
+// sibling field is a *ndr.DWORD rather than a bare DWORD. Such a pointer is dereferenced;
+// a nil pointer reports false, leaving the count to fall back to the array length.
 func siblingUint(rt reflect.Type, rv reflect.Value, name string) (uint64, bool) {
 	f, ok := rt.FieldByName(name)
 	if !ok || len(f.Index) != 1 {
 		return 0, false
 	}
 	fv := rv.Field(f.Index[0])
+	if fv.Kind() == reflect.Ptr {
+		if fv.IsNil() {
+			return 0, false
+		}
+		fv = fv.Elem()
+	}
 	if !isUintKind(fv.Kind()) {
 		return 0, false
 	}
