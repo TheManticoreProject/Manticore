@@ -20,6 +20,12 @@ type fakePipeConn struct {
 	readData []byte
 	readErr  error
 
+	// readSeq, when non-nil, supplies a result for each successive ReadFile call
+	// (the final entry repeats once exhausted). It takes precedence over
+	// readData/readErr and is used to exercise the transient-pipe-empty retry.
+	readSeq    []readResult
+	readSeqIdx int
+
 	closeErr error
 
 	// Recorded calls.
@@ -29,7 +35,14 @@ type fakePipeConn struct {
 	writeOffset uint64
 	readOffset  uint64
 	readMaxLen  uint32
+	readCount   int
 	closeCount  int
+}
+
+// readResult is one canned outcome of a ReadFile call.
+type readResult struct {
+	data []byte
+	err  error
 }
 
 func (f *fakePipeConn) OpenFile(path string, desiredAccess, shareAccess, createDisp, createOptions uint32) (client.FID, error) {
@@ -56,6 +69,14 @@ func (f *fakePipeConn) WriteFile(fid client.FID, offset uint64, data []byte) (in
 func (f *fakePipeConn) ReadFile(fid client.FID, offset uint64, maxLen uint32) ([]byte, error) {
 	f.readOffset = offset
 	f.readMaxLen = maxLen
+	f.readCount++
+	if f.readSeq != nil {
+		r := f.readSeq[f.readSeqIdx]
+		if f.readSeqIdx < len(f.readSeq)-1 {
+			f.readSeqIdx++
+		}
+		return r.data, r.err
+	}
 	if f.readErr != nil {
 		return nil, f.readErr
 	}
@@ -228,6 +249,55 @@ func TestRecv_PropagatesReadError(t *testing.T) {
 	_, err := p.Recv()
 	if !errors.Is(err, wantErr) {
 		t.Errorf("Recv() error = %v, want wrapped %v", err, wantErr)
+	}
+	// A non-pipe-empty error must fail immediately, without retrying.
+	if fake.readCount != 1 {
+		t.Errorf("ReadFile called %d times, want 1 (no retry on a hard error)", fake.readCount)
+	}
+}
+
+func TestIsPipeEmpty_ClassifiesStatus(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{errors.New("ReadAndx failed: 0xc00000d9"), true},  // STATUS_PIPE_EMPTY
+		{errors.New("ReadAndx failed: 0xC00000D9"), true},  // case-insensitive
+		{errors.New("ReadAndx failed: 0xc0030061"), true},  // RPC_NT_PIPE_EMPTY
+		{errors.New("ReadAndx failed: 0xc0000022"), false}, // STATUS_ACCESS_DENIED
+		{errors.New("pipe broken"), false},                 // unrelated
+	} {
+		if got := isPipeEmpty(tc.err); got != tc.want {
+			t.Errorf("isPipeEmpty(%q) = %v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
+
+func TestRecv_RetriesOnPipeEmptyThenSucceeds(t *testing.T) {
+	resp := []byte{0x05, 0x00, 0x0c, 0x03}
+	pipeEmpty := errors.New("ReadAndx failed: 0xc00000d9")
+	fake := &fakePipeConn{
+		openFID: 1,
+		readSeq: []readResult{
+			{nil, pipeEmpty}, // server has not queued the response yet
+			{nil, pipeEmpty}, // ...still not
+			{resp, nil},      // response arrives
+		},
+	}
+	p := newWithConn(fake, `\PIPE\lsarpc`)
+	if err := p.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	got, err := p.Recv()
+	if err != nil {
+		t.Fatalf("Recv() error = %v, want nil after transient pipe-empty retries", err)
+	}
+	if !bytes.Equal(got, resp) {
+		t.Errorf("Recv() = %x, want %x", got, resp)
+	}
+	if fake.readCount != 3 {
+		t.Errorf("ReadFile called %d times, want 3 (two empties then the response)", fake.readCount)
 	}
 }
 
