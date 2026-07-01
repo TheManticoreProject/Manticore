@@ -9,11 +9,21 @@ import (
 )
 
 // baseRegQueryValueRequest carries the [in] parameters of BaseRegQueryValue.
+//
+// [MS-RRP] 3.1.5.17 declares lpData as
+// [in, out, unique, size_is(*lpcbData), length_is(*lpcbLen)] LPBYTE: a unique pointer to a
+// conformant-varying byte array whose maximum_count is *lpcbData (the buffer capacity the
+// client offers) and whose actual_count is *lpcbLen (the number of valid input octets, 0 on
+// a read). The two counts are independent of the Go slice length and of each other, so the
+// tag names both sibling pointers explicitly — matching RPC_SECURITY_DESCRIPTOR's
+// CbIn/CbOut modeling in this same interface. Without size_is/length_is the marshaller would
+// derive both counts from len(LpData), transmitting an actual_count that contradicts *lpcbLen
+// and a full input body on a value read, which a DC rejects with nca_s_fault_ndr.
 type baseRegQueryValueRequest struct {
 	HKey        structures.RPC_HKEY
 	LpValueName structures.RRP_UNICODE_STRING
 	LpType      *ndr.DWORD `ndr:"unique"`
-	LpData      []uint8    `ndr:"unique,varying"`
+	LpData      []uint8    `ndr:"unique,size_is=LpcbData,varying,length_is=LpcbLen"`
 	LpcbData    *ndr.DWORD `ndr:"unique"`
 	LpcbLen     *ndr.DWORD `ndr:"unique"`
 }

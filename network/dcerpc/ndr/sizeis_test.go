@@ -63,3 +63,40 @@ func TestSizeIs_LiteralConstant(t *testing.T) {
 		t.Errorf("literal size_is:\n got %x\nwant %x", raw, want)
 	}
 }
+
+// TestSizeIs_PointerSiblingIndependentBounds verifies that a conformant-varying array whose
+// size_is/length_is targets are *pointers* to integers (MS-RRP's [in, out, unique] LPDWORD
+// count parameters) derives its maximum_count and actual_count from the pointed-to values,
+// independent of the Go slice length. This is the BaseRegQueryValue shape: a full-capacity
+// buffer is offered (maximum_count = *lpcbData) while no input octets are transmitted on a
+// read (actual_count = *lpcbLen = 0). Before pointer siblings were resolved, both counts
+// fell back to len(Data), sending a spurious actual_count and an input body that a DC
+// rejects with nca_s_fault_ndr.
+func TestSizeIs_PointerSiblingIndependentBounds(t *testing.T) {
+	type req struct {
+		Data   []uint8 `ndr:"unique,size_is=CbData,varying,length_is=CbLen"`
+		CbData *DWORD  `ndr:"unique"`
+		CbLen  *DWORD  `ndr:"unique"`
+	}
+	capacity := DWORD(8)
+	valid := DWORD(0)
+	// Data carries 8 octets, but only *CbLen (0) are valid; none must be transmitted.
+	in := &req{Data: []byte{1, 2, 3, 4, 5, 6, 7, 8}, CbData: &capacity, CbLen: &valid}
+	raw, err := Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := []byte{
+		0x00, 0x00, 0x02, 0x00, // Data referent id
+		0x08, 0x00, 0x00, 0x00, // Data maximum_count == *CbData (8), not len(Data)
+		0x00, 0x00, 0x00, 0x00, // Data offset
+		0x00, 0x00, 0x00, 0x00, // Data actual_count == *CbLen (0); no data body follows
+		0x04, 0x00, 0x02, 0x00, // CbData referent id
+		0x08, 0x00, 0x00, 0x00, // CbData value
+		0x08, 0x00, 0x02, 0x00, // CbLen referent id
+		0x00, 0x00, 0x00, 0x00, // CbLen value
+	}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("pointer-sibling size_is/length_is:\n got %x\nwant %x", raw, want)
+	}
+}
