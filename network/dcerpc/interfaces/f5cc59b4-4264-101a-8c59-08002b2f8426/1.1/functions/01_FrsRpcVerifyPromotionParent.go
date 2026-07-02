@@ -1,0 +1,43 @@
+package functions
+
+import (
+	"fmt"
+
+	frsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f5cc59b4-4264-101a-8c59-08002b2f8426/1.1"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// frsRpcVerifyPromotionParentRequest carries the [in] parameters of FrsRpcVerifyPromotionParent.
+type frsRpcVerifyPromotionParentRequest struct {
+	ParentAccount    *ndr.WSTR `ndr:"unique"`
+	ParentPassword   *ndr.WSTR `ndr:"unique"`
+	ReplicaSetName   *ndr.WSTR `ndr:"unique"`
+	ReplicaSetType   *ndr.WSTR `ndr:"unique"`
+	PartnerAuthLevel ndr.DWORD
+	GuidSize         ndr.DWORD
+}
+
+func (*frsRpcVerifyPromotionParentRequest) Opnum() uint16 {
+	return frsrpc.OpnumFrsRpcVerifyPromotionParent
+}
+
+// FrsRpcVerifyPromotionParent calls FrsRpcVerifyPromotionParent (opnum 1) ([MS-FRS1] section 3.3.4.5).
+func FrsRpcVerifyPromotionParent(rpc ndr.Invoker, parentAccount *ndr.WSTR, parentPassword *ndr.WSTR, replicaSetName *ndr.WSTR, replicaSetType *ndr.WSTR, partnerAuthLevel ndr.DWORD, guidSize ndr.DWORD) (err error) {
+	req := &frsRpcVerifyPromotionParentRequest{
+		ParentAccount:    parentAccount,
+		ParentPassword:   parentPassword,
+		ReplicaSetName:   replicaSetName,
+		ReplicaSetType:   replicaSetType,
+		PartnerAuthLevel: partnerAuthLevel,
+		GuidSize:         guidSize,
+	}
+	var resp statusResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FrsRpcVerifyPromotionParent: %w", err)
+		return
+	}
+	if uint32(resp.Status) != frsrpc.StatusSuccess {
+		err = fmt.Errorf("FrsRpcVerifyPromotionParent failed: %s", frsrpc.StatusString(uint32(resp.Status)))
+	}
+	return
+}
