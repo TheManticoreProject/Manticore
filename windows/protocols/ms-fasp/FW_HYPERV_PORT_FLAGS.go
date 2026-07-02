@@ -1,0 +1,10 @@
+package msfasp
+
+// FW_HYPERV_PORT_FLAGS is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-FASP]).
+type FW_HYPERV_PORT_FLAGS uint16
+
+const (
+	FW_HYPERV_PORT_FLAGS_NONE                  FW_HYPERV_PORT_FLAGS = 0x0
+	FW_HYPERV_PORT_FLAGS_CONSTRAINED_INTERFACE FW_HYPERV_PORT_FLAGS = 0x1
+	FW_HYPERV_PORT_FLAGS_MAX                   FW_HYPERV_PORT_FLAGS = 0x2
+)
