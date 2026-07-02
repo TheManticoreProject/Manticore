@@ -1,4 +1,4 @@
-package mslsad
+package mslsat
 
 // LSAP_LOOKUP_LEVEL specifies the scope of a SID/name lookup translation request
 // ([MS-LSAT] 2.2.16). As an NDR enum it is transmitted as a 16-bit unsigned value

@@ -1,4 +1,4 @@
-package mslsad
+package mslsat
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"

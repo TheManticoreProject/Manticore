@@ -1,4 +1,4 @@
-package mslsad
+package mslsat
 
 // SID_NAME_USE enumerates the type of a security principal identified by a SID
 // ([MS-LSAT] 2.2.13). As an NDR enum it is transmitted as a 16-bit unsigned value
