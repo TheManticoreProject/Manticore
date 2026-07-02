@@ -1,0 +1,34 @@
+package functions
+
+import (
+	"fmt"
+
+	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// opnum196ReservedRequest carries the [in] parameters of Opnum196Reserved.
+type opnum196ReservedRequest struct {
+}
+
+func (*opnum196ReservedRequest) Opnum() uint16 { return clusapi.OpnumOpnum196Reserved }
+
+// opnum196ReservedResponse carries the [out] parameters and return value of Opnum196Reserved.
+type opnum196ReservedResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// Opnum196Reserved calls Opnum196Reserved (opnum 196) ([MS-CMRP] — verify the parameter
+// modeling and status handling).
+func Opnum196Reserved(rpc ndr.Invoker) (err error) {
+	req := &opnum196ReservedRequest{}
+	var resp opnum196ReservedResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("Opnum196Reserved: %w", err)
+		return
+	}
+	if uint32(resp.Status) != clusapi.StatusSuccess {
+		err = fmt.Errorf("Opnum196Reserved failed: %s", clusapi.StatusString(uint32(resp.Status)))
+	}
+	return
+}
