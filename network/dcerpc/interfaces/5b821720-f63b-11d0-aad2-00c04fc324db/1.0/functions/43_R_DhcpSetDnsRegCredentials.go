@@ -1,0 +1,45 @@
+package functions
+
+import (
+	"fmt"
+
+	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// r_DhcpSetDnsRegCredentialsRequest carries the [in] parameters of R_DhcpSetDnsRegCredentials.
+type r_DhcpSetDnsRegCredentialsRequest struct {
+	ServerIpAddress *ndr.WSTR `ndr:"unique"`
+	Uname           *ndr.WSTR `ndr:"unique"`
+	Domain          *ndr.WSTR `ndr:"unique"`
+	Passwd          *ndr.WSTR `ndr:"unique"`
+}
+
+func (*r_DhcpSetDnsRegCredentialsRequest) Opnum() uint16 {
+	return dhcpsrv2.OpnumR_DhcpSetDnsRegCredentials
+}
+
+// r_DhcpSetDnsRegCredentialsResponse carries the [out] parameters and return value of R_DhcpSetDnsRegCredentials.
+type r_DhcpSetDnsRegCredentialsResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// R_DhcpSetDnsRegCredentials calls R_DhcpSetDnsRegCredentials (opnum 43) ([MS-DHCPM] — verify the parameter
+// modeling and status handling).
+func R_DhcpSetDnsRegCredentials(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, uname *ndr.WSTR, domain *ndr.WSTR, passwd *ndr.WSTR) (err error) {
+	req := &r_DhcpSetDnsRegCredentialsRequest{
+		ServerIpAddress: serverIpAddress,
+		Uname:           uname,
+		Domain:          domain,
+		Passwd:          passwd,
+	}
+	var resp r_DhcpSetDnsRegCredentialsResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("R_DhcpSetDnsRegCredentials: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+		err = fmt.Errorf("R_DhcpSetDnsRegCredentials failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
+	}
+	return
+}
