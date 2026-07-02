@@ -1,0 +1,12 @@
+package msfasp
+
+// FW_RULE_ACTION is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-FASP]).
+type FW_RULE_ACTION uint16
+
+const (
+	FW_RULE_ACTION_INVALID      FW_RULE_ACTION = 0
+	FW_RULE_ACTION_ALLOW_BYPASS FW_RULE_ACTION = 1
+	FW_RULE_ACTION_BLOCK        FW_RULE_ACTION = 2
+	FW_RULE_ACTION_ALLOW        FW_RULE_ACTION = 3
+	FW_RULE_ACTION_MAX          FW_RULE_ACTION = 4
+)

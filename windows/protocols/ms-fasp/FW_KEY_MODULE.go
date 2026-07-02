@@ -1,0 +1,12 @@
+package msfasp
+
+// FW_KEY_MODULE is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-FASP]).
+type FW_KEY_MODULE uint16
+
+const (
+	FW_KEY_MODULE_DEFAULT FW_KEY_MODULE = 0x0
+	FW_KEY_MODULE_IKEv1   FW_KEY_MODULE = 0x1
+	FW_KEY_MODULE_AUTHIP  FW_KEY_MODULE = 0x2
+	FW_KEY_MODULE_IKEv2   FW_KEY_MODULE = 0x4
+	FW_KEY_MODULE_MAX     FW_KEY_MODULE = 0x8
+)

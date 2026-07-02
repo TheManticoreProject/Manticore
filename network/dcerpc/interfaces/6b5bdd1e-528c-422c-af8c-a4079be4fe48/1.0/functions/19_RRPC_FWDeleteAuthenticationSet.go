@@ -1,0 +1,44 @@
+package functions
+
+import (
+	"fmt"
+
+	RemoteFW "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6b5bdd1e-528c-422c-af8c-a4079be4fe48/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfasp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fasp"
+)
+
+// rRPC_FWDeleteAuthenticationSetRequest carries the [in] parameters of RRPC_FWDeleteAuthenticationSet.
+type rRPC_FWDeleteAuthenticationSetRequest struct {
+	HPolicyStore msfasp.FW_POLICY_STORE_HANDLE
+	IpSecPhase   msfasp.FW_IPSEC_PHASE
+	WszSetId     ndr.WSTR
+}
+
+func (*rRPC_FWDeleteAuthenticationSetRequest) Opnum() uint16 {
+	return RemoteFW.OpnumRRPC_FWDeleteAuthenticationSet
+}
+
+// rRPC_FWDeleteAuthenticationSetResponse carries the [out] parameters and return value of RRPC_FWDeleteAuthenticationSet.
+type rRPC_FWDeleteAuthenticationSetResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// RRPC_FWDeleteAuthenticationSet calls RRPC_FWDeleteAuthenticationSet (opnum 19) ([MS-FASP] — verify the parameter
+// modeling and status handling).
+func RRPC_FWDeleteAuthenticationSet(rpc ndr.Invoker, hPolicyStore msfasp.FW_POLICY_STORE_HANDLE, ipSecPhase msfasp.FW_IPSEC_PHASE, wszSetId ndr.WSTR) (err error) {
+	req := &rRPC_FWDeleteAuthenticationSetRequest{
+		HPolicyStore: hPolicyStore,
+		IpSecPhase:   ipSecPhase,
+		WszSetId:     wszSetId,
+	}
+	var resp rRPC_FWDeleteAuthenticationSetResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RRPC_FWDeleteAuthenticationSet: %w", err)
+		return
+	}
+	if uint32(resp.Status) != RemoteFW.StatusSuccess {
+		err = fmt.Errorf("RRPC_FWDeleteAuthenticationSet failed: %s", RemoteFW.StatusString(uint32(resp.Status)))
+	}
+	return
+}
