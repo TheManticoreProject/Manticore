@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// rpcDeletePrinterDataRequest carries the [in] parameters of RpcDeletePrinterData.
+type rpcDeletePrinterDataRequest struct {
+	HPrinter   structures.PRINTER_HANDLE
+	PValueName ndr.WSTR
+}
+
+func (*rpcDeletePrinterDataRequest) Opnum() uint16 { return winspool.OpnumRpcDeletePrinterData }
+
+// rpcDeletePrinterDataResponse carries the [out] parameters and return value of RpcDeletePrinterData.
+type rpcDeletePrinterDataResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// RpcDeletePrinterData calls RpcDeletePrinterData (opnum 73) ([MS-RPRN] — verify the parameter
+// modeling and status handling).
+func RpcDeletePrinterData(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pValueName ndr.WSTR) (err error) {
+	req := &rpcDeletePrinterDataRequest{
+		HPrinter:   hPrinter,
+		PValueName: pValueName,
+	}
+	var resp rpcDeletePrinterDataResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RpcDeletePrinterData: %w", err)
+		return
+	}
+	if uint32(resp.Status) != winspool.StatusSuccess {
+		err = fmt.Errorf("RpcDeletePrinterData failed: %s", winspool.StatusString(uint32(resp.Status)))
+	}
+	return
+}
