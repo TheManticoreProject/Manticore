@@ -24,11 +24,11 @@ import (
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // DefaultTimeout bounds the endpoint-mapper and drsuapi TCP dials and reads when the
@@ -44,9 +44,9 @@ type Client struct {
 	timeout time.Duration
 
 	rpc       *dcerpcclient.Client
-	handle    structures.DRS_HANDLE
-	serverExt *structures.DRS_EXTENSIONS_INT
-	sourceDSA structures.UUID // source DSA GUID for GetNCChanges; zero (NULL) by default
+	handle    drsrtypes.DRS_HANDLE
+	serverExt *drsrtypes.DRS_EXTENSIONS_INT
+	sourceDSA drsrtypes.UUID // source DSA GUID for GetNCChanges; zero (NULL) by default
 	bound     bool
 
 	// onReplicationProgress, when non-nil, is invoked once per replicated page during
@@ -98,8 +98,8 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("msdrsr: %w", err)
 	}
 
-	clientGUID := structures.NTDSAPIClientGUID()
-	clientExt := structures.DefaultClientExtensions().ToExtensions()
+	clientGUID := drsrtypes.NTDSAPIClientGUID()
+	clientExt := drsrtypes.DefaultClientExtensions().ToExtensions()
 	serverExt, handle, err := functions.IDL_DRSBind(rpc, &clientGUID, &clientExt)
 	if err != nil {
 		rpc.Close()
@@ -119,12 +119,12 @@ func (c *Client) Connect() error {
 
 // Handle returns the drsuapi context handle established by Connect. It is the null
 // handle until Connect succeeds.
-func (c *Client) Handle() structures.DRS_HANDLE { return c.handle }
+func (c *Client) Handle() drsrtypes.DRS_HANDLE { return c.handle }
 
 // ServerExtensions returns the capability structure the server returned at IDL_DRSBind,
 // or nil if not connected or the server returned none. Callers inspect its DwFlags to
 // confirm negotiated features (e.g. STRONG_ENCRYPTION before requesting secrets).
-func (c *Client) ServerExtensions() *structures.DRS_EXTENSIONS_INT { return c.serverExt }
+func (c *Client) ServerExtensions() *drsrtypes.DRS_EXTENSIONS_INT { return c.serverExt }
 
 // SessionKey returns the NTLM session key negotiated for this connection, used to
 // decrypt replicated secrets in IDL_DRSGetNCChanges. It is nil until Connect succeeds.
@@ -154,7 +154,7 @@ func (c *Client) Close() error {
 	closeErr := c.rpc.Close()
 	c.rpc = nil
 	c.bound = false
-	c.handle = structures.DRS_HANDLE{}
+	c.handle = drsrtypes.DRS_HANDLE{}
 	if unbindErr != nil {
 		return unbindErr
 	}

@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSReplicaDelRequest carries the [in] parameters of IDL_DRSReplicaDel.
 type iDL_DRSReplicaDelRequest struct {
-	HDrs      structures.DRS_HANDLE
+	HDrs      msdrsr.DRS_HANDLE
 	DwVersion ndr.DWORD
-	PmsgDel   structures.DRS_MSG_REPDEL
+	PmsgDel   msdrsr.DRS_MSG_REPDEL
 }
 
 func (*iDL_DRSReplicaDelRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSReplicaDel }
@@ -24,7 +24,7 @@ type iDL_DRSReplicaDelResponse struct {
 
 // IDL_DRSReplicaDel calls IDL_DRSReplicaDel (opnum 6) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSReplicaDel(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwVersion ndr.DWORD, pmsgDel structures.DRS_MSG_REPDEL) (err error) {
+func IDL_DRSReplicaDel(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwVersion ndr.DWORD, pmsgDel msdrsr.DRS_MSG_REPDEL) (err error) {
 	req := &iDL_DRSReplicaDelRequest{
 		HDrs:      hDrs,
 		DwVersion: dwVersion,

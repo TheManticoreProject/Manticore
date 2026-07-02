@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSReplicaModifyRequest carries the [in] parameters of IDL_DRSReplicaModify.
 type iDL_DRSReplicaModifyRequest struct {
-	HDrs      structures.DRS_HANDLE
+	HDrs      msdrsr.DRS_HANDLE
 	DwVersion ndr.DWORD
-	PmsgMod   structures.DRS_MSG_REPMOD
+	PmsgMod   msdrsr.DRS_MSG_REPMOD
 }
 
 func (*iDL_DRSReplicaModifyRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSReplicaModify }
@@ -24,7 +24,7 @@ type iDL_DRSReplicaModifyResponse struct {
 
 // IDL_DRSReplicaModify calls IDL_DRSReplicaModify (opnum 7) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSReplicaModify(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwVersion ndr.DWORD, pmsgMod structures.DRS_MSG_REPMOD) (err error) {
+func IDL_DRSReplicaModify(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwVersion ndr.DWORD, pmsgMod msdrsr.DRS_MSG_REPMOD) (err error) {
 	req := &iDL_DRSReplicaModifyRequest{
 		HDrs:      hDrs,
 		DwVersion: dwVersion,

@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // DRS_VERIFY_DSNAMES is the IDL_DRSVerifyNames flag selecting verification by DSNAME
@@ -29,14 +29,14 @@ func (c *Client) VerifyNames(dns []string) ([]VerifiedName, error) {
 	if !c.bound {
 		return nil, fmt.Errorf("msdrsr: not connected")
 	}
-	rp := make([]*structures.DSNAME, len(dns))
+	rp := make([]*drsrtypes.DSNAME, len(dns))
 	for i, dn := range dns {
-		d := structures.NewDSNameFromDN(dn)
+		d := drsrtypes.NewDSNameFromDN(dn)
 		rp[i] = &d
 	}
-	msgIn := structures.DRS_MSG_VERIFYREQ{
+	msgIn := drsrtypes.DRS_MSG_VERIFYREQ{
 		Tag: 1,
-		V1: structures.DRS_MSG_VERIFYREQ_V1{
+		V1: drsrtypes.DRS_MSG_VERIFYREQ_V1{
 			DwFlags: DRS_VERIFY_DSNAMES,
 			CNames:  ndr.DWORD(len(dns)),
 			RpNames: rp,

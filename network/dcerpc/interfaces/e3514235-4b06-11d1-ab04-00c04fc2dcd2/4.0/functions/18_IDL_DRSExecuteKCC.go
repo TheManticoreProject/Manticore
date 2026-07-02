@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSExecuteKCCRequest carries the [in] parameters of IDL_DRSExecuteKCC.
 type iDL_DRSExecuteKCCRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        msdrsr.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_KCC_EXECUTE
+	PmsgIn      msdrsr.DRS_MSG_KCC_EXECUTE
 }
 
 func (*iDL_DRSExecuteKCCRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSExecuteKCC }
@@ -24,7 +24,7 @@ type iDL_DRSExecuteKCCResponse struct {
 
 // IDL_DRSExecuteKCC calls IDL_DRSExecuteKCC (opnum 18) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSExecuteKCC(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn structures.DRS_MSG_KCC_EXECUTE) (err error) {
+func IDL_DRSExecuteKCC(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn msdrsr.DRS_MSG_KCC_EXECUTE) (err error) {
 	req := &iDL_DRSExecuteKCCRequest{
 		HDrs:        hDrs,
 		DwInVersion: dwInVersion,

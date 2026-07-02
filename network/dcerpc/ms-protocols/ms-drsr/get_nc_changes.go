@@ -5,9 +5,9 @@ import (
 	"unicode/utf16"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // ReplicatedAttribute is one attribute of a replicated object: its ATTRTYP (an OID
@@ -32,8 +32,8 @@ type ReplicatedObject struct {
 // raw V6 reply (which carries the PEK list and uptodate vectors).
 type ReplicationResult struct {
 	Objects     []ReplicatedObject
-	PrefixTable structures.SCHEMA_PREFIX_TABLE
-	Reply       *structures.DRS_MSG_GETCHGREPLY_V6
+	PrefixTable drsrtypes.SCHEMA_PREFIX_TABLE
+	Reply       *drsrtypes.DRS_MSG_GETCHGREPLY_V6
 }
 
 // ReplicateSingleObject replicates exactly one object, identified by its objectGUID, via
@@ -49,17 +49,17 @@ func (c *Client) ReplicateSingleObject(objectGUID guid.GUID) (*ReplicationResult
 		return nil, fmt.Errorf("msdrsr: not connected")
 	}
 
-	pnc := structures.NewDSNameFromGUID(objectGUID)
-	msgIn := structures.DRS_MSG_GETCHGREQ{
+	pnc := drsrtypes.NewDSNameFromGUID(objectGUID)
+	msgIn := drsrtypes.DRS_MSG_GETCHGREQ{
 		Tag: 8,
-		V8: structures.DRS_MSG_GETCHGREQ_V8{
+		V8: drsrtypes.DRS_MSG_GETCHGREQ_V8{
 			UuidDsaObjDest: c.sourceDSA, // NULL unless SetSourceDSA was called
 			UuidInvocIdSrc: c.sourceDSA,
 			PNC:            &pnc,
-			UlFlags:        ndr.DWORD(structures.DRS_INIT_SYNC | structures.DRS_WRIT_REP),
+			UlFlags:        ndr.DWORD(drsrtypes.DRS_INIT_SYNC | drsrtypes.DRS_WRIT_REP),
 			CMaxObjects:    1,
 			CMaxBytes:      0,
-			UlExtendedOp:   ndr.DWORD(structures.EXOP_REPL_OBJ),
+			UlExtendedOp:   ndr.DWORD(drsrtypes.EXOP_REPL_OBJ),
 		},
 	}
 
@@ -80,7 +80,7 @@ func (c *Client) ReplicateSingleObject(objectGUID guid.GUID) (*ReplicationResult
 }
 
 // projectEntInf converts a wire ENTINF into a friendly ReplicatedObject.
-func projectEntInf(e structures.ENTINF) ReplicatedObject {
+func projectEntInf(e drsrtypes.ENTINF) ReplicatedObject {
 	var obj ReplicatedObject
 	if e.PName != nil {
 		obj.GUID = e.PName.Guid.GUID()

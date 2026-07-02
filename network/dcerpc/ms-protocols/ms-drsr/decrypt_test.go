@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // Cross-implementation vector generated with impacket's deriveKey + the documented
@@ -54,10 +54,10 @@ func TestBerEncodeOIDContent(t *testing.T) {
 // table index 9 (the usual AD layout), unicodePwd resolves to 0x9005A.
 func TestAttidForOID(t *testing.T) {
 	msPrefix, _ := hex.DecodeString("2a864886f7140104") // 1.2.840.113556.1.4
-	pt := structures.SCHEMA_PREFIX_TABLE{
+	pt := drsrtypes.SCHEMA_PREFIX_TABLE{
 		PrefixCount: 1,
-		PPrefixEntry: []structures.PrefixTableEntry{
-			{Ndx: 9, Prefix: structures.OID_t{Length: uint32(len(msPrefix)), Elements: msPrefix}},
+		PPrefixEntry: []drsrtypes.PrefixTableEntry{
+			{Ndx: 9, Prefix: drsrtypes.OID_t{Length: uint32(len(msPrefix)), Elements: msPrefix}},
 		},
 	}
 	got, ok := attidForOID(pt, oidUnicodePwd)

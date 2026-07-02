@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	msdrsr "github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/ms-drsr"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // TestDRSBindUnbind exercises the full Phase 2 path against a live Domain Controller:
@@ -67,7 +67,7 @@ func TestDRSBindUnbind(t *testing.T) {
 	}
 	t.Logf("server extensions: dwFlags=0x%08x dwFlagsExt=0x%08x dwReplEpoch=%d",
 		ext.DwFlags, ext.DwFlagsExt, ext.DwReplEpoch)
-	if ext.DwFlags&structures.DRS_EXT_STRONG_ENCRYPTION == 0 {
+	if ext.DwFlags&drsrtypes.DRS_EXT_STRONG_ENCRYPTION == 0 {
 		t.Error("server did not negotiate STRONG_ENCRYPTION; secret replication would be refused")
 	}
 }
@@ -100,9 +100,9 @@ func TestCrackAndReplicate(t *testing.T) {
 	}
 	defer c.Close()
 
-	name, format := dn, structures.DS_FQDN_1779_NAME
+	name, format := dn, drsrtypes.DS_FQDN_1779_NAME
 	if name == "" {
-		name, format = target, structures.DS_NT4_ACCOUNT_NAME
+		name, format = target, drsrtypes.DS_NT4_ACCOUNT_NAME
 	}
 	objGUID, err := c.ResolveToGUID(name, format)
 	if err != nil {
@@ -379,12 +379,12 @@ func TestReadOpnums2(t *testing.T) {
 	}
 
 	adminSID, _ := hex.DecodeString("010500000000000515000000fdca06a7cba8d22c3eae86ecf4010000")
-	if groups, err := c.GetMemberships([][]byte{adminSID}, structures.RevMembGetGroupsForUser, nc); err != nil {
+	if groups, err := c.GetMemberships([][]byte{adminSID}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
 		t.Fatalf("GetMemberships: %v", err)
 	} else {
 		t.Logf("GetMemberships: %d group(s)", len(groups))
 	}
-	if groups, err := c.GetMemberships2([][][]byte{{adminSID}}, structures.RevMembGetGroupsForUser, nc); err != nil {
+	if groups, err := c.GetMemberships2([][][]byte{{adminSID}}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
 		t.Fatalf("GetMemberships2: %v", err)
 	} else {
 		t.Logf("GetMemberships2: %d group(s)", len(groups))

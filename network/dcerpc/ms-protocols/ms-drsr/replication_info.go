@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // GetReplInfo calls IDL_DRSGetReplInfo (opnum 19) for the given DS_REPL_INFO_TYPE and
@@ -14,13 +14,13 @@ import (
 // reply.PCursors for DS_REPL_INFO_CURSORS_FOR_NC). objectDN is the target NC or object DN
 // for the chosen info type; sourceDSA may be the zero GUID. This is a read-only recon
 // call. For the common info types prefer the friendly helpers (ReplicationCursors, …).
-func (c *Client) GetReplInfo(infoType uint32, objectDN string, sourceDSA guid.GUID) (*structures.DRS_MSG_GETREPLINFO_REPLY, error) {
+func (c *Client) GetReplInfo(infoType uint32, objectDN string, sourceDSA guid.GUID) (*drsrtypes.DRS_MSG_GETREPLINFO_REPLY, error) {
 	if !c.bound {
 		return nil, fmt.Errorf("msdrsr: not connected")
 	}
-	v1 := structures.DRS_MSG_GETREPLINFO_REQ_V1{
+	v1 := drsrtypes.DRS_MSG_GETREPLINFO_REQ_V1{
 		InfoType:             ndr.DWORD(infoType),
-		UuidSourceDsaObjGuid: structures.UUIDFromGUID(sourceDSA),
+		UuidSourceDsaObjGuid: drsrtypes.UUIDFromGUID(sourceDSA),
 	}
 	// pszObjectDN is a [unique] (nullable) pointer: send NULL for an empty DN. Info types
 	// that ignore it (pending ops, KCC failures) reject a non-NULL empty string with
@@ -29,7 +29,7 @@ func (c *Client) GetReplInfo(infoType uint32, objectDN string, sourceDSA guid.GU
 		dn := ndr.WSTR(objectDN)
 		v1.PszObjectDN = &dn
 	}
-	msgIn := structures.DRS_MSG_GETREPLINFO_REQ{Tag: 1, V1: v1}
+	msgIn := drsrtypes.DRS_MSG_GETREPLINFO_REQ{Tag: 1, V1: v1}
 	_, msgOut, err := functions.IDL_DRSGetReplInfo(c.rpc, c.handle, 1, msgIn)
 	if err != nil {
 		return nil, fmt.Errorf("msdrsr: GetReplInfo(type=%d): %w", infoType, err)
@@ -48,7 +48,7 @@ type ReplCursor struct {
 // up-to-dateness vector) via IDL_DRSGetReplInfo (DS_REPL_INFO_CURSORS_FOR_NC). ncDN is
 // the NC distinguished name, e.g. "DC=lab,DC=local".
 func (c *Client) ReplicationCursors(ncDN string) ([]ReplCursor, error) {
-	reply, err := c.GetReplInfo(structures.DS_REPL_INFO_CURSORS_FOR_NC, ncDN, guid.GUID{})
+	reply, err := c.GetReplInfo(drsrtypes.DS_REPL_INFO_CURSORS_FOR_NC, ncDN, guid.GUID{})
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +85,9 @@ func (c *Client) QuerySitesByCost(fromSite string, toSites []string) ([]SiteCost
 		w := ndr.WSTR(s)
 		rg[i] = &w
 	}
-	msgIn := structures.DRS_MSG_QUERYSITESREQ{
+	msgIn := drsrtypes.DRS_MSG_QUERYSITESREQ{
 		Tag: 1,
-		V1: structures.DRS_MSG_QUERYSITESREQ_V1{
+		V1: drsrtypes.DRS_MSG_QUERYSITESREQ_V1{
 			PwszFromSite: &from,
 			CToSites:     ndr.DWORD(len(toSites)),
 			RgszToSites:  rg,
@@ -123,7 +123,7 @@ type ReplNeighbor struct {
 // ReplicationNeighbors returns the replication neighbors (repsFrom) of a naming context
 // via IDL_DRSGetReplInfo (DS_REPL_INFO_NEIGHBORS). ncDN is the NC distinguished name.
 func (c *Client) ReplicationNeighbors(ncDN string) ([]ReplNeighbor, error) {
-	reply, err := c.GetReplInfo(structures.DS_REPL_INFO_NEIGHBORS, ncDN, guid.GUID{})
+	reply, err := c.GetReplInfo(drsrtypes.DS_REPL_INFO_NEIGHBORS, ncDN, guid.GUID{})
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ type ReplPendingOp struct {
 // ReplicationPendingOps returns the DC's pending replication operations via
 // IDL_DRSGetReplInfo (DS_REPL_INFO_PENDING_OPS).
 func (c *Client) ReplicationPendingOps() ([]ReplPendingOp, error) {
-	reply, err := c.GetReplInfo(structures.DS_REPL_INFO_PENDING_OPS, "", guid.GUID{})
+	reply, err := c.GetReplInfo(drsrtypes.DS_REPL_INFO_PENDING_OPS, "", guid.GUID{})
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ type ReplFailure struct {
 	LastResult  uint32
 }
 
-func projectFailures(f *structures.DS_REPL_KCC_DSA_FAILURESW) []ReplFailure {
+func projectFailures(f *drsrtypes.DS_REPL_KCC_DSA_FAILURESW) []ReplFailure {
 	if f == nil {
 		return nil
 	}
@@ -207,7 +207,7 @@ func projectFailures(f *structures.DS_REPL_KCC_DSA_FAILURESW) []ReplFailure {
 // ReplicationConnectFailures returns KCC connection failures
 // (DS_REPL_INFO_KCC_DSA_CONNECT_FAILURES).
 func (c *Client) ReplicationConnectFailures() ([]ReplFailure, error) {
-	reply, err := c.GetReplInfo(structures.DS_REPL_INFO_KCC_DSA_CONNECT_FAILURES, "", guid.GUID{})
+	reply, err := c.GetReplInfo(drsrtypes.DS_REPL_INFO_KCC_DSA_CONNECT_FAILURES, "", guid.GUID{})
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (c *Client) ReplicationConnectFailures() ([]ReplFailure, error) {
 
 // ReplicationLinkFailures returns KCC link failures (DS_REPL_INFO_KCC_DSA_LINK_FAILURES).
 func (c *Client) ReplicationLinkFailures() ([]ReplFailure, error) {
-	reply, err := c.GetReplInfo(structures.DS_REPL_INFO_KCC_DSA_LINK_FAILURES, "", guid.GUID{})
+	reply, err := c.GetReplInfo(drsrtypes.DS_REPL_INFO_KCC_DSA_LINK_FAILURES, "", guid.GUID{})
 	if err != nil {
 		return nil, err
 	}

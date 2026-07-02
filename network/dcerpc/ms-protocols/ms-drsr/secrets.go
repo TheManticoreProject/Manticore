@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unicode/utf16"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // AccountSecrets holds the credential material decrypted from one replicated object.
@@ -21,6 +21,7 @@ type AccountSecrets struct {
 	LMHash         [16]byte
 	HasNT          bool
 	HasLM          bool
+	IsDeleted      bool
 	NTHistory      [][16]byte
 	LMHistory      [][16]byte
 
@@ -56,8 +57,13 @@ func (c *Client) DecryptSecrets(res *ReplicationResult) ([]*AccountSecrets, erro
 }
 
 // decryptObjectSecrets extracts and decrypts the secret attributes of a single object.
-func decryptObjectSecrets(obj ReplicatedObject, prefixTable structures.SCHEMA_PREFIX_TABLE, sessionKey []byte, rid uint32) (*AccountSecrets, error) {
+func decryptObjectSecrets(obj ReplicatedObject, prefixTable drsrtypes.SCHEMA_PREFIX_TABLE, sessionKey []byte, rid uint32) (*AccountSecrets, error) {
 	sec := &AccountSecrets{DN: obj.DN, RID: rid}
+
+	// isDeleted is a 4-byte LE boolean: TRUE = 0x01000000
+	if v := firstValue(findAttr(obj, prefixTable, oidIsDeleted)); v != nil && len(v) >= 4 && v[0] != 0 {
+		sec.IsDeleted = true
+	}
 
 	if v := firstValue(findAttr(obj, prefixTable, oidSAMAccountName)); v != nil {
 		sec.SAMAccountName = utf16leToString(v)
