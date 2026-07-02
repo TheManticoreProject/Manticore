@@ -3,8 +3,8 @@ package msdrsr
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // DCSync performs a full DCSync of a single account against the connected DC: it resolves
@@ -24,17 +24,17 @@ func (c *Client) DCSync(name string, formatOffered uint32) (*AccountSecrets, err
 // "CN=Administrator,CN=Users,DC=lab,DC=local"). This is the most portable form: unlike
 // the NT4 "DOMAIN\\user" format it needs no NetBIOS domain name.
 func (c *Client) DCSyncByDN(dn string) (*AccountSecrets, error) {
-	return c.DCSync(dn, structures.DS_FQDN_1779_NAME)
+	return c.DCSync(dn, drsrtypes.DS_FQDN_1779_NAME)
 }
 
 // DCSyncByAccount DCSyncs an account identified by its NT4 name ("DOMAIN\\user").
 func (c *Client) DCSyncByAccount(domainUser string) (*AccountSecrets, error) {
-	return c.DCSync(domainUser, structures.DS_NT4_ACCOUNT_NAME)
+	return c.DCSync(domainUser, drsrtypes.DS_NT4_ACCOUNT_NAME)
 }
 
 // DCSyncByUPN DCSyncs an account identified by its user principal name ("user@domain").
 func (c *Client) DCSyncByUPN(upn string) (*AccountSecrets, error) {
-	return c.DCSync(upn, structures.DS_USER_PRINCIPAL_NAME)
+	return c.DCSync(upn, drsrtypes.DS_USER_PRINCIPAL_NAME)
 }
 
 // dcsyncGUID replicates and decrypts the object with the given GUID, returning the single

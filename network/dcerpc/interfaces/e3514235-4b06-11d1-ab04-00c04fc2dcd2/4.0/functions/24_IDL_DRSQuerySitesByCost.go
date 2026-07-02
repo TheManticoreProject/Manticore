@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSQuerySitesByCostRequest carries the [in] parameters of IDL_DRSQuerySitesByCost.
 type iDL_DRSQuerySitesByCostRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        msdrsr.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_QUERYSITESREQ
+	PmsgIn      msdrsr.DRS_MSG_QUERYSITESREQ
 }
 
 func (*iDL_DRSQuerySitesByCostRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSQuerySitesByCost }
@@ -20,13 +20,13 @@ func (*iDL_DRSQuerySitesByCostRequest) Opnum() uint16 { return drsuapi.OpnumIDL_
 // iDL_DRSQuerySitesByCostResponse carries the [out] parameters and return value of IDL_DRSQuerySitesByCost.
 type iDL_DRSQuerySitesByCostResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DRS_MSG_QUERYSITESREPLY
+	PmsgOut       msdrsr.DRS_MSG_QUERYSITESREPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
 // IDL_DRSQuerySitesByCost calls IDL_DRSQuerySitesByCost (opnum 24) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSQuerySitesByCost(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn structures.DRS_MSG_QUERYSITESREQ) (PdwOutVersion ndr.DWORD, PmsgOut structures.DRS_MSG_QUERYSITESREPLY, err error) {
+func IDL_DRSQuerySitesByCost(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn msdrsr.DRS_MSG_QUERYSITESREQ) (PdwOutVersion ndr.DWORD, PmsgOut msdrsr.DRS_MSG_QUERYSITESREPLY, err error) {
 	req := &iDL_DRSQuerySitesByCostRequest{
 		HDrs:        hDrs,
 		DwInVersion: dwInVersion,

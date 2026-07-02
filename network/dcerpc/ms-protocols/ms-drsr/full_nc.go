@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // Page sizes for full-NC replication ([MS-DRSR] 4.5.1 recommends these; the server may
@@ -40,22 +40,22 @@ func (c *Client) ReplicateNC(ncDN string) (*ReplicationResult, error) {
 		return nil, fmt.Errorf("msdrsr: not connected")
 	}
 
-	pnc := structures.NewDSNameFromDN(ncDN)
+	pnc := drsrtypes.NewDSNameFromDN(ncDN)
 	// ulFlags MUST stay byte-identical for every request in the cycle ([MS-DRSR] 4.5.1):
 	// initial, writable (full attribute set incl. secrets), never-synced (from scratch).
-	const ulFlags = ndr.DWORD(structures.DRS_INIT_SYNC | structures.DRS_WRIT_REP | structures.DRS_NEVER_SYNCED)
+	const ulFlags = ndr.DWORD(drsrtypes.DRS_INIT_SYNC | drsrtypes.DRS_WRIT_REP | drsrtypes.DRS_NEVER_SYNCED)
 
 	result := &ReplicationResult{}
-	var usnFrom structures.USN_VECTOR // zero on the first request
-	var invocID structures.UUID       // NULL on the first request
+	var usnFrom drsrtypes.USN_VECTOR // zero on the first request
+	var invocID drsrtypes.UUID       // NULL on the first request
 
 	for page := 0; ; page++ {
 		if page > maxFullNCPages {
 			return nil, fmt.Errorf("msdrsr: full-NC replication exceeded %d pages (server never cleared fMoreData?)", maxFullNCPages)
 		}
-		msgIn := structures.DRS_MSG_GETCHGREQ{
+		msgIn := drsrtypes.DRS_MSG_GETCHGREQ{
 			Tag: 8,
-			V8: structures.DRS_MSG_GETCHGREQ_V8{
+			V8: drsrtypes.DRS_MSG_GETCHGREQ_V8{
 				UuidDsaObjDest: c.sourceDSA,
 				UuidInvocIdSrc: invocID,
 				PNC:            &pnc,

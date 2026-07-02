@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSWriteSPNRequest carries the [in] parameters of IDL_DRSWriteSPN.
 type iDL_DRSWriteSPNRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        msdrsr.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_SPNREQ
+	PmsgIn      msdrsr.DRS_MSG_SPNREQ
 }
 
 func (*iDL_DRSWriteSPNRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSWriteSPN }
@@ -20,13 +20,13 @@ func (*iDL_DRSWriteSPNRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSWrite
 // iDL_DRSWriteSPNResponse carries the [out] parameters and return value of IDL_DRSWriteSPN.
 type iDL_DRSWriteSPNResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DRS_MSG_SPNREPLY
+	PmsgOut       msdrsr.DRS_MSG_SPNREPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
 // IDL_DRSWriteSPN calls IDL_DRSWriteSPN (opnum 13) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSWriteSPN(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn structures.DRS_MSG_SPNREQ) (PdwOutVersion ndr.DWORD, PmsgOut structures.DRS_MSG_SPNREPLY, err error) {
+func IDL_DRSWriteSPN(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn msdrsr.DRS_MSG_SPNREQ) (PdwOutVersion ndr.DWORD, PmsgOut msdrsr.DRS_MSG_SPNREPLY, err error) {
 	req := &iDL_DRSWriteSPNRequest{
 		HDrs:        hDrs,
 		DwInVersion: dwInVersion,

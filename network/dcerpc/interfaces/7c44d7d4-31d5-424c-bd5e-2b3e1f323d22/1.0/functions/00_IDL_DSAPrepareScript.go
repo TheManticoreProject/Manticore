@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	dsaop "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/7c44d7d4-31d5-424c-bd5e-2b3e1f323d22/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/7c44d7d4-31d5-424c-bd5e-2b3e1f323d22/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DSAPrepareScriptRequest carries the [in] parameters of IDL_DSAPrepareScript.
 type iDL_DSAPrepareScriptRequest struct {
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DSA_MSG_PREPARE_SCRIPT_REQ
+	PmsgIn      msdrsr.DSA_MSG_PREPARE_SCRIPT_REQ
 }
 
 func (*iDL_DSAPrepareScriptRequest) Opnum() uint16 { return dsaop.OpnumIDL_DSAPrepareScript }
@@ -19,13 +19,13 @@ func (*iDL_DSAPrepareScriptRequest) Opnum() uint16 { return dsaop.OpnumIDL_DSAPr
 // iDL_DSAPrepareScriptResponse carries the [out] parameters and return value of IDL_DSAPrepareScript.
 type iDL_DSAPrepareScriptResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DSA_MSG_PREPARE_SCRIPT_REPLY
+	PmsgOut       msdrsr.DSA_MSG_PREPARE_SCRIPT_REPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
 // IDL_DSAPrepareScript calls IDL_DSAPrepareScript (opnum 0) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DSAPrepareScript(rpc ndr.Invoker, dwInVersion ndr.DWORD, pmsgIn structures.DSA_MSG_PREPARE_SCRIPT_REQ) (PdwOutVersion ndr.DWORD, PmsgOut structures.DSA_MSG_PREPARE_SCRIPT_REPLY, err error) {
+func IDL_DSAPrepareScript(rpc ndr.Invoker, dwInVersion ndr.DWORD, pmsgIn msdrsr.DSA_MSG_PREPARE_SCRIPT_REQ) (PdwOutVersion ndr.DWORD, PmsgOut msdrsr.DSA_MSG_PREPARE_SCRIPT_REPLY, err error) {
 	req := &iDL_DSAPrepareScriptRequest{
 		DwInVersion: dwInVersion,
 		PmsgIn:      pmsgIn,

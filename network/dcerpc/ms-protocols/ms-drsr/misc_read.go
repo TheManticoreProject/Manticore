@@ -5,24 +5,24 @@ import (
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // readNgcKeyRequest / readNgcKeyResponse drive IDL_DRSReadNgcKey directly (rather than via
 // functions.IDL_DRSReadNgcKey) so a non-success RetVal — notably "account has no NGC key"
 // — is returned as a code rather than collapsed into a transport error.
 type readNgcKeyRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        drsrtypes.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_READNGCKEYREQ
+	PmsgIn      drsrtypes.DRS_MSG_READNGCKEYREQ
 }
 
 func (*readNgcKeyRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSReadNgcKey }
 
 type readNgcKeyResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DRS_MSG_READNGCKEYREPLY
+	PmsgOut       drsrtypes.DRS_MSG_READNGCKEYREPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
@@ -38,7 +38,7 @@ func (c *Client) ReadNgcKey(accountDN string) (key []byte, retVal uint32, err er
 	acct := ndr.WSTR(accountDN)
 	req := &readNgcKeyRequest{
 		DwInVersion: 1,
-		PmsgIn:      structures.DRS_MSG_READNGCKEYREQ{Tag: 1, V1: structures.DRS_MSG_READNGCKEYREQ_V1{PwszAccount: &acct}},
+		PmsgIn:      drsrtypes.DRS_MSG_READNGCKEYREQ{Tag: 1, V1: drsrtypes.DRS_MSG_READNGCKEYREQ_V1{PwszAccount: &acct}},
 		HDrs:        c.handle,
 	}
 	var resp readNgcKeyResponse
@@ -64,12 +64,12 @@ func (c *Client) GetNT4ChangeLog(restart []byte, preferredMaxLength uint32) (*NT
 	if !c.bound {
 		return nil, fmt.Errorf("msdrsr: not connected")
 	}
-	v1 := structures.DRS_MSG_NT4_CHGLOG_REQ_V1{
+	v1 := drsrtypes.DRS_MSG_NT4_CHGLOG_REQ_V1{
 		PreferredMaximumLength: ndr.DWORD(preferredMaxLength),
 		CbRestart:              ndr.DWORD(len(restart)),
 		PRestart:               restart,
 	}
-	msgIn := structures.DRS_MSG_NT4_CHGLOG_REQ{Tag: 1, V1: v1}
+	msgIn := drsrtypes.DRS_MSG_NT4_CHGLOG_REQ{Tag: 1, V1: v1}
 	_, msgOut, err := functions.IDL_DRSGetNT4ChangeLog(c.rpc, c.handle, 1, msgIn)
 	if err != nil {
 		return nil, fmt.Errorf("msdrsr: GetNT4ChangeLog: %w", err)

@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSGetMembershipsRequest carries the [in] parameters of IDL_DRSGetMemberships.
 type iDL_DRSGetMembershipsRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        msdrsr.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_REVMEMB_REQ
+	PmsgIn      msdrsr.DRS_MSG_REVMEMB_REQ
 }
 
 func (*iDL_DRSGetMembershipsRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSGetMemberships }
@@ -20,13 +20,13 @@ func (*iDL_DRSGetMembershipsRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DR
 // iDL_DRSGetMembershipsResponse carries the [out] parameters and return value of IDL_DRSGetMemberships.
 type iDL_DRSGetMembershipsResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DRS_MSG_REVMEMB_REPLY
+	PmsgOut       msdrsr.DRS_MSG_REVMEMB_REPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
 // IDL_DRSGetMemberships calls IDL_DRSGetMemberships (opnum 9) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSGetMemberships(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn structures.DRS_MSG_REVMEMB_REQ) (PdwOutVersion ndr.DWORD, PmsgOut structures.DRS_MSG_REVMEMB_REPLY, err error) {
+func IDL_DRSGetMemberships(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn msdrsr.DRS_MSG_REVMEMB_REQ) (PdwOutVersion ndr.DWORD, PmsgOut msdrsr.DRS_MSG_REVMEMB_REPLY, err error) {
 	req := &iDL_DRSGetMembershipsRequest{
 		HDrs:        hDrs,
 		DwInVersion: dwInVersion,

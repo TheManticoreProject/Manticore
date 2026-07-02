@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSReplicaVerifyObjectsRequest carries the [in] parameters of IDL_DRSReplicaVerifyObjects.
 type iDL_DRSReplicaVerifyObjectsRequest struct {
-	HDrs       structures.DRS_HANDLE
+	HDrs       msdrsr.DRS_HANDLE
 	DwVersion  ndr.DWORD
-	PmsgVerify structures.DRS_MSG_REPVERIFYOBJ
+	PmsgVerify msdrsr.DRS_MSG_REPVERIFYOBJ
 }
 
 func (*iDL_DRSReplicaVerifyObjectsRequest) Opnum() uint16 {
@@ -26,7 +26,7 @@ type iDL_DRSReplicaVerifyObjectsResponse struct {
 
 // IDL_DRSReplicaVerifyObjects calls IDL_DRSReplicaVerifyObjects (opnum 22) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSReplicaVerifyObjects(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwVersion ndr.DWORD, pmsgVerify structures.DRS_MSG_REPVERIFYOBJ) (err error) {
+func IDL_DRSReplicaVerifyObjects(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwVersion ndr.DWORD, pmsgVerify msdrsr.DRS_MSG_REPVERIFYOBJ) (err error) {
 	req := &iDL_DRSReplicaVerifyObjectsRequest{
 		HDrs:       hDrs,
 		DwVersion:  dwVersion,

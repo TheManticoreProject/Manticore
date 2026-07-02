@@ -5,16 +5,16 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // msPrefixTable returns a prefix table with the 1.2.840.113556.1.4 attribute prefix at
 // index 9, as a default DC reply carries it.
-func msPrefixTable() structures.SCHEMA_PREFIX_TABLE {
+func msPrefixTable() drsrtypes.SCHEMA_PREFIX_TABLE {
 	p, _ := hex.DecodeString("2a864886f7140104")
-	return structures.SCHEMA_PREFIX_TABLE{
+	return drsrtypes.SCHEMA_PREFIX_TABLE{
 		PrefixCount:  1,
-		PPrefixEntry: []structures.PrefixTableEntry{{Ndx: 9, Prefix: structures.OID_t{Length: uint32(len(p)), Elements: p}}},
+		PPrefixEntry: []drsrtypes.PrefixTableEntry{{Ndx: 9, Prefix: drsrtypes.OID_t{Length: uint32(len(p)), Elements: p}}},
 	}
 }
 

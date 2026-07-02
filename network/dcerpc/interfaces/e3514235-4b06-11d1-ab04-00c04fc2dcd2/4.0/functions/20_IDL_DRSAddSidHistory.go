@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // iDL_DRSAddSidHistoryRequest carries the [in] parameters of IDL_DRSAddSidHistory.
 type iDL_DRSAddSidHistoryRequest struct {
-	HDrs        structures.DRS_HANDLE
+	HDrs        msdrsr.DRS_HANDLE
 	DwInVersion ndr.DWORD
-	PmsgIn      structures.DRS_MSG_ADDSIDREQ
+	PmsgIn      msdrsr.DRS_MSG_ADDSIDREQ
 }
 
 func (*iDL_DRSAddSidHistoryRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRSAddSidHistory }
@@ -20,13 +20,13 @@ func (*iDL_DRSAddSidHistoryRequest) Opnum() uint16 { return drsuapi.OpnumIDL_DRS
 // iDL_DRSAddSidHistoryResponse carries the [out] parameters and return value of IDL_DRSAddSidHistory.
 type iDL_DRSAddSidHistoryResponse struct {
 	PdwOutVersion ndr.DWORD
-	PmsgOut       structures.DRS_MSG_ADDSIDREPLY
+	PmsgOut       msdrsr.DRS_MSG_ADDSIDREPLY
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
 // IDL_DRSAddSidHistory calls IDL_DRSAddSidHistory (opnum 20) ([MS-DRSR] — verify the parameter
 // modeling and status handling).
-func IDL_DRSAddSidHistory(rpc ndr.Invoker, hDrs structures.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn structures.DRS_MSG_ADDSIDREQ) (PdwOutVersion ndr.DWORD, PmsgOut structures.DRS_MSG_ADDSIDREPLY, err error) {
+func IDL_DRSAddSidHistory(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwInVersion ndr.DWORD, pmsgIn msdrsr.DRS_MSG_ADDSIDREQ) (PdwOutVersion ndr.DWORD, PmsgOut msdrsr.DRS_MSG_ADDSIDREPLY, err error) {
 	req := &iDL_DRSAddSidHistoryRequest{
 		HDrs:        hDrs,
 		DwInVersion: dwInVersion,

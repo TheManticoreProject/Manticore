@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0/structures"
+	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
 // Well-known attribute OIDs used by DCSync ([MS-ADA1]/[MS-ADA3]). GetNCChanges keys each
@@ -21,6 +21,7 @@ const (
 	oidLMPwdHistory            = "1.2.840.113556.1.4.160"
 	oidSupplementalCredentials = "1.2.840.113556.1.4.125"
 	oidUserPrincipalName       = "1.2.840.113556.1.4.656"
+	oidIsDeleted               = "1.2.840.113556.1.2.48"
 )
 
 // berEncodeOIDContent returns the BER/DER content octets of a dotted OID (without the
@@ -74,7 +75,7 @@ func base128(v uint64) []byte {
 // prefix table and combining the entry's Ndx with the last arc ([MS-DRSR] 5.16.4,
 // MakeAttid). It returns false if the prefix is not present in the table (the attribute
 // was not part of the reply).
-func attidForOID(prefixTable structures.SCHEMA_PREFIX_TABLE, oid string) (uint32, bool) {
+func attidForOID(prefixTable drsrtypes.SCHEMA_PREFIX_TABLE, oid string) (uint32, bool) {
 	parts := strings.Split(oid, ".")
 	lastValue, err := strconv.ParseUint(parts[len(parts)-1], 10, 32)
 	if err != nil {
@@ -110,7 +111,7 @@ func attidForOID(prefixTable structures.SCHEMA_PREFIX_TABLE, oid string) (uint32
 
 // findAttr returns the values of the attribute with the given OID in obj, resolved
 // through prefixTable, or nil if the object does not carry it.
-func findAttr(obj ReplicatedObject, prefixTable structures.SCHEMA_PREFIX_TABLE, oid string) [][]byte {
+func findAttr(obj ReplicatedObject, prefixTable drsrtypes.SCHEMA_PREFIX_TABLE, oid string) [][]byte {
 	attid, ok := attidForOID(prefixTable, oid)
 	if !ok {
 		return nil
