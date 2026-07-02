@@ -1,0 +1,42 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_SetMessageRequest carries the [in] parameters of FAX_SetMessage.
+type fAX_SetMessageRequest struct {
+	DwlMessageId   uint64
+	Folder         msfax.FAX_ENUM_MESSAGE_FOLDER
+	LpMessageProps msfax.FAX_MESSAGE_PROPS
+}
+
+func (*fAX_SetMessageRequest) Opnum() uint16 { return fax.OpnumFAX_SetMessage }
+
+// fAX_SetMessageResponse carries the [out] parameters and return value of FAX_SetMessage.
+type fAX_SetMessageResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_SetMessage calls FAX_SetMessage (opnum 102) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_SetMessage(rpc ndr.Invoker, dwlMessageId uint64, folder msfax.FAX_ENUM_MESSAGE_FOLDER, lpMessageProps msfax.FAX_MESSAGE_PROPS) (err error) {
+	req := &fAX_SetMessageRequest{
+		DwlMessageId:   dwlMessageId,
+		Folder:         folder,
+		LpMessageProps: lpMessageProps,
+	}
+	var resp fAX_SetMessageResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_SetMessage: %w", err)
+		return
+	}
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_SetMessage failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

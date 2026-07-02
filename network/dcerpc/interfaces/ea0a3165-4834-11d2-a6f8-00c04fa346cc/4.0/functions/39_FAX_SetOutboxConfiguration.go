@@ -1,0 +1,38 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_SetOutboxConfigurationRequest carries the [in] parameters of FAX_SetOutboxConfiguration.
+type fAX_SetOutboxConfigurationRequest struct {
+	POutboxCfg msfax.FAX_OUTBOX_CONFIG
+}
+
+func (*fAX_SetOutboxConfigurationRequest) Opnum() uint16 { return fax.OpnumFAX_SetOutboxConfiguration }
+
+// fAX_SetOutboxConfigurationResponse carries the [out] parameters and return value of FAX_SetOutboxConfiguration.
+type fAX_SetOutboxConfigurationResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_SetOutboxConfiguration calls FAX_SetOutboxConfiguration (opnum 39) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_SetOutboxConfiguration(rpc ndr.Invoker, pOutboxCfg msfax.FAX_OUTBOX_CONFIG) (err error) {
+	req := &fAX_SetOutboxConfigurationRequest{
+		POutboxCfg: pOutboxCfg,
+	}
+	var resp fAX_SetOutboxConfigurationResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_SetOutboxConfiguration: %w", err)
+		return
+	}
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_SetOutboxConfiguration failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

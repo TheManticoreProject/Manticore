@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// fAX_GetLoggingCategoriesRequest carries the [in] parameters of FAX_GetLoggingCategories.
+type fAX_GetLoggingCategoriesRequest struct {
+}
+
+func (*fAX_GetLoggingCategoriesRequest) Opnum() uint16 { return fax.OpnumFAX_GetLoggingCategories }
+
+// fAX_GetLoggingCategoriesResponse carries the [out] parameters and return value of FAX_GetLoggingCategories.
+type fAX_GetLoggingCategoriesResponse struct {
+	Buffer           []byte `ndr:"unique,conformant"`
+	BufferSize       ndr.DWORD
+	NumberCategories ndr.DWORD
+	Status           ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_GetLoggingCategories calls FAX_GetLoggingCategories (opnum 21) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_GetLoggingCategories(rpc ndr.Invoker) (Buffer []byte, BufferSize ndr.DWORD, NumberCategories ndr.DWORD, err error) {
+	req := &fAX_GetLoggingCategoriesRequest{}
+	var resp fAX_GetLoggingCategoriesResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_GetLoggingCategories: %w", err)
+		return
+	}
+	Buffer = resp.Buffer
+	BufferSize = resp.BufferSize
+	NumberCategories = resp.NumberCategories
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_GetLoggingCategories failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

@@ -1,0 +1,42 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_WriteFileRequest carries the [in] parameters of FAX_WriteFile.
+type fAX_WriteFileRequest struct {
+	HCopy      msfax.RPC_FAX_COPY_HANDLE
+	LpbData    []uint8 `ndr:"ref,size_is=DwDataSize"`
+	DwDataSize ndr.DWORD
+}
+
+func (*fAX_WriteFileRequest) Opnum() uint16 { return fax.OpnumFAX_WriteFile }
+
+// fAX_WriteFileResponse carries the [out] parameters and return value of FAX_WriteFile.
+type fAX_WriteFileResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_WriteFile calls FAX_WriteFile (opnum 70) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_WriteFile(rpc ndr.Invoker, hCopy msfax.RPC_FAX_COPY_HANDLE, lpbData []uint8, dwDataSize ndr.DWORD) (err error) {
+	req := &fAX_WriteFileRequest{
+		HCopy:      hCopy,
+		LpbData:    lpbData,
+		DwDataSize: dwDataSize,
+	}
+	var resp fAX_WriteFileResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_WriteFile: %w", err)
+		return
+	}
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_WriteFile failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

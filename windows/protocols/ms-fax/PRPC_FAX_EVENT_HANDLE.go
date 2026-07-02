@@ -1,0 +1,4 @@
+package msfax
+
+// PRPC_FAX_EVENT_HANDLE is an alias for RPC_FAX_EVENT_HANDLE ([MS-FAX]).
+type PRPC_FAX_EVENT_HANDLE = RPC_FAX_EVENT_HANDLE

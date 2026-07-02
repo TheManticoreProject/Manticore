@@ -1,0 +1,4 @@
+package msfax
+
+// PRPC_FAX_SVC_HANDLE is an alias for RPC_FAX_SVC_HANDLE ([MS-FAX]).
+type PRPC_FAX_SVC_HANDLE = RPC_FAX_SVC_HANDLE

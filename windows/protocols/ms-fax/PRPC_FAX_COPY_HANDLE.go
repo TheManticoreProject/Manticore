@@ -1,0 +1,4 @@
+package msfax
+
+// PRPC_FAX_COPY_HANDLE is an alias for RPC_FAX_COPY_HANDLE ([MS-FAX]).
+type PRPC_FAX_COPY_HANDLE = RPC_FAX_COPY_HANDLE
