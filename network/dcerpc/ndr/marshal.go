@@ -310,7 +310,10 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			e.WriteBytes(b)
 			return nil
 		}
-		return fmt.Errorf("ndr: unsupported array element %s", fv.Type().Elem().Kind())
+		// A fixed (non-conformant) array of non-byte elements ([C706] 14.3.4): the
+		// Len() elements are marshalled in place with no count prefix. Element pointer
+		// bodies defer to the array's own flush point, exactly as for conformant arrays.
+		return marshalElements(e, fv, elementTag(tag))
 	default:
 		return marshalScalar(e, fv)
 	}
@@ -574,7 +577,15 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 			reflect.Copy(fv, reflect.ValueOf(b))
 			return nil
 		}
-		return fmt.Errorf("ndr: unsupported array element %s", fv.Type().Elem().Kind())
+		// Fixed (non-conformant) array of non-byte elements: read exactly Len() elements
+		// in place, no count prefix, mirroring marshalInlineValue's fixed-array case.
+		var deferred []func() error
+		for i := 0; i < fv.Len(); i++ {
+			if err := unmarshalElement(d, fv.Index(i), elementTag(tag), &deferred); err != nil {
+				return fmt.Errorf("element %d: %w", i, err)
+			}
+		}
+		return runDeferred(deferred)
 	default:
 		return unmarshalScalar(d, fv)
 	}
@@ -844,12 +855,15 @@ func ndrAlignment(t reflect.Type, syntax Syntax) int {
 		}
 		return 4
 	case reflect.Array:
-		// A fixed array aligns to its element. Under NDR20 the historical behaviour is
-		// the catch-all alignment of 4, preserved to keep NDR20 output byte-identical.
-		if syntax == NDR64 {
-			return ndrAlignment(t.Elem(), syntax)
+		// A fixed array aligns to its element ([C706] 14.3.4). Under NDR20 a byte-element
+		// array keeps the historical catch-all alignment of 4 to preserve byte-identical
+		// output for the many [N]byte fields already validated on the wire; arrays of wider
+		// elements (e.g. [32]struct with a ULONG64, [N]uint16) align to the element so a
+		// struct that embeds them reports the correct leading alignment.
+		if t.Elem().Kind() == reflect.Uint8 {
+			return 4
 		}
-		return 4
+		return ndrAlignment(t.Elem(), syntax)
 	case reflect.Struct:
 		a := 1
 		for i := 0; i < t.NumField(); i++ {
