@@ -33,6 +33,7 @@ import (
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
+	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
 
 // classify reports the wire outcome of a method call:
@@ -154,16 +155,16 @@ func TestLiveValidation(t *testing.T) {
 
 	// --- SID->name: LsarLookupSids (SID array in + translated-names array out + referenced domains) ---
 	withPolicy("LsarLookupSids", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
-		var sidInfos []mslsad.LSAPR_SID_INFORMATION
+		var sidInfos []mslsat.LSAPR_SID_INFORMATION
 		for _, s := range []string{"S-1-5-32-544", "S-1-1-0", "S-1-5-18"} {
 			sid, perr := dtyp.ParseSID(s)
 			if perr != nil {
 				t.Fatalf("ParseSID(%s): %v", s, perr)
 			}
-			sidInfos = append(sidInfos, mslsad.LSAPR_SID_INFORMATION{Sid: &sid})
+			sidInfos = append(sidInfos, mslsat.LSAPR_SID_INFORMATION{Sid: &sid})
 		}
-		sidBuf := mslsad.LSAPR_SID_ENUM_BUFFER{Entries: uint32(len(sidInfos)), SidInfo: sidInfos}
-		dom, names, mapped, err := functions.LsarLookupSids(rpc, policy, sidBuf, mslsad.LsapLookupWksta)
+		sidBuf := mslsat.LSAPR_SID_ENUM_BUFFER{Entries: uint32(len(sidInfos)), SidInfo: sidInfos}
+		dom, names, mapped, err := functions.LsarLookupSids(rpc, policy, sidBuf, mslsat.LsapLookupWksta)
 		if _, ok := classify(t, "LsarLookupSids(Administrators,Everyone,System)", err); ok && err == nil {
 			t.Logf("    mapped=%d names.Entries=%d", mapped, names.Entries)
 			for i, n := range names.Names {
@@ -179,7 +180,7 @@ func TestLiveValidation(t *testing.T) {
 	// --- name->SID: LsarLookupNames (RPC_UNICODE_STRING array in + translated-sids out) ---
 	withPolicy("LsarLookupNames", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		names := []dtyp.RPC_UNICODE_STRING{dtyp.NewUnicodeString("Administrator"), dtyp.NewUnicodeString("Guest")}
-		dom, sids, mapped, err := functions.LsarLookupNames(rpc, policy, names, mslsad.LsapLookupWksta)
+		dom, sids, mapped, err := functions.LsarLookupNames(rpc, policy, names, mslsat.LsapLookupWksta)
 		if _, ok := classify(t, "LsarLookupNames(Administrator,Guest)", err); ok && err == nil {
 			t.Logf("    mapped=%d sids.Entries=%d referencedDomains=%d", mapped, sids.Entries, domCount(dom))
 			for i, s := range sids.Sids {
@@ -233,7 +234,7 @@ func TestLiveValidation(t *testing.T) {
 	})
 }
 
-func domCount(d *mslsad.LSAPR_REFERENCED_DOMAIN_LIST) uint32 {
+func domCount(d *mslsat.LSAPR_REFERENCED_DOMAIN_LIST) uint32 {
 	if d == nil {
 		return 0
 	}

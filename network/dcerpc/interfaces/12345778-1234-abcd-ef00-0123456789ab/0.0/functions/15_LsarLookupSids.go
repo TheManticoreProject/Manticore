@@ -6,6 +6,7 @@ import (
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
+	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
 
 // lsarLookupSidsRequest is the [in]/[in,out] parameter set of LsarLookupSids: a policy
@@ -13,9 +14,9 @@ import (
 // (a single, inline value), the lookup level, and the [in,out] mapped count.
 type lsarLookupSidsRequest struct {
 	PolicyHandle    mslsad.LSAPR_HANDLE
-	SidEnumBuffer   mslsad.LSAPR_SID_ENUM_BUFFER
-	TranslatedNames mslsad.LSAPR_TRANSLATED_NAMES
-	LookupLevel     mslsad.LSAP_LOOKUP_LEVEL `ndr:"enum"`
+	SidEnumBuffer   mslsat.LSAPR_SID_ENUM_BUFFER
+	TranslatedNames mslsat.LSAPR_TRANSLATED_NAMES
+	LookupLevel     mslsat.LSAP_LOOKUP_LEVEL `ndr:"enum"`
 	MappedCount     ndr.DWORD
 }
 
@@ -24,8 +25,8 @@ func (*lsarLookupSidsRequest) Opnum() uint16 { return lsarpc.OpnumLsarLookupSids
 // lsarLookupSidsResponse is the reply: the [out] referenced domains (a double pointer),
 // the [in,out] translated names, the [in,out] mapped count, and the NTSTATUS.
 type lsarLookupSidsResponse struct {
-	ReferencedDomains *mslsad.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
-	TranslatedNames   mslsad.LSAPR_TRANSLATED_NAMES
+	ReferencedDomains *mslsat.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
+	TranslatedNames   mslsat.LSAPR_TRANSLATED_NAMES
 	MappedCount       ndr.DWORD
 	Status            ndr.DWORD `ndr:"retval"`
 }
@@ -35,7 +36,7 @@ type lsarLookupSidsResponse struct {
 // STATUS_NONE_MAPPED when not all SIDs resolved; in those cases the (partial) results are
 // still returned without error, so callers should inspect the translated names and mapped
 // count. Any other non-success status is reported as an error.
-func LsarLookupSids(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, sidEnumBuffer mslsad.LSAPR_SID_ENUM_BUFFER, lookupLevel mslsad.LSAP_LOOKUP_LEVEL) (*mslsad.LSAPR_REFERENCED_DOMAIN_LIST, mslsad.LSAPR_TRANSLATED_NAMES, uint32, error) {
+func LsarLookupSids(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, sidEnumBuffer mslsat.LSAPR_SID_ENUM_BUFFER, lookupLevel mslsat.LSAP_LOOKUP_LEVEL) (*mslsat.LSAPR_REFERENCED_DOMAIN_LIST, mslsat.LSAPR_TRANSLATED_NAMES, uint32, error) {
 	req := &lsarLookupSidsRequest{
 		PolicyHandle:  policyHandle,
 		SidEnumBuffer: sidEnumBuffer,
@@ -43,7 +44,7 @@ func LsarLookupSids(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, sidEnumBu
 	}
 	var resp lsarLookupSidsResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return nil, mslsad.LSAPR_TRANSLATED_NAMES{}, 0, fmt.Errorf("LsarLookupSids: %w", err)
+		return nil, mslsat.LSAPR_TRANSLATED_NAMES{}, 0, fmt.Errorf("LsarLookupSids: %w", err)
 	}
 	status := uint32(resp.Status)
 	switch status {
