@@ -52,6 +52,12 @@ var builtin = []Interface{
 		Executable:  "services.exe", Protocol: "MS-SCMR", Pipes: []string{`\pipe\svcctl`},
 	},
 	{
+		UUID: mustGUID("3dde7c30-165d-11d1-ab8f-00805f14db40"), Version: v(1, 0),
+		Name: "backupkey", Title: "BackupKey Remote Protocol",
+		Description: "DPAPI domain backup key wrap/unwrap; abused to steal the domain backup key.",
+		Executable:  "lsass.exe", Protocol: "MS-BKRP", Pipes: []string{`\pipe\protected_storage`, `\pipe\ntsvcs`},
+	},
+	{
 		UUID: mustGUID("4b324fc8-1670-01d3-1278-5a47bf6ee188"), Version: v(3, 0),
 		Name: "srvsvc", Title: "Server Service",
 		Description: "Server service (shares, sessions, files).",
