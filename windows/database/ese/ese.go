@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	eseSignature       = 0x89ABCDEF
-	catalogPageNumber  = 4
-	dataDefinitionSize = 4  // ESENT_DATA_DEFINITION_HEADER: LastFixedSize(1)+LastVariableDataType(1)+VariableSizeOffset(2)
-	maxCatalogDepth    = 32 // guard against a cyclic catalog B-tree
+	eseSignature       uint32 = 0x89ABCDEF // ESE/JET header magic (ulMagic); typed so it does not overflow int on 32-bit builds
+	catalogPageNumber         = 4
+	dataDefinitionSize        = 4  // ESENT_DATA_DEFINITION_HEADER: LastFixedSize(1)+LastVariableDataType(1)+VariableSizeOffset(2)
+	maxCatalogDepth           = 32 // guard against a cyclic catalog B-tree
 
 	// Page flags ([MS] FLAGS_*).
 	flagRoot      = 0x01
