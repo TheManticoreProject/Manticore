@@ -4,18 +4,18 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // TestWriteFileRawRequest_PipeRoundTrip checks that the [in] EFS_EXIM_PIPE is marshalled
 // as an NDR pipe after the context handle and round-trips.
 func TestWriteFileRawRequest_PipeRoundTrip(t *testing.T) {
-	var h structures.PEXIMPORT_CONTEXT_HANDLE
+	var h msefsr.PEXIMPORT_CONTEXT_HANDLE
 	for i := range h {
 		h[i] = byte(i)
 	}
-	in := &efsRpcWriteFileRawRequest{HContext: h, EfsInPipe: structures.EFS_EXIM_PIPE{0xde, 0xad, 0xbe, 0xef}}
+	in := &efsRpcWriteFileRawRequest{HContext: h, EfsInPipe: msefsr.EFS_EXIM_PIPE{0xde, 0xad, 0xbe, 0xef}}
 	raw, err := ndr.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -37,7 +37,7 @@ func TestWriteFileRawRequest_PipeRoundTrip(t *testing.T) {
 // TestReadFileRawResponse_PipeRoundTrip checks the [out] EFS_EXIM_PIPE stream precedes
 // the return value and round-trips.
 func TestReadFileRawResponse_PipeRoundTrip(t *testing.T) {
-	in := &efsRpcReadFileRawResponse{EfsOutPipe: structures.EFS_EXIM_PIPE{1, 2, 3, 4, 5}, Status: 0}
+	in := &efsRpcReadFileRawResponse{EfsOutPipe: msefsr.EFS_EXIM_PIPE{1, 2, 3, 4, 5}, Status: 0}
 	raw, err := ndr.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)

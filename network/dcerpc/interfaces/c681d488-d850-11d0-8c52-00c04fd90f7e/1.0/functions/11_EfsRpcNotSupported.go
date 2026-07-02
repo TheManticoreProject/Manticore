@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcNotSupportedRequest carries the [in] parameters of EfsRpcNotSupported.
@@ -14,7 +14,7 @@ type efsRpcNotSupportedRequest struct {
 	Reserved2   ndr.WSTR
 	DwReserved1 ndr.DWORD
 	DwReserved2 ndr.DWORD
-	Reserved    *structures.EFS_RPC_BLOB `ndr:"unique"`
+	Reserved    *msefsr.EFS_RPC_BLOB `ndr:"unique"`
 	BReserved   ndr.BOOL
 }
 
@@ -27,7 +27,7 @@ type efsRpcNotSupportedResponse struct {
 
 // EfsRpcNotSupported calls EfsRpcNotSupported (opnum 11) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcNotSupported(rpc ndr.Invoker, reserved1 ndr.WSTR, reserved2 ndr.WSTR, dwReserved1 ndr.DWORD, dwReserved2 ndr.DWORD, reserved *structures.EFS_RPC_BLOB, bReserved ndr.BOOL) (err error) {
+func EfsRpcNotSupported(rpc ndr.Invoker, reserved1 ndr.WSTR, reserved2 ndr.WSTR, dwReserved1 ndr.DWORD, dwReserved2 ndr.DWORD, reserved *msefsr.EFS_RPC_BLOB, bReserved ndr.BOOL) (err error) {
 	req := &efsRpcNotSupportedRequest{
 		Reserved1:   reserved1,
 		Reserved2:   reserved2,

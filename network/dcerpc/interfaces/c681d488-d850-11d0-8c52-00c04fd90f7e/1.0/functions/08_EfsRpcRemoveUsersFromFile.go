@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcRemoveUsersFromFileRequest carries the [in] parameters of EfsRpcRemoveUsersFromFile.
 type efsRpcRemoveUsersFromFileRequest struct {
 	FileName ndr.WSTR
-	Users    structures.ENCRYPTION_CERTIFICATE_HASH_LIST
+	Users    msefsr.ENCRYPTION_CERTIFICATE_HASH_LIST
 }
 
 func (*efsRpcRemoveUsersFromFileRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcRemoveUsersFromFile }
@@ -23,7 +23,7 @@ type efsRpcRemoveUsersFromFileResponse struct {
 
 // EfsRpcRemoveUsersFromFile calls EfsRpcRemoveUsersFromFile (opnum 8) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcRemoveUsersFromFile(rpc ndr.Invoker, fileName ndr.WSTR, users structures.ENCRYPTION_CERTIFICATE_HASH_LIST) (err error) {
+func EfsRpcRemoveUsersFromFile(rpc ndr.Invoker, fileName ndr.WSTR, users msefsr.ENCRYPTION_CERTIFICATE_HASH_LIST) (err error) {
 	req := &efsRpcRemoveUsersFromFileRequest{
 		FileName: fileName,
 		Users:    users,

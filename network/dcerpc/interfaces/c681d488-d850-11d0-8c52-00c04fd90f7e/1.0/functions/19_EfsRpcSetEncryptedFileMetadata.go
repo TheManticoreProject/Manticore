@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcSetEncryptedFileMetadataRequest carries the [in] parameters of EfsRpcSetEncryptedFileMetadata.
 type efsRpcSetEncryptedFileMetadataRequest struct {
 	FileName         ndr.WSTR
-	OldEfsStreamBlob *structures.EFS_RPC_BLOB `ndr:"unique"`
-	NewEfsStreamBlob structures.EFS_RPC_BLOB
-	NewEfsSignature  *structures.ENCRYPTED_FILE_METADATA_SIGNATURE `ndr:"unique"`
+	OldEfsStreamBlob *msefsr.EFS_RPC_BLOB `ndr:"unique"`
+	NewEfsStreamBlob msefsr.EFS_RPC_BLOB
+	NewEfsSignature  *msefsr.ENCRYPTED_FILE_METADATA_SIGNATURE `ndr:"unique"`
 }
 
 func (*efsRpcSetEncryptedFileMetadataRequest) Opnum() uint16 {
@@ -27,7 +27,7 @@ type efsRpcSetEncryptedFileMetadataResponse struct {
 
 // EfsRpcSetEncryptedFileMetadata calls EfsRpcSetEncryptedFileMetadata (opnum 19) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcSetEncryptedFileMetadata(rpc ndr.Invoker, fileName ndr.WSTR, oldEfsStreamBlob *structures.EFS_RPC_BLOB, newEfsStreamBlob structures.EFS_RPC_BLOB, newEfsSignature *structures.ENCRYPTED_FILE_METADATA_SIGNATURE) (err error) {
+func EfsRpcSetEncryptedFileMetadata(rpc ndr.Invoker, fileName ndr.WSTR, oldEfsStreamBlob *msefsr.EFS_RPC_BLOB, newEfsStreamBlob msefsr.EFS_RPC_BLOB, newEfsSignature *msefsr.ENCRYPTED_FILE_METADATA_SIGNATURE) (err error) {
 	req := &efsRpcSetEncryptedFileMetadataRequest{
 		FileName:         fileName,
 		OldEfsStreamBlob: oldEfsStreamBlob,
