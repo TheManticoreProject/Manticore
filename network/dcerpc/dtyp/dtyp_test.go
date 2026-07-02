@@ -50,6 +50,33 @@ func TestFILETIME_GoldenAndRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSYSTEMTIME_GoldenAndRoundTrip(t *testing.T) {
+	type rec struct{ T SYSTEMTIME }
+	in := &rec{T: SYSTEMTIME{
+		WYear: 2026, WMonth: 7, WDayOfWeek: 4, WDay: 2,
+		WHour: 13, WMinute: 30, WSecond: 15, WMilliseconds: 500,
+	}}
+	raw, err := ndr.Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// Eight 16-bit LE fields in declaration order ([MS-DTYP] 2.3.13).
+	want := []byte{
+		0xEA, 0x07, 0x07, 0x00, 0x04, 0x00, 0x02, 0x00,
+		0x0D, 0x00, 0x1E, 0x00, 0x0F, 0x00, 0xF4, 0x01,
+	}
+	if !bytes.Equal(raw, want) {
+		t.Errorf("SYSTEMTIME wire = % x, want % x", raw, want)
+	}
+	var out rec
+	if err := ndr.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.T != in.T {
+		t.Errorf("SYSTEMTIME round-trip: got %+v want %+v", out.T, in.T)
+	}
+}
+
 func TestLargeInteger_RoundTrip(t *testing.T) {
 	type rec struct {
 		Q LARGE_INTEGER

@@ -1,0 +1,9 @@
+package msfrs2
+
+// RDC_FILE_COMPRESSION_TYPES is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-FRS2]).
+type RDC_FILE_COMPRESSION_TYPES uint16
+
+const (
+	RDC_UNCOMPRESSED RDC_FILE_COMPRESSION_TYPES = 0
+	RDC_XPRESS       RDC_FILE_COMPRESSION_TYPES = 1
+)
