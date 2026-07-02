@@ -1,0 +1,4 @@
+package msdnsp
+
+// DNS_RPC_ZONE_STATS is an alias for DNS_RPC_ZONE_STATS_V1 ([MS-DNSP]).
+type DNS_RPC_ZONE_STATS = DNS_RPC_ZONE_STATS_V1
