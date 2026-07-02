@@ -1,0 +1,43 @@
+package functions
+
+import (
+	"fmt"
+
+	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mscmrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmrp"
+)
+
+// apiOpenNetworkRequest carries the [in] parameters of ApiOpenNetwork.
+type apiOpenNetworkRequest struct {
+	LpszNetworkName ndr.WSTR
+}
+
+func (*apiOpenNetworkRequest) Opnum() uint16 { return clusapi.OpnumApiOpenNetwork }
+
+// apiOpenNetworkResponse carries the [out] parameters and return value of ApiOpenNetwork.
+type apiOpenNetworkResponse struct {
+	Status     ndr.DWORD
+	Rpc_status ndr.DWORD
+	Handle     mscmrp.HNETWORK_RPC `ndr:"retval"`
+}
+
+// ApiOpenNetwork calls ApiOpenNetwork (opnum 81) ([MS-CMRP] — verify the parameter
+// modeling and status handling).
+func ApiOpenNetwork(rpc ndr.Invoker, lpszNetworkName ndr.WSTR) (Handle mscmrp.HNETWORK_RPC, Status ndr.DWORD, Rpc_status ndr.DWORD, err error) {
+	req := &apiOpenNetworkRequest{
+		LpszNetworkName: lpszNetworkName,
+	}
+	var resp apiOpenNetworkResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("ApiOpenNetwork: %w", err)
+		return
+	}
+	Handle = resp.Handle
+	Status = resp.Status
+	Rpc_status = resp.Rpc_status
+	if uint32(resp.Status) != clusapi.StatusSuccess {
+		err = fmt.Errorf("ApiOpenNetwork failed: %s", clusapi.StatusString(uint32(resp.Status)))
+	}
+	return
+}

@@ -1,0 +1,8 @@
+package mscmrp
+
+// IDL_CLUSTER_SET_PASSWORD_FLAGS is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-CMRP]).
+type IDL_CLUSTER_SET_PASSWORD_FLAGS uint16
+
+const (
+	IDL_CLUSTER_SET_PASSWORD_IGNORE_DOWN_NODES IDL_CLUSTER_SET_PASSWORD_FLAGS = 1
+)
