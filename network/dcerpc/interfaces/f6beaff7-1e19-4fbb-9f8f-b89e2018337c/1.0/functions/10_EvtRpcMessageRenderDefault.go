@@ -1,0 +1,58 @@
+package functions
+
+import (
+	"fmt"
+
+	IEventService "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f6beaff7-1e19-4fbb-9f8f-b89e2018337c/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mseven6 "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even6"
+)
+
+// evtRpcMessageRenderDefaultRequest carries the [in] parameters of EvtRpcMessageRenderDefault.
+type evtRpcMessageRenderDefaultRequest struct {
+	SizeEventId   ndr.DWORD
+	EventId       []uint8 `ndr:"ref,size_is=SizeEventId"`
+	MessageId     ndr.DWORD
+	Values        mseven6.EvtRpcVariantList
+	Flags         ndr.DWORD
+	MaxSizeString ndr.DWORD
+}
+
+func (*evtRpcMessageRenderDefaultRequest) Opnum() uint16 {
+	return IEventService.OpnumEvtRpcMessageRenderDefault
+}
+
+// evtRpcMessageRenderDefaultResponse carries the [out] parameters and return value of EvtRpcMessageRenderDefault.
+type evtRpcMessageRenderDefaultResponse struct {
+	ActualSizeString ndr.DWORD
+	NeededSizeString ndr.DWORD
+	String           []uint8 `ndr:"unique,size_is=ActualSizeString"`
+	Error            mseven6.RpcInfo
+	Status           ndr.DWORD `ndr:"retval"`
+}
+
+// EvtRpcMessageRenderDefault calls EvtRpcMessageRenderDefault (opnum 10) ([MS-EVEN6] — verify the parameter
+// modeling and status handling).
+func EvtRpcMessageRenderDefault(rpc ndr.Invoker, sizeEventId ndr.DWORD, eventId []uint8, messageId ndr.DWORD, values mseven6.EvtRpcVariantList, flags ndr.DWORD, maxSizeString ndr.DWORD) (ActualSizeString ndr.DWORD, NeededSizeString ndr.DWORD, String []uint8, Error mseven6.RpcInfo, err error) {
+	req := &evtRpcMessageRenderDefaultRequest{
+		SizeEventId:   sizeEventId,
+		EventId:       eventId,
+		MessageId:     messageId,
+		Values:        values,
+		Flags:         flags,
+		MaxSizeString: maxSizeString,
+	}
+	var resp evtRpcMessageRenderDefaultResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("EvtRpcMessageRenderDefault: %w", err)
+		return
+	}
+	ActualSizeString = resp.ActualSizeString
+	NeededSizeString = resp.NeededSizeString
+	String = resp.String
+	Error = resp.Error
+	if uint32(resp.Status) != IEventService.StatusSuccess {
+		err = fmt.Errorf("EvtRpcMessageRenderDefault failed: %s", IEventService.StatusString(uint32(resp.Status)))
+	}
+	return
+}
