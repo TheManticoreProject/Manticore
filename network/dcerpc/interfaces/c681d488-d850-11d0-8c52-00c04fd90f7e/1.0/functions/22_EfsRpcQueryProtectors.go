@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcQueryProtectorsRequest carries the [in] parameters of EfsRpcQueryProtectors.
@@ -17,13 +17,13 @@ func (*efsRpcQueryProtectorsRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcQ
 
 // efsRpcQueryProtectorsResponse carries the [out] parameters and return value of EfsRpcQueryProtectors.
 type efsRpcQueryProtectorsResponse struct {
-	PpProtectorList *structures.ENCRYPTION_PROTECTOR_LIST `ndr:"unique"`
-	Status          ndr.DWORD                             `ndr:"retval"`
+	PpProtectorList *msefsr.ENCRYPTION_PROTECTOR_LIST `ndr:"unique"`
+	Status          ndr.DWORD                         `ndr:"retval"`
 }
 
 // EfsRpcQueryProtectors calls EfsRpcQueryProtectors (opnum 22) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcQueryProtectors(rpc ndr.Invoker, fileName ndr.WSTR) (PpProtectorList *structures.ENCRYPTION_PROTECTOR_LIST, err error) {
+func EfsRpcQueryProtectors(rpc ndr.Invoker, fileName ndr.WSTR) (PpProtectorList *msefsr.ENCRYPTION_PROTECTOR_LIST, err error) {
 	req := &efsRpcQueryProtectorsRequest{
 		FileName: fileName,
 	}

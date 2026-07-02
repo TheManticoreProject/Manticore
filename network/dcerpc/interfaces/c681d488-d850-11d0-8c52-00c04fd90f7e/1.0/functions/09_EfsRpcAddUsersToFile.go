@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcAddUsersToFileRequest carries the [in] parameters of EfsRpcAddUsersToFile.
 type efsRpcAddUsersToFileRequest struct {
 	FileName               ndr.WSTR
-	EncryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST
+	EncryptionCertificates msefsr.ENCRYPTION_CERTIFICATE_LIST
 }
 
 func (*efsRpcAddUsersToFileRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcAddUsersToFile }
@@ -23,7 +23,7 @@ type efsRpcAddUsersToFileResponse struct {
 
 // EfsRpcAddUsersToFile calls EfsRpcAddUsersToFile (opnum 9) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcAddUsersToFile(rpc ndr.Invoker, fileName ndr.WSTR, encryptionCertificates structures.ENCRYPTION_CERTIFICATE_LIST) (err error) {
+func EfsRpcAddUsersToFile(rpc ndr.Invoker, fileName ndr.WSTR, encryptionCertificates msefsr.ENCRYPTION_CERTIFICATE_LIST) (err error) {
 	req := &efsRpcAddUsersToFileRequest{
 		FileName:               fileName,
 		EncryptionCertificates: encryptionCertificates,

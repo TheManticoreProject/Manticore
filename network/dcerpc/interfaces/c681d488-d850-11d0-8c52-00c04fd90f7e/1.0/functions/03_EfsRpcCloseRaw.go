@@ -4,26 +4,26 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcCloseRawRequest carries the [in] parameters of EfsRpcCloseRaw.
 type efsRpcCloseRawRequest struct {
-	HContext structures.PEXIMPORT_CONTEXT_HANDLE
+	HContext msefsr.PEXIMPORT_CONTEXT_HANDLE
 }
 
 func (*efsRpcCloseRawRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpcCloseRaw }
 
 // efsRpcCloseRawResponse carries the [out] parameters and return value of EfsRpcCloseRaw.
 type efsRpcCloseRawResponse struct {
-	HContext structures.PEXIMPORT_CONTEXT_HANDLE
+	HContext msefsr.PEXIMPORT_CONTEXT_HANDLE
 	Status   ndr.DWORD `ndr:"retval"`
 }
 
 // EfsRpcCloseRaw calls EfsRpcCloseRaw (opnum 3) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcCloseRaw(rpc ndr.Invoker, hContext structures.PEXIMPORT_CONTEXT_HANDLE) (HContext structures.PEXIMPORT_CONTEXT_HANDLE, err error) {
+func EfsRpcCloseRaw(rpc ndr.Invoker, hContext msefsr.PEXIMPORT_CONTEXT_HANDLE) (HContext msefsr.PEXIMPORT_CONTEXT_HANDLE, err error) {
 	req := &efsRpcCloseRawRequest{
 		HContext: hContext,
 	}

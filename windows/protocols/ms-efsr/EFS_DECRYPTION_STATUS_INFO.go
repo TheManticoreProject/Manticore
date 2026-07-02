@@ -1,4 +1,4 @@
-package structures
+package msefsr
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"

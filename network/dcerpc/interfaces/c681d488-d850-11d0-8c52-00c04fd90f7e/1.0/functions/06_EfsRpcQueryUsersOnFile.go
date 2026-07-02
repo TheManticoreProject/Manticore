@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
 // efsRpcQueryUsersOnFileRequest carries the [in] parameters of EfsRpcQueryUsersOnFile.
@@ -17,13 +17,13 @@ func (*efsRpcQueryUsersOnFileRequest) Opnum() uint16 { return efsrpc.OpnumEfsRpc
 
 // efsRpcQueryUsersOnFileResponse carries the [out] parameters and return value of EfsRpcQueryUsersOnFile.
 type efsRpcQueryUsersOnFileResponse struct {
-	Users  *structures.ENCRYPTION_CERTIFICATE_HASH_LIST `ndr:"unique"`
-	Status ndr.DWORD                                    `ndr:"retval"`
+	Users  *msefsr.ENCRYPTION_CERTIFICATE_HASH_LIST `ndr:"unique"`
+	Status ndr.DWORD                                `ndr:"retval"`
 }
 
 // EfsRpcQueryUsersOnFile calls EfsRpcQueryUsersOnFile (opnum 6) ([MS-EFSR] — verify the parameter
 // modeling and status handling).
-func EfsRpcQueryUsersOnFile(rpc ndr.Invoker, fileName ndr.WSTR) (Users *structures.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
+func EfsRpcQueryUsersOnFile(rpc ndr.Invoker, fileName ndr.WSTR) (Users *msefsr.ENCRYPTION_CERTIFICATE_HASH_LIST, err error) {
 	req := &efsRpcQueryUsersOnFileRequest{
 		FileName: fileName,
 	}
