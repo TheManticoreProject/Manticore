@@ -6,13 +6,13 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarDeleteTrustedDomainRequest is the [in] parameter set of LsarDeleteTrustedDomain: an
 // open policy handle and the [unique] SID of the trusted domain to delete.
 type lsarDeleteTrustedDomainRequest struct {
-	PolicyHandle     structures.LSAPR_HANDLE
+	PolicyHandle     mslsad.LSAPR_HANDLE
 	TrustedDomainSid *dtyp.RPC_SID `ndr:"unique"`
 }
 
@@ -22,7 +22,7 @@ func (*lsarDeleteTrustedDomainRequest) Opnum() uint16 {
 
 // LsarDeleteTrustedDomain calls LsarDeleteTrustedDomain (opnum 41), deleting the trusted
 // domain object identified by its SID.
-func LsarDeleteTrustedDomain(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, trustedDomainSid *dtyp.RPC_SID) error {
+func LsarDeleteTrustedDomain(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainSid *dtyp.RPC_SID) error {
 	req := &lsarDeleteTrustedDomainRequest{
 		PolicyHandle:     policyHandle,
 		TrustedDomainSid: trustedDomainSid,

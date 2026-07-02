@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarSetSystemAccessAccountRequest is the [in] parameter set of
 // LsarSetSystemAccessAccount: an open account handle and the new system-access flags.
 type lsarSetSystemAccessAccountRequest struct {
-	AccountHandle structures.LSAPR_HANDLE
+	AccountHandle mslsad.LSAPR_HANDLE
 	SystemAccess  ndr.DWORD
 }
 
@@ -21,7 +21,7 @@ func (*lsarSetSystemAccessAccountRequest) Opnum() uint16 {
 
 // LsarSetSystemAccessAccount calls LsarSetSystemAccessAccount (opnum 24), setting the
 // system-access flags of the account.
-func LsarSetSystemAccessAccount(rpc ndr.Invoker, accountHandle structures.LSAPR_HANDLE, systemAccess uint32) error {
+func LsarSetSystemAccessAccount(rpc ndr.Invoker, accountHandle mslsad.LSAPR_HANDLE, systemAccess uint32) error {
 	req := &lsarSetSystemAccessAccountRequest{AccountHandle: accountHandle, SystemAccess: ndr.DWORD(systemAccess)}
 	var resp statusResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

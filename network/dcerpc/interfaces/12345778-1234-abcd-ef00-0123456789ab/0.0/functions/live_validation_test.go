@@ -28,11 +28,11 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // classify reports the wire outcome of a method call:
@@ -103,7 +103,7 @@ func TestLiveValidation(t *testing.T) {
 
 	// withPolicy runs fn on a FRESH pipe + bind + policy handle, so a method that faults
 	// or tears down the pipe cannot corrupt the next method's result.
-	withPolicy := func(name string, fn func(rpc *client.Client, policy structures.LSAPR_HANDLE)) {
+	withPolicy := func(name string, fn func(rpc *client.Client, policy mslsad.LSAPR_HANDLE)) {
 		rpc := client.NewClient(dcerpcsmb.New(smb, lsarpc.PipeName))
 		defer rpc.Close()
 		if err := rpc.Bind(lsarpc.SyntaxID()); err != nil {
@@ -120,8 +120,8 @@ func TestLiveValidation(t *testing.T) {
 	}
 
 	// --- Union path: LsarQueryInformationPolicy (union decode + RPC_UNICODE_STRING + SID) ---
-	withPolicy("LsarQueryInformationPolicy(AccountDomain)", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
-		info, err := functions.LsarQueryInformationPolicy(rpc, policy, structures.PolicyAccountDomainInformation)
+	withPolicy("LsarQueryInformationPolicy(AccountDomain)", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
+		info, err := functions.LsarQueryInformationPolicy(rpc, policy, mslsad.PolicyAccountDomainInformation)
 		if _, ok := classify(t, "LsarQueryInformationPolicy(AccountDomain)", err); ok && err == nil {
 			ad := info.PolicyAccountDomainInfo
 			sid := "<nil>"
@@ -131,8 +131,8 @@ func TestLiveValidation(t *testing.T) {
 			t.Logf("    account domain: name=%q sid=%s", ad.DomainName.String(), sid)
 		}
 	})
-	withPolicy("LsarQueryInformationPolicy(PrimaryDomain)", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
-		info, err := functions.LsarQueryInformationPolicy(rpc, policy, structures.PolicyPrimaryDomainInformation)
+	withPolicy("LsarQueryInformationPolicy(PrimaryDomain)", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
+		info, err := functions.LsarQueryInformationPolicy(rpc, policy, mslsad.PolicyPrimaryDomainInformation)
 		if _, ok := classify(t, "LsarQueryInformationPolicy(PrimaryDomain)", err); ok && err == nil {
 			pd := info.PolicyPrimaryDomainInfo
 			sid := "<nil>"
@@ -145,25 +145,25 @@ func TestLiveValidation(t *testing.T) {
 
 	// Isolation probe: a union arm with NO RPC_UNICODE_STRING (server-role = a bare enum),
 	// to tell whether union failures are the union machinery or the string type.
-	withPolicy("LsarQueryInformationPolicy(ServerRole)", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
-		info, err := functions.LsarQueryInformationPolicy(rpc, policy, structures.PolicyLsaServerRoleInformation)
+	withPolicy("LsarQueryInformationPolicy(ServerRole)", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
+		info, err := functions.LsarQueryInformationPolicy(rpc, policy, mslsad.PolicyLsaServerRoleInformation)
 		if _, ok := classify(t, "LsarQueryInformationPolicy(ServerRole)", err); ok && err == nil {
 			t.Logf("    server role = %d", info.PolicyServerRoleInfo.LsaServerRole)
 		}
 	})
 
 	// --- SID->name: LsarLookupSids (SID array in + translated-names array out + referenced domains) ---
-	withPolicy("LsarLookupSids", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
-		var sidInfos []structures.LSAPR_SID_INFORMATION
+	withPolicy("LsarLookupSids", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
+		var sidInfos []mslsad.LSAPR_SID_INFORMATION
 		for _, s := range []string{"S-1-5-32-544", "S-1-1-0", "S-1-5-18"} {
 			sid, perr := dtyp.ParseSID(s)
 			if perr != nil {
 				t.Fatalf("ParseSID(%s): %v", s, perr)
 			}
-			sidInfos = append(sidInfos, structures.LSAPR_SID_INFORMATION{Sid: &sid})
+			sidInfos = append(sidInfos, mslsad.LSAPR_SID_INFORMATION{Sid: &sid})
 		}
-		sidBuf := structures.LSAPR_SID_ENUM_BUFFER{Entries: uint32(len(sidInfos)), SidInfo: sidInfos}
-		dom, names, mapped, err := functions.LsarLookupSids(rpc, policy, sidBuf, structures.LsapLookupWksta)
+		sidBuf := mslsad.LSAPR_SID_ENUM_BUFFER{Entries: uint32(len(sidInfos)), SidInfo: sidInfos}
+		dom, names, mapped, err := functions.LsarLookupSids(rpc, policy, sidBuf, mslsad.LsapLookupWksta)
 		if _, ok := classify(t, "LsarLookupSids(Administrators,Everyone,System)", err); ok && err == nil {
 			t.Logf("    mapped=%d names.Entries=%d", mapped, names.Entries)
 			for i, n := range names.Names {
@@ -177,9 +177,9 @@ func TestLiveValidation(t *testing.T) {
 	})
 
 	// --- name->SID: LsarLookupNames (RPC_UNICODE_STRING array in + translated-sids out) ---
-	withPolicy("LsarLookupNames", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
+	withPolicy("LsarLookupNames", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		names := []dtyp.RPC_UNICODE_STRING{dtyp.NewUnicodeString("Administrator"), dtyp.NewUnicodeString("Guest")}
-		dom, sids, mapped, err := functions.LsarLookupNames(rpc, policy, names, structures.LsapLookupWksta)
+		dom, sids, mapped, err := functions.LsarLookupNames(rpc, policy, names, mslsad.LsapLookupWksta)
 		if _, ok := classify(t, "LsarLookupNames(Administrator,Guest)", err); ok && err == nil {
 			t.Logf("    mapped=%d sids.Entries=%d referencedDomains=%d", mapped, sids.Entries, domCount(dom))
 			for i, s := range sids.Sids {
@@ -189,7 +189,7 @@ func TestLiveValidation(t *testing.T) {
 	})
 
 	// --- LUID + string: LsarLookupPrivilegeValue then LsarLookupPrivilegeName ---
-	withPolicy("LsarLookupPrivilegeValue/Name", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
+	withPolicy("LsarLookupPrivilegeValue/Name", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		luid, err := functions.LsarLookupPrivilegeValue(rpc, policy, "SeShutdownPrivilege")
 		if _, ok := classify(t, "LsarLookupPrivilegeValue(SeShutdownPrivilege)", err); ok && err == nil {
 			t.Logf("    LUID = {low=%#x high=%#x}", luid.LowPart, luid.HighPart)
@@ -201,7 +201,7 @@ func TestLiveValidation(t *testing.T) {
 	})
 
 	// --- Array-of-pointer-struct buffers ---
-	withPolicy("LsarEnumeratePrivileges", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
+	withPolicy("LsarEnumeratePrivileges", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		_, buf, err := functions.LsarEnumeratePrivileges(rpc, policy, 0, 0x10000)
 		if _, ok := classify(t, "LsarEnumeratePrivileges", err); ok && err == nil {
 			t.Logf("    privileges returned: %d", buf.Entries)
@@ -214,7 +214,7 @@ func TestLiveValidation(t *testing.T) {
 			}
 		}
 	})
-	withPolicy("LsarEnumerateAccounts", func(rpc *client.Client, policy structures.LSAPR_HANDLE) {
+	withPolicy("LsarEnumerateAccounts", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		buf, _, err := functions.LsarEnumerateAccounts(rpc, policy, 0, 0x10000)
 		if _, ok := classify(t, "LsarEnumerateAccounts", err); ok && err == nil {
 			t.Logf("    accounts returned: %d", buf.EntriesRead)
@@ -233,7 +233,7 @@ func TestLiveValidation(t *testing.T) {
 	})
 }
 
-func domCount(d *structures.LSAPR_REFERENCED_DOMAIN_LIST) uint32 {
+func domCount(d *mslsad.LSAPR_REFERENCED_DOMAIN_LIST) uint32 {
 	if d == nil {
 		return 0
 	}

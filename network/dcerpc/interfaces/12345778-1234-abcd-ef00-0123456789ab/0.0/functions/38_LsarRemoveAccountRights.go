@@ -6,7 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarRemoveAccountRightsRequest is the [in] parameter set of LsarRemoveAccountRights: an
@@ -14,10 +14,10 @@ import (
 // every right and ignores UserRights), and the inline set of user-right names to remove
 // (a top-level [ref] struct).
 type lsarRemoveAccountRightsRequest struct {
-	PolicyHandle structures.LSAPR_HANDLE
+	PolicyHandle mslsad.LSAPR_HANDLE
 	AccountSid   *dtyp.RPC_SID `ndr:"unique"`
 	AllRights    uint8
-	UserRights   structures.LSAPR_USER_RIGHT_SET
+	UserRights   mslsad.LSAPR_USER_RIGHT_SET
 }
 
 func (*lsarRemoveAccountRightsRequest) Opnum() uint16 {
@@ -27,7 +27,7 @@ func (*lsarRemoveAccountRightsRequest) Opnum() uint16 {
 // LsarRemoveAccountRights calls LsarRemoveAccountRights (opnum 38), revoking the named user
 // rights from the account identified by SID; if allRights is nonzero, every right is removed
 // and userRights is ignored ([MS-LSAD] 3.1.4.5.13).
-func LsarRemoveAccountRights(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, accountSid *dtyp.RPC_SID, allRights uint8, userRights structures.LSAPR_USER_RIGHT_SET) error {
+func LsarRemoveAccountRights(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, accountSid *dtyp.RPC_SID, allRights uint8, userRights mslsad.LSAPR_USER_RIGHT_SET) error {
 	req := &lsarRemoveAccountRightsRequest{
 		PolicyHandle: policyHandle,
 		AccountSid:   accountSid,

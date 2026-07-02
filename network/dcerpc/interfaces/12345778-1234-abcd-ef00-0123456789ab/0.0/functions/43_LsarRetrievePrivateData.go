@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarRetrievePrivateDataRequest is the [in,out] parameter set of LsarRetrievePrivateData:
@@ -15,9 +15,9 @@ import (
 // pointer to the inner [unique] LSAPR_CR_CIPHER_VALUE; the client passes it as a NULL
 // referent and the server fills it in ([MS-LSAD] 3.1.4.7.2).
 type lsarRetrievePrivateDataRequest struct {
-	PolicyHandle  structures.LSAPR_HANDLE
+	PolicyHandle  mslsad.LSAPR_HANDLE
 	KeyName       dtyp.RPC_UNICODE_STRING
-	EncryptedData *structures.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
+	EncryptedData *mslsad.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
 }
 
 func (*lsarRetrievePrivateDataRequest) Opnum() uint16 { return lsarpc.OpnumLsarRetrievePrivateData }
@@ -25,14 +25,14 @@ func (*lsarRetrievePrivateDataRequest) Opnum() uint16 { return lsarpc.OpnumLsarR
 // lsarRetrievePrivateDataResponse is the reply: the [in,out] encrypted data populated by
 // the server followed by the NTSTATUS return value.
 type lsarRetrievePrivateDataResponse struct {
-	EncryptedData *structures.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
-	Status        ndr.DWORD                         `ndr:"retval"`
+	EncryptedData *mslsad.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
+	Status        ndr.DWORD                     `ndr:"retval"`
 }
 
 // LsarRetrievePrivateData calls LsarRetrievePrivateData (opnum 43) and returns the
 // encrypted data stored under the given key name ([MS-LSAD] 3.1.4.7.2). The result may be
 // nil if the server did not return a value.
-func LsarRetrievePrivateData(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, keyName string) (*structures.LSAPR_CR_CIPHER_VALUE, error) {
+func LsarRetrievePrivateData(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, keyName string) (*mslsad.LSAPR_CR_CIPHER_VALUE, error) {
 	req := &lsarRetrievePrivateDataRequest{
 		PolicyHandle: policyHandle,
 		KeyName:      dtyp.NewUnicodeString(keyName),

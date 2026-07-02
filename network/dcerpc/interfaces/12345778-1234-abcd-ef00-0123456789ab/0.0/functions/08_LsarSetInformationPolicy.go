@@ -5,16 +5,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarSetInformationPolicyRequest is the [in] parameter set of LsarSetInformationPolicy: an
 // open policy handle, the information class, and the inline [ref] union value carrying the
 // new policy information.
 type lsarSetInformationPolicyRequest struct {
-	PolicyHandle      structures.LSAPR_HANDLE
-	InformationClass  structures.POLICY_INFORMATION_CLASS `ndr:"enum"`
-	PolicyInformation structures.LSAPR_POLICY_INFORMATION
+	PolicyHandle      mslsad.LSAPR_HANDLE
+	InformationClass  mslsad.POLICY_INFORMATION_CLASS `ndr:"enum"`
+	PolicyInformation mslsad.LSAPR_POLICY_INFORMATION
 }
 
 func (*lsarSetInformationPolicyRequest) Opnum() uint16 {
@@ -24,7 +24,7 @@ func (*lsarSetInformationPolicyRequest) Opnum() uint16 {
 // LsarSetInformationPolicy calls LsarSetInformationPolicy (opnum 8), setting the policy
 // information for the given class ([MS-LSAD] 3.1.4.4.6). The union discriminant is set to
 // the information class before marshalling.
-func LsarSetInformationPolicy(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, infoClass structures.POLICY_INFORMATION_CLASS, info structures.LSAPR_POLICY_INFORMATION) error {
+func LsarSetInformationPolicy(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, infoClass mslsad.POLICY_INFORMATION_CLASS, info mslsad.LSAPR_POLICY_INFORMATION) error {
 	info.Class = infoClass
 	req := &lsarSetInformationPolicyRequest{
 		PolicyHandle:      policyHandle,

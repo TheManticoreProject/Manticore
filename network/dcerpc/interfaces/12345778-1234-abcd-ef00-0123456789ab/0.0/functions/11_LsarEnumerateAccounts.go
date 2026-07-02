@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarEnumerateAccountsRequest is the [in]/[in,out] parameter set of LsarEnumerateAccounts:
 // an open policy handle, the [in,out] enumeration context (a cursor that the server
 // updates between calls), and the maximum number of bytes the client will accept.
 type lsarEnumerateAccountsRequest struct {
-	PolicyHandle          structures.LSAPR_HANDLE
+	PolicyHandle          mslsad.LSAPR_HANDLE
 	EnumerationContext    ndr.DWORD
 	PreferedMaximumLength ndr.DWORD
 }
@@ -23,7 +23,7 @@ func (*lsarEnumerateAccountsRequest) Opnum() uint16 { return lsarpc.OpnumLsarEnu
 // [out] buffer of account SIDs, and the NTSTATUS return value.
 type lsarEnumerateAccountsResponse struct {
 	EnumerationContext ndr.DWORD
-	EnumerationBuffer  structures.LSAPR_ACCOUNT_ENUM_BUFFER
+	EnumerationBuffer  mslsad.LSAPR_ACCOUNT_ENUM_BUFFER
 	Status             ndr.DWORD `ndr:"retval"`
 }
 
@@ -33,7 +33,7 @@ type lsarEnumerateAccountsResponse struct {
 // STATUS_MORE_ENTRIES while pages remain, which is not treated as an error; the returned
 // context and buffer are valid in that case. The updated context is returned alongside the
 // buffer.
-func LsarEnumerateAccounts(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, enumerationContext uint32, preferedMaximumLength uint32) (structures.LSAPR_ACCOUNT_ENUM_BUFFER, uint32, error) {
+func LsarEnumerateAccounts(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, enumerationContext uint32, preferedMaximumLength uint32) (mslsad.LSAPR_ACCOUNT_ENUM_BUFFER, uint32, error) {
 	req := &lsarEnumerateAccountsRequest{
 		PolicyHandle:          policyHandle,
 		EnumerationContext:    ndr.DWORD(enumerationContext),
@@ -41,7 +41,7 @@ func LsarEnumerateAccounts(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE
 	}
 	var resp lsarEnumerateAccountsResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.LSAPR_ACCOUNT_ENUM_BUFFER{}, enumerationContext, fmt.Errorf("LsarEnumerateAccounts: %w", err)
+		return mslsad.LSAPR_ACCOUNT_ENUM_BUFFER{}, enumerationContext, fmt.Errorf("LsarEnumerateAccounts: %w", err)
 	}
 	status := uint32(resp.Status)
 	if status != lsarpc.StatusSuccess && status != lsarpc.StatusMoreEntries {

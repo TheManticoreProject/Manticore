@@ -5,15 +5,15 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarCreateSecretRequest is the [in] parameter set of LsarCreateSecret: an open policy
 // handle, the secret name (a [ref] PRPC_UNICODE_STRING, modeled inline), and the desired
 // access mask.
 type lsarCreateSecretRequest struct {
-	PolicyHandle  structures.LSAPR_HANDLE
+	PolicyHandle  mslsad.LSAPR_HANDLE
 	SecretName    dtyp.RPC_UNICODE_STRING
 	DesiredAccess ndr.DWORD
 }
@@ -22,7 +22,7 @@ func (*lsarCreateSecretRequest) Opnum() uint16 { return lsarpc.OpnumLsarCreateSe
 
 // LsarCreateSecret calls LsarCreateSecret (opnum 16) and returns a handle to the newly
 // created secret object ([MS-LSAD] 3.1.4.6.1).
-func LsarCreateSecret(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, secretName string, desiredAccess uint32) (structures.LSAPR_HANDLE, error) {
+func LsarCreateSecret(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, secretName string, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
 	req := &lsarCreateSecretRequest{
 		PolicyHandle:  policyHandle,
 		SecretName:    dtyp.NewUnicodeString(secretName),
@@ -30,7 +30,7 @@ func LsarCreateSecret(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, sec
 	}
 	var resp handleResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateSecret: %w", err)
+		return mslsad.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateSecret: %w", err)
 	}
 	if uint32(resp.Status) != lsarpc.StatusSuccess {
 		return resp.Handle, fmt.Errorf("LsarCreateSecret failed: %s", lsarpc.StatusString(uint32(resp.Status)))

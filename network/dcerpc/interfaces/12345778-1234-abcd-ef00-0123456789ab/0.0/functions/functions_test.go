@@ -7,10 +7,10 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // fakeTransport is an in-memory transport.Transport for driving the client without a
@@ -80,7 +80,7 @@ func TestLsarOpenPolicy2_RequestMarshalling(t *testing.T) {
 	c := boundClient(t, ft)
 
 	// Canned success response: 20-byte handle + STATUS_SUCCESS. First call is call_id 2.
-	wantHandle := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	wantHandle := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 	respStub := append(append([]byte(nil), wantHandle[:]...), 0x00, 0x00, 0x00, 0x00)
 	ft.queue(responsePDU(t, 2, respStub))
 
@@ -133,7 +133,7 @@ func TestLsarClose_RoundTrip(t *testing.T) {
 	// LsarClose returns a zeroed handle + STATUS_SUCCESS.
 	ft.queue(responsePDU(t, 2, make([]byte, 24)))
 
-	in := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
+	in := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
 	out, err := functions.LsarClose(c, in)
 	if err != nil {
 		t.Fatalf("LsarClose() error = %v", err)

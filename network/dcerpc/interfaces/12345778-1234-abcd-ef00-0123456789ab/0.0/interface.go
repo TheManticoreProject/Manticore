@@ -96,6 +96,17 @@ const (
 	OpnumLsarSetForestTrustInformation      uint16 = 74
 	OpnumLsarLookupSids3                    uint16 = 76
 	OpnumLsarLookupNames4                   uint16 = 77
+	OpnumLsarCreateTrustedDomainEx3         uint16 = 129
+	OpnumLsarOpenPolicy3                    uint16 = 130
+	OpnumLsarQueryForestTrustInformation2   uint16 = 132
+	OpnumLsarSetForestTrustInformation2     uint16 = 133
+	OpnumLsarOpenPolicyWithCreds            uint16 = 135
+	OpnumLsarOpenSecret2                    uint16 = 136
+	OpnumLsarCreateSecret2                  uint16 = 137
+	OpnumLsarSetSecret2                     uint16 = 138
+	OpnumLsarQuerySecret2                   uint16 = 139
+	OpnumLsarStorePrivateData2              uint16 = 140
+	OpnumLsarRetrievePrivateData2           uint16 = 141
 )
 
 // Standard access rights ([MS-DTYP] 2.4.3 ACCESS_MASK), plus the generic
@@ -272,6 +283,17 @@ var OpnumToName = map[uint16]string{
 	OpnumLsarSetForestTrustInformation:      "LsarSetForestTrustInformation",
 	OpnumLsarLookupSids3:                    "LsarLookupSids3",
 	OpnumLsarLookupNames4:                   "LsarLookupNames4",
+	OpnumLsarCreateTrustedDomainEx3:         "LsarCreateTrustedDomainEx3",
+	OpnumLsarOpenPolicy3:                    "LsarOpenPolicy3",
+	OpnumLsarQueryForestTrustInformation2:   "LsarQueryForestTrustInformation2",
+	OpnumLsarSetForestTrustInformation2:     "LsarSetForestTrustInformation2",
+	OpnumLsarOpenPolicyWithCreds:            "LsarOpenPolicyWithCreds",
+	OpnumLsarOpenSecret2:                    "LsarOpenSecret2",
+	OpnumLsarCreateSecret2:                  "LsarCreateSecret2",
+	OpnumLsarSetSecret2:                     "LsarSetSecret2",
+	OpnumLsarQuerySecret2:                   "LsarQuerySecret2",
+	OpnumLsarStorePrivateData2:              "LsarStorePrivateData2",
+	OpnumLsarRetrievePrivateData2:           "LsarRetrievePrivateData2",
 }
 
 // NameToOpnum is the reverse of OpnumToName: method name to opnum. It is built from

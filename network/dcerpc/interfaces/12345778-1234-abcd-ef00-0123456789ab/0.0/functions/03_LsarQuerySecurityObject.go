@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarQuerySecurityObjectRequest is the [in] parameter set of LsarQuerySecurityObject: an
 // open object handle and the SECURITY_INFORMATION bitmask selecting which parts of the
 // descriptor to return.
 type lsarQuerySecurityObjectRequest struct {
-	ObjectHandle        structures.LSAPR_HANDLE
+	ObjectHandle        mslsad.LSAPR_HANDLE
 	SecurityInformation ndr.DWORD
 }
 
@@ -21,14 +21,14 @@ func (*lsarQuerySecurityObjectRequest) Opnum() uint16 { return lsarpc.OpnumLsarQ
 // lsarQuerySecurityObjectResponse is the reply: the [out] self-relative security
 // descriptor (a double pointer) followed by the NTSTATUS return value.
 type lsarQuerySecurityObjectResponse struct {
-	SecurityDescriptor *structures.LSAPR_SR_SECURITY_DESCRIPTOR `ndr:"unique"`
-	Status             ndr.DWORD                                `ndr:"retval"`
+	SecurityDescriptor *mslsad.LSAPR_SR_SECURITY_DESCRIPTOR `ndr:"unique"`
+	Status             ndr.DWORD                            `ndr:"retval"`
 }
 
 // LsarQuerySecurityObject calls LsarQuerySecurityObject (opnum 3) to retrieve the security
 // descriptor of an LSA object ([MS-LSAD] 3.1.4.4.1). securityInformation is a
 // SECURITY_INFORMATION bitmask selecting which components of the descriptor to return.
-func LsarQuerySecurityObject(rpc ndr.Invoker, objectHandle structures.LSAPR_HANDLE, securityInformation uint32) (*structures.LSAPR_SR_SECURITY_DESCRIPTOR, error) {
+func LsarQuerySecurityObject(rpc ndr.Invoker, objectHandle mslsad.LSAPR_HANDLE, securityInformation uint32) (*mslsad.LSAPR_SR_SECURITY_DESCRIPTOR, error) {
 	req := &lsarQuerySecurityObjectRequest{
 		ObjectHandle:        objectHandle,
 		SecurityInformation: ndr.DWORD(securityInformation),

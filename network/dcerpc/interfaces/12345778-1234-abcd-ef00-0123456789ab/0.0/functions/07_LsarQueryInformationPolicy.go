@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarQueryInformationPolicyRequest is the [in] parameter set of LsarQueryInformationPolicy:
 // an open policy handle and the information class selecting which union arm is returned.
 type lsarQueryInformationPolicyRequest struct {
-	PolicyHandle     structures.LSAPR_HANDLE
-	InformationClass structures.POLICY_INFORMATION_CLASS `ndr:"enum"`
+	PolicyHandle     mslsad.LSAPR_HANDLE
+	InformationClass mslsad.POLICY_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryInformationPolicyRequest) Opnum() uint16 {
@@ -22,13 +22,13 @@ func (*lsarQueryInformationPolicyRequest) Opnum() uint16 {
 // lsarQueryInformationPolicyResponse is the reply: the [out, switch_is] union (a double
 // pointer in the IDL, so a [unique] pointer on the wire) and the NTSTATUS return value.
 type lsarQueryInformationPolicyResponse struct {
-	PolicyInformation *structures.LSAPR_POLICY_INFORMATION `ndr:"unique"`
-	Status            ndr.DWORD                            `ndr:"retval"`
+	PolicyInformation *mslsad.LSAPR_POLICY_INFORMATION `ndr:"unique"`
+	Status            ndr.DWORD                        `ndr:"retval"`
 }
 
 // LsarQueryInformationPolicy calls LsarQueryInformationPolicy (opnum 7), returning the
 // requested policy information class ([MS-LSAD] 3.1.4.4.4).
-func LsarQueryInformationPolicy(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, infoClass structures.POLICY_INFORMATION_CLASS) (*structures.LSAPR_POLICY_INFORMATION, error) {
+func LsarQueryInformationPolicy(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, infoClass mslsad.POLICY_INFORMATION_CLASS) (*mslsad.LSAPR_POLICY_INFORMATION, error) {
 	req := &lsarQueryInformationPolicyRequest{
 		PolicyHandle:     policyHandle,
 		InformationClass: infoClass,

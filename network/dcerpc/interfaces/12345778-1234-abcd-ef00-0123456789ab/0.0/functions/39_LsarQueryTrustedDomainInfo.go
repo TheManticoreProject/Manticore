@@ -5,17 +5,17 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarQueryTrustedDomainInfoRequest is the [in] parameter set of LsarQueryTrustedDomainInfo:
 // an open policy handle, the [unique] SID identifying the trusted domain, and the information
 // class selecting which union arm is returned.
 type lsarQueryTrustedDomainInfoRequest struct {
-	PolicyHandle     structures.LSAPR_HANDLE
-	TrustedDomainSid *dtyp.RPC_SID                        `ndr:"unique"`
-	InformationClass structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
+	PolicyHandle     mslsad.LSAPR_HANDLE
+	TrustedDomainSid *dtyp.RPC_SID                    `ndr:"unique"`
+	InformationClass mslsad.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*lsarQueryTrustedDomainInfoRequest) Opnum() uint16 {
@@ -25,14 +25,14 @@ func (*lsarQueryTrustedDomainInfoRequest) Opnum() uint16 {
 // lsarQueryTrustedDomainInfoResponse is the reply: the [out, switch_is] union (a double
 // pointer in the IDL, so a [unique] pointer on the wire) and the NTSTATUS return value.
 type lsarQueryTrustedDomainInfoResponse struct {
-	TrustedDomainInformation *structures.LSAPR_TRUSTED_DOMAIN_INFO `ndr:"unique"`
-	Status                   ndr.DWORD                             `ndr:"retval"`
+	TrustedDomainInformation *mslsad.LSAPR_TRUSTED_DOMAIN_INFO `ndr:"unique"`
+	Status                   ndr.DWORD                         `ndr:"retval"`
 }
 
 // LsarQueryTrustedDomainInfo calls LsarQueryTrustedDomainInfo (opnum 39), returning the
 // requested trusted-domain information class for the domain identified by SID
 // ([MS-LSAD] 3.1.4.7.2).
-func LsarQueryTrustedDomainInfo(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, trustedDomainSid *dtyp.RPC_SID, infoClass structures.TRUSTED_INFORMATION_CLASS) (*structures.LSAPR_TRUSTED_DOMAIN_INFO, error) {
+func LsarQueryTrustedDomainInfo(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainSid *dtyp.RPC_SID, infoClass mslsad.TRUSTED_INFORMATION_CLASS) (*mslsad.LSAPR_TRUSTED_DOMAIN_INFO, error) {
 	req := &lsarQueryTrustedDomainInfoRequest{
 		PolicyHandle:     policyHandle,
 		TrustedDomainSid: trustedDomainSid,

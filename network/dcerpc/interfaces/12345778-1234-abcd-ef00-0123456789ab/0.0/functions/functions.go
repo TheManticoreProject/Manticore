@@ -8,8 +8,8 @@
 package functions
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // handleResponse is the common reply shape: a 20-byte context handle followed by the
@@ -17,7 +17,7 @@ import (
 // LSAPR_HANDLE (LsarOpenPolicy2, LsarOpenPolicy, LsarClose, LsarDeleteObject, the
 // Open*/Create* methods).
 type handleResponse struct {
-	Handle structures.LSAPR_HANDLE
+	Handle mslsad.LSAPR_HANDLE
 	Status ndr.DWORD `ndr:"retval"`
 }
 
