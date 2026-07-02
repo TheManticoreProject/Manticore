@@ -1,0 +1,44 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_StartCopyToServerRequest carries the [in] parameters of FAX_StartCopyToServer.
+type fAX_StartCopyToServerRequest struct {
+	LpcwstrFileExt       ndr.WSTR
+	LpwstrServerFileName ndr.WSTR
+}
+
+func (*fAX_StartCopyToServerRequest) Opnum() uint16 { return fax.OpnumFAX_StartCopyToServer }
+
+// fAX_StartCopyToServerResponse carries the [out] parameters and return value of FAX_StartCopyToServer.
+type fAX_StartCopyToServerResponse struct {
+	LpwstrServerFileName ndr.WSTR
+	LpHandle             msfax.PRPC_FAX_COPY_HANDLE
+	Status               ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_StartCopyToServer calls FAX_StartCopyToServer (opnum 68) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_StartCopyToServer(rpc ndr.Invoker, lpcwstrFileExt ndr.WSTR, lpwstrServerFileName ndr.WSTR) (LpwstrServerFileName ndr.WSTR, LpHandle msfax.PRPC_FAX_COPY_HANDLE, err error) {
+	req := &fAX_StartCopyToServerRequest{
+		LpcwstrFileExt:       lpcwstrFileExt,
+		LpwstrServerFileName: lpwstrServerFileName,
+	}
+	var resp fAX_StartCopyToServerResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_StartCopyToServer: %w", err)
+		return
+	}
+	LpwstrServerFileName = resp.LpwstrServerFileName
+	LpHandle = resp.LpHandle
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_StartCopyToServer failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

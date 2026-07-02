@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// fAX_EnumerateProvidersRequest carries the [in] parameters of FAX_EnumerateProviders.
+type fAX_EnumerateProvidersRequest struct {
+}
+
+func (*fAX_EnumerateProvidersRequest) Opnum() uint16 { return fax.OpnumFAX_EnumerateProviders }
+
+// fAX_EnumerateProvidersResponse carries the [out] parameters and return value of FAX_EnumerateProviders.
+type fAX_EnumerateProvidersResponse struct {
+	Buffer           []byte `ndr:"unique,conformant"`
+	BufferSize       ndr.DWORD
+	LpdwNumProviders ndr.DWORD
+	Status           ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_EnumerateProviders calls FAX_EnumerateProviders (opnum 45) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_EnumerateProviders(rpc ndr.Invoker) (Buffer []byte, BufferSize ndr.DWORD, LpdwNumProviders ndr.DWORD, err error) {
+	req := &fAX_EnumerateProvidersRequest{}
+	var resp fAX_EnumerateProvidersResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_EnumerateProviders: %w", err)
+		return
+	}
+	Buffer = resp.Buffer
+	BufferSize = resp.BufferSize
+	LpdwNumProviders = resp.LpdwNumProviders
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_EnumerateProviders failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

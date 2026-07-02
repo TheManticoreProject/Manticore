@@ -1,0 +1,37 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_GetServerSKURequest carries the [in] parameters of FAX_GetServerSKU.
+type fAX_GetServerSKURequest struct {
+}
+
+func (*fAX_GetServerSKURequest) Opnum() uint16 { return fax.OpnumFAX_GetServerSKU }
+
+// fAX_GetServerSKUResponse carries the [out] parameters and return value of FAX_GetServerSKU.
+type fAX_GetServerSKUResponse struct {
+	PServerSKU msfax.PRODUCT_SKU_TYPE
+	Status     ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_GetServerSKU calls FAX_GetServerSKU (opnum 84) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_GetServerSKU(rpc ndr.Invoker) (PServerSKU msfax.PRODUCT_SKU_TYPE, err error) {
+	req := &fAX_GetServerSKURequest{}
+	var resp fAX_GetServerSKUResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_GetServerSKU: %w", err)
+		return
+	}
+	PServerSKU = resp.PServerSKU
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_GetServerSKU failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

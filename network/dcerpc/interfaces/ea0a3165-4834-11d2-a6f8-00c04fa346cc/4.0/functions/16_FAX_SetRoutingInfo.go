@@ -1,0 +1,44 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msfax "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fax"
+)
+
+// fAX_SetRoutingInfoRequest carries the [in] parameters of FAX_SetRoutingInfo.
+type fAX_SetRoutingInfoRequest struct {
+	FaxPortHandle         msfax.RPC_FAX_PORT_HANDLE
+	RoutingGuid           *ndr.WSTR `ndr:"unique"`
+	RoutingInfoBuffer     []uint8   `ndr:"ref,size_is=RoutingInfoBufferSize"`
+	RoutingInfoBufferSize ndr.DWORD
+}
+
+func (*fAX_SetRoutingInfoRequest) Opnum() uint16 { return fax.OpnumFAX_SetRoutingInfo }
+
+// fAX_SetRoutingInfoResponse carries the [out] parameters and return value of FAX_SetRoutingInfo.
+type fAX_SetRoutingInfoResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_SetRoutingInfo calls FAX_SetRoutingInfo (opnum 16) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_SetRoutingInfo(rpc ndr.Invoker, faxPortHandle msfax.RPC_FAX_PORT_HANDLE, routingGuid *ndr.WSTR, routingInfoBuffer []uint8, routingInfoBufferSize ndr.DWORD) (err error) {
+	req := &fAX_SetRoutingInfoRequest{
+		FaxPortHandle:         faxPortHandle,
+		RoutingGuid:           routingGuid,
+		RoutingInfoBuffer:     routingInfoBuffer,
+		RoutingInfoBufferSize: routingInfoBufferSize,
+	}
+	var resp fAX_SetRoutingInfoResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_SetRoutingInfo: %w", err)
+		return
+	}
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_SetRoutingInfo failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

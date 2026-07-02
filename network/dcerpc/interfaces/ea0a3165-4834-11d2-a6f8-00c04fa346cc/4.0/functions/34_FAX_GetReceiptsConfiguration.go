@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// fAX_GetReceiptsConfigurationRequest carries the [in] parameters of FAX_GetReceiptsConfiguration.
+type fAX_GetReceiptsConfigurationRequest struct {
+}
+
+func (*fAX_GetReceiptsConfigurationRequest) Opnum() uint16 {
+	return fax.OpnumFAX_GetReceiptsConfiguration
+}
+
+// fAX_GetReceiptsConfigurationResponse carries the [out] parameters and return value of FAX_GetReceiptsConfiguration.
+type fAX_GetReceiptsConfigurationResponse struct {
+	Buffer     []byte `ndr:"unique,conformant"`
+	BufferSize ndr.DWORD
+	Status     ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_GetReceiptsConfiguration calls FAX_GetReceiptsConfiguration (opnum 34) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_GetReceiptsConfiguration(rpc ndr.Invoker) (Buffer []byte, BufferSize ndr.DWORD, err error) {
+	req := &fAX_GetReceiptsConfigurationRequest{}
+	var resp fAX_GetReceiptsConfigurationResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_GetReceiptsConfiguration: %w", err)
+		return
+	}
+	Buffer = resp.Buffer
+	BufferSize = resp.BufferSize
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_GetReceiptsConfiguration failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

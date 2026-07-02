@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// fAX_EnumPortsExRequest carries the [in] parameters of FAX_EnumPortsEx.
+type fAX_EnumPortsExRequest struct {
+}
+
+func (*fAX_EnumPortsExRequest) Opnum() uint16 { return fax.OpnumFAX_EnumPortsEx }
+
+// fAX_EnumPortsExResponse carries the [out] parameters and return value of FAX_EnumPortsEx.
+type fAX_EnumPortsExResponse struct {
+	Buffer       []byte `ndr:"unique,conformant"`
+	BufferSize   ndr.DWORD
+	LpdwNumPorts ndr.DWORD
+	Status       ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_EnumPortsEx calls FAX_EnumPortsEx (opnum 48) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_EnumPortsEx(rpc ndr.Invoker) (Buffer []byte, BufferSize ndr.DWORD, LpdwNumPorts ndr.DWORD, err error) {
+	req := &fAX_EnumPortsExRequest{}
+	var resp fAX_EnumPortsExResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_EnumPortsEx: %w", err)
+		return
+	}
+	Buffer = resp.Buffer
+	BufferSize = resp.BufferSize
+	LpdwNumPorts = resp.LpdwNumPorts
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_EnumPortsEx failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}

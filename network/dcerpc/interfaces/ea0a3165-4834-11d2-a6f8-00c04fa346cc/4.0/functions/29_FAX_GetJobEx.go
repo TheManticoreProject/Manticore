@@ -1,0 +1,41 @@
+package functions
+
+import (
+	"fmt"
+
+	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// fAX_GetJobExRequest carries the [in] parameters of FAX_GetJobEx.
+type fAX_GetJobExRequest struct {
+	DwlMessageID uint64
+}
+
+func (*fAX_GetJobExRequest) Opnum() uint16 { return fax.OpnumFAX_GetJobEx }
+
+// fAX_GetJobExResponse carries the [out] parameters and return value of FAX_GetJobEx.
+type fAX_GetJobExResponse struct {
+	Buffer     []byte `ndr:"unique,conformant"`
+	BufferSize ndr.DWORD
+	Status     ndr.DWORD `ndr:"retval"`
+}
+
+// FAX_GetJobEx calls FAX_GetJobEx (opnum 29) ([MS-FAX] — verify the parameter
+// modeling and status handling).
+func FAX_GetJobEx(rpc ndr.Invoker, dwlMessageID uint64) (Buffer []byte, BufferSize ndr.DWORD, err error) {
+	req := &fAX_GetJobExRequest{
+		DwlMessageID: dwlMessageID,
+	}
+	var resp fAX_GetJobExResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("FAX_GetJobEx: %w", err)
+		return
+	}
+	Buffer = resp.Buffer
+	BufferSize = resp.BufferSize
+	if uint32(resp.Status) != fax.StatusSuccess {
+		err = fmt.Errorf("FAX_GetJobEx failed: %s", fax.StatusString(uint32(resp.Status)))
+	}
+	return
+}
