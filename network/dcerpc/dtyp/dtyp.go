@@ -47,6 +47,23 @@ func (f FILETIME) Uint64() uint64 {
 	return uint64(f.DwHighDateTime)<<32 | uint64(f.DwLowDateTime)
 }
 
+// SYSTEMTIME is the [MS-DTYP] 2.3.13 wall-clock date and time, represented as eight
+// consecutive 16-bit fields (year, month, day-of-week, day, hour, minute, second,
+// millisecond). Each member is a 16-bit integer, so the structure carries 2-octet NDR
+// alignment ([C706] section 14.2.2), matching how Windows lays it out on the wire.
+//
+// Reference: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/2fefe8dd-ab48-4e33-a7d5-7171455a9289
+type SYSTEMTIME struct {
+	WYear         uint16
+	WMonth        uint16
+	WDayOfWeek    uint16
+	WDay          uint16
+	WHour         uint16
+	WMinute       uint16
+	WSecond       uint16
+	WMilliseconds uint16
+}
+
 // LUID is the [MS-DTYP] 2.3.7 locally unique identifier: a 64-bit value split into a
 // low (unsigned) and high (signed) 32-bit part, transmitted in that order. It is used
 // pervasively for privilege identifiers (for example by LsarLookupPrivilegeValue).
