@@ -1,0 +1,64 @@
+package functions
+
+import (
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
+)
+
+// elfrReportEventExWRequest carries the [in] parameters of ElfrReportEventExW.
+type elfrReportEventExWRequest struct {
+	LogHandle     mseven.IELF_HANDLE
+	TimeGenerated dtyp.FILETIME
+	EventType     uint16
+	EventCategory uint16
+	EventID       ndr.DWORD
+	NumStrings    uint16
+	DataSize      ndr.DWORD
+	ComputerName  dtyp.RPC_UNICODE_STRING
+	UserSID       *dtyp.RPC_SID              `ndr:"unique"`
+	Strings       []*dtyp.RPC_UNICODE_STRING `ndr:"unique,elem=unique,size_is=NumStrings"`
+	Data          []uint8                    `ndr:"unique,size_is=DataSize"`
+	Flags         uint16
+	RecordNumber  *ndr.DWORD `ndr:"unique"`
+}
+
+func (*elfrReportEventExWRequest) Opnum() uint16 { return eventlog.OpnumElfrReportEventExW }
+
+// elfrReportEventExWResponse carries the [out] parameters and return value of ElfrReportEventExW.
+type elfrReportEventExWResponse struct {
+	RecordNumber *ndr.DWORD `ndr:"unique"`
+	Status       ndr.DWORD  `ndr:"retval"`
+}
+
+// ElfrReportEventExW calls ElfrReportEventExW (opnum 25) ([MS-EVEN] section 3.1.4).
+func ElfrReportEventExW(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, timeGenerated dtyp.FILETIME, eventType uint16, eventCategory uint16, eventID ndr.DWORD, numStrings uint16, dataSize ndr.DWORD, computerName dtyp.RPC_UNICODE_STRING, userSID *dtyp.RPC_SID, strings []*dtyp.RPC_UNICODE_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD) (RecordNumber *ndr.DWORD, err error) {
+	req := &elfrReportEventExWRequest{
+		LogHandle:     logHandle,
+		TimeGenerated: timeGenerated,
+		EventType:     eventType,
+		EventCategory: eventCategory,
+		EventID:       eventID,
+		NumStrings:    numStrings,
+		DataSize:      dataSize,
+		ComputerName:  computerName,
+		UserSID:       userSID,
+		Strings:       strings,
+		Data:          data,
+		Flags:         flags,
+		RecordNumber:  recordNumber,
+	}
+	var resp elfrReportEventExWResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("ElfrReportEventExW: %w", err)
+		return
+	}
+	RecordNumber = resp.RecordNumber
+	if uint32(resp.Status) != eventlog.StatusSuccess {
+		err = fmt.Errorf("ElfrReportEventExW failed: %s", eventlog.StatusString(uint32(resp.Status)))
+	}
+	return
+}
