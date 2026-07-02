@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarLookupPrivilegeValueRequest is the [in] parameter set of LsarLookupPrivilegeValue:
@@ -15,7 +15,7 @@ import (
 // is a reference pointer), so its referent is transmitted in place with no referent id —
 // modeled as an inline value, not a [unique] pointer.
 type lsarLookupPrivilegeValueRequest struct {
-	PolicyHandle structures.LSAPR_HANDLE
+	PolicyHandle mslsad.LSAPR_HANDLE
 	Name         dtyp.RPC_UNICODE_STRING
 }
 
@@ -32,7 +32,7 @@ type lsarLookupPrivilegeValueResponse struct {
 
 // LsarLookupPrivilegeValue calls LsarLookupPrivilegeValue (opnum 31), mapping a privilege
 // name to its locally unique identifier ([MS-LSAD] 3.1.4.5.13).
-func LsarLookupPrivilegeValue(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, name string) (dtyp.LUID, error) {
+func LsarLookupPrivilegeValue(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, name string) (dtyp.LUID, error) {
 	req := &lsarLookupPrivilegeValueRequest{
 		PolicyHandle: policyHandle,
 		Name:         dtyp.NewUnicodeString(name),

@@ -12,8 +12,8 @@ func TestStatusString(t *testing.T) {
 }
 
 func TestOpnumNameMapsRoundTrip(t *testing.T) {
-	if len(OpnumToName) != 58 {
-		t.Errorf("OpnumToName has %d entries, want 58 on-the-wire methods", len(OpnumToName))
+	if len(OpnumToName) != 69 {
+		t.Errorf("OpnumToName has %d entries, want 69 on-the-wire methods", len(OpnumToName))
 	}
 	if len(NameToOpnum) != len(OpnumToName) {
 		t.Errorf("NameToOpnum has %d entries, OpnumToName has %d (a duplicate name collapsed an entry)",

@@ -6,7 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarSetTrustedDomainInfoByNameRequest is the [in] parameter set of
@@ -14,10 +14,10 @@ import (
 // the information class, and the inline [ref] union value carrying the new trusted-domain
 // information.
 type lsarSetTrustedDomainInfoByNameRequest struct {
-	PolicyHandle             structures.LSAPR_HANDLE
+	PolicyHandle             mslsad.LSAPR_HANDLE
 	TrustedDomainName        dtyp.RPC_UNICODE_STRING
-	InformationClass         structures.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
-	TrustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFO
+	InformationClass         mslsad.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
+	TrustedDomainInformation mslsad.LSAPR_TRUSTED_DOMAIN_INFO
 }
 
 func (*lsarSetTrustedDomainInfoByNameRequest) Opnum() uint16 {
@@ -27,7 +27,7 @@ func (*lsarSetTrustedDomainInfoByNameRequest) Opnum() uint16 {
 // LsarSetTrustedDomainInfoByName calls LsarSetTrustedDomainInfoByName (opnum 49), setting the
 // trusted-domain information for the domain identified by name ([MS-LSAD] 3.1.4.7.7). The
 // union discriminant is set to the information class before marshalling.
-func LsarSetTrustedDomainInfoByName(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, trustedDomainName string, infoClass structures.TRUSTED_INFORMATION_CLASS, info structures.LSAPR_TRUSTED_DOMAIN_INFO) error {
+func LsarSetTrustedDomainInfoByName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, infoClass mslsad.TRUSTED_INFORMATION_CLASS, info mslsad.LSAPR_TRUSTED_DOMAIN_INFO) error {
 	info.Class = infoClass
 	name := dtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarSetTrustedDomainInfoByNameRequest{

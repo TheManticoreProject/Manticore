@@ -6,11 +6,11 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // sentRequestStub drives LsarQueryInformationPolicy over ft and returns the marshalled
@@ -18,10 +18,10 @@ import (
 // read, and the [out] union response is not the subject of this test.
 func sentRequestStub(t *testing.T, c *client.Client, ft *fakeTransport) []byte {
 	t.Helper()
-	var handle structures.LSAPR_HANDLE // zero (20-octet) handle
+	var handle mslsad.LSAPR_HANDLE // zero (20-octet) handle
 	// A null PolicyInformation referent + zero status, valid under both syntaxes.
 	ft.queue(responsePDU(t, 2, make([]byte, 12)))
-	_, _ = functions.LsarQueryInformationPolicy(c, handle, structures.PolicyLsaServerRoleInformation)
+	_, _ = functions.LsarQueryInformationPolicy(c, handle, mslsad.PolicyLsaServerRoleInformation)
 	if len(ft.sent) < 2 {
 		t.Fatalf("sent %d PDUs, want >= 2 (bind + request)", len(ft.sent))
 	}

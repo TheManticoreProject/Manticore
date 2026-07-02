@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarCreateTrustedDomainRequest is the [in] parameter set of LsarCreateTrustedDomain:
 // an open policy handle, the trusted-domain information (a top-level [ref] struct, so it
 // is inlined), and the desired access mask for the returned handle.
 type lsarCreateTrustedDomainRequest struct {
-	PolicyHandle             structures.LSAPR_HANDLE
-	TrustedDomainInformation structures.LSAPR_TRUST_INFORMATION
+	PolicyHandle             mslsad.LSAPR_HANDLE
+	TrustedDomainInformation mslsad.LSAPR_TRUST_INFORMATION
 	DesiredAccess            ndr.DWORD
 }
 
@@ -23,7 +23,7 @@ func (*lsarCreateTrustedDomainRequest) Opnum() uint16 {
 
 // LsarCreateTrustedDomain calls LsarCreateTrustedDomain (opnum 12), creating a trusted
 // domain object from the supplied trust information and returning a handle to it.
-func LsarCreateTrustedDomain(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, trustedDomainInformation structures.LSAPR_TRUST_INFORMATION, desiredAccess uint32) (structures.LSAPR_HANDLE, error) {
+func LsarCreateTrustedDomain(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainInformation mslsad.LSAPR_TRUST_INFORMATION, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
 	req := &lsarCreateTrustedDomainRequest{
 		PolicyHandle:             policyHandle,
 		TrustedDomainInformation: trustedDomainInformation,
@@ -31,7 +31,7 @@ func LsarCreateTrustedDomain(rpc ndr.Invoker, policyHandle structures.LSAPR_HAND
 	}
 	var resp handleResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateTrustedDomain: %w", err)
+		return mslsad.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateTrustedDomain: %w", err)
 	}
 	if uint32(resp.Status) != lsarpc.StatusSuccess {
 		return resp.Handle, fmt.Errorf("LsarCreateTrustedDomain failed: %s", lsarpc.StatusString(uint32(resp.Status)))

@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarLookupNamesRequest is the [in]/[in,out] parameter set of LsarLookupNames: a policy
@@ -17,11 +17,11 @@ import (
 // of the request (a bare conformant slice would hoist it before PolicyHandle and desync
 // the whole stub). The "ref" tag keeps it pointer-like so it is emitted as a referent.
 type lsarLookupNamesRequest struct {
-	PolicyHandle   structures.LSAPR_HANDLE
+	PolicyHandle   mslsad.LSAPR_HANDLE
 	Count          ndr.DWORD
 	Names          []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
-	TranslatedSids structures.LSAPR_TRANSLATED_SIDS
-	LookupLevel    structures.LSAP_LOOKUP_LEVEL `ndr:"enum"`
+	TranslatedSids mslsad.LSAPR_TRANSLATED_SIDS
+	LookupLevel    mslsad.LSAP_LOOKUP_LEVEL `ndr:"enum"`
 	MappedCount    ndr.DWORD
 }
 
@@ -30,8 +30,8 @@ func (*lsarLookupNamesRequest) Opnum() uint16 { return lsarpc.OpnumLsarLookupNam
 // lsarLookupNamesResponse is the reply: the [out] referenced domains (a double pointer),
 // the [in,out] translated SIDs, the [in,out] mapped count, and the NTSTATUS.
 type lsarLookupNamesResponse struct {
-	ReferencedDomains *structures.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
-	TranslatedSids    structures.LSAPR_TRANSLATED_SIDS
+	ReferencedDomains *mslsad.LSAPR_REFERENCED_DOMAIN_LIST `ndr:"unique"`
+	TranslatedSids    mslsad.LSAPR_TRANSLATED_SIDS
 	MappedCount       ndr.DWORD
 	Status            ndr.DWORD `ndr:"retval"`
 }
@@ -41,7 +41,7 @@ type lsarLookupNamesResponse struct {
 // STATUS_NONE_MAPPED when not all names resolved; in those cases the (partial) results
 // are still returned without error, so callers should inspect the translated SIDs and
 // mapped count. Any other non-success status is reported as an error.
-func LsarLookupNames(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, names []dtyp.RPC_UNICODE_STRING, lookupLevel structures.LSAP_LOOKUP_LEVEL) (*structures.LSAPR_REFERENCED_DOMAIN_LIST, structures.LSAPR_TRANSLATED_SIDS, uint32, error) {
+func LsarLookupNames(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, names []dtyp.RPC_UNICODE_STRING, lookupLevel mslsad.LSAP_LOOKUP_LEVEL) (*mslsad.LSAPR_REFERENCED_DOMAIN_LIST, mslsad.LSAPR_TRANSLATED_SIDS, uint32, error) {
 	req := &lsarLookupNamesRequest{
 		PolicyHandle: policyHandle,
 		Count:        ndr.DWORD(len(names)),
@@ -50,7 +50,7 @@ func LsarLookupNames(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, name
 	}
 	var resp lsarLookupNamesResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return nil, structures.LSAPR_TRANSLATED_SIDS{}, 0, fmt.Errorf("LsarLookupNames: %w", err)
+		return nil, mslsad.LSAPR_TRANSLATED_SIDS{}, 0, fmt.Errorf("LsarLookupNames: %w", err)
 	}
 	status := uint32(resp.Status)
 	switch status {

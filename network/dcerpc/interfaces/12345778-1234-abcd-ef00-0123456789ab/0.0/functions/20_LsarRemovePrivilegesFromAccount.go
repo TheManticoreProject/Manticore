@@ -5,7 +5,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarRemovePrivilegesFromAccountRequest is the [in] parameter set of
@@ -13,9 +13,9 @@ import (
 // removes every privilege and ignores Privileges), and a [unique] pointer to the set of
 // privileges to remove.
 type lsarRemovePrivilegesFromAccountRequest struct {
-	AccountHandle structures.LSAPR_HANDLE
+	AccountHandle mslsad.LSAPR_HANDLE
 	AllPrivileges uint8
-	Privileges    *structures.LSAPR_PRIVILEGE_SET `ndr:"unique"`
+	Privileges    *mslsad.LSAPR_PRIVILEGE_SET `ndr:"unique"`
 }
 
 func (*lsarRemovePrivilegesFromAccountRequest) Opnum() uint16 {
@@ -25,7 +25,7 @@ func (*lsarRemovePrivilegesFromAccountRequest) Opnum() uint16 {
 // LsarRemovePrivilegesFromAccount calls LsarRemovePrivilegesFromAccount (opnum 20), removing
 // the given privileges from the account; if allPrivileges is nonzero, every privilege is
 // removed and privileges is ignored ([MS-LSAD] 3.1.4.5.6).
-func LsarRemovePrivilegesFromAccount(rpc ndr.Invoker, accountHandle structures.LSAPR_HANDLE, allPrivileges uint8, privileges *structures.LSAPR_PRIVILEGE_SET) error {
+func LsarRemovePrivilegesFromAccount(rpc ndr.Invoker, accountHandle mslsad.LSAPR_HANDLE, allPrivileges uint8, privileges *mslsad.LSAPR_PRIVILEGE_SET) error {
 	req := &lsarRemovePrivilegesFromAccountRequest{
 		AccountHandle: accountHandle,
 		AllPrivileges: allPrivileges,

@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 // lsarCreateTrustedDomainExRequest is the [in] parameter set of LsarCreateTrustedDomainEx:
@@ -13,9 +13,9 @@ import (
 // information, and the desired access mask. Both information parameters are top-level
 // [ref] structs, so they are inlined.
 type lsarCreateTrustedDomainExRequest struct {
-	PolicyHandle              structures.LSAPR_HANDLE
-	TrustedDomainInformation  structures.LSAPR_TRUSTED_DOMAIN_INFORMATION_EX
-	AuthenticationInformation structures.LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION
+	PolicyHandle              mslsad.LSAPR_HANDLE
+	TrustedDomainInformation  mslsad.LSAPR_TRUSTED_DOMAIN_INFORMATION_EX
+	AuthenticationInformation mslsad.LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION
 	DesiredAccess             ndr.DWORD
 }
 
@@ -26,7 +26,7 @@ func (*lsarCreateTrustedDomainExRequest) Opnum() uint16 {
 // LsarCreateTrustedDomainEx calls LsarCreateTrustedDomainEx (opnum 51), creating a trusted
 // domain object from the supplied extended trust and authentication information and
 // returning a handle to it.
-func LsarCreateTrustedDomainEx(rpc ndr.Invoker, policyHandle structures.LSAPR_HANDLE, trustedDomainInformation structures.LSAPR_TRUSTED_DOMAIN_INFORMATION_EX, authenticationInformation structures.LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION, desiredAccess uint32) (structures.LSAPR_HANDLE, error) {
+func LsarCreateTrustedDomainEx(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainInformation mslsad.LSAPR_TRUSTED_DOMAIN_INFORMATION_EX, authenticationInformation mslsad.LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
 	req := &lsarCreateTrustedDomainExRequest{
 		PolicyHandle:              policyHandle,
 		TrustedDomainInformation:  trustedDomainInformation,
@@ -35,7 +35,7 @@ func LsarCreateTrustedDomainEx(rpc ndr.Invoker, policyHandle structures.LSAPR_HA
 	}
 	var resp handleResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateTrustedDomainEx: %w", err)
+		return mslsad.LSAPR_HANDLE{}, fmt.Errorf("LsarCreateTrustedDomainEx: %w", err)
 	}
 	if uint32(resp.Status) != lsarpc.StatusSuccess {
 		return resp.Handle, fmt.Errorf("LsarCreateTrustedDomainEx failed: %s", lsarpc.StatusString(uint32(resp.Status)))

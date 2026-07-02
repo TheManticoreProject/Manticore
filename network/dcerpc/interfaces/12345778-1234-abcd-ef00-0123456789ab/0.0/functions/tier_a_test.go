@@ -6,8 +6,8 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
 func TestLsarDeleteObject_RoundTrip(t *testing.T) {
@@ -15,7 +15,7 @@ func TestLsarDeleteObject_RoundTrip(t *testing.T) {
 	c := boundClient(t, ft)
 	ft.queue(responsePDU(t, 2, make([]byte, 24))) // zeroed handle + STATUS_SUCCESS
 
-	in := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
+	in := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xaa, 0xbb}
 	out, err := functions.LsarDeleteObject(c, in)
 	if err != nil {
 		t.Fatalf("LsarDeleteObject() error = %v", err)
@@ -41,7 +41,7 @@ func TestLsarGetSystemAccessAccount_RoundTrip(t *testing.T) {
 	// [out] SystemAccess (0x00000007) + STATUS_SUCCESS.
 	ft.queue(responsePDU(t, 2, []byte{0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}))
 
-	h := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0x11, 0x22}
+	h := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0x11, 0x22}
 	access, err := functions.LsarGetSystemAccessAccount(c, h)
 	if err != nil {
 		t.Fatalf("LsarGetSystemAccessAccount() error = %v", err)
@@ -66,7 +66,7 @@ func TestLsarSetSystemAccessAccount_RequestMarshalling(t *testing.T) {
 	c := boundClient(t, ft)
 	ft.queue(responsePDU(t, 2, make([]byte, 4))) // STATUS_SUCCESS
 
-	h := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0x33, 0x44}
+	h := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0x33, 0x44}
 	if err := functions.LsarSetSystemAccessAccount(c, h, 0x00000003); err != nil {
 		t.Fatalf("LsarSetSystemAccessAccount() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestLsarSetSystemAccessAccount_RequestMarshalling(t *testing.T) {
 func TestLsarOpenPolicy_RequestMarshalling(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
-	wantHandle := structures.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad}
+	wantHandle := mslsad.LSAPR_HANDLE{0x00, 0x00, 0x00, 0x00, 0xde, 0xad}
 	respStub := append(append([]byte(nil), wantHandle[:]...), 0x00, 0x00, 0x00, 0x00)
 	ft.queue(responsePDU(t, 2, respStub))
 
