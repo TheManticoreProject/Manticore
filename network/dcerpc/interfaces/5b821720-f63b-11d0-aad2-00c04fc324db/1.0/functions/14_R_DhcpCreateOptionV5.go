@@ -1,0 +1,48 @@
+package functions
+
+import (
+	"fmt"
+
+	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
+)
+
+// r_DhcpCreateOptionV5Request carries the [in] parameters of R_DhcpCreateOptionV5.
+type r_DhcpCreateOptionV5Request struct {
+	ServerIpAddress *ndr.WSTR `ndr:"unique"`
+	Flags           ndr.DWORD
+	OptionId        ndr.DWORD
+	ClassName       *ndr.WSTR `ndr:"unique"`
+	VendorName      *ndr.WSTR `ndr:"unique"`
+	OptionInfo      msdhcpm.DHCP_OPTION
+}
+
+func (*r_DhcpCreateOptionV5Request) Opnum() uint16 { return dhcpsrv2.OpnumR_DhcpCreateOptionV5 }
+
+// r_DhcpCreateOptionV5Response carries the [out] parameters and return value of R_DhcpCreateOptionV5.
+type r_DhcpCreateOptionV5Response struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// R_DhcpCreateOptionV5 calls R_DhcpCreateOptionV5 (opnum 14) ([MS-DHCPM] — verify the parameter
+// modeling and status handling).
+func R_DhcpCreateOptionV5(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, flags ndr.DWORD, optionId ndr.DWORD, className *ndr.WSTR, vendorName *ndr.WSTR, optionInfo msdhcpm.DHCP_OPTION) (err error) {
+	req := &r_DhcpCreateOptionV5Request{
+		ServerIpAddress: serverIpAddress,
+		Flags:           flags,
+		OptionId:        optionId,
+		ClassName:       className,
+		VendorName:      vendorName,
+		OptionInfo:      optionInfo,
+	}
+	var resp r_DhcpCreateOptionV5Response
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("R_DhcpCreateOptionV5: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+		err = fmt.Errorf("R_DhcpCreateOptionV5 failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
+	}
+	return
+}

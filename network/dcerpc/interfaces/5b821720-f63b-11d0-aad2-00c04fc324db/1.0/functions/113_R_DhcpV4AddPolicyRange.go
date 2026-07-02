@@ -1,0 +1,44 @@
+package functions
+
+import (
+	"fmt"
+
+	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
+)
+
+// r_DhcpV4AddPolicyRangeRequest carries the [in] parameters of R_DhcpV4AddPolicyRange.
+type r_DhcpV4AddPolicyRangeRequest struct {
+	ServerIpAddress *ndr.WSTR `ndr:"unique"`
+	SubnetAddress   ndr.DWORD
+	PolicyName      *ndr.WSTR `ndr:"unique"`
+	Range           msdhcpm.DHCP_IP_RANGE
+}
+
+func (*r_DhcpV4AddPolicyRangeRequest) Opnum() uint16 { return dhcpsrv2.OpnumR_DhcpV4AddPolicyRange }
+
+// r_DhcpV4AddPolicyRangeResponse carries the [out] parameters and return value of R_DhcpV4AddPolicyRange.
+type r_DhcpV4AddPolicyRangeResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// R_DhcpV4AddPolicyRange calls R_DhcpV4AddPolicyRange (opnum 113) ([MS-DHCPM] — verify the parameter
+// modeling and status handling).
+func R_DhcpV4AddPolicyRange(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, subnetAddress ndr.DWORD, policyName *ndr.WSTR, range_ msdhcpm.DHCP_IP_RANGE) (err error) {
+	req := &r_DhcpV4AddPolicyRangeRequest{
+		ServerIpAddress: serverIpAddress,
+		SubnetAddress:   subnetAddress,
+		PolicyName:      policyName,
+		Range:           range_,
+	}
+	var resp r_DhcpV4AddPolicyRangeResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("R_DhcpV4AddPolicyRange: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+		err = fmt.Errorf("R_DhcpV4AddPolicyRange failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
+	}
+	return
+}

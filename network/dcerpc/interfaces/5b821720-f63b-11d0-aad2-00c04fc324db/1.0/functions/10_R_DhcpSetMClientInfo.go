@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
+)
+
+// r_DhcpSetMClientInfoRequest carries the [in] parameters of R_DhcpSetMClientInfo.
+type r_DhcpSetMClientInfoRequest struct {
+	ServerIpAddress *ndr.WSTR `ndr:"unique"`
+	ClientInfo      msdhcpm.DHCP_MCLIENT_INFO
+}
+
+func (*r_DhcpSetMClientInfoRequest) Opnum() uint16 { return dhcpsrv2.OpnumR_DhcpSetMClientInfo }
+
+// r_DhcpSetMClientInfoResponse carries the [out] parameters and return value of R_DhcpSetMClientInfo.
+type r_DhcpSetMClientInfoResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// R_DhcpSetMClientInfo calls R_DhcpSetMClientInfo (opnum 10) ([MS-DHCPM] — verify the parameter
+// modeling and status handling).
+func R_DhcpSetMClientInfo(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, clientInfo msdhcpm.DHCP_MCLIENT_INFO) (err error) {
+	req := &r_DhcpSetMClientInfoRequest{
+		ServerIpAddress: serverIpAddress,
+		ClientInfo:      clientInfo,
+	}
+	var resp r_DhcpSetMClientInfoResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("R_DhcpSetMClientInfo: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+		err = fmt.Errorf("R_DhcpSetMClientInfo failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
+	}
+	return
+}

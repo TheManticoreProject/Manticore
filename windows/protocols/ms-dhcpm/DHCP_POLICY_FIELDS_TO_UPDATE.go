@@ -1,0 +1,14 @@
+package msdhcpm
+
+// DHCP_POLICY_FIELDS_TO_UPDATE is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-DHCPM]).
+type DHCP_POLICY_FIELDS_TO_UPDATE uint16
+
+const (
+	DhcpUpdatePolicyName      DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000001
+	DhcpUpdatePolicyOrder     DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000002
+	DhcpUpdatePolicyExpr      DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000004
+	DhcpUpdatePolicyRanges    DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000008
+	DhcpUpdatePolicyDescr     DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000010
+	DhcpUpdatePolicyStatus    DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000020
+	DhcpUpdatePolicyDnsSuffix DHCP_POLICY_FIELDS_TO_UPDATE = 0x00000040
+)

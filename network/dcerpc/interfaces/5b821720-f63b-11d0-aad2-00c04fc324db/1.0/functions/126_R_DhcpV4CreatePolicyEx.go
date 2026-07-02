@@ -1,0 +1,40 @@
+package functions
+
+import (
+	"fmt"
+
+	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
+)
+
+// r_DhcpV4CreatePolicyExRequest carries the [in] parameters of R_DhcpV4CreatePolicyEx.
+type r_DhcpV4CreatePolicyExRequest struct {
+	ServerIpAddress *ndr.WSTR `ndr:"unique"`
+	PPolicy         msdhcpm.DHCP_POLICY_EX
+}
+
+func (*r_DhcpV4CreatePolicyExRequest) Opnum() uint16 { return dhcpsrv2.OpnumR_DhcpV4CreatePolicyEx }
+
+// r_DhcpV4CreatePolicyExResponse carries the [out] parameters and return value of R_DhcpV4CreatePolicyEx.
+type r_DhcpV4CreatePolicyExResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// R_DhcpV4CreatePolicyEx calls R_DhcpV4CreatePolicyEx (opnum 126) ([MS-DHCPM] — verify the parameter
+// modeling and status handling).
+func R_DhcpV4CreatePolicyEx(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, pPolicy msdhcpm.DHCP_POLICY_EX) (err error) {
+	req := &r_DhcpV4CreatePolicyExRequest{
+		ServerIpAddress: serverIpAddress,
+		PPolicy:         pPolicy,
+	}
+	var resp r_DhcpV4CreatePolicyExResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("R_DhcpV4CreatePolicyEx: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+		err = fmt.Errorf("R_DhcpV4CreatePolicyEx failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
+	}
+	return
+}
