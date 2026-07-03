@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcSetJobNamedPropertyRequest carries the [in] parameters of RpcSetJobNamedProperty.
 type rpcSetJobNamedPropertyRequest struct {
-	HPrinter  structures.PRINTER_HANDLE
+	HPrinter  msrprn.PRINTER_HANDLE
 	JobId     ndr.DWORD
-	PProperty structures.RPC_PrintNamedProperty
+	PProperty msrprn.RPC_PrintNamedProperty
 }
 
 func (*rpcSetJobNamedPropertyRequest) Opnum() uint16 { return winspool.OpnumRpcSetJobNamedProperty }
@@ -24,7 +24,7 @@ type rpcSetJobNamedPropertyResponse struct {
 
 // RpcSetJobNamedProperty calls RpcSetJobNamedProperty (opnum 111) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcSetJobNamedProperty(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, pProperty structures.RPC_PrintNamedProperty) (err error) {
+func RpcSetJobNamedProperty(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, pProperty msrprn.RPC_PrintNamedProperty) (err error) {
 	req := &rpcSetJobNamedPropertyRequest{
 		HPrinter:  hPrinter,
 		JobId:     jobId,

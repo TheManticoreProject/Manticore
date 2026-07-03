@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcWaitForPrinterChangeRequest carries the [in] parameters of RpcWaitForPrinterChange.
 type rpcWaitForPrinterChangeRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	Flags    ndr.DWORD
 }
 
@@ -24,7 +24,7 @@ type rpcWaitForPrinterChangeResponse struct {
 
 // RpcWaitForPrinterChange calls RpcWaitForPrinterChange (opnum 28) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcWaitForPrinterChange(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, flags ndr.DWORD) (PFlags ndr.DWORD, err error) {
+func RpcWaitForPrinterChange(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, flags ndr.DWORD) (PFlags ndr.DWORD, err error) {
 	req := &rpcWaitForPrinterChangeRequest{
 		HPrinter: hPrinter,
 		Flags:    flags,

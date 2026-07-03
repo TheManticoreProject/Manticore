@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcDeletePrinterKeyRequest carries the [in] parameters of RpcDeletePrinterKey.
 type rpcDeletePrinterKeyRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	PKeyName ndr.WSTR
 }
 
@@ -23,7 +23,7 @@ type rpcDeletePrinterKeyResponse struct {
 
 // RpcDeletePrinterKey calls RpcDeletePrinterKey (opnum 82) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcDeletePrinterKey(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pKeyName ndr.WSTR) (err error) {
+func RpcDeletePrinterKey(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pKeyName ndr.WSTR) (err error) {
 	req := &rpcDeletePrinterKeyRequest{
 		HPrinter: hPrinter,
 		PKeyName: pKeyName,

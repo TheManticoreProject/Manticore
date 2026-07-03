@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcScheduleJobRequest carries the [in] parameters of RpcScheduleJob.
 type rpcScheduleJobRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	JobId    ndr.DWORD
 }
 
@@ -23,7 +23,7 @@ type rpcScheduleJobResponse struct {
 
 // RpcScheduleJob calls RpcScheduleJob (opnum 25) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcScheduleJob(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD) (err error) {
+func RpcScheduleJob(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD) (err error) {
 	req := &rpcScheduleJobRequest{
 		HPrinter: hPrinter,
 		JobId:    jobId,

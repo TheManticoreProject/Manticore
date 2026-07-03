@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcWritePrinterRequest carries the [in] parameters of RpcWritePrinter.
 type rpcWritePrinterRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	PBuf     []uint8 `ndr:"ref,size_is=CbBuf"`
 	CbBuf    ndr.DWORD
 }
@@ -25,7 +25,7 @@ type rpcWritePrinterResponse struct {
 
 // RpcWritePrinter calls RpcWritePrinter (opnum 19) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcWritePrinter(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pBuf []uint8, cbBuf ndr.DWORD) (PcWritten ndr.DWORD, err error) {
+func RpcWritePrinter(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pBuf []uint8, cbBuf ndr.DWORD) (PcWritten ndr.DWORD, err error) {
 	req := &rpcWritePrinterRequest{
 		HPrinter: hPrinter,
 		PBuf:     pBuf,

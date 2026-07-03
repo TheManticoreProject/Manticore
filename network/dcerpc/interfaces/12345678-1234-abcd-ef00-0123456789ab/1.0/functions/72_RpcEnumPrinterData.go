@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcEnumPrinterDataRequest carries the [in] parameters of RpcEnumPrinterData.
 type rpcEnumPrinterDataRequest struct {
-	HPrinter    structures.PRINTER_HANDLE
+	HPrinter    msrprn.PRINTER_HANDLE
 	DwIndex     ndr.DWORD
 	CbValueName ndr.DWORD
 	CbData      ndr.DWORD
@@ -30,7 +30,7 @@ type rpcEnumPrinterDataResponse struct {
 
 // RpcEnumPrinterData calls RpcEnumPrinterData (opnum 72) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcEnumPrinterData(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, dwIndex ndr.DWORD, cbValueName ndr.DWORD, cbData ndr.DWORD) (PValueName []uint16, PcbValueName ndr.DWORD, PType ndr.DWORD, PData []uint8, PcbData ndr.DWORD, err error) {
+func RpcEnumPrinterData(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, dwIndex ndr.DWORD, cbValueName ndr.DWORD, cbData ndr.DWORD) (PValueName []uint16, PcbValueName ndr.DWORD, PType ndr.DWORD, PData []uint8, PcbData ndr.DWORD, err error) {
 	req := &rpcEnumPrinterDataRequest{
 		HPrinter:    hPrinter,
 		DwIndex:     dwIndex,

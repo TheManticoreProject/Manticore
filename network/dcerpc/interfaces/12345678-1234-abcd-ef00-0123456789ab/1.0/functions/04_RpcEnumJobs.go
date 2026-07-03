@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcEnumJobsRequest carries the [in] parameters of RpcEnumJobs.
 type rpcEnumJobsRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	FirstJob ndr.DWORD
 	NoJobs   ndr.DWORD
 	Level    ndr.DWORD
@@ -30,7 +30,7 @@ type rpcEnumJobsResponse struct {
 
 // RpcEnumJobs calls RpcEnumJobs (opnum 4) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcEnumJobs(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, firstJob ndr.DWORD, noJobs ndr.DWORD, level ndr.DWORD, pJob []uint8, cbBuf ndr.DWORD) (PJob []uint8, PcbNeeded ndr.DWORD, PcReturned ndr.DWORD, err error) {
+func RpcEnumJobs(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, firstJob ndr.DWORD, noJobs ndr.DWORD, level ndr.DWORD, pJob []uint8, cbBuf ndr.DWORD) (PJob []uint8, PcbNeeded ndr.DWORD, PcReturned ndr.DWORD, err error) {
 	req := &rpcEnumJobsRequest{
 		HPrinter: hPrinter,
 		FirstJob: firstJob,

@@ -4,18 +4,18 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcRemoteFindFirstPrinterChangeNotificationExRequest carries the [in] parameters of RpcRemoteFindFirstPrinterChangeNotificationEx.
 type rpcRemoteFindFirstPrinterChangeNotificationExRequest struct {
-	HPrinter        structures.PRINTER_HANDLE
+	HPrinter        msrprn.PRINTER_HANDLE
 	FdwFlags        ndr.DWORD
 	FdwOptions      ndr.DWORD
 	PszLocalMachine *ndr.WSTR `ndr:"unique"`
 	DwPrinterLocal  ndr.DWORD
-	POptions        *structures.RPC_V2_NOTIFY_OPTIONS `ndr:"unique"`
+	POptions        *msrprn.RPC_V2_NOTIFY_OPTIONS `ndr:"unique"`
 }
 
 func (*rpcRemoteFindFirstPrinterChangeNotificationExRequest) Opnum() uint16 {
@@ -29,7 +29,7 @@ type rpcRemoteFindFirstPrinterChangeNotificationExResponse struct {
 
 // RpcRemoteFindFirstPrinterChangeNotificationEx calls RpcRemoteFindFirstPrinterChangeNotificationEx (opnum 65) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcRemoteFindFirstPrinterChangeNotificationEx(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, fdwFlags ndr.DWORD, fdwOptions ndr.DWORD, pszLocalMachine *ndr.WSTR, dwPrinterLocal ndr.DWORD, pOptions *structures.RPC_V2_NOTIFY_OPTIONS) (err error) {
+func RpcRemoteFindFirstPrinterChangeNotificationEx(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, fdwFlags ndr.DWORD, fdwOptions ndr.DWORD, pszLocalMachine *ndr.WSTR, dwPrinterLocal ndr.DWORD, pOptions *msrprn.RPC_V2_NOTIFY_OPTIONS) (err error) {
 	req := &rpcRemoteFindFirstPrinterChangeNotificationExRequest{
 		HPrinter:        hPrinter,
 		FdwFlags:        fdwFlags,

@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcXcvDataRequest carries the [in] parameters of RpcXcvData.
 type rpcXcvDataRequest struct {
-	HXcv         structures.PRINTER_HANDLE
+	HXcv         msrprn.PRINTER_HANDLE
 	PszDataName  ndr.WSTR
 	PInputData   []uint8 `ndr:"ref,size_is=CbInputData"`
 	CbInputData  ndr.DWORD
@@ -30,7 +30,7 @@ type rpcXcvDataResponse struct {
 
 // RpcXcvData calls RpcXcvData (opnum 88) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcXcvData(rpc ndr.Invoker, hXcv structures.PRINTER_HANDLE, pszDataName ndr.WSTR, pInputData []uint8, cbInputData ndr.DWORD, cbOutputData ndr.DWORD, pdwStatus ndr.DWORD) (POutputData []uint8, PcbOutputNeeded ndr.DWORD, PdwStatus ndr.DWORD, err error) {
+func RpcXcvData(rpc ndr.Invoker, hXcv msrprn.PRINTER_HANDLE, pszDataName ndr.WSTR, pInputData []uint8, cbInputData ndr.DWORD, cbOutputData ndr.DWORD, pdwStatus ndr.DWORD) (POutputData []uint8, PcbOutputNeeded ndr.DWORD, PdwStatus ndr.DWORD, err error) {
 	req := &rpcXcvDataRequest{
 		HXcv:         hXcv,
 		PszDataName:  pszDataName,

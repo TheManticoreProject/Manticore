@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcGetPrinterDataRequest carries the [in] parameters of RpcGetPrinterData.
 type rpcGetPrinterDataRequest struct {
-	HPrinter   structures.PRINTER_HANDLE
+	HPrinter   msrprn.PRINTER_HANDLE
 	PValueName ndr.WSTR
 	NSize      ndr.DWORD
 }
@@ -27,7 +27,7 @@ type rpcGetPrinterDataResponse struct {
 
 // RpcGetPrinterData calls RpcGetPrinterData (opnum 26) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcGetPrinterData(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pValueName ndr.WSTR, nSize ndr.DWORD) (PType ndr.DWORD, PData []uint8, PcbNeeded ndr.DWORD, err error) {
+func RpcGetPrinterData(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pValueName ndr.WSTR, nSize ndr.DWORD) (PType ndr.DWORD, PData []uint8, PcbNeeded ndr.DWORD, err error) {
 	req := &rpcGetPrinterDataRequest{
 		HPrinter:   hPrinter,
 		PValueName: pValueName,

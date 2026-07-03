@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcRouterReplyPrinterRequest carries the [in] parameters of RpcRouterReplyPrinter.
 type rpcRouterReplyPrinterRequest struct {
-	HNotify  structures.PRINTER_HANDLE
+	HNotify  msrprn.PRINTER_HANDLE
 	FdwFlags ndr.DWORD
 	CbBuffer ndr.DWORD
 	PBuffer  []uint8 `ndr:"unique,size_is=CbBuffer"`
@@ -25,7 +25,7 @@ type rpcRouterReplyPrinterResponse struct {
 
 // RpcRouterReplyPrinter calls RpcRouterReplyPrinter (opnum 59) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcRouterReplyPrinter(rpc ndr.Invoker, hNotify structures.PRINTER_HANDLE, fdwFlags ndr.DWORD, cbBuffer ndr.DWORD, pBuffer []uint8) (err error) {
+func RpcRouterReplyPrinter(rpc ndr.Invoker, hNotify msrprn.PRINTER_HANDLE, fdwFlags ndr.DWORD, cbBuffer ndr.DWORD, pBuffer []uint8) (err error) {
 	req := &rpcRouterReplyPrinterRequest{
 		HNotify:  hNotify,
 		FdwFlags: fdwFlags,

@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcSetPrinterDataExRequest carries the [in] parameters of RpcSetPrinterDataEx.
 type rpcSetPrinterDataExRequest struct {
-	HPrinter   structures.PRINTER_HANDLE
+	HPrinter   msrprn.PRINTER_HANDLE
 	PKeyName   ndr.WSTR
 	PValueName ndr.WSTR
 	Type       ndr.DWORD
@@ -27,7 +27,7 @@ type rpcSetPrinterDataExResponse struct {
 
 // RpcSetPrinterDataEx calls RpcSetPrinterDataEx (opnum 77) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcSetPrinterDataEx(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pKeyName ndr.WSTR, pValueName ndr.WSTR, type_ ndr.DWORD, pData []uint8, cbData ndr.DWORD) (err error) {
+func RpcSetPrinterDataEx(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pKeyName ndr.WSTR, pValueName ndr.WSTR, type_ ndr.DWORD, pData []uint8, cbData ndr.DWORD) (err error) {
 	req := &rpcSetPrinterDataExRequest{
 		HPrinter:   hPrinter,
 		PKeyName:   pKeyName,

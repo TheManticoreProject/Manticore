@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcAddPortExRequest carries the [in] parameters of RpcAddPortEx.
 type rpcAddPortExRequest struct {
 	PName             *ndr.WSTR `ndr:"unique"`
-	PPortContainer    structures.PORT_CONTAINER
-	PPortVarContainer structures.PORT_VAR_CONTAINER
+	PPortContainer    msrprn.PORT_CONTAINER
+	PPortVarContainer msrprn.PORT_VAR_CONTAINER
 	PMonitorName      ndr.WSTR
 }
 
@@ -25,7 +25,7 @@ type rpcAddPortExResponse struct {
 
 // RpcAddPortEx calls RpcAddPortEx (opnum 61) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcAddPortEx(rpc ndr.Invoker, pName *ndr.WSTR, pPortContainer structures.PORT_CONTAINER, pPortVarContainer structures.PORT_VAR_CONTAINER, pMonitorName ndr.WSTR) (err error) {
+func RpcAddPortEx(rpc ndr.Invoker, pName *ndr.WSTR, pPortContainer msrprn.PORT_CONTAINER, pPortVarContainer msrprn.PORT_VAR_CONTAINER, pMonitorName ndr.WSTR) (err error) {
 	req := &rpcAddPortExRequest{
 		PName:             pName,
 		PPortContainer:    pPortContainer,

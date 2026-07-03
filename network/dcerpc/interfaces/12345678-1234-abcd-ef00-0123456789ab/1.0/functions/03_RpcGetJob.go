@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcGetJobRequest carries the [in] parameters of RpcGetJob.
 type rpcGetJobRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	JobId    ndr.DWORD
 	Level    ndr.DWORD
 	PJob     []uint8 `ndr:"unique,size_is=CbBuf"`
@@ -28,7 +28,7 @@ type rpcGetJobResponse struct {
 
 // RpcGetJob calls RpcGetJob (opnum 3) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcGetJob(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, level ndr.DWORD, pJob []uint8, cbBuf ndr.DWORD) (PJob []uint8, PcbNeeded ndr.DWORD, err error) {
+func RpcGetJob(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, level ndr.DWORD, pJob []uint8, cbBuf ndr.DWORD) (PJob []uint8, PcbNeeded ndr.DWORD, err error) {
 	req := &rpcGetJobRequest{
 		HPrinter: hPrinter,
 		JobId:    jobId,

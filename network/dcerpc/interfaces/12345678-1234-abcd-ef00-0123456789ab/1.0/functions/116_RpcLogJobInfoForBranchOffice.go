@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcLogJobInfoForBranchOfficeRequest carries the [in] parameters of RpcLogJobInfoForBranchOffice.
 type rpcLogJobInfoForBranchOfficeRequest struct {
-	HPrinter                      structures.PRINTER_HANDLE
-	PBranchOfficeJobDataContainer structures.RPC_BranchOfficeJobDataContainer
+	HPrinter                      msrprn.PRINTER_HANDLE
+	PBranchOfficeJobDataContainer msrprn.RPC_BranchOfficeJobDataContainer
 }
 
 func (*rpcLogJobInfoForBranchOfficeRequest) Opnum() uint16 {
@@ -25,7 +25,7 @@ type rpcLogJobInfoForBranchOfficeResponse struct {
 
 // RpcLogJobInfoForBranchOffice calls RpcLogJobInfoForBranchOffice (opnum 116) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcLogJobInfoForBranchOffice(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pBranchOfficeJobDataContainer structures.RPC_BranchOfficeJobDataContainer) (err error) {
+func RpcLogJobInfoForBranchOffice(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pBranchOfficeJobDataContainer msrprn.RPC_BranchOfficeJobDataContainer) (err error) {
 	req := &rpcLogJobInfoForBranchOfficeRequest{
 		HPrinter:                      hPrinter,
 		PBranchOfficeJobDataContainer: pBranchOfficeJobDataContainer,

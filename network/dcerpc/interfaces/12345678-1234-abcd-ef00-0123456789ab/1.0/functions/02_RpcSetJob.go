@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcSetJobRequest carries the [in] parameters of RpcSetJob.
 type rpcSetJobRequest struct {
-	HPrinter      structures.PRINTER_HANDLE
+	HPrinter      msrprn.PRINTER_HANDLE
 	JobId         ndr.DWORD
-	PJobContainer *structures.JOB_CONTAINER `ndr:"unique"`
+	PJobContainer *msrprn.JOB_CONTAINER `ndr:"unique"`
 	Command       ndr.DWORD
 }
 
@@ -25,7 +25,7 @@ type rpcSetJobResponse struct {
 
 // RpcSetJob calls RpcSetJob (opnum 2) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcSetJob(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, pJobContainer *structures.JOB_CONTAINER, command ndr.DWORD) (err error) {
+func RpcSetJob(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, pJobContainer *msrprn.JOB_CONTAINER, command ndr.DWORD) (err error) {
 	req := &rpcSetJobRequest{
 		HPrinter:      hPrinter,
 		JobId:         jobId,

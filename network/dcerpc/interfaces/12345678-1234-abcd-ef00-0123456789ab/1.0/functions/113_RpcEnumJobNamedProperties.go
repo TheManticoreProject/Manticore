@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcEnumJobNamedPropertiesRequest carries the [in] parameters of RpcEnumJobNamedProperties.
 type rpcEnumJobNamedPropertiesRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	JobId    ndr.DWORD
 }
 
@@ -21,13 +21,13 @@ func (*rpcEnumJobNamedPropertiesRequest) Opnum() uint16 {
 // rpcEnumJobNamedPropertiesResponse carries the [out] parameters and return value of RpcEnumJobNamedProperties.
 type rpcEnumJobNamedPropertiesResponse struct {
 	PcProperties ndr.DWORD
-	PpProperties []*structures.RPC_PrintNamedProperty `ndr:"elem=unique,ref,conformant"`
-	Status       ndr.DWORD                            `ndr:"retval"`
+	PpProperties []*msrprn.RPC_PrintNamedProperty `ndr:"elem=unique,ref,conformant"`
+	Status       ndr.DWORD                        `ndr:"retval"`
 }
 
 // RpcEnumJobNamedProperties calls RpcEnumJobNamedProperties (opnum 113) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcEnumJobNamedProperties(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD) (PcProperties ndr.DWORD, PpProperties []*structures.RPC_PrintNamedProperty, err error) {
+func RpcEnumJobNamedProperties(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD) (PcProperties ndr.DWORD, PpProperties []*msrprn.RPC_PrintNamedProperty, err error) {
 	req := &rpcEnumJobNamedPropertiesRequest{
 		HPrinter: hPrinter,
 		JobId:    jobId,

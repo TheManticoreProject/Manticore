@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcFlushPrinterRequest carries the [in] parameters of RpcFlushPrinter.
 type rpcFlushPrinterRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	PBuf     []uint8 `ndr:"ref,size_is=CbBuf"`
 	CbBuf    ndr.DWORD
 	CSleep   ndr.DWORD
@@ -26,7 +26,7 @@ type rpcFlushPrinterResponse struct {
 
 // RpcFlushPrinter calls RpcFlushPrinter (opnum 96) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcFlushPrinter(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pBuf []uint8, cbBuf ndr.DWORD, cSleep ndr.DWORD) (PcWritten ndr.DWORD, err error) {
+func RpcFlushPrinter(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pBuf []uint8, cbBuf ndr.DWORD, cSleep ndr.DWORD) (PcWritten ndr.DWORD, err error) {
 	req := &rpcFlushPrinterRequest{
 		HPrinter: hPrinter,
 		PBuf:     pBuf,

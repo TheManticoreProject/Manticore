@@ -30,12 +30,12 @@ import (
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // bindSpooler binds the winspool interface against the target, preferring the \spoolss
@@ -146,9 +146,9 @@ func TestIntegration_OpenClosePrinter(t *testing.T) {
 	rpc := bindSpooler(t)
 
 	server := ndr.WSTR(`\\` + os.Getenv("DCERPC_TEST_HOST"))
-	empty := structures.DEVMODE_CONTAINER{} // CbBuf=0, PDevMode=nil
+	empty := msrprn.DEVMODE_CONTAINER{} // CbBuf=0, PDevMode=nil
 
-	var handle structures.PRINTER_HANDLE
+	var handle msrprn.PRINTER_HANDLE
 	var err error
 	// Try the access masks a print server accepts, most-permissive first; a server may
 	// reject MAXIMUM_ALLOWED for the server object and require an explicit SERVER_* mask.

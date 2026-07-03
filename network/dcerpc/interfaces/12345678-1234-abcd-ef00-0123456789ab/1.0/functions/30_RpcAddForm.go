@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcAddFormRequest carries the [in] parameters of RpcAddForm.
 type rpcAddFormRequest struct {
-	HPrinter           structures.PRINTER_HANDLE
-	PFormInfoContainer structures.FORM_CONTAINER
+	HPrinter           msrprn.PRINTER_HANDLE
+	PFormInfoContainer msrprn.FORM_CONTAINER
 }
 
 func (*rpcAddFormRequest) Opnum() uint16 { return winspool.OpnumRpcAddForm }
@@ -23,7 +23,7 @@ type rpcAddFormResponse struct {
 
 // RpcAddForm calls RpcAddForm (opnum 30) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcAddForm(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pFormInfoContainer structures.FORM_CONTAINER) (err error) {
+func RpcAddForm(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pFormInfoContainer msrprn.FORM_CONTAINER) (err error) {
 	req := &rpcAddFormRequest{
 		HPrinter:           hPrinter,
 		PFormInfoContainer: pFormInfoContainer,
