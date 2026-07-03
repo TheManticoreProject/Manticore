@@ -1,0 +1,9 @@
+package msraiw
+
+// WINSINTF_PRIORITY_CLASS_E is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-RAIW]).
+type WINSINTF_PRIORITY_CLASS_E uint16
+
+const (
+	WINSINTF_E_NORMAL WINSINTF_PRIORITY_CLASS_E = 0
+	WINSINTF_E_HIGH   WINSINTF_PRIORITY_CLASS_E = 1
+)

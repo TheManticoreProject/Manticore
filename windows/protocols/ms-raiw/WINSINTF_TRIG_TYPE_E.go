@@ -1,0 +1,10 @@
+package msraiw
+
+// WINSINTF_TRIG_TYPE_E is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-RAIW]).
+type WINSINTF_TRIG_TYPE_E uint16
+
+const (
+	WINSINTF_E_PULL      WINSINTF_TRIG_TYPE_E = 0
+	WINSINTF_E_PUSH      WINSINTF_TRIG_TYPE_E = 1
+	WINSINTF_E_PUSH_PROP WINSINTF_TRIG_TYPE_E = 2
+)
