@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcAddPrinterDriverExRequest carries the [in] parameters of RpcAddPrinterDriverEx.
 type rpcAddPrinterDriverExRequest struct {
 	PName            *ndr.WSTR `ndr:"unique"`
-	PDriverContainer structures.DRIVER_CONTAINER
+	PDriverContainer msrprn.DRIVER_CONTAINER
 	DwFileCopyFlags  ndr.DWORD
 }
 
@@ -24,7 +24,7 @@ type rpcAddPrinterDriverExResponse struct {
 
 // RpcAddPrinterDriverEx calls RpcAddPrinterDriverEx (opnum 89) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcAddPrinterDriverEx(rpc ndr.Invoker, pName *ndr.WSTR, pDriverContainer structures.DRIVER_CONTAINER, dwFileCopyFlags ndr.DWORD) (err error) {
+func RpcAddPrinterDriverEx(rpc ndr.Invoker, pName *ndr.WSTR, pDriverContainer msrprn.DRIVER_CONTAINER, dwFileCopyFlags ndr.DWORD) (err error) {
 	req := &rpcAddPrinterDriverExRequest{
 		PName:            pName,
 		PDriverContainer: pDriverContainer,

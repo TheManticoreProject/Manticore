@@ -4,17 +4,17 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcRouterReplyPrinterExRequest carries the [in] parameters of RpcRouterReplyPrinterEx.
 type rpcRouterReplyPrinterExRequest struct {
-	HNotify     structures.PRINTER_HANDLE
+	HNotify     msrprn.PRINTER_HANDLE
 	DwColor     ndr.DWORD
 	FdwFlags    ndr.DWORD
 	DwReplyType ndr.DWORD
-	Reply       structures.RPC_V2_UREPLY_PRINTER
+	Reply       msrprn.RPC_V2_UREPLY_PRINTER
 }
 
 func (*rpcRouterReplyPrinterExRequest) Opnum() uint16 { return winspool.OpnumRpcRouterReplyPrinterEx }
@@ -27,7 +27,7 @@ type rpcRouterReplyPrinterExResponse struct {
 
 // RpcRouterReplyPrinterEx calls RpcRouterReplyPrinterEx (opnum 66) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcRouterReplyPrinterEx(rpc ndr.Invoker, hNotify structures.PRINTER_HANDLE, dwColor ndr.DWORD, fdwFlags ndr.DWORD, dwReplyType ndr.DWORD, reply structures.RPC_V2_UREPLY_PRINTER) (PdwResult ndr.DWORD, err error) {
+func RpcRouterReplyPrinterEx(rpc ndr.Invoker, hNotify msrprn.PRINTER_HANDLE, dwColor ndr.DWORD, fdwFlags ndr.DWORD, dwReplyType ndr.DWORD, reply msrprn.RPC_V2_UREPLY_PRINTER) (PdwResult ndr.DWORD, err error) {
 	req := &rpcRouterReplyPrinterExRequest{
 		HNotify:     hNotify,
 		DwColor:     dwColor,

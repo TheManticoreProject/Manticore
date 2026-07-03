@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcIppGetPrinterAttributesRequest carries the [in] parameters of RpcIppGetPrinterAttributes.
 type rpcIppGetPrinterAttributesRequest struct {
-	HPrinter           structures.PRINTER_HANDLE
+	HPrinter           msrprn.PRINTER_HANDLE
 	AttributeNameCount ndr.DWORD
 	AttributeNames     ndr.WSTR
 }
@@ -28,7 +28,7 @@ type rpcIppGetPrinterAttributesResponse struct {
 
 // RpcIppGetPrinterAttributes calls RpcIppGetPrinterAttributes (opnum 122) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcIppGetPrinterAttributes(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, attributeNameCount ndr.DWORD, attributeNames ndr.WSTR) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
+func RpcIppGetPrinterAttributes(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, attributeNameCount ndr.DWORD, attributeNames ndr.WSTR) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
 	req := &rpcIppGetPrinterAttributesRequest{
 		HPrinter:           hPrinter,
 		AttributeNameCount: attributeNameCount,

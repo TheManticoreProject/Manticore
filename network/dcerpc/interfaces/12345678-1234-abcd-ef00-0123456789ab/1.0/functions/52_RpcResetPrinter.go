@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcResetPrinterRequest carries the [in] parameters of RpcResetPrinter.
 type rpcResetPrinterRequest struct {
-	HPrinter          structures.PRINTER_HANDLE
+	HPrinter          msrprn.PRINTER_HANDLE
 	PDatatype         *ndr.WSTR `ndr:"unique"`
-	PDevModeContainer structures.DEVMODE_CONTAINER
+	PDevModeContainer msrprn.DEVMODE_CONTAINER
 }
 
 func (*rpcResetPrinterRequest) Opnum() uint16 { return winspool.OpnumRpcResetPrinter }
@@ -24,7 +24,7 @@ type rpcResetPrinterResponse struct {
 
 // RpcResetPrinter calls RpcResetPrinter (opnum 52) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcResetPrinter(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pDatatype *ndr.WSTR, pDevModeContainer structures.DEVMODE_CONTAINER) (err error) {
+func RpcResetPrinter(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pDatatype *ndr.WSTR, pDevModeContainer msrprn.DEVMODE_CONTAINER) (err error) {
 	req := &rpcResetPrinterRequest{
 		HPrinter:          hPrinter,
 		PDatatype:         pDatatype,

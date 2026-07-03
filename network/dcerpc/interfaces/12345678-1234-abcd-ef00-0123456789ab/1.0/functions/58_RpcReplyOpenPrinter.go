@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcReplyOpenPrinterRequest carries the [in] parameters of RpcReplyOpenPrinter.
@@ -21,13 +21,13 @@ func (*rpcReplyOpenPrinterRequest) Opnum() uint16 { return winspool.OpnumRpcRepl
 
 // rpcReplyOpenPrinterResponse carries the [out] parameters and return value of RpcReplyOpenPrinter.
 type rpcReplyOpenPrinterResponse struct {
-	PhPrinterNotify structures.PRINTER_HANDLE
+	PhPrinterNotify msrprn.PRINTER_HANDLE
 	Status          ndr.DWORD `ndr:"retval"`
 }
 
 // RpcReplyOpenPrinter calls RpcReplyOpenPrinter (opnum 58) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcReplyOpenPrinter(rpc ndr.Invoker, pMachine ndr.WSTR, dwPrinterRemote ndr.DWORD, dwType ndr.DWORD, cbBuffer ndr.DWORD, pBuffer []uint8) (PhPrinterNotify structures.PRINTER_HANDLE, err error) {
+func RpcReplyOpenPrinter(rpc ndr.Invoker, pMachine ndr.WSTR, dwPrinterRemote ndr.DWORD, dwType ndr.DWORD, cbBuffer ndr.DWORD, pBuffer []uint8) (PhPrinterNotify msrprn.PRINTER_HANDLE, err error) {
 	req := &rpcReplyOpenPrinterRequest{
 		PMachine:        pMachine,
 		DwPrinterRemote: dwPrinterRemote,

@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcGetPrinterRequest carries the [in] parameters of RpcGetPrinter.
 type rpcGetPrinterRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	Level    ndr.DWORD
 	PPrinter []uint8 `ndr:"unique,size_is=CbBuf"`
 	CbBuf    ndr.DWORD
@@ -27,7 +27,7 @@ type rpcGetPrinterResponse struct {
 
 // RpcGetPrinter calls RpcGetPrinter (opnum 8) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcGetPrinter(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, level ndr.DWORD, pPrinter []uint8, cbBuf ndr.DWORD) (PPrinter []uint8, PcbNeeded ndr.DWORD, err error) {
+func RpcGetPrinter(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, level ndr.DWORD, pPrinter []uint8, cbBuf ndr.DWORD) (PPrinter []uint8, PcbNeeded ndr.DWORD, err error) {
 	req := &rpcGetPrinterRequest{
 		HPrinter: hPrinter,
 		Level:    level,

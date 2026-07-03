@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcIppGetJobAttributesRequest carries the [in] parameters of RpcIppGetJobAttributes.
 type rpcIppGetJobAttributesRequest struct {
-	HPrinter           structures.PRINTER_HANDLE
+	HPrinter           msrprn.PRINTER_HANDLE
 	JobId              ndr.DWORD
 	AttributeNameCount ndr.DWORD
 	AttributeNames     ndr.WSTR
@@ -27,7 +27,7 @@ type rpcIppGetJobAttributesResponse struct {
 
 // RpcIppGetJobAttributes calls RpcIppGetJobAttributes (opnum 120) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcIppGetJobAttributes(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, attributeNameCount ndr.DWORD, attributeNames ndr.WSTR) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
+func RpcIppGetJobAttributes(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, attributeNameCount ndr.DWORD, attributeNames ndr.WSTR) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
 	req := &rpcIppGetJobAttributesRequest{
 		HPrinter:           hPrinter,
 		JobId:              jobId,

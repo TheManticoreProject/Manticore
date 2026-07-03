@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcEnumPrinterKeyRequest carries the [in] parameters of RpcEnumPrinterKey.
 type rpcEnumPrinterKeyRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	PKeyName ndr.WSTR
 	CbSubkey ndr.DWORD
 }
@@ -26,7 +26,7 @@ type rpcEnumPrinterKeyResponse struct {
 
 // RpcEnumPrinterKey calls RpcEnumPrinterKey (opnum 80) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcEnumPrinterKey(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pKeyName ndr.WSTR, cbSubkey ndr.DWORD) (PSubkey []uint16, PcbSubkey ndr.DWORD, err error) {
+func RpcEnumPrinterKey(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pKeyName ndr.WSTR, cbSubkey ndr.DWORD) (PSubkey []uint16, PcbSubkey ndr.DWORD, err error) {
 	req := &rpcEnumPrinterKeyRequest{
 		HPrinter: hPrinter,
 		PKeyName: pKeyName,

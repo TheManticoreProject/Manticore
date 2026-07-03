@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcDeleteJobNamedPropertyRequest carries the [in] parameters of RpcDeleteJobNamedProperty.
 type rpcDeleteJobNamedPropertyRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	JobId    ndr.DWORD
 	PszName  ndr.WSTR
 }
@@ -26,7 +26,7 @@ type rpcDeleteJobNamedPropertyResponse struct {
 
 // RpcDeleteJobNamedProperty calls RpcDeleteJobNamedProperty (opnum 112) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcDeleteJobNamedProperty(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, pszName ndr.WSTR) (err error) {
+func RpcDeleteJobNamedProperty(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, pszName ndr.WSTR) (err error) {
 	req := &rpcDeleteJobNamedPropertyRequest{
 		HPrinter: hPrinter,
 		JobId:    jobId,

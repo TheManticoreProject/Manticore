@@ -4,29 +4,29 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcAddPrinterRequest carries the [in] parameters of RpcAddPrinter.
 type rpcAddPrinterRequest struct {
 	PName              *ndr.WSTR `ndr:"unique"`
-	PPrinterContainer  structures.PRINTER_CONTAINER
-	PDevModeContainer  structures.DEVMODE_CONTAINER
-	PSecurityContainer structures.SECURITY_CONTAINER
+	PPrinterContainer  msrprn.PRINTER_CONTAINER
+	PDevModeContainer  msrprn.DEVMODE_CONTAINER
+	PSecurityContainer msrprn.SECURITY_CONTAINER
 }
 
 func (*rpcAddPrinterRequest) Opnum() uint16 { return winspool.OpnumRpcAddPrinter }
 
 // rpcAddPrinterResponse carries the [out] parameters and return value of RpcAddPrinter.
 type rpcAddPrinterResponse struct {
-	PHandle structures.PRINTER_HANDLE
+	PHandle msrprn.PRINTER_HANDLE
 	Status  ndr.DWORD `ndr:"retval"`
 }
 
 // RpcAddPrinter calls RpcAddPrinter (opnum 5) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcAddPrinter(rpc ndr.Invoker, pName *ndr.WSTR, pPrinterContainer structures.PRINTER_CONTAINER, pDevModeContainer structures.DEVMODE_CONTAINER, pSecurityContainer structures.SECURITY_CONTAINER) (PHandle structures.PRINTER_HANDLE, err error) {
+func RpcAddPrinter(rpc ndr.Invoker, pName *ndr.WSTR, pPrinterContainer msrprn.PRINTER_CONTAINER, pDevModeContainer msrprn.DEVMODE_CONTAINER, pSecurityContainer msrprn.SECURITY_CONTAINER) (PHandle msrprn.PRINTER_HANDLE, err error) {
 	req := &rpcAddPrinterRequest{
 		PName:              pName,
 		PPrinterContainer:  pPrinterContainer,

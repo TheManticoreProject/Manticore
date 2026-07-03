@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcFindClosePrinterChangeNotificationRequest carries the [in] parameters of RpcFindClosePrinterChangeNotification.
 type rpcFindClosePrinterChangeNotificationRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 }
 
 func (*rpcFindClosePrinterChangeNotificationRequest) Opnum() uint16 {
@@ -24,7 +24,7 @@ type rpcFindClosePrinterChangeNotificationResponse struct {
 
 // RpcFindClosePrinterChangeNotification calls RpcFindClosePrinterChangeNotification (opnum 56) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcFindClosePrinterChangeNotification(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE) (err error) {
+func RpcFindClosePrinterChangeNotification(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE) (err error) {
 	req := &rpcFindClosePrinterChangeNotificationRequest{
 		HPrinter: hPrinter,
 	}

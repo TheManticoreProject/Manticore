@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcReadPrinterRequest carries the [in] parameters of RpcReadPrinter.
 type rpcReadPrinterRequest struct {
-	HPrinter structures.PRINTER_HANDLE
+	HPrinter msrprn.PRINTER_HANDLE
 	CbBuf    ndr.DWORD
 }
 
@@ -25,7 +25,7 @@ type rpcReadPrinterResponse struct {
 
 // RpcReadPrinter calls RpcReadPrinter (opnum 22) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcReadPrinter(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, cbBuf ndr.DWORD) (PBuf []uint8, PcNoBytesRead ndr.DWORD, err error) {
+func RpcReadPrinter(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, cbBuf ndr.DWORD) (PBuf []uint8, PcNoBytesRead ndr.DWORD, err error) {
 	req := &rpcReadPrinterRequest{
 		HPrinter: hPrinter,
 		CbBuf:    cbBuf,

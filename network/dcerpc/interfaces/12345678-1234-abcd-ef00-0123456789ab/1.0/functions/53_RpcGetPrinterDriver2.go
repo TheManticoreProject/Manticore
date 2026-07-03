@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcGetPrinterDriver2Request carries the [in] parameters of RpcGetPrinterDriver2.
 type rpcGetPrinterDriver2Request struct {
-	HPrinter             structures.PRINTER_HANDLE
+	HPrinter             msrprn.PRINTER_HANDLE
 	PEnvironment         *ndr.WSTR `ndr:"unique"`
 	Level                ndr.DWORD
 	PDriver              []uint8 `ndr:"unique,size_is=CbBuf"`
@@ -32,7 +32,7 @@ type rpcGetPrinterDriver2Response struct {
 
 // RpcGetPrinterDriver2 calls RpcGetPrinterDriver2 (opnum 53) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcGetPrinterDriver2(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, pEnvironment *ndr.WSTR, level ndr.DWORD, pDriver []uint8, cbBuf ndr.DWORD, dwClientMajorVersion ndr.DWORD, dwClientMinorVersion ndr.DWORD) (PDriver []uint8, PcbNeeded ndr.DWORD, PdwServerMaxVersion ndr.DWORD, PdwServerMinVersion ndr.DWORD, err error) {
+func RpcGetPrinterDriver2(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, pEnvironment *ndr.WSTR, level ndr.DWORD, pDriver []uint8, cbBuf ndr.DWORD, dwClientMajorVersion ndr.DWORD, dwClientMinorVersion ndr.DWORD) (PDriver []uint8, PcbNeeded ndr.DWORD, PdwServerMaxVersion ndr.DWORD, PdwServerMinVersion ndr.DWORD, err error) {
 	req := &rpcGetPrinterDriver2Request{
 		HPrinter:             hPrinter,
 		PEnvironment:         pEnvironment,

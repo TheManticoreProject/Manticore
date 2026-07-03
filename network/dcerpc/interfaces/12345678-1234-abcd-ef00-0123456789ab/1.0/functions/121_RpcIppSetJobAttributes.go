@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcIppSetJobAttributesRequest carries the [in] parameters of RpcIppSetJobAttributes.
 type rpcIppSetJobAttributesRequest struct {
-	HPrinter                    structures.PRINTER_HANDLE
+	HPrinter                    msrprn.PRINTER_HANDLE
 	JobId                       ndr.DWORD
 	JobAttributeGroupBufferSize ndr.DWORD
 	JobAttributeGroupBuffer     []uint8 `ndr:"ref,size_is=JobAttributeGroupBufferSize"`
@@ -27,7 +27,7 @@ type rpcIppSetJobAttributesResponse struct {
 
 // RpcIppSetJobAttributes calls RpcIppSetJobAttributes (opnum 121) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcIppSetJobAttributes(rpc ndr.Invoker, hPrinter structures.PRINTER_HANDLE, jobId ndr.DWORD, jobAttributeGroupBufferSize ndr.DWORD, jobAttributeGroupBuffer []uint8) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
+func RpcIppSetJobAttributes(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE, jobId ndr.DWORD, jobAttributeGroupBufferSize ndr.DWORD, jobAttributeGroupBuffer []uint8) (IppResponseBufferSize ndr.DWORD, IppResponseBuffer []*uint8, err error) {
 	req := &rpcIppSetJobAttributesRequest{
 		HPrinter:                    hPrinter,
 		JobId:                       jobId,

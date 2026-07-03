@@ -4,26 +4,26 @@ import (
 	"fmt"
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
 // rpcReplyClosePrinterRequest carries the [in] parameters of RpcReplyClosePrinter.
 type rpcReplyClosePrinterRequest struct {
-	PhNotify structures.PRINTER_HANDLE
+	PhNotify msrprn.PRINTER_HANDLE
 }
 
 func (*rpcReplyClosePrinterRequest) Opnum() uint16 { return winspool.OpnumRpcReplyClosePrinter }
 
 // rpcReplyClosePrinterResponse carries the [out] parameters and return value of RpcReplyClosePrinter.
 type rpcReplyClosePrinterResponse struct {
-	PhNotify structures.PRINTER_HANDLE
+	PhNotify msrprn.PRINTER_HANDLE
 	Status   ndr.DWORD `ndr:"retval"`
 }
 
 // RpcReplyClosePrinter calls RpcReplyClosePrinter (opnum 60) ([MS-RPRN] — verify the parameter
 // modeling and status handling).
-func RpcReplyClosePrinter(rpc ndr.Invoker, phNotify structures.PRINTER_HANDLE) (PhNotify structures.PRINTER_HANDLE, err error) {
+func RpcReplyClosePrinter(rpc ndr.Invoker, phNotify msrprn.PRINTER_HANDLE) (PhNotify msrprn.PRINTER_HANDLE, err error) {
 	req := &rpcReplyClosePrinterRequest{
 		PhNotify: phNotify,
 	}
