@@ -7,8 +7,8 @@ import (
 
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
 // captureInvoker records the marshalled request stub and opnum without any network I/O, so
@@ -32,7 +32,7 @@ func (c *captureInvoker) Invoke(in ndr.Call, out any) error {
 // challenge, and that the computer name is carried as a UTF-16LE NDR string.
 func TestNetrServerReqChallengeMarshal(t *testing.T) {
 	cap := &captureInvoker{}
-	challenge := structures.NETLOGON_CREDENTIAL{1, 2, 3, 4, 5, 6, 7, 8}
+	challenge := msnrpc.NETLOGON_CREDENTIAL{1, 2, 3, 4, 5, 6, 7, 8}
 
 	if _, _, err := functions.NetrServerReqChallenge(cap, "DC", "DC", challenge); err != nil {
 		t.Fatalf("NetrServerReqChallenge: %v", err)
@@ -52,9 +52,9 @@ func TestNetrServerReqChallengeMarshal(t *testing.T) {
 // credential are present, exercising the enum + fixed-array + scalar field tags together.
 func TestNetrServerAuthenticate2Marshal(t *testing.T) {
 	cap := &captureInvoker{}
-	cred := structures.NETLOGON_CREDENTIAL{9, 8, 7, 6, 5, 4, 3, 2}
+	cred := msnrpc.NETLOGON_CREDENTIAL{9, 8, 7, 6, 5, 4, 3, 2}
 
-	if _, _, _, err := functions.NetrServerAuthenticate2(cap, "", "DC$", netlogon.ServerSecureChannel, "DC", cred, 0x612fffff); err != nil {
+	if _, _, _, err := functions.NetrServerAuthenticate2(cap, "", "DC$", msnrpc.ServerSecureChannel, "DC", cred, 0x612fffff); err != nil {
 		t.Fatalf("NetrServerAuthenticate2: %v", err)
 	}
 	if cap.opnum != netlogon.OpnumNetrServerAuthenticate2 {
@@ -78,9 +78,9 @@ func TestNetrServerAuthenticate2Marshal(t *testing.T) {
 // NL_TRUST_PASSWORD.
 func TestNetrServerPasswordSet2Marshal(t *testing.T) {
 	cap := &captureInvoker{}
-	auth := structures.NETLOGON_AUTHENTICATOR{Credential: structures.NETLOGON_CREDENTIAL{1, 1, 1, 1, 1, 1, 1, 1}, Timestamp: 0}
+	auth := msnrpc.NETLOGON_AUTHENTICATOR{Credential: msnrpc.NETLOGON_CREDENTIAL{1, 1, 1, 1, 1, 1, 1, 1}, Timestamp: 0}
 
-	if _, _, err := functions.NetrServerPasswordSet2(cap, "DC", "DC$", netlogon.ServerSecureChannel, "DC", auth, structures.NL_TRUST_PASSWORD{}); err != nil {
+	if _, _, err := functions.NetrServerPasswordSet2(cap, "DC", "DC$", msnrpc.ServerSecureChannel, "DC", auth, msnrpc.NL_TRUST_PASSWORD{}); err != nil {
 		t.Fatalf("NetrServerPasswordSet2: %v", err)
 	}
 	if cap.opnum != netlogon.OpnumNetrServerPasswordSet2 {
@@ -101,7 +101,7 @@ func TestComputeNetlogonCredentialAES(t *testing.T) {
 	for i := range sk {
 		sk[i] = byte(i)
 	}
-	challenge := structures.NETLOGON_CREDENTIAL{0, 0, 0, 0, 0x11, 0x11, 0x11, 0}
+	challenge := msnrpc.NETLOGON_CREDENTIAL{0, 0, 0, 0, 0x11, 0x11, 0x11, 0}
 	got := functions.ComputeNetlogonCredentialAES(challenge, sk)
 	if want := "c64020e48fee8f96"; hex.EncodeToString(got[:]) != want {
 		t.Fatalf("credential = %x, want %s", got[:], want)
@@ -111,8 +111,8 @@ func TestComputeNetlogonCredentialAES(t *testing.T) {
 // TestComputeSessionKeyAES pins the session-key derivation ([MS-NRPC] 3.1.4.4.1) to a
 // regression vector: first 16 octets of HMAC-SHA256(NTOWFv1(password), client || server).
 func TestComputeSessionKeyAES(t *testing.T) {
-	client := structures.NETLOGON_CREDENTIAL{'1', '2', '3', '4', '5', '6', '7', '8'}
-	server := structures.NETLOGON_CREDENTIAL{8, 7, 6, 5, 4, 3, 2, 1}
+	client := msnrpc.NETLOGON_CREDENTIAL{'1', '2', '3', '4', '5', '6', '7', '8'}
+	server := msnrpc.NETLOGON_CREDENTIAL{8, 7, 6, 5, 4, 3, 2, 1}
 	got := functions.ComputeSessionKeyAES("Password1", nil, client, server)
 	if want := "3a2f0633feed49dcb158b0e72d441508"; hex.EncodeToString(got[:]) != want {
 		t.Fatalf("session key = %x, want %s", got[:], want)

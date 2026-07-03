@@ -1,11 +1,12 @@
 // Package rpcinterface_123456781234abcdef0001234567cffb_1_0 is the descriptor for the
-// Netlogon RPC interface, abstract syntax 12345678-1234-abcd-ef00-01234567cffb version 1.0
-// ([MS-NRPC]).
+// Netlogon (logon) RPC interface, abstract syntax 12345678-1234-abcd-ef00-01234567cffb
+// version 1.0 ([MS-NRPC]).
 //
-// Hand-written (not idlgen-generated): only the slice of MS-NRPC needed to establish and
-// use a Netlogon secure channel is modelled — NetrServerReqChallenge (4),
-// NetrServerAuthenticate2 (15) and NetrServerPasswordSet2 (30) — so the opnum table below
-// is intentionally partial and documents just the implemented methods.
+// An RPC interface is identified by its UUID and version, never by the named pipe it is
+// reached over. This package holds only the interface-level descriptor (abstract syntax,
+// transport endpoint, opnums, opnum<->name maps, status and negotiate-flag constants). NDR
+// types live in windows/protocols/ms-nrpc and method stubs in functions; both depend on
+// this package, never the reverse.
 package rpcinterface_123456781234abcdef0001234567cffb_1_0
 
 import (
@@ -20,45 +21,90 @@ import (
 // reachable over ncacn_ip_tcp at a dynamic port resolved through the endpoint mapper.
 const PipeName = `\netlogon`
 
-// Opnums for the implemented on-the-wire methods ([MS-NRPC] 3.5.4.4).
+// Opnums for the on-the-wire methods. Opnums 50, 51, 52, 53, 54, 55, 56, 57, 58 are "not used on the wire"
+// and are omitted.
 const (
-	OpnumNetrServerReqChallenge  uint16 = 4
-	OpnumNetrServerAuthenticate2 uint16 = 15
-	OpnumNetrServerPasswordSet2  uint16 = 30
+	OpnumNetrLogonUasLogon                   uint16 = 0
+	OpnumNetrLogonUasLogoff                  uint16 = 1
+	OpnumNetrLogonSamLogon                   uint16 = 2
+	OpnumNetrLogonSamLogoff                  uint16 = 3
+	OpnumNetrServerReqChallenge              uint16 = 4
+	OpnumNetrServerAuthenticate              uint16 = 5
+	OpnumNetrServerPasswordSet               uint16 = 6
+	OpnumNetrDatabaseDeltas                  uint16 = 7
+	OpnumNetrDatabaseSync                    uint16 = 8
+	OpnumNetrAccountDeltas                   uint16 = 9
+	OpnumNetrAccountSync                     uint16 = 10
+	OpnumNetrGetDCName                       uint16 = 11
+	OpnumNetrLogonControl                    uint16 = 12
+	OpnumNetrGetAnyDCName                    uint16 = 13
+	OpnumNetrLogonControl2                   uint16 = 14
+	OpnumNetrServerAuthenticate2             uint16 = 15
+	OpnumNetrDatabaseSync2                   uint16 = 16
+	OpnumNetrDatabaseRedo                    uint16 = 17
+	OpnumNetrLogonControl2Ex                 uint16 = 18
+	OpnumNetrEnumerateTrustedDomains         uint16 = 19
+	OpnumDsrGetDcName                        uint16 = 20
+	OpnumNetrLogonGetCapabilities            uint16 = 21
+	OpnumNetrLogonSetServiceBits             uint16 = 22
+	OpnumNetrLogonGetTrustRid                uint16 = 23
+	OpnumNetrLogonComputeServerDigest        uint16 = 24
+	OpnumNetrLogonComputeClientDigest        uint16 = 25
+	OpnumNetrServerAuthenticate3             uint16 = 26
+	OpnumDsrGetDcNameEx                      uint16 = 27
+	OpnumDsrGetSiteName                      uint16 = 28
+	OpnumNetrLogonGetDomainInfo              uint16 = 29
+	OpnumNetrServerPasswordSet2              uint16 = 30
+	OpnumNetrServerPasswordGet               uint16 = 31
+	OpnumNetrLogonSendToSam                  uint16 = 32
+	OpnumDsrAddressToSiteNamesW              uint16 = 33
+	OpnumDsrGetDcNameEx2                     uint16 = 34
+	OpnumNetrLogonGetTimeServiceParentDomain uint16 = 35
+	OpnumNetrEnumerateTrustedDomainsEx       uint16 = 36
+	OpnumDsrAddressToSiteNamesExW            uint16 = 37
+	OpnumDsrGetDcSiteCoverageW               uint16 = 38
+	OpnumNetrLogonSamLogonEx                 uint16 = 39
+	OpnumDsrEnumerateDomainTrusts            uint16 = 40
+	OpnumDsrDeregisterDnsHostRecords         uint16 = 41
+	OpnumNetrServerTrustPasswordsGet         uint16 = 42
+	OpnumDsrGetForestTrustInformation        uint16 = 43
+	OpnumNetrGetForestTrustInformation       uint16 = 44
+	OpnumNetrLogonSamLogonWithFlags          uint16 = 45
+	OpnumNetrServerGetTrustInfo              uint16 = 46
+	OpnumOpnumUnused47                       uint16 = 47
+	OpnumDsrUpdateReadOnlyServerDnsRecords   uint16 = 48
+	OpnumNetrChainSetClientAttributes        uint16 = 49
+	OpnumNetrServerAuthenticateKerberos      uint16 = 59
 )
-
-// OpnumToName maps each implemented opnum to its method name; the single source of truth
-// for the (partial) wire numbering of this interface.
-var OpnumToName = map[uint16]string{
-	OpnumNetrServerReqChallenge:  "NetrServerReqChallenge",
-	OpnumNetrServerAuthenticate2: "NetrServerAuthenticate2",
-	OpnumNetrServerPasswordSet2:  "NetrServerPasswordSet2",
-}
-
-// NameToOpnum is the inverse of OpnumToName, derived at init.
-var NameToOpnum = func() map[string]uint16 {
-	m := make(map[string]uint16, len(OpnumToName))
-	for op, name := range OpnumToName {
-		m[name] = op
-	}
-	return m
-}()
 
 // NTSTATUS values returned by Netlogon methods ([MS-ERREF] 2.3). Netlogon returns NTSTATUS
 // (not the Win32 error_status_t that MS-RRP uses). StatusSuccess is the canonical success
 // value; StatusAccessDenied is what the server returns for a rejected secure-channel
 // credential.
 const (
-	StatusSuccess            uint32 = 0x00000000 // STATUS_SUCCESS
-	StatusInvalidParameter   uint32 = 0xC000000D // STATUS_INVALID_PARAMETER
-	StatusAccessDenied       uint32 = 0xC0000022 // STATUS_ACCESS_DENIED
-	StatusNoTrustSAMAccount  uint32 = 0xC000018B // STATUS_NO_TRUST_SAM_ACCOUNT
-	StatusNoSuchUser         uint32 = 0xC0000064 // STATUS_NO_SUCH_USER
-	StatusNotSupported       uint32 = 0xC00000BB // STATUS_NOT_SUPPORTED
-	StatusDowngradeDetected  uint32 = 0xC0000388 // STATUS_DOWNGRADE_DETECTED
+	StatusSuccess           uint32 = 0x00000000 // STATUS_SUCCESS
+	StatusInvalidParameter  uint32 = 0xC000000D // STATUS_INVALID_PARAMETER
+	StatusAccessDenied      uint32 = 0xC0000022 // STATUS_ACCESS_DENIED
+	StatusNoSuchUser        uint32 = 0xC0000064 // STATUS_NO_SUCH_USER
+	StatusNoTrustSAMAccount uint32 = 0xC000018B // STATUS_NO_TRUST_SAM_ACCOUNT
+	StatusNotSupported      uint32 = 0xC00000BB // STATUS_NOT_SUPPORTED
+	StatusMoreEntries       uint32 = 0x00000105 // STATUS_MORE_ENTRIES
+	StatusNoMoreEntries     uint32 = 0x8000001A // STATUS_NO_MORE_ENTRIES
+	StatusDowngradeDetected uint32 = 0xC0000388 // STATUS_DOWNGRADE_DETECTED
 )
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the hex value.
+// SyntaxID returns the logon abstract syntax identifier:
+// 12345678-1234-abcd-ef00-01234567cffb, version 1.0.
+func SyntaxID() syntax.SyntaxID {
+	return syntax.SyntaxID{
+		UUID:         guid.GUID{A: 0x12345678, B: 0x1234, C: 0xabcd, D: 0xef00, E: 0x01234567cffb},
+		MajorVersion: 1,
+		MinorVersion: 0,
+	}
+}
+
+// StatusString returns a mnemonic for the documented status codes, otherwise the
+// hex value.
 func StatusString(status uint32) string {
 	switch status {
 	case StatusSuccess:
@@ -67,12 +113,16 @@ func StatusString(status uint32) string {
 		return "STATUS_INVALID_PARAMETER"
 	case StatusAccessDenied:
 		return "STATUS_ACCESS_DENIED"
-	case StatusNoTrustSAMAccount:
-		return "STATUS_NO_TRUST_SAM_ACCOUNT"
 	case StatusNoSuchUser:
 		return "STATUS_NO_SUCH_USER"
+	case StatusNoTrustSAMAccount:
+		return "STATUS_NO_TRUST_SAM_ACCOUNT"
 	case StatusNotSupported:
 		return "STATUS_NOT_SUPPORTED"
+	case StatusMoreEntries:
+		return "STATUS_MORE_ENTRIES"
+	case StatusNoMoreEntries:
+		return "STATUS_NO_MORE_ENTRIES"
 	case StatusDowngradeDetected:
 		return "STATUS_DOWNGRADE_DETECTED"
 	default:
@@ -80,23 +130,74 @@ func StatusString(status uint32) string {
 	}
 }
 
-// NETLOGON_SECURE_CHANNEL_TYPE ([MS-NRPC] 2.2.1.3.13) identifies the kind of secure channel
-// being established. It is an NDR enum (2 octets under NDR20); use the `ndr:"enum"` tag on
-// fields of this type.
-type NETLOGON_SECURE_CHANNEL_TYPE uint16
+// OpnumToName maps each on-the-wire opnum to its method name; the single source of
+// truth.
+var OpnumToName = map[uint16]string{
+	OpnumNetrLogonUasLogon:                   "NetrLogonUasLogon",
+	OpnumNetrLogonUasLogoff:                  "NetrLogonUasLogoff",
+	OpnumNetrLogonSamLogon:                   "NetrLogonSamLogon",
+	OpnumNetrLogonSamLogoff:                  "NetrLogonSamLogoff",
+	OpnumNetrServerReqChallenge:              "NetrServerReqChallenge",
+	OpnumNetrServerAuthenticate:              "NetrServerAuthenticate",
+	OpnumNetrServerPasswordSet:               "NetrServerPasswordSet",
+	OpnumNetrDatabaseDeltas:                  "NetrDatabaseDeltas",
+	OpnumNetrDatabaseSync:                    "NetrDatabaseSync",
+	OpnumNetrAccountDeltas:                   "NetrAccountDeltas",
+	OpnumNetrAccountSync:                     "NetrAccountSync",
+	OpnumNetrGetDCName:                       "NetrGetDCName",
+	OpnumNetrLogonControl:                    "NetrLogonControl",
+	OpnumNetrGetAnyDCName:                    "NetrGetAnyDCName",
+	OpnumNetrLogonControl2:                   "NetrLogonControl2",
+	OpnumNetrServerAuthenticate2:             "NetrServerAuthenticate2",
+	OpnumNetrDatabaseSync2:                   "NetrDatabaseSync2",
+	OpnumNetrDatabaseRedo:                    "NetrDatabaseRedo",
+	OpnumNetrLogonControl2Ex:                 "NetrLogonControl2Ex",
+	OpnumNetrEnumerateTrustedDomains:         "NetrEnumerateTrustedDomains",
+	OpnumDsrGetDcName:                        "DsrGetDcName",
+	OpnumNetrLogonGetCapabilities:            "NetrLogonGetCapabilities",
+	OpnumNetrLogonSetServiceBits:             "NetrLogonSetServiceBits",
+	OpnumNetrLogonGetTrustRid:                "NetrLogonGetTrustRid",
+	OpnumNetrLogonComputeServerDigest:        "NetrLogonComputeServerDigest",
+	OpnumNetrLogonComputeClientDigest:        "NetrLogonComputeClientDigest",
+	OpnumNetrServerAuthenticate3:             "NetrServerAuthenticate3",
+	OpnumDsrGetDcNameEx:                      "DsrGetDcNameEx",
+	OpnumDsrGetSiteName:                      "DsrGetSiteName",
+	OpnumNetrLogonGetDomainInfo:              "NetrLogonGetDomainInfo",
+	OpnumNetrServerPasswordSet2:              "NetrServerPasswordSet2",
+	OpnumNetrServerPasswordGet:               "NetrServerPasswordGet",
+	OpnumNetrLogonSendToSam:                  "NetrLogonSendToSam",
+	OpnumDsrAddressToSiteNamesW:              "DsrAddressToSiteNamesW",
+	OpnumDsrGetDcNameEx2:                     "DsrGetDcNameEx2",
+	OpnumNetrLogonGetTimeServiceParentDomain: "NetrLogonGetTimeServiceParentDomain",
+	OpnumNetrEnumerateTrustedDomainsEx:       "NetrEnumerateTrustedDomainsEx",
+	OpnumDsrAddressToSiteNamesExW:            "DsrAddressToSiteNamesExW",
+	OpnumDsrGetDcSiteCoverageW:               "DsrGetDcSiteCoverageW",
+	OpnumNetrLogonSamLogonEx:                 "NetrLogonSamLogonEx",
+	OpnumDsrEnumerateDomainTrusts:            "DsrEnumerateDomainTrusts",
+	OpnumDsrDeregisterDnsHostRecords:         "DsrDeregisterDnsHostRecords",
+	OpnumNetrServerTrustPasswordsGet:         "NetrServerTrustPasswordsGet",
+	OpnumDsrGetForestTrustInformation:        "DsrGetForestTrustInformation",
+	OpnumNetrGetForestTrustInformation:       "NetrGetForestTrustInformation",
+	OpnumNetrLogonSamLogonWithFlags:          "NetrLogonSamLogonWithFlags",
+	OpnumNetrServerGetTrustInfo:              "NetrServerGetTrustInfo",
+	OpnumOpnumUnused47:                       "OpnumUnused47",
+	OpnumDsrUpdateReadOnlyServerDnsRecords:   "DsrUpdateReadOnlyServerDnsRecords",
+	OpnumNetrChainSetClientAttributes:        "NetrChainSetClientAttributes",
+	OpnumNetrServerAuthenticateKerberos:      "NetrServerAuthenticateKerberos",
+}
 
-const (
-	NullSecureChannel             NETLOGON_SECURE_CHANNEL_TYPE = 0
-	MsvApSecureChannel            NETLOGON_SECURE_CHANNEL_TYPE = 1
-	WorkstationSecureChannel      NETLOGON_SECURE_CHANNEL_TYPE = 2
-	TrustedDnsDomainSecureChannel NETLOGON_SECURE_CHANNEL_TYPE = 3
-	TrustedDomainSecureChannel    NETLOGON_SECURE_CHANNEL_TYPE = 4
-	UasServerSecureChannel        NETLOGON_SECURE_CHANNEL_TYPE = 5
-	ServerSecureChannel           NETLOGON_SECURE_CHANNEL_TYPE = 6
-	CdcServerSecureChannel        NETLOGON_SECURE_CHANNEL_TYPE = 7
-)
+// NameToOpnum is the reverse of OpnumToName, built at init so the two never drift.
+var NameToOpnum = func() map[string]uint16 {
+	m := make(map[string]uint16, len(OpnumToName))
+	for op, name := range OpnumToName {
+		m[name] = op
+	}
+	return m
+}()
 
-// Netlogon negotiate option bits ([MS-NRPC] 3.1.4.2), one per capability letter (A–Z).
+// Netlogon negotiate option bits ([MS-NRPC] 3.1.4.2), one per capability letter (A–Z). A
+// client advertises the set it supports in the NegotiateFlags argument of
+// NetrServerAuthenticate2/3; the server echoes back the subset it agrees to.
 const (
 	NegotiateAccountLockout             uint32 = 0x00000001 // A
 	NegotiateNT35BDCContinuousUpdate    uint32 = 0x00000002 // B
@@ -125,13 +226,3 @@ const (
 	NegotiateSecureRPC                  uint32 = 0x40000000 // Y
 	NegotiateKerberosForSecureChannel   uint32 = 0x80000000 // Z
 )
-
-// SyntaxID returns the Netlogon abstract syntax identifier:
-// 12345678-1234-abcd-ef00-01234567cffb, version 1.0.
-func SyntaxID() syntax.SyntaxID {
-	return syntax.SyntaxID{
-		UUID:         guid.GUID{A: 0x12345678, B: 0x1234, C: 0xabcd, D: 0xef00, E: 0x01234567cffb},
-		MajorVersion: 1,
-		MinorVersion: 0,
-	}
-}
