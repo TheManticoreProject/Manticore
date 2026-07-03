@@ -104,3 +104,43 @@ func TestPropVariantEmpty(t *testing.T) {
 	p.SetVt(VT_EMPTY)
 	roundTrip(t, "VT_EMPTY", p)
 }
+
+// TestMQMPSharedTypesRoundTrip covers the [MS-MQMQ] wire types reused by [MS-MQMP]:
+// OBJECTID, XACTUOW, MULTICAST_ID, DL_ID, and each QUEUE_FORMAT union arm.
+func TestMQMPSharedTypesRoundTrip(t *testing.T) {
+	g := dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
+
+	roundTrip(t, "OBJECTID", OBJECTID{Lineage: g, Uniquifier: 0xDEADBEEF})
+	roundTrip(t, "XACTUOW", XACTUOW{Rgb: [16]uint8{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}})
+	roundTrip(t, "MULTICAST_ID", MULTICAST_ID{MAddress: 0xC0A80001, MPort: 1801})
+	roundTrip(t, "DL_ID", DL_ID{MDlGuid: g, MPwzDomain: wstr("example.com")})
+}
+
+// TestQueueFormatArms exercises each selectable QUEUE_FORMAT arm plus the UNKNOWN (empty)
+// discriminant. SetQft keeps the outer and mirrored discriminants consistent.
+func TestQueueFormatArms(t *testing.T) {
+	g := dtyp.GUID{Data1: 0xAABBCCDD, Data2: 0x1122, Data3: 0x3344, Data4: [8]byte{9, 8, 7, 6, 5, 4, 3, 2}}
+
+	var q QUEUE_FORMAT
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MGPublicID: g}}
+	roundTrip(t, "QF_PUBLIC", *q.SetQft(QUEUE_FORMAT_TYPE_PUBLIC))
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MOPrivateID: OBJECTID{Lineage: g, Uniquifier: 42}}}
+	roundTrip(t, "QF_PRIVATE", *q.SetQft(QUEUE_FORMAT_TYPE_PRIVATE))
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MPDirectID: wstr(`OS:server\queue`)}}
+	roundTrip(t, "QF_DIRECT", *q.SetQft(QUEUE_FORMAT_TYPE_DIRECT))
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MGMachineID: g}}
+	roundTrip(t, "QF_MACHINE", *q.SetQft(QUEUE_FORMAT_TYPE_MACHINE))
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MDlID: DL_ID{MDlGuid: g, MPwzDomain: wstr("dom")}}}
+	roundTrip(t, "QF_DL", *q.SetQft(QUEUE_FORMAT_TYPE_DL))
+
+	q = QUEUE_FORMAT{Value: QueueFormatUnion{MMulticastID: MULTICAST_ID{MAddress: 0xE0000001, MPort: 2000}}}
+	roundTrip(t, "QF_MULTICAST", *q.SetQft(QUEUE_FORMAT_TYPE_MULTICAST))
+
+	q = QUEUE_FORMAT{}
+	roundTrip(t, "QF_UNKNOWN", *q.SetQft(QUEUE_FORMAT_TYPE_UNKNOWN))
+}
