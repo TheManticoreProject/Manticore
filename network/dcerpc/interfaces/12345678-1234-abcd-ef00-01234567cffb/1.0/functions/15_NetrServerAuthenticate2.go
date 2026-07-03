@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
 type netrServerAuthenticate2Request struct {
 	PrimaryName       *ndr.WSTR `ndr:"unique"`
 	AccountName       ndr.WSTR
-	SecureChannelType netlogon.NETLOGON_SECURE_CHANNEL_TYPE `ndr:"enum"`
+	SecureChannelType msnrpc.NETLOGON_SECURE_CHANNEL_TYPE `ndr:"enum"`
 	ComputerName      ndr.WSTR
-	ClientCredential  structures.NETLOGON_CREDENTIAL
+	ClientCredential  msnrpc.NETLOGON_CREDENTIAL
 	NegotiateFlags    ndr.DWORD
 }
 
@@ -22,7 +22,7 @@ func (*netrServerAuthenticate2Request) Opnum() uint16 {
 }
 
 type netrServerAuthenticate2Response struct {
-	ServerCredential structures.NETLOGON_CREDENTIAL
+	ServerCredential msnrpc.NETLOGON_CREDENTIAL
 	NegotiateFlags   ndr.DWORD
 	Status           ndr.DWORD `ndr:"retval"`
 }
@@ -43,7 +43,7 @@ type netrServerAuthenticate2Response struct {
 //
 // Returns:
 //   - The server credential, the negotiated flags, the NTSTATUS, and a transport error.
-func NetrServerAuthenticate2(rpc ndr.Invoker, primaryName, accountName string, secureChannelType netlogon.NETLOGON_SECURE_CHANNEL_TYPE, computerName string, clientCredential structures.NETLOGON_CREDENTIAL, negotiateFlags uint32) (structures.NETLOGON_CREDENTIAL, uint32, uint32, error) {
+func NetrServerAuthenticate2(rpc ndr.Invoker, primaryName, accountName string, secureChannelType msnrpc.NETLOGON_SECURE_CHANNEL_TYPE, computerName string, clientCredential msnrpc.NETLOGON_CREDENTIAL, negotiateFlags uint32) (msnrpc.NETLOGON_CREDENTIAL, uint32, uint32, error) {
 	req := &netrServerAuthenticate2Request{
 		AccountName:       ndr.WSTR(accountName),
 		SecureChannelType: secureChannelType,
@@ -58,7 +58,7 @@ func NetrServerAuthenticate2(rpc ndr.Invoker, primaryName, accountName string, s
 
 	var resp netrServerAuthenticate2Response
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.NETLOGON_CREDENTIAL{}, 0, 0, fmt.Errorf("NetrServerAuthenticate2: %w", err)
+		return msnrpc.NETLOGON_CREDENTIAL{}, 0, 0, fmt.Errorf("NetrServerAuthenticate2: %w", err)
 	}
 	return resp.ServerCredential, uint32(resp.NegotiateFlags), uint32(resp.Status), nil
 }

@@ -4,20 +4,20 @@ import (
 	"fmt"
 
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
 type netrServerReqChallengeRequest struct {
 	PrimaryName     *ndr.WSTR `ndr:"unique"`
 	ComputerName    ndr.WSTR
-	ClientChallenge structures.NETLOGON_CREDENTIAL
+	ClientChallenge msnrpc.NETLOGON_CREDENTIAL
 }
 
 func (*netrServerReqChallengeRequest) Opnum() uint16 { return netlogon.OpnumNetrServerReqChallenge }
 
 type netrServerReqChallengeResponse struct {
-	ServerChallenge structures.NETLOGON_CREDENTIAL
+	ServerChallenge msnrpc.NETLOGON_CREDENTIAL
 	Status          ndr.DWORD `ndr:"retval"`
 }
 
@@ -33,7 +33,7 @@ type netrServerReqChallengeResponse struct {
 //
 // Returns:
 //   - The server challenge, the NTSTATUS return value, and a transport error.
-func NetrServerReqChallenge(rpc ndr.Invoker, primaryName, computerName string, clientChallenge structures.NETLOGON_CREDENTIAL) (structures.NETLOGON_CREDENTIAL, uint32, error) {
+func NetrServerReqChallenge(rpc ndr.Invoker, primaryName, computerName string, clientChallenge msnrpc.NETLOGON_CREDENTIAL) (msnrpc.NETLOGON_CREDENTIAL, uint32, error) {
 	req := &netrServerReqChallengeRequest{
 		ComputerName:    ndr.WSTR(computerName),
 		ClientChallenge: clientChallenge,
@@ -45,7 +45,7 @@ func NetrServerReqChallenge(rpc ndr.Invoker, primaryName, computerName string, c
 
 	var resp netrServerReqChallengeResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.NETLOGON_CREDENTIAL{}, 0, fmt.Errorf("NetrServerReqChallenge: %w", err)
+		return msnrpc.NETLOGON_CREDENTIAL{}, 0, fmt.Errorf("NetrServerReqChallenge: %w", err)
 	}
 	return resp.ServerChallenge, uint32(resp.Status), nil
 }

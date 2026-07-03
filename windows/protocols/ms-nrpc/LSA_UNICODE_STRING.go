@@ -1,0 +1,4 @@
+package msnrpc
+
+// LSA_UNICODE_STRING is an alias for UNICODE_STRING ([MS-NRPC]).
+type LSA_UNICODE_STRING = UNICODE_STRING

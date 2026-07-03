@@ -7,7 +7,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/crypto/cfb8"
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/structures"
+	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
 // ComputeSessionKeyAES derives the AES Netlogon session key ([MS-NRPC] 3.1.4.4.1). The key
@@ -27,7 +27,7 @@ import (
 //
 // Returns:
 //   - The 16-byte AES session key.
-func ComputeSessionKeyAES(password string, ntHash []byte, clientChallenge, serverChallenge structures.NETLOGON_CREDENTIAL) [16]byte {
+func ComputeSessionKeyAES(password string, ntHash []byte, clientChallenge, serverChallenge msnrpc.NETLOGON_CREDENTIAL) [16]byte {
 	key := ntHash
 	if key == nil {
 		h := nt.NTHash(password)
@@ -54,14 +54,14 @@ func ComputeSessionKeyAES(password string, ntHash []byte, clientChallenge, serve
 //
 // Returns:
 //   - The 8-byte Netlogon credential.
-func ComputeNetlogonCredentialAES(challenge structures.NETLOGON_CREDENTIAL, sessionKey [16]byte) structures.NETLOGON_CREDENTIAL {
+func ComputeNetlogonCredentialAES(challenge msnrpc.NETLOGON_CREDENTIAL, sessionKey [16]byte) msnrpc.NETLOGON_CREDENTIAL {
 	block, err := aes.NewCipher(sessionKey[:])
 	if err != nil {
 		// sessionKey is always 16 bytes, so this cannot fail in practice.
 		panic(err)
 	}
 	var iv [aes.BlockSize]byte // 16 zero octets
-	var out structures.NETLOGON_CREDENTIAL
+	var out msnrpc.NETLOGON_CREDENTIAL
 	cfb8.NewEncrypter(block, iv[:]).XORKeyStream(out[:], challenge[:])
 	return out
 }
