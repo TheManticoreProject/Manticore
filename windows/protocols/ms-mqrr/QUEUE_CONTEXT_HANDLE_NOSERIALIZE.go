@@ -1,0 +1,4 @@
+package msmqrr
+
+// QUEUE_CONTEXT_HANDLE_NOSERIALIZE is an RPC context handle: 20 bytes ([MS-RPCE] 2.3.2.2, [MS-MQRR]).
+type QUEUE_CONTEXT_HANDLE_NOSERIALIZE [20]byte
