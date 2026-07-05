@@ -1,0 +1,43 @@
+package functions
+
+import (
+	"fmt"
+
+	W32Time "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/8fb6d884-2388-11d0-8c35-00c04fda2795/4.1"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msw32t "github.com/TheManticoreProject/Manticore/windows/protocols/ms-w32t"
+)
+
+// w32TimeQueryProviderStatusRequest carries the [in] parameters of W32TimeQueryProviderStatus.
+type w32TimeQueryProviderStatusRequest struct {
+	UlFlags      ndr.DWORD
+	PwszProvider ndr.WSTR
+}
+
+func (*w32TimeQueryProviderStatusRequest) Opnum() uint16 {
+	return W32Time.OpnumW32TimeQueryProviderStatus
+}
+
+// w32TimeQueryProviderStatusResponse carries the [out] parameters and return value of W32TimeQueryProviderStatus.
+type w32TimeQueryProviderStatusResponse struct {
+	PProviderInfo *msw32t.W32TIME_PROVIDER_INFO `ndr:"unique"`
+	Status        ndr.DWORD                     `ndr:"retval"`
+}
+
+// W32TimeQueryProviderStatus calls W32TimeQueryProviderStatus (opnum 2) ([MS-W32T] section 3.2.4).
+func W32TimeQueryProviderStatus(rpc ndr.Invoker, ulFlags ndr.DWORD, pwszProvider ndr.WSTR) (PProviderInfo *msw32t.W32TIME_PROVIDER_INFO, err error) {
+	req := &w32TimeQueryProviderStatusRequest{
+		UlFlags:      ulFlags,
+		PwszProvider: pwszProvider,
+	}
+	var resp w32TimeQueryProviderStatusResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("W32TimeQueryProviderStatus: %w", err)
+		return
+	}
+	PProviderInfo = resp.PProviderInfo
+	if uint32(resp.Status) != W32Time.StatusSuccess {
+		err = fmt.Errorf("W32TimeQueryProviderStatus failed: %s", W32Time.StatusString(uint32(resp.Status)))
+	}
+	return
+}
