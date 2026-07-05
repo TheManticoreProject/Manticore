@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rCreateServiceARequest carries the [in] parameters of RCreateServiceA.
 type rCreateServiceARequest struct {
-	HSCManager         structures.SC_RPC_HANDLE
+	HSCManager         msscmr.SC_RPC_HANDLE
 	LpServiceName      ndr.STR
 	LpDisplayName      *ndr.STR `ndr:"unique"`
 	DwDesiredAccess    ndr.DWORD
@@ -32,13 +32,13 @@ func (*rCreateServiceARequest) Opnum() uint16 { return svcctl.OpnumRCreateServic
 // rCreateServiceAResponse carries the [out] parameters and return value of RCreateServiceA.
 type rCreateServiceAResponse struct {
 	LpdwTagId       *ndr.DWORD `ndr:"unique"`
-	LpServiceHandle structures.LPSC_RPC_HANDLE
+	LpServiceHandle msscmr.LPSC_RPC_HANDLE
 	Status          ndr.DWORD `ndr:"retval"`
 }
 
 // RCreateServiceA calls RCreateServiceA (opnum 24) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RCreateServiceA(rpc ndr.Invoker, hSCManager structures.SC_RPC_HANDLE, lpServiceName ndr.STR, lpDisplayName *ndr.STR, dwDesiredAccess ndr.DWORD, dwServiceType ndr.DWORD, dwStartType ndr.DWORD, dwErrorControl ndr.DWORD, lpBinaryPathName ndr.STR, lpLoadOrderGroup *ndr.STR, lpdwTagId *ndr.DWORD, lpDependencies []uint8, dwDependSize ndr.DWORD, lpServiceStartName *ndr.STR, lpPassword []uint8, dwPwSize ndr.DWORD) (LpdwTagId *ndr.DWORD, LpServiceHandle structures.LPSC_RPC_HANDLE, err error) {
+func RCreateServiceA(rpc ndr.Invoker, hSCManager msscmr.SC_RPC_HANDLE, lpServiceName ndr.STR, lpDisplayName *ndr.STR, dwDesiredAccess ndr.DWORD, dwServiceType ndr.DWORD, dwStartType ndr.DWORD, dwErrorControl ndr.DWORD, lpBinaryPathName ndr.STR, lpLoadOrderGroup *ndr.STR, lpdwTagId *ndr.DWORD, lpDependencies []uint8, dwDependSize ndr.DWORD, lpServiceStartName *ndr.STR, lpPassword []uint8, dwPwSize ndr.DWORD) (LpdwTagId *ndr.DWORD, LpServiceHandle msscmr.LPSC_RPC_HANDLE, err error) {
 	req := &rCreateServiceARequest{
 		HSCManager:         hSCManager,
 		LpServiceName:      lpServiceName,

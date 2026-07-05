@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rGetServiceDisplayNameWRequest carries the [in] parameters of RGetServiceDisplayNameW.
 type rGetServiceDisplayNameWRequest struct {
-	HSCManager    structures.SC_RPC_HANDLE
+	HSCManager    msscmr.SC_RPC_HANDLE
 	LpServiceName ndr.WSTR
 	LpcchBuffer   ndr.DWORD
 }
@@ -26,7 +26,7 @@ type rGetServiceDisplayNameWResponse struct {
 
 // RGetServiceDisplayNameW calls RGetServiceDisplayNameW (opnum 20) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RGetServiceDisplayNameW(rpc ndr.Invoker, hSCManager structures.SC_RPC_HANDLE, lpServiceName ndr.WSTR, lpcchBuffer ndr.DWORD) (LpDisplayName ndr.WSTR, LpcchBuffer ndr.DWORD, err error) {
+func RGetServiceDisplayNameW(rpc ndr.Invoker, hSCManager msscmr.SC_RPC_HANDLE, lpServiceName ndr.WSTR, lpcchBuffer ndr.DWORD) (LpDisplayName ndr.WSTR, LpcchBuffer ndr.DWORD, err error) {
 	req := &rGetServiceDisplayNameWRequest{
 		HSCManager:    hSCManager,
 		LpServiceName: lpServiceName,

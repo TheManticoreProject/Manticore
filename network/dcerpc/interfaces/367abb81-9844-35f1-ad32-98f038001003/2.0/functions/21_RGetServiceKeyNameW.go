@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rGetServiceKeyNameWRequest carries the [in] parameters of RGetServiceKeyNameW.
 type rGetServiceKeyNameWRequest struct {
-	HSCManager    structures.SC_RPC_HANDLE
+	HSCManager    msscmr.SC_RPC_HANDLE
 	LpDisplayName ndr.WSTR
 	LpcchBuffer   ndr.DWORD
 }
@@ -26,7 +26,7 @@ type rGetServiceKeyNameWResponse struct {
 
 // RGetServiceKeyNameW calls RGetServiceKeyNameW (opnum 21) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RGetServiceKeyNameW(rpc ndr.Invoker, hSCManager structures.SC_RPC_HANDLE, lpDisplayName ndr.WSTR, lpcchBuffer ndr.DWORD) (LpServiceName ndr.WSTR, LpcchBuffer ndr.DWORD, err error) {
+func RGetServiceKeyNameW(rpc ndr.Invoker, hSCManager msscmr.SC_RPC_HANDLE, lpDisplayName ndr.WSTR, lpcchBuffer ndr.DWORD) (LpServiceName ndr.WSTR, LpcchBuffer ndr.DWORD, err error) {
 	req := &rGetServiceKeyNameWRequest{
 		HSCManager:    hSCManager,
 		LpDisplayName: lpDisplayName,

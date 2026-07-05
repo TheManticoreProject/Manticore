@@ -4,26 +4,26 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rUnlockServiceDatabaseRequest carries the [in] parameters of RUnlockServiceDatabase.
 type rUnlockServiceDatabaseRequest struct {
-	Lock structures.LPSC_RPC_LOCK
+	Lock msscmr.LPSC_RPC_LOCK
 }
 
 func (*rUnlockServiceDatabaseRequest) Opnum() uint16 { return svcctl.OpnumRUnlockServiceDatabase }
 
 // rUnlockServiceDatabaseResponse carries the [out] parameters and return value of RUnlockServiceDatabase.
 type rUnlockServiceDatabaseResponse struct {
-	Lock   structures.LPSC_RPC_LOCK
+	Lock   msscmr.LPSC_RPC_LOCK
 	Status ndr.DWORD `ndr:"retval"`
 }
 
 // RUnlockServiceDatabase calls RUnlockServiceDatabase (opnum 8) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RUnlockServiceDatabase(rpc ndr.Invoker, lock structures.LPSC_RPC_LOCK) (Lock structures.LPSC_RPC_LOCK, err error) {
+func RUnlockServiceDatabase(rpc ndr.Invoker, lock msscmr.LPSC_RPC_LOCK) (Lock msscmr.LPSC_RPC_LOCK, err error) {
 	req := &rUnlockServiceDatabaseRequest{
 		Lock: lock,
 	}

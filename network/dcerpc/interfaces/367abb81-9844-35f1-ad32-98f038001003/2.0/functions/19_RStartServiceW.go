@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rStartServiceWRequest carries the [in] parameters of RStartServiceW.
 type rStartServiceWRequest struct {
-	HService structures.SC_RPC_HANDLE
+	HService msscmr.SC_RPC_HANDLE
 	Argc     ndr.DWORD
-	Argv     []structures.STRING_PTRSW `ndr:"unique,size_is=Argc"`
+	Argv     []msscmr.STRING_PTRSW `ndr:"unique,size_is=Argc"`
 }
 
 func (*rStartServiceWRequest) Opnum() uint16 { return svcctl.OpnumRStartServiceW }
@@ -24,7 +24,7 @@ type rStartServiceWResponse struct {
 
 // RStartServiceW calls RStartServiceW (opnum 19) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RStartServiceW(rpc ndr.Invoker, hService structures.SC_RPC_HANDLE, argc ndr.DWORD, argv []structures.STRING_PTRSW) (err error) {
+func RStartServiceW(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, argc ndr.DWORD, argv []msscmr.STRING_PTRSW) (err error) {
 	req := &rStartServiceWRequest{
 		HService: hService,
 		Argc:     argc,

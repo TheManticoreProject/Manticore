@@ -4,26 +4,26 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rCloseServiceHandleRequest carries the [in] parameters of RCloseServiceHandle.
 type rCloseServiceHandleRequest struct {
-	HSCObject structures.LPSC_RPC_HANDLE
+	HSCObject msscmr.LPSC_RPC_HANDLE
 }
 
 func (*rCloseServiceHandleRequest) Opnum() uint16 { return svcctl.OpnumRCloseServiceHandle }
 
 // rCloseServiceHandleResponse carries the [out] parameters and return value of RCloseServiceHandle.
 type rCloseServiceHandleResponse struct {
-	HSCObject structures.LPSC_RPC_HANDLE
+	HSCObject msscmr.LPSC_RPC_HANDLE
 	Status    ndr.DWORD `ndr:"retval"`
 }
 
 // RCloseServiceHandle calls RCloseServiceHandle (opnum 0) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RCloseServiceHandle(rpc ndr.Invoker, hSCObject structures.LPSC_RPC_HANDLE) (HSCObject structures.LPSC_RPC_HANDLE, err error) {
+func RCloseServiceHandle(rpc ndr.Invoker, hSCObject msscmr.LPSC_RPC_HANDLE) (HSCObject msscmr.LPSC_RPC_HANDLE, err error) {
 	req := &rCloseServiceHandleRequest{
 		HSCObject: hSCObject,
 	}
