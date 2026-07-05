@@ -5,9 +5,9 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrDfsFixLocalVolumeRequest is the [in] parameter set of NetrDfsFixLocalVolume: the
@@ -23,7 +23,7 @@ type netrDfsFixLocalVolumeRequest struct {
 	StgId             ndr.WSTR
 	EntryUid          dtyp.GUID
 	EntryPrefix       ndr.WSTR
-	RelationInfo      structures.NET_DFS_ENTRY_ID_CONTAINER
+	RelationInfo      mssrvs.NET_DFS_ENTRY_ID_CONTAINER
 	CreateDisposition ndr.DWORD
 }
 
@@ -31,7 +31,7 @@ func (*netrDfsFixLocalVolumeRequest) Opnum() uint16 { return srvsvc.OpnumNetrDfs
 
 // NetrDfsFixLocalVolume calls NetrDfsFixLocalVolume (opnum 51), repairing the local DFS
 // volume state ([MS-SRVS] 3.1.4.51).
-func NetrDfsFixLocalVolume(rpc ndr.Invoker, serverName, volumeName string, entryType, serviceType uint32, stgId string, entryUid guid.GUID, entryPrefix string, relationInfo structures.NET_DFS_ENTRY_ID_CONTAINER, createDisposition uint32) error {
+func NetrDfsFixLocalVolume(rpc ndr.Invoker, serverName, volumeName string, entryType, serviceType uint32, stgId string, entryUid guid.GUID, entryPrefix string, relationInfo mssrvs.NET_DFS_ENTRY_ID_CONTAINER, createDisposition uint32) error {
 	req := &netrDfsFixLocalVolumeRequest{
 		ServerName:        optWStr(serverName),
 		VolumeName:        ndr.WSTR(volumeName),

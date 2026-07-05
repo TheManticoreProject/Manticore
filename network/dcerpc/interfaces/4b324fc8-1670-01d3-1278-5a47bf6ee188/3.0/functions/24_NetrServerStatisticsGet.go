@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrServerStatisticsGetRequest is the [in] parameter set of NetrServerStatisticsGet:
@@ -23,13 +23,13 @@ func (*netrServerStatisticsGetRequest) Opnum() uint16 { return srvsvc.OpnumNetrS
 // netrServerStatisticsGetResponse is the reply: the [out] double pointer to a
 // STAT_SERVER_0 (a [unique] referent) and the NET_API_STATUS return value.
 type netrServerStatisticsGetResponse struct {
-	InfoStruct *structures.STAT_SERVER_0 `ndr:"unique"`
-	Status     ndr.DWORD                 `ndr:"retval"`
+	InfoStruct *mssrvs.STAT_SERVER_0 `ndr:"unique"`
+	Status     ndr.DWORD             `ndr:"retval"`
 }
 
 // NetrServerStatisticsGet calls NetrServerStatisticsGet (opnum 24), retrieving the
 // operating statistics for the server service ([MS-SRVS] 3.1.4.20).
-func NetrServerStatisticsGet(rpc ndr.Invoker, serverName, service string, level, options uint32) (*structures.STAT_SERVER_0, error) {
+func NetrServerStatisticsGet(rpc ndr.Invoker, serverName, service string, level, options uint32) (*mssrvs.STAT_SERVER_0, error) {
 	req := &netrServerStatisticsGetRequest{
 		ServerName: optWStr(serverName),
 		Service:    optWStr(service),

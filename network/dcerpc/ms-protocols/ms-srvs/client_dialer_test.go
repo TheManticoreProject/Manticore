@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // fakePipeDialer is a PipeDialer that hands out a pre-scripted in-memory transport,
@@ -32,13 +32,13 @@ func TestNewUsesDialerToBindSrvsvc(t *testing.T) {
 
 	// One share in a level-1 container, then the NetrShareEnum reply.
 	resp := &shareEnumResp{
-		InfoStruct: structures.SHARE_ENUM_STRUCT{
+		InfoStruct: srvstypes.SHARE_ENUM_STRUCT{
 			Level: 1,
-			ShareInfo: structures.SHARE_ENUM_UNION{
+			ShareInfo: srvstypes.SHARE_ENUM_UNION{
 				Tag: 1,
-				Level1: &structures.SHARE_INFO_1_CONTAINER{
+				Level1: &srvstypes.SHARE_INFO_1_CONTAINER{
 					EntriesRead: 1,
-					Buffer:      []structures.SHARE_INFO_1{{Shi1Netname: "C$", Shi1Type: 0x80000000, Shi1Remark: "Default share"}},
+					Buffer:      []srvstypes.SHARE_INFO_1{{Shi1Netname: "C$", Shi1Type: 0x80000000, Shi1Remark: "Default share"}},
 				},
 			},
 		},

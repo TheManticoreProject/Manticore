@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrServerTransportDelExRequest is the [in] parameter set of NetrServerTransportDelEx:
@@ -14,7 +14,7 @@ import (
 type netrServerTransportDelExRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	Buffer     structures.TRANSPORT_INFO
+	Buffer     mssrvs.TRANSPORT_INFO
 }
 
 func (*netrServerTransportDelExRequest) Opnum() uint16 {
@@ -24,7 +24,7 @@ func (*netrServerTransportDelExRequest) Opnum() uint16 {
 // NetrServerTransportDelEx calls NetrServerTransportDelEx (opnum 53), unbinding the
 // server from a transport protocol with extended (leveled) information ([MS-SRVS]
 // 3.1.4.26).
-func NetrServerTransportDelEx(rpc ndr.Invoker, serverName string, level uint32, buffer structures.TRANSPORT_INFO) error {
+func NetrServerTransportDelEx(rpc ndr.Invoker, serverName string, level uint32, buffer mssrvs.TRANSPORT_INFO) error {
 	buffer.Tag = ndr.DWORD(level)
 	req := &netrServerTransportDelExRequest{
 		ServerName: optWStr(serverName),

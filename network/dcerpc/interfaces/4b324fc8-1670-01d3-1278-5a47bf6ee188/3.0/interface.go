@@ -8,9 +8,9 @@
 //
 // This package holds only the interface-level descriptor: the abstract syntax
 // identifier, the transport endpoint (PipeName), the opnum constants and opnum<->name
-// maps, and the NET_API_STATUS return codes. The NDR types live in the structures
-// subpackage and the method stubs in functions; both depend on this package, never the
-// reverse.
+// maps, and the NET_API_STATUS return codes. The NDR types live in the protocol
+// structures package windows/protocols/ms-srvs (package mssrvs) and the method stubs in
+// functions; both depend on this package, never the reverse.
 //
 // References:
 //   - [MS-SRVS] Server Service Remote Protocol:

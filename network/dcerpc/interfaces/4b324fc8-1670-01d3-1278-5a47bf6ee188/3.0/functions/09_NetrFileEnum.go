@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrFileEnumRequest is the [in]/[in,out] parameter set of NetrFileEnum: the [unique]
@@ -16,7 +16,7 @@ type netrFileEnumRequest struct {
 	ServerName            *ndr.WSTR `ndr:"unique"`
 	BasePath              *ndr.WSTR `ndr:"unique"`
 	UserName              *ndr.WSTR `ndr:"unique"`
-	InfoStruct            structures.FILE_ENUM_STRUCT
+	InfoStruct            mssrvs.FILE_ENUM_STRUCT
 	PreferedMaximumLength ndr.DWORD
 	ResumeHandle          *ndr.DWORD `ndr:"unique"`
 }
@@ -27,7 +27,7 @@ func (*netrFileEnumRequest) Opnum() uint16 { return srvsvc.OpnumNetrFileEnum }
 // entry count, the updated [in,out,unique] resume handle, and the NET_API_STATUS return
 // value.
 type netrFileEnumResponse struct {
-	InfoStruct   structures.FILE_ENUM_STRUCT
+	InfoStruct   mssrvs.FILE_ENUM_STRUCT
 	TotalEntries ndr.DWORD
 	ResumeHandle *ndr.DWORD `ndr:"unique"`
 	Status       ndr.DWORD  `ndr:"retval"`
@@ -38,7 +38,7 @@ type netrFileEnumResponse struct {
 // enumeration is stateful: pass the returned resume handle back on the next call to
 // continue, starting from 0. ERROR_MORE_DATA indicates more pages remain and is not
 // treated as an error; the returned container, total, and resume handle are valid then.
-func NetrFileEnum(rpc ndr.Invoker, serverName, basePath, userName string, info structures.FILE_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (structures.FILE_ENUM_STRUCT, uint32, uint32, error) {
+func NetrFileEnum(rpc ndr.Invoker, serverName, basePath, userName string, info mssrvs.FILE_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (mssrvs.FILE_ENUM_STRUCT, uint32, uint32, error) {
 	resume := ndr.DWORD(resumeHandle)
 	req := &netrFileEnumRequest{
 		ServerName:            optWStr(serverName),
@@ -50,7 +50,7 @@ func NetrFileEnum(rpc ndr.Invoker, serverName, basePath, userName string, info s
 	}
 	var resp netrFileEnumResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.FILE_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrFileEnum: %w", err)
+		return mssrvs.FILE_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrFileEnum: %w", err)
 	}
 	var outResume uint32
 	if resp.ResumeHandle != nil {

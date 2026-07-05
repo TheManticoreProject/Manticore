@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 type serverGetInfoResp struct {
-	InfoStruct structures.SERVER_INFO
+	InfoStruct srvstypes.SERVER_INFO
 	Status     ndr.DWORD `ndr:"retval"`
 }
 
@@ -19,9 +19,9 @@ func TestGetServerInfo(t *testing.T) {
 	c := boundClient(t, ft)
 
 	resp := &serverGetInfoResp{
-		InfoStruct: structures.SERVER_INFO{
+		InfoStruct: srvstypes.SERVER_INFO{
 			Tag: 101,
-			ServerInfo101: &structures.SERVER_INFO_101{
+			ServerInfo101: &srvstypes.SERVER_INFO_101{
 				Sv101PlatformId:   500,
 				Sv101Name:         "FILESERVER",
 				Sv101VersionMajor: 6,
@@ -60,7 +60,7 @@ func TestGetServerInfo_MissingArm(t *testing.T) {
 	c := boundClient(t, ft)
 	// Success status but a nil level-101 arm must be reported, not nil-dereferenced.
 	resp := &serverGetInfoResp{
-		InfoStruct: structures.SERVER_INFO{Tag: 101},
+		InfoStruct: srvstypes.SERVER_INFO{Tag: 101},
 		Status:     ndr.DWORD(srvsvc.NERR_Success),
 	}
 	ft.queue(responsePDU(t, 2, stub(t, resp)))

@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrServerAliasAddRequest is the [in] parameter set of NetrServerAliasAdd: the
@@ -14,14 +14,14 @@ import (
 type netrServerAliasAddRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	InfoStruct structures.SERVER_ALIAS_INFO
+	InfoStruct mssrvs.SERVER_ALIAS_INFO
 }
 
 func (*netrServerAliasAddRequest) Opnum() uint16 { return srvsvc.OpnumNetrServerAliasAdd }
 
 // NetrServerAliasAdd calls NetrServerAliasAdd (opnum 54), creating an alias name for
 // the server ([MS-SRVS] 3.1.4.28).
-func NetrServerAliasAdd(rpc ndr.Invoker, serverName string, level uint32, info structures.SERVER_ALIAS_INFO) error {
+func NetrServerAliasAdd(rpc ndr.Invoker, serverName string, level uint32, info mssrvs.SERVER_ALIAS_INFO) error {
 	info.Tag = ndr.DWORD(level)
 	req := &netrServerAliasAddRequest{
 		ServerName: optWStr(serverName),

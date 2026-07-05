@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrShareDelExRequest is the [in] parameter set of NetrShareDelEx: the optional server
@@ -14,7 +14,7 @@ import (
 type netrShareDelExRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	ShareInfo  structures.SHARE_INFO
+	ShareInfo  mssrvs.SHARE_INFO
 }
 
 func (*netrShareDelExRequest) Opnum() uint16 {
@@ -24,7 +24,7 @@ func (*netrShareDelExRequest) Opnum() uint16 {
 // NetrShareDelEx calls NetrShareDelEx (opnum 57), deleting a share identified by the
 // supplied share-info structure ([MS-SRVS] 3.1.4.18). The union discriminant is set to
 // level before marshalling.
-func NetrShareDelEx(rpc ndr.Invoker, serverName string, level ndr.DWORD, shareInfo structures.SHARE_INFO) error {
+func NetrShareDelEx(rpc ndr.Invoker, serverName string, level ndr.DWORD, shareInfo mssrvs.SHARE_INFO) error {
 	shareInfo.Tag = level
 	req := &netrShareDelExRequest{
 		ServerName: optWStr(serverName),

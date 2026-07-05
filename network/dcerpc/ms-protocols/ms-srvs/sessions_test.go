@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 type sessionEnumResp struct {
-	InfoStruct   structures.SESSION_ENUM_STRUCT
+	InfoStruct   srvstypes.SESSION_ENUM_STRUCT
 	TotalEntries ndr.DWORD
 	ResumeHandle *ndr.DWORD `ndr:"unique"`
 	Status       ndr.DWORD  `ndr:"retval"`
@@ -21,13 +21,13 @@ func TestListSessions(t *testing.T) {
 	c := boundClient(t, ft)
 
 	resp := &sessionEnumResp{
-		InfoStruct: structures.SESSION_ENUM_STRUCT{
+		InfoStruct: srvstypes.SESSION_ENUM_STRUCT{
 			Level: 10,
-			SessionInfo: structures.SESSION_ENUM_UNION{
+			SessionInfo: srvstypes.SESSION_ENUM_UNION{
 				Tag: 10,
-				Level10: &structures.SESSION_INFO_10_CONTAINER{
+				Level10: &srvstypes.SESSION_INFO_10_CONTAINER{
 					EntriesRead: 1,
-					Buffer: []structures.SESSION_INFO_10{
+					Buffer: []srvstypes.SESSION_INFO_10{
 						{Sesi10Cname: "\\\\10.0.0.5", Sesi10Username: "ADMIN", Sesi10Time: 3600, Sesi10IdleTime: 12},
 					},
 				},
