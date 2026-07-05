@@ -5,16 +5,16 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrGetDisplayEnumerationIndexRequest is the [in] parameter set of
 // SamrGetDisplayEnumerationIndex: a domain handle, the display class, and the [ref] name
 // prefix (inline, single pointer) to search for.
 type samrGetDisplayEnumerationIndexRequest struct {
-	DomainHandle            structures.SAMPR_HANDLE
-	DisplayInformationClass structures.DOMAIN_DISPLAY_INFORMATION `ndr:"enum"`
+	DomainHandle            mssamr.SAMPR_HANDLE
+	DisplayInformationClass mssamr.DOMAIN_DISPLAY_INFORMATION `ndr:"enum"`
 	Prefix                  dtyp.RPC_UNICODE_STRING
 }
 
@@ -31,10 +31,10 @@ type samrGetDisplayEnumerationIndexResponse struct {
 // SamrGetDisplayEnumerationIndex calls SamrGetDisplayEnumerationIndex (opnum 41), returning
 // the index of the first account whose name is greater than or equal to the given prefix
 // ([MS-SAMR] 3.1.5.3.3).
-func SamrGetDisplayEnumerationIndex(rpc ndr.Invoker, domainHandle structures.SAMPR_HANDLE, class uint16, prefix string) (uint32, error) {
+func SamrGetDisplayEnumerationIndex(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, class uint16, prefix string) (uint32, error) {
 	req := &samrGetDisplayEnumerationIndexRequest{
 		DomainHandle:            domainHandle,
-		DisplayInformationClass: structures.DOMAIN_DISPLAY_INFORMATION(class),
+		DisplayInformationClass: mssamr.DOMAIN_DISPLAY_INFORMATION(class),
 		Prefix:                  dtyp.NewUnicodeString(prefix),
 	}
 	var resp samrGetDisplayEnumerationIndexResponse

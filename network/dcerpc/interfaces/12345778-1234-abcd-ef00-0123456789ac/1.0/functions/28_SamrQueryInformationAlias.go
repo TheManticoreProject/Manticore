@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrQueryInformationAliasRequest carries the [in] alias handle and the information class
 // that selects the arm of the returned union.
 type samrQueryInformationAliasRequest struct {
-	AliasHandle           structures.SAMPR_HANDLE
-	AliasInformationClass structures.ALIAS_INFORMATION_CLASS `ndr:"enum"`
+	AliasHandle           mssamr.SAMPR_HANDLE
+	AliasInformationClass mssamr.ALIAS_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationAliasRequest) Opnum() uint16 {
@@ -22,13 +22,13 @@ func (*samrQueryInformationAliasRequest) Opnum() uint16 {
 // samrQueryInformationAliasResponse is the reply: the [out, switch_is] alias info buffer
 // (a [unique] pointer to the discriminated union) and the NTSTATUS.
 type samrQueryInformationAliasResponse struct {
-	Buffer *structures.SAMPR_ALIAS_INFO_BUFFER `ndr:"unique"`
-	Status ndr.DWORD                           `ndr:"retval"`
+	Buffer *mssamr.SAMPR_ALIAS_INFO_BUFFER `ndr:"unique"`
+	Status ndr.DWORD                       `ndr:"retval"`
 }
 
 // SamrQueryInformationAlias calls SamrQueryInformationAlias (opnum 28), retrieving
 // attributes of an alias for the requested information class ([MS-SAMR] 3.1.5.5.4).
-func SamrQueryInformationAlias(rpc ndr.Invoker, aliasHandle structures.SAMPR_HANDLE, aliasInformationClass structures.ALIAS_INFORMATION_CLASS) (*structures.SAMPR_ALIAS_INFO_BUFFER, error) {
+func SamrQueryInformationAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, aliasInformationClass mssamr.ALIAS_INFORMATION_CLASS) (*mssamr.SAMPR_ALIAS_INFO_BUFFER, error) {
 	req := &samrQueryInformationAliasRequest{
 		AliasHandle:           aliasHandle,
 		AliasInformationClass: aliasInformationClass,

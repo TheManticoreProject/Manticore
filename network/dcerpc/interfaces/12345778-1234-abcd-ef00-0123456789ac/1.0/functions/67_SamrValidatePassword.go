@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrValidatePasswordRequest carries the [in] parameters. The handle_t binding
@@ -13,8 +13,8 @@ import (
 // the union arm and InputArg is the [ref, switch_is(ValidationType)] input union
 // (modeled inline).
 type samrValidatePasswordRequest struct {
-	ValidationType structures.PASSWORD_POLICY_VALIDATION_TYPE `ndr:"enum"`
-	InputArg       structures.SAM_VALIDATE_INPUT_ARG
+	ValidationType mssamr.PASSWORD_POLICY_VALIDATION_TYPE `ndr:"enum"`
+	InputArg       mssamr.SAM_VALIDATE_INPUT_ARG
 }
 
 func (*samrValidatePasswordRequest) Opnum() uint16 { return samr.OpnumSamrValidatePassword }
@@ -22,14 +22,14 @@ func (*samrValidatePasswordRequest) Opnum() uint16 { return samr.OpnumSamrValida
 // samrValidatePasswordResponse carries the [out, switch_is(ValidationType)] double
 // pointer to the output union and the NTSTATUS.
 type samrValidatePasswordResponse struct {
-	OutputArg *structures.SAM_VALIDATE_OUTPUT_ARG `ndr:"unique"`
-	Status    ndr.DWORD                           `ndr:"retval"`
+	OutputArg *mssamr.SAM_VALIDATE_OUTPUT_ARG `ndr:"unique"`
+	Status    ndr.DWORD                       `ndr:"retval"`
 }
 
 // SamrValidatePassword calls SamrValidatePassword (opnum 67), applying the account
 // domain's password policy to the supplied state ([MS-SAMR] 3.1.5.13.7.1). The
 // caller sets inputArg.Tag to match validationType before calling.
-func SamrValidatePassword(rpc ndr.Invoker, validationType structures.PASSWORD_POLICY_VALIDATION_TYPE, inputArg structures.SAM_VALIDATE_INPUT_ARG) (*structures.SAM_VALIDATE_OUTPUT_ARG, error) {
+func SamrValidatePassword(rpc ndr.Invoker, validationType mssamr.PASSWORD_POLICY_VALIDATION_TYPE, inputArg mssamr.SAM_VALIDATE_INPUT_ARG) (*mssamr.SAM_VALIDATE_OUTPUT_ARG, error) {
 	req := &samrValidatePasswordRequest{
 		ValidationType: validationType,
 		InputArg:       inputArg,

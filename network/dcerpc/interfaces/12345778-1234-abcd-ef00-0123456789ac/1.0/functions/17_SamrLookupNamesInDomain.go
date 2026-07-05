@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrLookupNamesInDomainRequest is the [in] parameter set of SamrLookupNamesInDomain: a
@@ -19,7 +19,7 @@ import (
 // server rejects as nca_s_fault_context_mismatch; the [ref] form emits no referent id and
 // defers the array (with its count) to after the handle. Live-validated against Windows XP.
 type samrLookupNamesInDomainRequest struct {
-	DomainHandle structures.SAMPR_HANDLE
+	DomainHandle mssamr.SAMPR_HANDLE
 	Count        ndr.DWORD
 	Names        []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=1000,varying"`
 }
@@ -29,14 +29,14 @@ func (*samrLookupNamesInDomainRequest) Opnum() uint16 { return samr.OpnumSamrLoo
 // samrLookupNamesInDomainResponse is the reply: the [out] [ref] RID array and Use array
 // (single pointer containers, inline) and the NTSTATUS.
 type samrLookupNamesInDomainResponse struct {
-	RelativeIds structures.SAMPR_ULONG_ARRAY
-	Use         structures.SAMPR_ULONG_ARRAY
+	RelativeIds mssamr.SAMPR_ULONG_ARRAY
+	Use         mssamr.SAMPR_ULONG_ARRAY
 	Status      ndr.DWORD `ndr:"retval"`
 }
 
 // SamrLookupNamesInDomain calls SamrLookupNamesInDomain (opnum 17), translating account
 // names into RIDs and their SID_NAME_USE classifications ([MS-SAMR] 3.1.5.11.2).
-func SamrLookupNamesInDomain(rpc ndr.Invoker, domainHandle structures.SAMPR_HANDLE, names []string) (structures.SAMPR_ULONG_ARRAY, structures.SAMPR_ULONG_ARRAY, error) {
+func SamrLookupNamesInDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, names []string) (mssamr.SAMPR_ULONG_ARRAY, mssamr.SAMPR_ULONG_ARRAY, error) {
 	wnames := make([]dtyp.RPC_UNICODE_STRING, len(names))
 	for i, n := range names {
 		wnames[i] = dtyp.NewUnicodeString(n)
@@ -48,7 +48,7 @@ func SamrLookupNamesInDomain(rpc ndr.Invoker, domainHandle structures.SAMPR_HAND
 	}
 	var resp samrLookupNamesInDomainResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.SAMPR_ULONG_ARRAY{}, structures.SAMPR_ULONG_ARRAY{}, fmt.Errorf("SamrLookupNamesInDomain: %w", err)
+		return mssamr.SAMPR_ULONG_ARRAY{}, mssamr.SAMPR_ULONG_ARRAY{}, fmt.Errorf("SamrLookupNamesInDomain: %w", err)
 	}
 	status := uint32(resp.Status)
 	if status != samr.StatusSuccess && status != samr.StatusSomeNotMapped && status != samr.StatusNoneMapped {

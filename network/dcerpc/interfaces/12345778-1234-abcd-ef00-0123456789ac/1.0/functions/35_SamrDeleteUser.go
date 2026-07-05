@@ -5,20 +5,20 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrDeleteUserRequest carries the [in,out] SAMPR_HANDLE of the user to delete. On success
 // the server returns it zeroed via the shared handleResponse.
 type samrDeleteUserRequest struct {
-	UserHandle structures.SAMPR_HANDLE
+	UserHandle mssamr.SAMPR_HANDLE
 }
 
 func (*samrDeleteUserRequest) Opnum() uint16 { return samr.OpnumSamrDeleteUser }
 
 // SamrDeleteUser calls SamrDeleteUser (opnum 35), removing the user object referenced by the
 // handle and returning the (now zeroed) handle ([MS-SAMR] 3.1.5.7.3).
-func SamrDeleteUser(rpc ndr.Invoker, userHandle structures.SAMPR_HANDLE) (structures.SAMPR_HANDLE, error) {
+func SamrDeleteUser(rpc ndr.Invoker, userHandle mssamr.SAMPR_HANDLE) (mssamr.SAMPR_HANDLE, error) {
 	req := &samrDeleteUserRequest{UserHandle: userHandle}
 	var resp handleResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

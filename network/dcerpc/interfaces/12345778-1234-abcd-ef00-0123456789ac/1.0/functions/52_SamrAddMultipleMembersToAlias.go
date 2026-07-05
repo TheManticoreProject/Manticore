@@ -5,14 +5,14 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrAddMultipleMembersToAliasRequest carries the [in] alias handle and the [ref] SID
 // array container of members to add (transmitted inline).
 type samrAddMultipleMembersToAliasRequest struct {
-	AliasHandle   structures.SAMPR_HANDLE
-	MembersBuffer structures.SAMPR_PSID_ARRAY
+	AliasHandle   mssamr.SAMPR_HANDLE
+	MembersBuffer mssamr.SAMPR_PSID_ARRAY
 }
 
 func (*samrAddMultipleMembersToAliasRequest) Opnum() uint16 {
@@ -21,7 +21,7 @@ func (*samrAddMultipleMembersToAliasRequest) Opnum() uint16 {
 
 // SamrAddMultipleMembersToAlias calls SamrAddMultipleMembersToAlias (opnum 52), adding
 // multiple members to an alias in a single call ([MS-SAMR] 3.1.5.4.3).
-func SamrAddMultipleMembersToAlias(rpc ndr.Invoker, aliasHandle structures.SAMPR_HANDLE, membersBuffer structures.SAMPR_PSID_ARRAY) error {
+func SamrAddMultipleMembersToAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, membersBuffer mssamr.SAMPR_PSID_ARRAY) error {
 	req := &samrAddMultipleMembersToAliasRequest{
 		AliasHandle:   aliasHandle,
 		MembersBuffer: membersBuffer,

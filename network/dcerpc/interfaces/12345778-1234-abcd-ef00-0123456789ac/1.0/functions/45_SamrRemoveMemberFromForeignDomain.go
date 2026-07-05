@@ -6,14 +6,14 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrRemoveMemberFromForeignDomainRequest is the [in] parameter set of
 // SamrRemoveMemberFromForeignDomain: a domain handle and the [ref] SID (inline, single
 // pointer) to remove from all aliases in the domain.
 type samrRemoveMemberFromForeignDomainRequest struct {
-	DomainHandle structures.SAMPR_HANDLE
+	DomainHandle mssamr.SAMPR_HANDLE
 	MemberSid    dtyp.RPC_SID
 }
 
@@ -24,7 +24,7 @@ func (*samrRemoveMemberFromForeignDomainRequest) Opnum() uint16 {
 // SamrRemoveMemberFromForeignDomain calls SamrRemoveMemberFromForeignDomain (opnum 45),
 // removing the given SID from the membership of all aliases in the domain ([MS-SAMR]
 // 3.1.5.8.5).
-func SamrRemoveMemberFromForeignDomain(rpc ndr.Invoker, domainHandle structures.SAMPR_HANDLE, memberSid dtyp.RPC_SID) error {
+func SamrRemoveMemberFromForeignDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, memberSid dtyp.RPC_SID) error {
 	req := &samrRemoveMemberFromForeignDomainRequest{
 		DomainHandle: domainHandle,
 		MemberSid:    memberSid,

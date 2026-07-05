@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrQueryInformationDomainRequest is the [in] parameter set of SamrQueryInformationDomain:
 // a domain handle and the information class selecting the union arm to return.
 type samrQueryInformationDomainRequest struct {
-	DomainHandle           structures.SAMPR_HANDLE
-	DomainInformationClass structures.DOMAIN_INFORMATION_CLASS `ndr:"enum"`
+	DomainHandle           mssamr.SAMPR_HANDLE
+	DomainInformationClass mssamr.DOMAIN_INFORMATION_CLASS `ndr:"enum"`
 }
 
 func (*samrQueryInformationDomainRequest) Opnum() uint16 {
@@ -22,16 +22,16 @@ func (*samrQueryInformationDomainRequest) Opnum() uint16 {
 // samrQueryInformationDomainResponse is the reply: the [out, switch_is] double-pointer
 // SAMPR_DOMAIN_INFO_BUFFER union (modeled [unique]) and the NTSTATUS.
 type samrQueryInformationDomainResponse struct {
-	Buffer *structures.SAMPR_DOMAIN_INFO_BUFFER `ndr:"unique"`
-	Status ndr.DWORD                            `ndr:"retval"`
+	Buffer *mssamr.SAMPR_DOMAIN_INFO_BUFFER `ndr:"unique"`
+	Status ndr.DWORD                        `ndr:"retval"`
 }
 
 // SamrQueryInformationDomain calls SamrQueryInformationDomain (opnum 8), retrieving domain
 // attributes selected by class ([MS-SAMR] 3.1.5.5.2). The returned union carries its own Tag.
-func SamrQueryInformationDomain(rpc ndr.Invoker, domainHandle structures.SAMPR_HANDLE, class uint16) (*structures.SAMPR_DOMAIN_INFO_BUFFER, error) {
+func SamrQueryInformationDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, class uint16) (*mssamr.SAMPR_DOMAIN_INFO_BUFFER, error) {
 	req := &samrQueryInformationDomainRequest{
 		DomainHandle:           domainHandle,
-		DomainInformationClass: structures.DOMAIN_INFORMATION_CLASS(class),
+		DomainInformationClass: mssamr.DOMAIN_INFORMATION_CLASS(class),
 	}
 	var resp samrQueryInformationDomainResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

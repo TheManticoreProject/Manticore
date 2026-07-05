@@ -4,24 +4,24 @@ import (
 	"fmt"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrSetSecurityObjectRequest carries the [in] parameters of SamrSetSecurityObject:
 // the target object handle, the SECURITY_INFORMATION selecting which parts to set,
 // and the [ref] self-relative security descriptor (modeled inline).
 type samrSetSecurityObjectRequest struct {
-	ObjectHandle        structures.SAMPR_HANDLE
+	ObjectHandle        mssamr.SAMPR_HANDLE
 	SecurityInformation ndr.DWORD
-	SecurityDescriptor  structures.SAMPR_SR_SECURITY_DESCRIPTOR
+	SecurityDescriptor  mssamr.SAMPR_SR_SECURITY_DESCRIPTOR
 }
 
 func (*samrSetSecurityObjectRequest) Opnum() uint16 { return samr.OpnumSamrSetSecurityObject }
 
 // SamrSetSecurityObject calls SamrSetSecurityObject (opnum 2), setting the security
 // descriptor of the referenced object ([MS-SAMR] 3.1.5.12.2).
-func SamrSetSecurityObject(rpc ndr.Invoker, handle structures.SAMPR_HANDLE, securityInformation uint32, securityDescriptor structures.SAMPR_SR_SECURITY_DESCRIPTOR) error {
+func SamrSetSecurityObject(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, securityInformation uint32, securityDescriptor mssamr.SAMPR_SR_SECURITY_DESCRIPTOR) error {
 	req := &samrSetSecurityObjectRequest{
 		ObjectHandle:        handle,
 		SecurityInformation: ndr.DWORD(securityInformation),

@@ -5,7 +5,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrOemChangePasswordUser2Request carries the [in] parameters of SamrOemChangePasswordUser2
@@ -13,10 +13,10 @@ import (
 // [ref] ANSI user name, and the new password / old LM OWF blobs cross-encrypted with one
 // another. Field order matches the IDL.
 type samrOemChangePasswordUser2Request struct {
-	ServerName                         *structures.RPC_STRING `ndr:"unique"`
-	UserName                           structures.RPC_STRING
-	NewPasswordEncryptedWithOldLm      *structures.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
-	OldLmOwfPasswordEncryptedWithNewLm *structures.ENCRYPTED_LM_OWF_PASSWORD     `ndr:"unique"`
+	ServerName                         *mssamr.RPC_STRING `ndr:"unique"`
+	UserName                           mssamr.RPC_STRING
+	NewPasswordEncryptedWithOldLm      *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
+	OldLmOwfPasswordEncryptedWithNewLm *mssamr.ENCRYPTED_LM_OWF_PASSWORD     `ndr:"unique"`
 }
 
 func (*samrOemChangePasswordUser2Request) Opnum() uint16 {
@@ -25,7 +25,7 @@ func (*samrOemChangePasswordUser2Request) Opnum() uint16 {
 
 // SamrOemChangePasswordUser2 calls SamrOemChangePasswordUser2 (opnum 54), changing a user's
 // password using OEM (ANSI) encoded names and LM-based encryption ([MS-SAMR] 3.1.5.10.3).
-func SamrOemChangePasswordUser2(rpc ndr.Invoker, serverName *structures.RPC_STRING, userName structures.RPC_STRING, newPasswordEncryptedWithOldLm *structures.SAMPR_ENCRYPTED_USER_PASSWORD, oldLmOwfPasswordEncryptedWithNewLm *structures.ENCRYPTED_LM_OWF_PASSWORD) error {
+func SamrOemChangePasswordUser2(rpc ndr.Invoker, serverName *mssamr.RPC_STRING, userName mssamr.RPC_STRING, newPasswordEncryptedWithOldLm *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD, oldLmOwfPasswordEncryptedWithNewLm *mssamr.ENCRYPTED_LM_OWF_PASSWORD) error {
 	req := &samrOemChangePasswordUser2Request{
 		ServerName:                         serverName,
 		UserName:                           userName,

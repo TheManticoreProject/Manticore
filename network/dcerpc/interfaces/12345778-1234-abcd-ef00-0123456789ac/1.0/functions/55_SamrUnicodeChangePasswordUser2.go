@@ -6,7 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrUnicodeChangePasswordUser2Request carries the [in] parameters of
@@ -17,11 +17,11 @@ import (
 type samrUnicodeChangePasswordUser2Request struct {
 	ServerName                         *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
 	UserName                           dtyp.RPC_UNICODE_STRING
-	NewPasswordEncryptedWithOldNt      *structures.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
-	OldNtOwfPasswordEncryptedWithNewNt *structures.ENCRYPTED_NT_OWF_PASSWORD     `ndr:"unique"`
+	NewPasswordEncryptedWithOldNt      *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
+	OldNtOwfPasswordEncryptedWithNewNt *mssamr.ENCRYPTED_NT_OWF_PASSWORD     `ndr:"unique"`
 	LmPresent                          uint8
-	NewPasswordEncryptedWithOldLm      *structures.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
-	OldLmOwfPasswordEncryptedWithNewNt *structures.ENCRYPTED_LM_OWF_PASSWORD     `ndr:"unique"`
+	NewPasswordEncryptedWithOldLm      *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD `ndr:"unique"`
+	OldLmOwfPasswordEncryptedWithNewNt *mssamr.ENCRYPTED_LM_OWF_PASSWORD     `ndr:"unique"`
 }
 
 func (*samrUnicodeChangePasswordUser2Request) Opnum() uint16 {
@@ -31,7 +31,7 @@ func (*samrUnicodeChangePasswordUser2Request) Opnum() uint16 {
 // SamrUnicodeChangePasswordUser2 calls SamrUnicodeChangePasswordUser2 (opnum 55), changing a
 // user's password using Unicode names and NT-based encryption (with optional LM material)
 // ([MS-SAMR] 3.1.5.10.4).
-func SamrUnicodeChangePasswordUser2(rpc ndr.Invoker, serverName *dtyp.RPC_UNICODE_STRING, userName dtyp.RPC_UNICODE_STRING, newPasswordEncryptedWithOldNt *structures.SAMPR_ENCRYPTED_USER_PASSWORD, oldNtOwfPasswordEncryptedWithNewNt *structures.ENCRYPTED_NT_OWF_PASSWORD, lmPresent uint8, newPasswordEncryptedWithOldLm *structures.SAMPR_ENCRYPTED_USER_PASSWORD, oldLmOwfPasswordEncryptedWithNewNt *structures.ENCRYPTED_LM_OWF_PASSWORD) error {
+func SamrUnicodeChangePasswordUser2(rpc ndr.Invoker, serverName *dtyp.RPC_UNICODE_STRING, userName dtyp.RPC_UNICODE_STRING, newPasswordEncryptedWithOldNt *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD, oldNtOwfPasswordEncryptedWithNewNt *mssamr.ENCRYPTED_NT_OWF_PASSWORD, lmPresent uint8, newPasswordEncryptedWithOldLm *mssamr.SAMPR_ENCRYPTED_USER_PASSWORD, oldLmOwfPasswordEncryptedWithNewNt *mssamr.ENCRYPTED_LM_OWF_PASSWORD) error {
 	req := &samrUnicodeChangePasswordUser2Request{
 		ServerName:                         serverName,
 		UserName:                           userName,
