@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rChangeServiceConfigARequest carries the [in] parameters of RChangeServiceConfigA.
 type rChangeServiceConfigARequest struct {
-	HService           structures.SC_RPC_HANDLE
+	HService           msscmr.SC_RPC_HANDLE
 	DwServiceType      ndr.DWORD
 	DwStartType        ndr.DWORD
 	DwErrorControl     ndr.DWORD
@@ -35,7 +35,7 @@ type rChangeServiceConfigAResponse struct {
 
 // RChangeServiceConfigA calls RChangeServiceConfigA (opnum 23) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RChangeServiceConfigA(rpc ndr.Invoker, hService structures.SC_RPC_HANDLE, dwServiceType ndr.DWORD, dwStartType ndr.DWORD, dwErrorControl ndr.DWORD, lpBinaryPathName *ndr.STR, lpLoadOrderGroup *ndr.STR, lpdwTagId *ndr.DWORD, lpDependencies []uint8, dwDependSize ndr.DWORD, lpServiceStartName *ndr.STR, lpPassword []uint8, dwPwSize ndr.DWORD, lpDisplayName *ndr.STR) (LpdwTagId *ndr.DWORD, err error) {
+func RChangeServiceConfigA(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, dwServiceType ndr.DWORD, dwStartType ndr.DWORD, dwErrorControl ndr.DWORD, lpBinaryPathName *ndr.STR, lpLoadOrderGroup *ndr.STR, lpdwTagId *ndr.DWORD, lpDependencies []uint8, dwDependSize ndr.DWORD, lpServiceStartName *ndr.STR, lpPassword []uint8, dwPwSize ndr.DWORD, lpDisplayName *ndr.STR) (LpdwTagId *ndr.DWORD, err error) {
 	req := &rChangeServiceConfigARequest{
 		HService:           hService,
 		DwServiceType:      dwServiceType,

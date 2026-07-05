@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rChangeServiceConfig2WRequest carries the [in] parameters of RChangeServiceConfig2W.
 type rChangeServiceConfig2WRequest struct {
-	HService structures.SC_RPC_HANDLE
-	Info     structures.SC_RPC_CONFIG_INFOW
+	HService msscmr.SC_RPC_HANDLE
+	Info     msscmr.SC_RPC_CONFIG_INFOW
 }
 
 func (*rChangeServiceConfig2WRequest) Opnum() uint16 { return svcctl.OpnumRChangeServiceConfig2W }
@@ -23,7 +23,7 @@ type rChangeServiceConfig2WResponse struct {
 
 // RChangeServiceConfig2W calls RChangeServiceConfig2W (opnum 37) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RChangeServiceConfig2W(rpc ndr.Invoker, hService structures.SC_RPC_HANDLE, info structures.SC_RPC_CONFIG_INFOW) (err error) {
+func RChangeServiceConfig2W(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, info msscmr.SC_RPC_CONFIG_INFOW) (err error) {
 	// dwInfoLevel is re-transmitted inline as the union discriminant ([C706] 14.3.8); keep
 	// the two in step so the caller only has to set Info.DwInfoLevel and the matching arm.
 	info.Field.Tag = info.DwInfoLevel

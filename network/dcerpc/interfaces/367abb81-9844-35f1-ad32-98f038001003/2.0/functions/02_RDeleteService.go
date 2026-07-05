@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rDeleteServiceRequest carries the [in] parameters of RDeleteService.
 type rDeleteServiceRequest struct {
-	HService structures.SC_RPC_HANDLE
+	HService msscmr.SC_RPC_HANDLE
 }
 
 func (*rDeleteServiceRequest) Opnum() uint16 { return svcctl.OpnumRDeleteService }
@@ -22,7 +22,7 @@ type rDeleteServiceResponse struct {
 
 // RDeleteService calls RDeleteService (opnum 2) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RDeleteService(rpc ndr.Invoker, hService structures.SC_RPC_HANDLE) (err error) {
+func RDeleteService(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE) (err error) {
 	req := &rDeleteServiceRequest{
 		HService: hService,
 	}

@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rQueryServiceConfigExRequest carries the [in] parameters of RQueryServiceConfigEx.
 type rQueryServiceConfigExRequest struct {
-	HService    structures.SC_RPC_HANDLE
+	HService    msscmr.SC_RPC_HANDLE
 	DwInfoLevel ndr.DWORD
 }
 
@@ -18,13 +18,13 @@ func (*rQueryServiceConfigExRequest) Opnum() uint16 { return svcctl.OpnumRQueryS
 
 // rQueryServiceConfigExResponse carries the [out] parameters and return value of RQueryServiceConfigEx.
 type rQueryServiceConfigExResponse struct {
-	PInfo  structures.SC_RPC_CONFIG_INFOW
+	PInfo  msscmr.SC_RPC_CONFIG_INFOW
 	Status ndr.DWORD `ndr:"retval"`
 }
 
 // RQueryServiceConfigEx calls RQueryServiceConfigEx (opnum 56) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func RQueryServiceConfigEx(rpc ndr.Invoker, hService structures.SC_RPC_HANDLE, dwInfoLevel ndr.DWORD) (PInfo structures.SC_RPC_CONFIG_INFOW, err error) {
+func RQueryServiceConfigEx(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, dwInfoLevel ndr.DWORD) (PInfo msscmr.SC_RPC_CONFIG_INFOW, err error) {
 	req := &rQueryServiceConfigExRequest{
 		HService:    hService,
 		DwInfoLevel: dwInfoLevel,

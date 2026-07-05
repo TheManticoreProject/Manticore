@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
 // rEnumServicesStatusExWRequest carries the [in] parameters of REnumServicesStatusExW.
 type rEnumServicesStatusExWRequest struct {
-	HSCManager     structures.SC_RPC_HANDLE
-	InfoLevel      structures.SC_ENUM_TYPE
+	HSCManager     msscmr.SC_RPC_HANDLE
+	InfoLevel      msscmr.SC_ENUM_TYPE
 	DwServiceType  ndr.DWORD
 	DwServiceState ndr.DWORD
 	CbBufSize      ndr.DWORD
@@ -24,15 +24,15 @@ func (*rEnumServicesStatusExWRequest) Opnum() uint16 { return svcctl.OpnumREnumS
 // rEnumServicesStatusExWResponse carries the [out] parameters and return value of REnumServicesStatusExW.
 type rEnumServicesStatusExWResponse struct {
 	LpBuffer           []uint8 `ndr:"ref,size_is=CbBufSize"`
-	PcbBytesNeeded     structures.LPBOUNDED_DWORD_256K
-	LpServicesReturned structures.LPBOUNDED_DWORD_256K
+	PcbBytesNeeded     msscmr.LPBOUNDED_DWORD_256K
+	LpServicesReturned msscmr.LPBOUNDED_DWORD_256K
 	LpResumeIndex      *ndr.DWORD `ndr:"unique"`
 	Status             ndr.DWORD  `ndr:"retval"`
 }
 
 // REnumServicesStatusExW calls REnumServicesStatusExW (opnum 42) ([MS-SCMR] — verify the parameter
 // modeling and status handling).
-func REnumServicesStatusExW(rpc ndr.Invoker, hSCManager structures.SC_RPC_HANDLE, infoLevel structures.SC_ENUM_TYPE, dwServiceType ndr.DWORD, dwServiceState ndr.DWORD, cbBufSize ndr.DWORD, lpResumeIndex *ndr.DWORD, pszGroupName *ndr.WSTR) (LpBuffer []uint8, PcbBytesNeeded structures.LPBOUNDED_DWORD_256K, LpServicesReturned structures.LPBOUNDED_DWORD_256K, LpResumeIndex *ndr.DWORD, err error) {
+func REnumServicesStatusExW(rpc ndr.Invoker, hSCManager msscmr.SC_RPC_HANDLE, infoLevel msscmr.SC_ENUM_TYPE, dwServiceType ndr.DWORD, dwServiceState ndr.DWORD, cbBufSize ndr.DWORD, lpResumeIndex *ndr.DWORD, pszGroupName *ndr.WSTR) (LpBuffer []uint8, PcbBytesNeeded msscmr.LPBOUNDED_DWORD_256K, LpServicesReturned msscmr.LPBOUNDED_DWORD_256K, LpResumeIndex *ndr.DWORD, err error) {
 	req := &rEnumServicesStatusExWRequest{
 		HSCManager:     hSCManager,
 		InfoLevel:      infoLevel,
