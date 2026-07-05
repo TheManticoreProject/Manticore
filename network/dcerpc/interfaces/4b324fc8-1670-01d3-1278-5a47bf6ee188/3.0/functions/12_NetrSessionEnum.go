@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrSessionEnumRequest is the [in]/[in,out] parameter set of NetrSessionEnum: the
@@ -16,7 +16,7 @@ type netrSessionEnumRequest struct {
 	ServerName            *ndr.WSTR `ndr:"unique"`
 	ClientName            *ndr.WSTR `ndr:"unique"`
 	UserName              *ndr.WSTR `ndr:"unique"`
-	InfoStruct            structures.SESSION_ENUM_STRUCT
+	InfoStruct            mssrvs.SESSION_ENUM_STRUCT
 	PreferedMaximumLength ndr.DWORD
 	ResumeHandle          *ndr.DWORD `ndr:"unique"`
 }
@@ -27,7 +27,7 @@ func (*netrSessionEnumRequest) Opnum() uint16 { return srvsvc.OpnumNetrSessionEn
 // entry count, the updated [in,out,unique] resume handle, and the NET_API_STATUS return
 // value.
 type netrSessionEnumResponse struct {
-	InfoStruct   structures.SESSION_ENUM_STRUCT
+	InfoStruct   mssrvs.SESSION_ENUM_STRUCT
 	TotalEntries ndr.DWORD
 	ResumeHandle *ndr.DWORD `ndr:"unique"`
 	Status       ndr.DWORD  `ndr:"retval"`
@@ -38,7 +38,7 @@ type netrSessionEnumResponse struct {
 // enumeration is stateful: pass the returned resume handle back on the next call to
 // continue, starting from 0. ERROR_MORE_DATA indicates more pages remain and is not
 // treated as an error; the returned container, total, and resume handle are valid then.
-func NetrSessionEnum(rpc ndr.Invoker, serverName, clientName, userName string, info structures.SESSION_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (structures.SESSION_ENUM_STRUCT, uint32, uint32, error) {
+func NetrSessionEnum(rpc ndr.Invoker, serverName, clientName, userName string, info mssrvs.SESSION_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (mssrvs.SESSION_ENUM_STRUCT, uint32, uint32, error) {
 	resume := ndr.DWORD(resumeHandle)
 	req := &netrSessionEnumRequest{
 		ServerName:            optWStr(serverName),
@@ -50,7 +50,7 @@ func NetrSessionEnum(rpc ndr.Invoker, serverName, clientName, userName string, i
 	}
 	var resp netrSessionEnumResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.SESSION_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrSessionEnum: %w", err)
+		return mssrvs.SESSION_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrSessionEnum: %w", err)
 	}
 	var outResume uint32
 	if resp.ResumeHandle != nil {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrShareSetInfoRequest is the [in] parameter set of NetrShareSetInfo: the optional
@@ -16,7 +16,7 @@ type netrShareSetInfoRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	NetName    ndr.WSTR
 	Level      ndr.DWORD
-	ShareInfo  structures.SHARE_INFO
+	ShareInfo  mssrvs.SHARE_INFO
 	ParmErr    *ndr.DWORD `ndr:"unique"`
 }
 
@@ -33,7 +33,7 @@ type netrShareSetInfoResponse struct {
 
 // NetrShareSetInfo calls NetrShareSetInfo (opnum 17), setting information about a share
 // ([MS-SRVS] 3.1.4.11). The union discriminant is set to level before marshalling.
-func NetrShareSetInfo(rpc ndr.Invoker, serverName string, netName string, level ndr.DWORD, shareInfo structures.SHARE_INFO, parmErr *ndr.DWORD) (*ndr.DWORD, error) {
+func NetrShareSetInfo(rpc ndr.Invoker, serverName string, netName string, level ndr.DWORD, shareInfo mssrvs.SHARE_INFO, parmErr *ndr.DWORD) (*ndr.DWORD, error) {
 	shareInfo.Tag = level
 	req := &netrShareSetInfoRequest{
 		ServerName: optWStr(serverName),

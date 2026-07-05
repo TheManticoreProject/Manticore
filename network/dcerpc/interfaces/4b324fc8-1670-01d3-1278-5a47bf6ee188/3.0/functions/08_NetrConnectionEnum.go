@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrConnectionEnumRequest is the [in]/[in,out] parameter set of NetrConnectionEnum:
@@ -15,7 +15,7 @@ import (
 type netrConnectionEnumRequest struct {
 	ServerName            *ndr.WSTR `ndr:"unique"`
 	Qualifier             *ndr.WSTR `ndr:"unique"`
-	InfoStruct            structures.CONNECT_ENUM_STRUCT
+	InfoStruct            mssrvs.CONNECT_ENUM_STRUCT
 	PreferedMaximumLength ndr.DWORD
 	ResumeHandle          *ndr.DWORD `ndr:"unique"`
 }
@@ -26,7 +26,7 @@ func (*netrConnectionEnumRequest) Opnum() uint16 { return srvsvc.OpnumNetrConnec
 // total entry count, the updated [in,out,unique] resume handle, and the NET_API_STATUS
 // return value.
 type netrConnectionEnumResponse struct {
-	InfoStruct   structures.CONNECT_ENUM_STRUCT
+	InfoStruct   mssrvs.CONNECT_ENUM_STRUCT
 	TotalEntries ndr.DWORD
 	ResumeHandle *ndr.DWORD `ndr:"unique"`
 	Status       ndr.DWORD  `ndr:"retval"`
@@ -37,7 +37,7 @@ type netrConnectionEnumResponse struct {
 // pass the returned resume handle back on the next call to continue, starting from 0.
 // ERROR_MORE_DATA indicates more pages remain and is not treated as an error; the
 // returned container, total, and resume handle are valid in that case.
-func NetrConnectionEnum(rpc ndr.Invoker, serverName, qualifier string, info structures.CONNECT_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (structures.CONNECT_ENUM_STRUCT, uint32, uint32, error) {
+func NetrConnectionEnum(rpc ndr.Invoker, serverName, qualifier string, info mssrvs.CONNECT_ENUM_STRUCT, preferedMaximumLength, resumeHandle uint32) (mssrvs.CONNECT_ENUM_STRUCT, uint32, uint32, error) {
 	resume := ndr.DWORD(resumeHandle)
 	req := &netrConnectionEnumRequest{
 		ServerName:            optWStr(serverName),
@@ -48,7 +48,7 @@ func NetrConnectionEnum(rpc ndr.Invoker, serverName, qualifier string, info stru
 	}
 	var resp netrConnectionEnumResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.CONNECT_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrConnectionEnum: %w", err)
+		return mssrvs.CONNECT_ENUM_STRUCT{}, 0, resumeHandle, fmt.Errorf("NetrConnectionEnum: %w", err)
 	}
 	var outResume uint32
 	if resp.ResumeHandle != nil {

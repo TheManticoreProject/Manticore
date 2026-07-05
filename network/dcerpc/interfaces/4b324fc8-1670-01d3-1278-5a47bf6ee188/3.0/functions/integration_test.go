@@ -16,12 +16,12 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 func TestIntegration_Srvsvc(t *testing.T) {
@@ -106,7 +106,7 @@ func TestIntegration_Srvsvc(t *testing.T) {
 		defer done()
 		resume := ndr.DWORD(0)
 		// The [in,out] union arm must be a non-null (empty) container on input.
-		in := structures.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: structures.SHARE_ENUM_UNION{Tag: 1, Level1: &structures.SHARE_INFO_1_CONTAINER{}}}
+		in := mssrvs.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 1, Level1: &mssrvs.SHARE_INFO_1_CONTAINER{}}}
 		out, total, _, err := functions.NetrShareEnum(rpc, "", in, 0xFFFFFFFF, &resume)
 		if err != nil {
 			t.Errorf("[WIRE FAIL] NetrShareEnum(1): %v", err)

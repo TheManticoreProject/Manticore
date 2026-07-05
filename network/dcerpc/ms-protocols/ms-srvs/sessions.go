@@ -2,8 +2,8 @@ package mssrvs
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // SessionInfo is an active session on the server: the connecting client's name, the
@@ -31,11 +31,11 @@ func (c *Client) ListSessions() ([]SessionInfo, error) {
 // listSessions performs the NetrSessionEnum call over an already-bound invoker and
 // projects the level-10 container into SessionInfo values.
 func listSessions(rpc ndr.Invoker) ([]SessionInfo, error) {
-	info := structures.SESSION_ENUM_STRUCT{
+	info := srvstypes.SESSION_ENUM_STRUCT{
 		Level: 10,
-		SessionInfo: structures.SESSION_ENUM_UNION{
+		SessionInfo: srvstypes.SESSION_ENUM_UNION{
 			Tag:     10,
-			Level10: &structures.SESSION_INFO_10_CONTAINER{},
+			Level10: &srvstypes.SESSION_INFO_10_CONTAINER{},
 		},
 	}
 

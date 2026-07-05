@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrShareAddRequest is the [in] parameter set of NetrShareAdd: the optional server name,
@@ -14,7 +14,7 @@ import (
 type netrShareAddRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	InfoStruct structures.SHARE_INFO
+	InfoStruct mssrvs.SHARE_INFO
 	ParmErr    *ndr.DWORD `ndr:"unique"`
 }
 
@@ -31,7 +31,7 @@ type netrShareAddResponse struct {
 
 // NetrShareAdd calls NetrShareAdd (opnum 14), sharing a resource on the server
 // ([MS-SRVS] 3.1.4.7). The union discriminant is set to level before marshalling.
-func NetrShareAdd(rpc ndr.Invoker, serverName string, level ndr.DWORD, infoStruct structures.SHARE_INFO, parmErr *ndr.DWORD) (*ndr.DWORD, error) {
+func NetrShareAdd(rpc ndr.Invoker, serverName string, level ndr.DWORD, infoStruct mssrvs.SHARE_INFO, parmErr *ndr.DWORD) (*ndr.DWORD, error) {
 	infoStruct.Tag = level
 	req := &netrShareAddRequest{
 		ServerName: optWStr(serverName),

@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrpGetFileSecurityRequest is the [in] parameter set of NetrpGetFileSecurity: the
@@ -23,13 +23,13 @@ func (*netrpGetFileSecurityRequest) Opnum() uint16 { return srvsvc.OpnumNetrpGet
 // netrpGetFileSecurityResponse is the reply: the [out] PADT_SECURITY_DESCRIPTOR (a double
 // pointer in the IDL, modelled as a [unique] pointer) and the return value.
 type netrpGetFileSecurityResponse struct {
-	SecurityDescriptor *structures.ADT_SECURITY_DESCRIPTOR `ndr:"unique"`
-	Status             ndr.DWORD                           `ndr:"retval"`
+	SecurityDescriptor *mssrvs.ADT_SECURITY_DESCRIPTOR `ndr:"unique"`
+	Status             ndr.DWORD                       `ndr:"retval"`
 }
 
 // NetrpGetFileSecurity calls NetrpGetFileSecurity (opnum 39), retrieving the security
 // descriptor of a file or directory on a share ([MS-SRVS] 3.1.4.40).
-func NetrpGetFileSecurity(rpc ndr.Invoker, serverName, shareName, lpFileName string, requestedInformation uint32) (*structures.ADT_SECURITY_DESCRIPTOR, error) {
+func NetrpGetFileSecurity(rpc ndr.Invoker, serverName, shareName, lpFileName string, requestedInformation uint32) (*mssrvs.ADT_SECURITY_DESCRIPTOR, error) {
 	req := &netrpGetFileSecurityRequest{
 		ServerName:           optWStr(serverName),
 		ShareName:            optWStr(shareName),

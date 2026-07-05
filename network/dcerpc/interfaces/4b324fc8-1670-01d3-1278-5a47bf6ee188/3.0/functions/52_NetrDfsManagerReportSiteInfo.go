@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrDfsManagerReportSiteInfoRequest is the [in] parameter set of
@@ -13,8 +13,8 @@ import (
 // to the DFS site list (an LPDFS_SITELIST_INFO* in the IDL, modelled as a [unique]
 // pointer present in both request and response).
 type netrDfsManagerReportSiteInfoRequest struct {
-	ServerName *ndr.WSTR                     `ndr:"unique"`
-	PpSiteInfo *structures.DFS_SITELIST_INFO `ndr:"unique"`
+	ServerName *ndr.WSTR                 `ndr:"unique"`
+	PpSiteInfo *mssrvs.DFS_SITELIST_INFO `ndr:"unique"`
 }
 
 func (*netrDfsManagerReportSiteInfoRequest) Opnum() uint16 {
@@ -24,13 +24,13 @@ func (*netrDfsManagerReportSiteInfoRequest) Opnum() uint16 {
 // netrDfsManagerReportSiteInfoResponse is the reply: the [in,out,unique] site list and
 // the NET_API_STATUS return value.
 type netrDfsManagerReportSiteInfoResponse struct {
-	PpSiteInfo *structures.DFS_SITELIST_INFO `ndr:"unique"`
-	Status     ndr.DWORD                     `ndr:"retval"`
+	PpSiteInfo *mssrvs.DFS_SITELIST_INFO `ndr:"unique"`
+	Status     ndr.DWORD                 `ndr:"retval"`
 }
 
 // NetrDfsManagerReportSiteInfo calls NetrDfsManagerReportSiteInfo (opnum 52), retrieving
 // the list of sites known to the DFS server ([MS-SRVS] 3.1.4.52).
-func NetrDfsManagerReportSiteInfo(rpc ndr.Invoker, serverName string, ppSiteInfo *structures.DFS_SITELIST_INFO) (*structures.DFS_SITELIST_INFO, error) {
+func NetrDfsManagerReportSiteInfo(rpc ndr.Invoker, serverName string, ppSiteInfo *mssrvs.DFS_SITELIST_INFO) (*mssrvs.DFS_SITELIST_INFO, error) {
 	req := &netrDfsManagerReportSiteInfoRequest{
 		ServerName: optWStr(serverName),
 		PpSiteInfo: ppSiteInfo,

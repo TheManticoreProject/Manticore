@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrServerSetInfoRequest is the [in]/[in,out] parameter set of NetrServerSetInfo:
@@ -15,7 +15,7 @@ import (
 type netrServerSetInfoRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	ServerInfo structures.SERVER_INFO
+	ServerInfo mssrvs.SERVER_INFO
 	ParmErr    *ndr.DWORD `ndr:"unique"`
 }
 
@@ -31,7 +31,7 @@ type netrServerSetInfoResponse struct {
 // NetrServerSetInfo calls NetrServerSetInfo (opnum 22), setting the server's
 // configuration parameters ([MS-SRVS] 3.1.4.18). On ERROR_INVALID_PARAMETER the
 // returned parameter-error index identifies the offending field.
-func NetrServerSetInfo(rpc ndr.Invoker, serverName string, level uint32, serverInfo structures.SERVER_INFO, parmErr uint32) (uint32, error) {
+func NetrServerSetInfo(rpc ndr.Invoker, serverName string, level uint32, serverInfo mssrvs.SERVER_INFO, parmErr uint32) (uint32, error) {
 	serverInfo.Tag = ndr.DWORD(level)
 	pe := ndr.DWORD(parmErr)
 	req := &netrServerSetInfoRequest{

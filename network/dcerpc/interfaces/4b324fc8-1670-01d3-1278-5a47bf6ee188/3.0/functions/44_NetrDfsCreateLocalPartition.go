@@ -5,9 +5,9 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrDfsCreateLocalPartitionRequest is the [in] parameter set of
@@ -21,7 +21,7 @@ type netrDfsCreateLocalPartitionRequest struct {
 	EntryUid     dtyp.GUID
 	EntryPrefix  ndr.WSTR
 	ShortName    ndr.WSTR
-	RelationInfo structures.NET_DFS_ENTRY_ID_CONTAINER
+	RelationInfo mssrvs.NET_DFS_ENTRY_ID_CONTAINER
 	Force        int32
 }
 
@@ -31,7 +31,7 @@ func (*netrDfsCreateLocalPartitionRequest) Opnum() uint16 {
 
 // NetrDfsCreateLocalPartition calls NetrDfsCreateLocalPartition (opnum 44), creating a
 // local DFS partition ([MS-SRVS] 3.1.4.45).
-func NetrDfsCreateLocalPartition(rpc ndr.Invoker, serverName, shareName string, entryUid guid.GUID, entryPrefix, shortName string, relationInfo structures.NET_DFS_ENTRY_ID_CONTAINER, force int32) error {
+func NetrDfsCreateLocalPartition(rpc ndr.Invoker, serverName, shareName string, entryUid guid.GUID, entryPrefix, shortName string, relationInfo mssrvs.NET_DFS_ENTRY_ID_CONTAINER, force int32) error {
 	req := &netrDfsCreateLocalPartitionRequest{
 		ServerName:   optWStr(serverName),
 		ShareName:    ndr.WSTR(shareName),

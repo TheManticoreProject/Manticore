@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // netrServerTransportAddExRequest is the [in] parameter set of NetrServerTransportAddEx:
@@ -14,7 +14,7 @@ import (
 type netrServerTransportAddExRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
 	Level      ndr.DWORD
-	Buffer     structures.TRANSPORT_INFO
+	Buffer     mssrvs.TRANSPORT_INFO
 }
 
 func (*netrServerTransportAddExRequest) Opnum() uint16 {
@@ -24,7 +24,7 @@ func (*netrServerTransportAddExRequest) Opnum() uint16 {
 // NetrServerTransportAddEx calls NetrServerTransportAddEx (opnum 41), binding the
 // server to a transport protocol with extended (leveled) information ([MS-SRVS]
 // 3.1.4.25).
-func NetrServerTransportAddEx(rpc ndr.Invoker, serverName string, level uint32, buffer structures.TRANSPORT_INFO) error {
+func NetrServerTransportAddEx(rpc ndr.Invoker, serverName string, level uint32, buffer mssrvs.TRANSPORT_INFO) error {
 	buffer.Tag = ndr.DWORD(level)
 	req := &netrServerTransportAddExRequest{
 		ServerName: optWStr(serverName),

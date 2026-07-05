@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
 // fakeTransport is an in-memory transport.Transport for driving the DCE/RPC client
@@ -84,7 +84,7 @@ func stub(t *testing.T, v any) []byte {
 }
 
 type shareEnumResp struct {
-	InfoStruct   structures.SHARE_ENUM_STRUCT
+	InfoStruct   srvstypes.SHARE_ENUM_STRUCT
 	TotalEntries ndr.DWORD
 	ResumeHandle *ndr.DWORD `ndr:"unique"`
 	Status       ndr.DWORD  `ndr:"retval"`
@@ -95,13 +95,13 @@ func TestListShares(t *testing.T) {
 	c := boundClient(t, ft)
 
 	resp := &shareEnumResp{
-		InfoStruct: structures.SHARE_ENUM_STRUCT{
+		InfoStruct: srvstypes.SHARE_ENUM_STRUCT{
 			Level: 1,
-			ShareInfo: structures.SHARE_ENUM_UNION{
+			ShareInfo: srvstypes.SHARE_ENUM_UNION{
 				Tag: 1,
-				Level1: &structures.SHARE_INFO_1_CONTAINER{
+				Level1: &srvstypes.SHARE_INFO_1_CONTAINER{
 					EntriesRead: 2,
-					Buffer: []structures.SHARE_INFO_1{
+					Buffer: []srvstypes.SHARE_INFO_1{
 						{Shi1Netname: "C$", Shi1Type: 0x80000000, Shi1Remark: "Default share"},
 						{Shi1Netname: "netlogon", Shi1Type: 0, Shi1Remark: "Logon server share"},
 					},
@@ -141,7 +141,7 @@ func TestListShares_AccessDenied(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 	resp := &shareEnumResp{
-		InfoStruct: structures.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: structures.SHARE_ENUM_UNION{Tag: 1}},
+		InfoStruct: srvstypes.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: srvstypes.SHARE_ENUM_UNION{Tag: 1}},
 		Status:     ndr.DWORD(srvsvc.ERROR_ACCESS_DENIED),
 	}
 	ft.queue(responsePDU(t, 2, stub(t, resp)))
