@@ -1,0 +1,51 @@
+package functions
+
+import (
+	"fmt"
+
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// schRpcScheduledRuntimesRequest carries the [in] parameters of SchRpcScheduledRuntimes.
+type schRpcScheduledRuntimesRequest struct {
+	Path       ndr.WSTR
+	Start      *dtyp.SYSTEMTIME `ndr:"unique"`
+	End        *dtyp.SYSTEMTIME `ndr:"unique"`
+	Flags      ndr.DWORD
+	CRequested ndr.DWORD
+}
+
+func (*schRpcScheduledRuntimesRequest) Opnum() uint16 {
+	return schrpc.OpnumSchRpcScheduledRuntimes
+}
+
+// schRpcScheduledRuntimesResponse carries the [out] parameters and return value of SchRpcScheduledRuntimes.
+type schRpcScheduledRuntimesResponse struct {
+	PcRuntimes ndr.DWORD
+	PRuntimes  []dtyp.SYSTEMTIME `ndr:"unique,size_is=PcRuntimes"`
+	Status     ndr.DWORD         `ndr:"retval"`
+}
+
+// SchRpcScheduledRuntimes calls SchRpcScheduledRuntimes (opnum 15) ([MS-TSCH] section 3.2.5.4.16).
+func SchRpcScheduledRuntimes(rpc ndr.Invoker, path ndr.WSTR, start *dtyp.SYSTEMTIME, end *dtyp.SYSTEMTIME, flags ndr.DWORD, cRequested ndr.DWORD) (PcRuntimes ndr.DWORD, PRuntimes []dtyp.SYSTEMTIME, err error) {
+	req := &schRpcScheduledRuntimesRequest{
+		Path:       path,
+		Start:      start,
+		End:        end,
+		Flags:      flags,
+		CRequested: cRequested,
+	}
+	var resp schRpcScheduledRuntimesResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("SchRpcScheduledRuntimes: %w", err)
+		return
+	}
+	PcRuntimes = resp.PcRuntimes
+	PRuntimes = resp.PRuntimes
+	if !schrpc.IsSuccess(uint32(resp.Status)) {
+		err = fmt.Errorf("SchRpcScheduledRuntimes failed: %s", schrpc.StatusString(uint32(resp.Status)))
+	}
+	return
+}
