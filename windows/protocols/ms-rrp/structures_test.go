@@ -1,4 +1,4 @@
-package structures
+package msrrp
 
 import (
 	"reflect"

@@ -3,8 +3,8 @@ package ms_rrp
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // The methods in this file mirror the winreg interface functions one-to-one: same name,
@@ -13,7 +13,7 @@ import (
 // ergonomic *ByPath helpers in paths.go are built on top of them.
 
 // OpenClassesRoot calls OpenClassesRoot (opnum 0): opens HKEY_CLASSES_ROOT.
-func (r *RemoteRegistry) OpenClassesRoot(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenClassesRoot(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -21,7 +21,7 @@ func (r *RemoteRegistry) OpenClassesRoot(serverName *ndr.WSTR, samDesired ndr.DW
 }
 
 // OpenCurrentUser calls OpenCurrentUser (opnum 1): opens HKEY_CURRENT_USER.
-func (r *RemoteRegistry) OpenCurrentUser(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenCurrentUser(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -29,7 +29,7 @@ func (r *RemoteRegistry) OpenCurrentUser(serverName *ndr.WSTR, samDesired ndr.DW
 }
 
 // OpenLocalMachine calls OpenLocalMachine (opnum 2): opens HKEY_LOCAL_MACHINE.
-func (r *RemoteRegistry) OpenLocalMachine(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenLocalMachine(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -37,7 +37,7 @@ func (r *RemoteRegistry) OpenLocalMachine(serverName *ndr.WSTR, samDesired ndr.D
 }
 
 // OpenPerformanceData calls OpenPerformanceData (opnum 3): opens HKEY_PERFORMANCE_DATA.
-func (r *RemoteRegistry) OpenPerformanceData(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenPerformanceData(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -45,7 +45,7 @@ func (r *RemoteRegistry) OpenPerformanceData(serverName *ndr.WSTR, samDesired nd
 }
 
 // OpenUsers calls OpenUsers (opnum 4): opens HKEY_USERS.
-func (r *RemoteRegistry) OpenUsers(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenUsers(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -53,7 +53,7 @@ func (r *RemoteRegistry) OpenUsers(serverName *ndr.WSTR, samDesired ndr.DWORD) (
 }
 
 // OpenCurrentConfig calls OpenCurrentConfig (opnum 27): opens HKEY_CURRENT_CONFIG.
-func (r *RemoteRegistry) OpenCurrentConfig(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenCurrentConfig(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -61,7 +61,7 @@ func (r *RemoteRegistry) OpenCurrentConfig(serverName *ndr.WSTR, samDesired ndr.
 }
 
 // OpenPerformanceText calls OpenPerformanceText (opnum 32).
-func (r *RemoteRegistry) OpenPerformanceText(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenPerformanceText(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -69,7 +69,7 @@ func (r *RemoteRegistry) OpenPerformanceText(serverName *ndr.WSTR, samDesired nd
 }
 
 // OpenPerformanceNlsText calls OpenPerformanceNlsText (opnum 33).
-func (r *RemoteRegistry) OpenPerformanceNlsText(serverName *ndr.WSTR, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) OpenPerformanceNlsText(serverName *ndr.WSTR, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -77,7 +77,7 @@ func (r *RemoteRegistry) OpenPerformanceNlsText(serverName *ndr.WSTR, samDesired
 }
 
 // BaseRegCloseKey calls BaseRegCloseKey (opnum 5): releases an open key handle.
-func (r *RemoteRegistry) BaseRegCloseKey(hKey structures.PRPC_HKEY) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) BaseRegCloseKey(hKey msrrp.PRPC_HKEY) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -85,7 +85,7 @@ func (r *RemoteRegistry) BaseRegCloseKey(hKey structures.PRPC_HKEY) (structures.
 }
 
 // BaseRegCreateKey calls BaseRegCreateKey (opnum 6): creates or opens a subkey.
-func (r *RemoteRegistry) BaseRegCreateKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, lpClass structures.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD, lpSecurityAttributes *structures.RPC_SECURITY_ATTRIBUTES, lpdwDisposition *ndr.DWORD) (structures.PRPC_HKEY, *ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegCreateKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, lpClass msrrp.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD, lpSecurityAttributes *msrrp.RPC_SECURITY_ATTRIBUTES, lpdwDisposition *ndr.DWORD) (msrrp.PRPC_HKEY, *ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, nil, err
 	}
@@ -93,7 +93,7 @@ func (r *RemoteRegistry) BaseRegCreateKey(hKey structures.RPC_HKEY, lpSubKey str
 }
 
 // BaseRegDeleteKey calls BaseRegDeleteKey (opnum 7): deletes a subkey with no subkeys.
-func (r *RemoteRegistry) BaseRegDeleteKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING) error {
+func (r *RemoteRegistry) BaseRegDeleteKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -101,15 +101,15 @@ func (r *RemoteRegistry) BaseRegDeleteKey(hKey structures.RPC_HKEY, lpSubKey str
 }
 
 // BaseRegEnumKey calls BaseRegEnumKey (opnum 9): returns the subkey at dwIndex.
-func (r *RemoteRegistry) BaseRegEnumKey(hKey structures.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn structures.RRP_UNICODE_STRING, lpClassIn *structures.RRP_UNICODE_STRING, lpftLastWriteTime *dtyp.FILETIME) (structures.RRP_UNICODE_STRING, *dtyp.RPC_UNICODE_STRING, *dtyp.FILETIME, error) {
+func (r *RemoteRegistry) BaseRegEnumKey(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn msrrp.RRP_UNICODE_STRING, lpClassIn *msrrp.RRP_UNICODE_STRING, lpftLastWriteTime *dtyp.FILETIME) (msrrp.RRP_UNICODE_STRING, *dtyp.RPC_UNICODE_STRING, *dtyp.FILETIME, error) {
 	if err := r.ensure(); err != nil {
-		return structures.RRP_UNICODE_STRING{}, nil, nil, err
+		return msrrp.RRP_UNICODE_STRING{}, nil, nil, err
 	}
 	return functions.BaseRegEnumKey(r.rpc, hKey, dwIndex, lpNameIn, lpClassIn, lpftLastWriteTime)
 }
 
 // BaseRegFlushKey calls BaseRegFlushKey (opnum 11): writes a key's changes to disk.
-func (r *RemoteRegistry) BaseRegFlushKey(hKey structures.RPC_HKEY) error {
+func (r *RemoteRegistry) BaseRegFlushKey(hKey msrrp.RPC_HKEY) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (r *RemoteRegistry) BaseRegFlushKey(hKey structures.RPC_HKEY) error {
 }
 
 // BaseRegLoadKey calls BaseRegLoadKey (opnum 13): loads a hive file under a subkey.
-func (r *RemoteRegistry) BaseRegLoadKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, lpFile structures.RRP_UNICODE_STRING) error {
+func (r *RemoteRegistry) BaseRegLoadKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, lpFile msrrp.RRP_UNICODE_STRING) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (r *RemoteRegistry) BaseRegLoadKey(hKey structures.RPC_HKEY, lpSubKey struc
 }
 
 // BaseRegOpenKey calls BaseRegOpenKey (opnum 15): opens an existing subkey.
-func (r *RemoteRegistry) BaseRegOpenKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD) (structures.PRPC_HKEY, error) {
+func (r *RemoteRegistry) BaseRegOpenKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD) (msrrp.PRPC_HKEY, error) {
 	if err := r.ensure(); err != nil {
 		return Handle{}, err
 	}
@@ -134,7 +134,7 @@ func (r *RemoteRegistry) BaseRegOpenKey(hKey structures.RPC_HKEY, lpSubKey struc
 
 // BaseRegQueryInfoKey calls BaseRegQueryInfoKey (opnum 16): returns subkey/value counts,
 // maximum lengths, and the last-write time of a key.
-func (r *RemoteRegistry) BaseRegQueryInfoKey(hKey structures.RPC_HKEY, lpClassIn structures.RRP_UNICODE_STRING) (dtyp.RPC_UNICODE_STRING, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, dtyp.FILETIME, error) {
+func (r *RemoteRegistry) BaseRegQueryInfoKey(hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (dtyp.RPC_UNICODE_STRING, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, dtyp.FILETIME, error) {
 	if err := r.ensure(); err != nil {
 		return dtyp.RPC_UNICODE_STRING{}, 0, 0, 0, 0, 0, 0, 0, dtyp.FILETIME{}, err
 	}
@@ -142,7 +142,7 @@ func (r *RemoteRegistry) BaseRegQueryInfoKey(hKey structures.RPC_HKEY, lpClassIn
 }
 
 // BaseRegReplaceKey calls BaseRegReplaceKey (opnum 18).
-func (r *RemoteRegistry) BaseRegReplaceKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, lpNewFile structures.RRP_UNICODE_STRING, lpOldFile structures.RRP_UNICODE_STRING) error {
+func (r *RemoteRegistry) BaseRegReplaceKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, lpNewFile msrrp.RRP_UNICODE_STRING, lpOldFile msrrp.RRP_UNICODE_STRING) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (r *RemoteRegistry) BaseRegReplaceKey(hKey structures.RPC_HKEY, lpSubKey st
 }
 
 // BaseRegRestoreKey calls BaseRegRestoreKey (opnum 19).
-func (r *RemoteRegistry) BaseRegRestoreKey(hKey structures.RPC_HKEY, lpFile structures.RRP_UNICODE_STRING, flags ndr.DWORD) error {
+func (r *RemoteRegistry) BaseRegRestoreKey(hKey msrrp.RPC_HKEY, lpFile msrrp.RRP_UNICODE_STRING, flags ndr.DWORD) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (r *RemoteRegistry) BaseRegRestoreKey(hKey structures.RPC_HKEY, lpFile stru
 }
 
 // BaseRegSaveKey calls BaseRegSaveKey (opnum 20): saves a key and its subtree to a file.
-func (r *RemoteRegistry) BaseRegSaveKey(hKey structures.RPC_HKEY, lpFile structures.RRP_UNICODE_STRING, pSecurityAttributes *structures.RPC_SECURITY_ATTRIBUTES) error {
+func (r *RemoteRegistry) BaseRegSaveKey(hKey msrrp.RPC_HKEY, lpFile msrrp.RRP_UNICODE_STRING, pSecurityAttributes *msrrp.RPC_SECURITY_ATTRIBUTES) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func (r *RemoteRegistry) BaseRegSaveKey(hKey structures.RPC_HKEY, lpFile structu
 }
 
 // BaseRegUnLoadKey calls BaseRegUnLoadKey (opnum 23): unloads a previously loaded hive.
-func (r *RemoteRegistry) BaseRegUnLoadKey(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING) error {
+func (r *RemoteRegistry) BaseRegUnLoadKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (r *RemoteRegistry) BaseRegUnLoadKey(hKey structures.RPC_HKEY, lpSubKey str
 }
 
 // BaseRegGetVersion calls BaseRegGetVersion (opnum 26): returns the registry version.
-func (r *RemoteRegistry) BaseRegGetVersion(hKey structures.RPC_HKEY) (ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegGetVersion(hKey msrrp.RPC_HKEY) (ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return 0, err
 	}
@@ -182,7 +182,7 @@ func (r *RemoteRegistry) BaseRegGetVersion(hKey structures.RPC_HKEY) (ndr.DWORD,
 }
 
 // BaseRegSaveKeyEx calls BaseRegSaveKeyEx (opnum 31): saves a key with format flags.
-func (r *RemoteRegistry) BaseRegSaveKeyEx(hKey structures.RPC_HKEY, lpFile structures.RRP_UNICODE_STRING, pSecurityAttributes *structures.RPC_SECURITY_ATTRIBUTES, flags ndr.DWORD) error {
+func (r *RemoteRegistry) BaseRegSaveKeyEx(hKey msrrp.RPC_HKEY, lpFile msrrp.RRP_UNICODE_STRING, pSecurityAttributes *msrrp.RPC_SECURITY_ATTRIBUTES, flags ndr.DWORD) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (r *RemoteRegistry) BaseRegSaveKeyEx(hKey structures.RPC_HKEY, lpFile struc
 
 // BaseRegDeleteKeyEx calls BaseRegDeleteKeyEx (opnum 35): deletes a subkey honouring the
 // KEY_WOW64_* view selected by accessMask.
-func (r *RemoteRegistry) BaseRegDeleteKeyEx(hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, accessMask ndr.DWORD, reserved ndr.DWORD) error {
+func (r *RemoteRegistry) BaseRegDeleteKeyEx(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, accessMask ndr.DWORD, reserved ndr.DWORD) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}

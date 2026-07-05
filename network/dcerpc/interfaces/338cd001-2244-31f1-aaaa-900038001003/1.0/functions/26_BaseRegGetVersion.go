@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegGetVersionRequest carries the [in] parameters of BaseRegGetVersion.
 type baseRegGetVersionRequest struct {
-	HKey structures.RPC_HKEY
+	HKey msrrp.RPC_HKEY
 }
 
 func (*baseRegGetVersionRequest) Opnum() uint16 { return winreg.OpnumBaseRegGetVersion }
@@ -23,7 +23,7 @@ type baseRegGetVersionResponse struct {
 
 // BaseRegGetVersion calls BaseRegGetVersion (opnum 26) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegGetVersion(rpc ndr.Invoker, hKey structures.RPC_HKEY) (LpdwVersion ndr.DWORD, err error) {
+func BaseRegGetVersion(rpc ndr.Invoker, hKey msrrp.RPC_HKEY) (LpdwVersion ndr.DWORD, err error) {
 	req := &baseRegGetVersionRequest{
 		HKey: hKey,
 	}

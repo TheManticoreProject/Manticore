@@ -8,8 +8,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // RegistryValue is a typed registry value: its REG_* type and its raw little-endian data
@@ -109,7 +109,7 @@ type ValueEntry struct {
 
 // BaseRegQueryValue calls BaseRegQueryValue (opnum 17). It mirrors the interface function
 // exactly (minus the invoker); for ergonomic reads use QueryValueByPath / queryValue.
-func (r *RemoteRegistry) BaseRegQueryValue(hKey structures.RPC_HKEY, lpValueName structures.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (*ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegQueryValue(hKey msrrp.RPC_HKEY, lpValueName msrrp.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (*ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -117,7 +117,7 @@ func (r *RemoteRegistry) BaseRegQueryValue(hKey structures.RPC_HKEY, lpValueName
 }
 
 // BaseRegSetValue calls BaseRegSetValue (opnum 22): writes a value's type and data.
-func (r *RemoteRegistry) BaseRegSetValue(hKey structures.RPC_HKEY, lpValueName structures.RRP_UNICODE_STRING, dwType ndr.DWORD, lpData []uint8, cbData ndr.DWORD) error {
+func (r *RemoteRegistry) BaseRegSetValue(hKey msrrp.RPC_HKEY, lpValueName msrrp.RRP_UNICODE_STRING, dwType ndr.DWORD, lpData []uint8, cbData ndr.DWORD) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (r *RemoteRegistry) BaseRegSetValue(hKey structures.RPC_HKEY, lpValueName s
 }
 
 // BaseRegDeleteValue calls BaseRegDeleteValue (opnum 8): removes a named value.
-func (r *RemoteRegistry) BaseRegDeleteValue(hKey structures.RPC_HKEY, lpValueName structures.RRP_UNICODE_STRING) error {
+func (r *RemoteRegistry) BaseRegDeleteValue(hKey msrrp.RPC_HKEY, lpValueName msrrp.RRP_UNICODE_STRING) error {
 	if err := r.ensure(); err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (r *RemoteRegistry) BaseRegDeleteValue(hKey structures.RPC_HKEY, lpValueNam
 }
 
 // BaseRegEnumValue calls BaseRegEnumValue (opnum 10): returns the value at dwIndex.
-func (r *RemoteRegistry) BaseRegEnumValue(hKey structures.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn structures.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (dtyp.RPC_UNICODE_STRING, *ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegEnumValue(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn msrrp.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (dtyp.RPC_UNICODE_STRING, *ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return dtyp.RPC_UNICODE_STRING{}, nil, nil, nil, nil, err
 	}
@@ -141,7 +141,7 @@ func (r *RemoteRegistry) BaseRegEnumValue(hKey structures.RPC_HKEY, dwIndex ndr.
 }
 
 // BaseRegQueryMultipleValues calls BaseRegQueryMultipleValues (opnum 29).
-func (r *RemoteRegistry) BaseRegQueryMultipleValues(hKey structures.RPC_HKEY, val_listIn []structures.RVALENT, num_vals ndr.DWORD, lpvalueBuf []byte, ldwTotsize ndr.DWORD) ([]structures.RVALENT, []byte, ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegQueryMultipleValues(hKey msrrp.RPC_HKEY, val_listIn []msrrp.RVALENT, num_vals ndr.DWORD, lpvalueBuf []byte, ldwTotsize ndr.DWORD) ([]msrrp.RVALENT, []byte, ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return nil, nil, 0, err
 	}
@@ -149,7 +149,7 @@ func (r *RemoteRegistry) BaseRegQueryMultipleValues(hKey structures.RPC_HKEY, va
 }
 
 // BaseRegQueryMultipleValues2 calls BaseRegQueryMultipleValues2 (opnum 34).
-func (r *RemoteRegistry) BaseRegQueryMultipleValues2(hKey structures.RPC_HKEY, val_listIn []structures.RVALENT, num_vals ndr.DWORD, lpvalueBuf []byte, ldwTotsize ndr.DWORD) ([]structures.RVALENT, []byte, ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegQueryMultipleValues2(hKey msrrp.RPC_HKEY, val_listIn []msrrp.RVALENT, num_vals ndr.DWORD, lpvalueBuf []byte, ldwTotsize ndr.DWORD) ([]msrrp.RVALENT, []byte, ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
 		return nil, nil, 0, err
 	}

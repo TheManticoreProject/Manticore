@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // openClassesRootRequest carries the [in] parameters of OpenClassesRoot.
@@ -18,13 +18,13 @@ func (*openClassesRootRequest) Opnum() uint16 { return winreg.OpnumOpenClassesRo
 
 // openClassesRootResponse carries the [out] parameters and return value of OpenClassesRoot.
 type openClassesRootResponse struct {
-	PhKey  structures.PRPC_HKEY
+	PhKey  msrrp.PRPC_HKEY
 	Status ndr.DWORD `ndr:"retval"`
 }
 
 // OpenClassesRoot calls OpenClassesRoot (opnum 0) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func OpenClassesRoot(rpc ndr.Invoker, serverName *ndr.WSTR, samDesired ndr.DWORD) (PhKey structures.PRPC_HKEY, err error) {
+func OpenClassesRoot(rpc ndr.Invoker, serverName *ndr.WSTR, samDesired ndr.DWORD) (PhKey msrrp.PRPC_HKEY, err error) {
 	req := &openClassesRootRequest{
 		ServerName: serverName,
 		SamDesired: samDesired,
