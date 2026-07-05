@@ -5,14 +5,14 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegQueryInfoKeyRequest carries the [in] parameters of BaseRegQueryInfoKey.
 type baseRegQueryInfoKeyRequest struct {
-	HKey      structures.RPC_HKEY
-	LpClassIn structures.RRP_UNICODE_STRING
+	HKey      msrrp.RPC_HKEY
+	LpClassIn msrrp.RRP_UNICODE_STRING
 }
 
 func (*baseRegQueryInfoKeyRequest) Opnum() uint16 { return winreg.OpnumBaseRegQueryInfoKey }
@@ -33,7 +33,7 @@ type baseRegQueryInfoKeyResponse struct {
 
 // BaseRegQueryInfoKey calls BaseRegQueryInfoKey (opnum 16) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegQueryInfoKey(rpc ndr.Invoker, hKey structures.RPC_HKEY, lpClassIn structures.RRP_UNICODE_STRING) (LpClassOut dtyp.RPC_UNICODE_STRING, LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcbMaxClassLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime dtyp.FILETIME, err error) {
+func BaseRegQueryInfoKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (LpClassOut dtyp.RPC_UNICODE_STRING, LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcbMaxClassLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime dtyp.FILETIME, err error) {
 	req := &baseRegQueryInfoKeyRequest{
 		HKey:      hKey,
 		LpClassIn: lpClassIn,

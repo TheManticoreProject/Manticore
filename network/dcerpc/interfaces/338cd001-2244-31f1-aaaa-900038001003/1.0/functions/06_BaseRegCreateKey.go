@@ -4,33 +4,33 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegCreateKeyRequest carries the [in] parameters of BaseRegCreateKey.
 type baseRegCreateKeyRequest struct {
-	HKey                 structures.RPC_HKEY
-	LpSubKey             structures.RRP_UNICODE_STRING
-	LpClass              structures.RRP_UNICODE_STRING
+	HKey                 msrrp.RPC_HKEY
+	LpSubKey             msrrp.RRP_UNICODE_STRING
+	LpClass              msrrp.RRP_UNICODE_STRING
 	DwOptions            ndr.DWORD
 	SamDesired           ndr.DWORD
-	LpSecurityAttributes *structures.RPC_SECURITY_ATTRIBUTES `ndr:"unique"`
-	LpdwDisposition      *ndr.DWORD                          `ndr:"unique"`
+	LpSecurityAttributes *msrrp.RPC_SECURITY_ATTRIBUTES `ndr:"unique"`
+	LpdwDisposition      *ndr.DWORD                     `ndr:"unique"`
 }
 
 func (*baseRegCreateKeyRequest) Opnum() uint16 { return winreg.OpnumBaseRegCreateKey }
 
 // baseRegCreateKeyResponse carries the [out] parameters and return value of BaseRegCreateKey.
 type baseRegCreateKeyResponse struct {
-	PhkResult       structures.PRPC_HKEY
+	PhkResult       msrrp.PRPC_HKEY
 	LpdwDisposition *ndr.DWORD `ndr:"unique"`
 	Status          ndr.DWORD  `ndr:"retval"`
 }
 
 // BaseRegCreateKey calls BaseRegCreateKey (opnum 6) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegCreateKey(rpc ndr.Invoker, hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, lpClass structures.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD, lpSecurityAttributes *structures.RPC_SECURITY_ATTRIBUTES, lpdwDisposition *ndr.DWORD) (PhkResult structures.PRPC_HKEY, LpdwDisposition *ndr.DWORD, err error) {
+func BaseRegCreateKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, lpClass msrrp.RRP_UNICODE_STRING, dwOptions ndr.DWORD, samDesired ndr.DWORD, lpSecurityAttributes *msrrp.RPC_SECURITY_ATTRIBUTES, lpdwDisposition *ndr.DWORD) (PhkResult msrrp.PRPC_HKEY, LpdwDisposition *ndr.DWORD, err error) {
 	req := &baseRegCreateKeyRequest{
 		HKey:                 hKey,
 		LpSubKey:             lpSubKey,

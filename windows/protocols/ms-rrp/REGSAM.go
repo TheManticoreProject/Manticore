@@ -1,4 +1,4 @@
-package structures
+package msrrp
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"

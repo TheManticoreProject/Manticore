@@ -6,8 +6,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // This file holds the ergonomic, reg.exe-style helpers layered on top of the one-to-one
@@ -22,7 +22,7 @@ const maximumAllowed ndr.DWORD = 0x02000000
 
 // regName builds a NUL-terminated RRP_UNICODE_STRING for a key/value name. [MS-RRP] 3.1.1
 // counts the terminating NUL in the length, so it is appended explicitly.
-func regName(s string) structures.RRP_UNICODE_STRING {
+func regName(s string) msrrp.RRP_UNICODE_STRING {
 	return dtyp.NewUnicodeString(s + "\x00")
 }
 
@@ -162,8 +162,8 @@ func (r *RemoteRegistry) EnumKeys(h Handle) ([]string, error) {
 	bufLen := uint32(256)
 	const maxBufLen = uint32(16 * 1024)
 	for i := uint32(0); ; {
-		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
-		classIn := structures.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
+		nameIn := msrrp.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
+		classIn := msrrp.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
 		nameOut, _, _, err := r.BaseRegEnumKey(h, ndr.DWORD(i), nameIn, &classIn, nil)
 		if err != nil {
 			if isStatus(err, winreg.ErrorNoMoreItems) {
@@ -202,7 +202,7 @@ func (r *RemoteRegistry) EnumValues(h Handle) ([]ValueEntry, error) {
 	for i := uint32(0); ; {
 		// A registry value name fits in 1023 UTF-16 code units here; only the data buffer
 		// needs to grow, so the name buffer is fixed and the data buffer is negotiated.
-		nameIn := structures.RRP_UNICODE_STRING{MaximumLength: 2048, Buffer: make([]uint16, 1024)}
+		nameIn := msrrp.RRP_UNICODE_STRING{MaximumLength: 2048, Buffer: make([]uint16, 1024)}
 		typ := ndr.DWORD(0)
 		buf := make([]byte, dataLen)
 		cb := ndr.DWORD(dataLen)
@@ -258,7 +258,7 @@ func (r *RemoteRegistry) CreateKeyByPath(keyPath string, samDesired ndr.DWORD) (
 	}
 	defer r.BaseRegCloseKey(rootHandle)
 	disp := ndr.DWORD(0)
-	sk, rdisp, err := r.BaseRegCreateKey(rootHandle, regName(sub), structures.RRP_UNICODE_STRING{}, ndr.DWORD(winreg.RegOptionNonVolatile), samDesired, nil, &disp)
+	sk, rdisp, err := r.BaseRegCreateKey(rootHandle, regName(sub), msrrp.RRP_UNICODE_STRING{}, ndr.DWORD(winreg.RegOptionNonVolatile), samDesired, nil, &disp)
 	if err != nil {
 		return Handle{}, 0, err
 	}

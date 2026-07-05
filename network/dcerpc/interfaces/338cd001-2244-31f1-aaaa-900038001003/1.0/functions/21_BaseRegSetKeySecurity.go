@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegSetKeySecurityRequest carries the [in] parameters of BaseRegSetKeySecurity.
 type baseRegSetKeySecurityRequest struct {
-	HKey                   structures.RPC_HKEY
+	HKey                   msrrp.RPC_HKEY
 	SecurityInformation    ndr.DWORD
-	PRpcSecurityDescriptor structures.RPC_SECURITY_DESCRIPTOR
+	PRpcSecurityDescriptor msrrp.RPC_SECURITY_DESCRIPTOR
 }
 
 func (*baseRegSetKeySecurityRequest) Opnum() uint16 { return winreg.OpnumBaseRegSetKeySecurity }
@@ -24,7 +24,7 @@ type baseRegSetKeySecurityResponse struct {
 
 // BaseRegSetKeySecurity calls BaseRegSetKeySecurity (opnum 21) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegSetKeySecurity(rpc ndr.Invoker, hKey structures.RPC_HKEY, securityInformation ndr.DWORD, pRpcSecurityDescriptor structures.RPC_SECURITY_DESCRIPTOR) (err error) {
+func BaseRegSetKeySecurity(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, securityInformation ndr.DWORD, pRpcSecurityDescriptor msrrp.RPC_SECURITY_DESCRIPTOR) (err error) {
 	req := &baseRegSetKeySecurityRequest{
 		HKey:                   hKey,
 		SecurityInformation:    securityInformation,

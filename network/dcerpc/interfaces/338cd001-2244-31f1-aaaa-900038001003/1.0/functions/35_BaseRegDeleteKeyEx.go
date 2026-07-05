@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegDeleteKeyExRequest carries the [in] parameters of BaseRegDeleteKeyEx.
 type baseRegDeleteKeyExRequest struct {
-	HKey       structures.RPC_HKEY
-	LpSubKey   structures.RRP_UNICODE_STRING
+	HKey       msrrp.RPC_HKEY
+	LpSubKey   msrrp.RRP_UNICODE_STRING
 	AccessMask ndr.DWORD
 	Reserved   ndr.DWORD
 }
@@ -25,7 +25,7 @@ type baseRegDeleteKeyExResponse struct {
 
 // BaseRegDeleteKeyEx calls BaseRegDeleteKeyEx (opnum 35) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegDeleteKeyEx(rpc ndr.Invoker, hKey structures.RPC_HKEY, lpSubKey structures.RRP_UNICODE_STRING, accessMask ndr.DWORD, reserved ndr.DWORD) (err error) {
+func BaseRegDeleteKeyEx(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_UNICODE_STRING, accessMask ndr.DWORD, reserved ndr.DWORD) (err error) {
 	req := &baseRegDeleteKeyExRequest{
 		HKey:       hKey,
 		LpSubKey:   lpSubKey,

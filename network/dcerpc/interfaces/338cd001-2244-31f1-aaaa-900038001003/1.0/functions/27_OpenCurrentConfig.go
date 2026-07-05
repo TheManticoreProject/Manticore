@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // openCurrentConfigRequest carries the [in] parameters of OpenCurrentConfig.
@@ -18,13 +18,13 @@ func (*openCurrentConfigRequest) Opnum() uint16 { return winreg.OpnumOpenCurrent
 
 // openCurrentConfigResponse carries the [out] parameters and return value of OpenCurrentConfig.
 type openCurrentConfigResponse struct {
-	PhKey  structures.PRPC_HKEY
+	PhKey  msrrp.PRPC_HKEY
 	Status ndr.DWORD `ndr:"retval"`
 }
 
 // OpenCurrentConfig calls OpenCurrentConfig (opnum 27) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func OpenCurrentConfig(rpc ndr.Invoker, serverName *ndr.WSTR, samDesired ndr.DWORD) (PhKey structures.PRPC_HKEY, err error) {
+func OpenCurrentConfig(rpc ndr.Invoker, serverName *ndr.WSTR, samDesired ndr.DWORD) (PhKey msrrp.PRPC_HKEY, err error) {
 	req := &openCurrentConfigRequest{
 		ServerName: serverName,
 		SamDesired: samDesired,

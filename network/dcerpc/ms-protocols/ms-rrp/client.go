@@ -25,16 +25,16 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // Handle is an open registry key context handle returned by the Open*/BaseRegCreateKey/
 // BaseRegOpenKey methods. It aliases the interface's RPC_HKEY so it can be passed back to
 // any method without conversion.
-type Handle = structures.RPC_HKEY
+type Handle = msrrp.RPC_HKEY
 
 // ErrNotConnected is returned by methods invoked before a successful Connect.
 var ErrNotConnected = errors.New("ms_rrp: not connected; call Connect first")

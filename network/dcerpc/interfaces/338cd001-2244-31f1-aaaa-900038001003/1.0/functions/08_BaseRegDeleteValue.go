@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegDeleteValueRequest carries the [in] parameters of BaseRegDeleteValue.
 type baseRegDeleteValueRequest struct {
-	HKey        structures.RPC_HKEY
-	LpValueName structures.RRP_UNICODE_STRING
+	HKey        msrrp.RPC_HKEY
+	LpValueName msrrp.RRP_UNICODE_STRING
 }
 
 func (*baseRegDeleteValueRequest) Opnum() uint16 { return winreg.OpnumBaseRegDeleteValue }
@@ -23,7 +23,7 @@ type baseRegDeleteValueResponse struct {
 
 // BaseRegDeleteValue calls BaseRegDeleteValue (opnum 8) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegDeleteValue(rpc ndr.Invoker, hKey structures.RPC_HKEY, lpValueName structures.RRP_UNICODE_STRING) (err error) {
+func BaseRegDeleteValue(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpValueName msrrp.RRP_UNICODE_STRING) (err error) {
 	req := &baseRegDeleteValueRequest{
 		HKey:        hKey,
 		LpValueName: lpValueName,

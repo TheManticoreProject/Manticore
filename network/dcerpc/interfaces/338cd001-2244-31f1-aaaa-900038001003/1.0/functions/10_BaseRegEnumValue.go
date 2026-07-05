@@ -5,15 +5,15 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
 // baseRegEnumValueRequest carries the [in] parameters of BaseRegEnumValue.
 type baseRegEnumValueRequest struct {
-	HKey          structures.RPC_HKEY
+	HKey          msrrp.RPC_HKEY
 	DwIndex       ndr.DWORD
-	LpValueNameIn structures.RRP_UNICODE_STRING
+	LpValueNameIn msrrp.RRP_UNICODE_STRING
 	LpType        *ndr.DWORD `ndr:"unique"`
 	LpData        []uint8    `ndr:"unique,varying"`
 	LpcbData      *ndr.DWORD `ndr:"unique"`
@@ -34,7 +34,7 @@ type baseRegEnumValueResponse struct {
 
 // BaseRegEnumValue calls BaseRegEnumValue (opnum 10) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegEnumValue(rpc ndr.Invoker, hKey structures.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn structures.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (LpValueNameOut dtyp.RPC_UNICODE_STRING, LpType *ndr.DWORD, LpData []uint8, LpcbData *ndr.DWORD, LpcbLen *ndr.DWORD, err error) {
+func BaseRegEnumValue(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn msrrp.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (LpValueNameOut dtyp.RPC_UNICODE_STRING, LpType *ndr.DWORD, LpData []uint8, LpcbData *ndr.DWORD, LpcbLen *ndr.DWORD, err error) {
 	req := &baseRegEnumValueRequest{
 		HKey:          hKey,
 		DwIndex:       dwIndex,

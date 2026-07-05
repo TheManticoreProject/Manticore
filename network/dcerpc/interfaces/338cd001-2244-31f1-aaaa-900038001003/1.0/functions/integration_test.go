@@ -27,7 +27,7 @@ import (
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/structures"
+	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
@@ -38,7 +38,7 @@ import (
 
 // regName builds an RRP_UNICODE_STRING for a key/value name, including the terminating NUL
 // in the counted length as [MS-RRP] 3.1.1 requires.
-func regName(s string) structures.RRP_UNICODE_STRING { return dtyp.NewUnicodeString(s + "\x00") }
+func regName(s string) msrrp.RRP_UNICODE_STRING { return dtyp.NewUnicodeString(s + "\x00") }
 
 // isFault reports whether err is a DCE/RPC fault (a wire-modeling failure) rather than a
 // clean Win32 error returned by the server (which validates the wire).
@@ -137,8 +137,8 @@ func TestIntegration_Winreg(t *testing.T) {
 
 		// BaseRegEnumKey (opnum 9): exercises the [in] sized name buffer, the [out,unique]
 		// double-pointer class, and the [in,out,unique] FILETIME pointer.
-		nameIn := structures.RRP_UNICODE_STRING{Length: 0, MaximumLength: 512, Buffer: make([]uint16, 256)}
-		classIn := structures.RRP_UNICODE_STRING{Length: 0, MaximumLength: 512, Buffer: make([]uint16, 256)}
+		nameIn := msrrp.RRP_UNICODE_STRING{Length: 0, MaximumLength: 512, Buffer: make([]uint16, 256)}
+		classIn := msrrp.RRP_UNICODE_STRING{Length: 0, MaximumLength: 512, Buffer: make([]uint16, 256)}
 		if nameOut, _, _, err := functions.BaseRegEnumKey(rpc, hkey, 0, nameIn, &classIn, nil); err != nil {
 			if isFault(err) {
 				t.Errorf("[WIRE FAIL] BaseRegEnumKey: %v", err)

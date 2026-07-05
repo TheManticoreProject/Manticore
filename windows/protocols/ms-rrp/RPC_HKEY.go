@@ -1,4 +1,4 @@
-package structures
+package msrrp
 
 // RPC_HKEY is an RPC context handle ([MS-RRP] 2.2.3): a 4-byte attributes field followed
 // by a 16-byte GUID, 20 bytes total ([MS-RPCE] 2.3.2.2). It is the handle to an open
