@@ -5,22 +5,22 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrSetInformationAliasRequest carries the [in] alias handle, the information class, and
 // the [in, switch_is] alias info buffer (the discriminated union, transmitted inline).
 type samrSetInformationAliasRequest struct {
-	AliasHandle           structures.SAMPR_HANDLE
-	AliasInformationClass structures.ALIAS_INFORMATION_CLASS `ndr:"enum"`
-	Buffer                structures.SAMPR_ALIAS_INFO_BUFFER
+	AliasHandle           mssamr.SAMPR_HANDLE
+	AliasInformationClass mssamr.ALIAS_INFORMATION_CLASS `ndr:"enum"`
+	Buffer                mssamr.SAMPR_ALIAS_INFO_BUFFER
 }
 
 func (*samrSetInformationAliasRequest) Opnum() uint16 { return samr.OpnumSamrSetInformationAlias }
 
 // SamrSetInformationAlias calls SamrSetInformationAlias (opnum 29), updating attributes of
 // an alias for the supplied information class ([MS-SAMR] 3.1.5.6.4).
-func SamrSetInformationAlias(rpc ndr.Invoker, aliasHandle structures.SAMPR_HANDLE, aliasInformationClass structures.ALIAS_INFORMATION_CLASS, buffer structures.SAMPR_ALIAS_INFO_BUFFER) error {
+func SamrSetInformationAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, aliasInformationClass mssamr.ALIAS_INFORMATION_CLASS, buffer mssamr.SAMPR_ALIAS_INFO_BUFFER) error {
 	req := &samrSetInformationAliasRequest{
 		AliasHandle:           aliasHandle,
 		AliasInformationClass: aliasInformationClass,

@@ -5,14 +5,14 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrAccountIsDelegatedManagedServiceAccountRequest carries the [in] server handle and the
 // [ref] account name (inline) being tested.
 type samrAccountIsDelegatedManagedServiceAccountRequest struct {
-	ServerHandle structures.SAMPR_HANDLE
+	ServerHandle mssamr.SAMPR_HANDLE
 	AccountName  dtyp.RPC_UNICODE_STRING
 }
 
@@ -33,7 +33,7 @@ type samrAccountIsDelegatedManagedServiceAccountResponse struct {
 // SamrAccountIsDelegatedManagedServiceAccount (opnum 77), reporting whether the named account
 // is a delegated managed service account and whether the caller is authorized for it
 // ([MS-SAMR] 3.1.5.13.6).
-func SamrAccountIsDelegatedManagedServiceAccount(rpc ndr.Invoker, serverHandle structures.SAMPR_HANDLE, accountName dtyp.RPC_UNICODE_STRING) (bool, bool, error) {
+func SamrAccountIsDelegatedManagedServiceAccount(rpc ndr.Invoker, serverHandle mssamr.SAMPR_HANDLE, accountName dtyp.RPC_UNICODE_STRING) (bool, bool, error) {
 	req := &samrAccountIsDelegatedManagedServiceAccountRequest{
 		ServerHandle: serverHandle,
 		AccountName:  accountName,

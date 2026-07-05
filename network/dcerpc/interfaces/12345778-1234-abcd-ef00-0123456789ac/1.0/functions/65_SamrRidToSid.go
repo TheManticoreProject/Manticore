@@ -5,14 +5,14 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrRidToSidRequest carries the [in] parameters of SamrRidToSid: an object
 // handle for the domain context and the relative identifier to expand.
 type samrRidToSidRequest struct {
-	ObjectHandle structures.SAMPR_HANDLE
+	ObjectHandle mssamr.SAMPR_HANDLE
 	Rid          ndr.DWORD
 }
 
@@ -27,7 +27,7 @@ type samrRidToSidResponse struct {
 
 // SamrRidToSid calls SamrRidToSid (opnum 65), constructing the full SID for a RID
 // in the object's domain ([MS-SAMR] 3.1.5.11.2).
-func SamrRidToSid(rpc ndr.Invoker, handle structures.SAMPR_HANDLE, rid uint32) (*dtyp.RPC_SID, error) {
+func SamrRidToSid(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, rid uint32) (*dtyp.RPC_SID, error) {
 	req := &samrRidToSidRequest{
 		ObjectHandle: handle,
 		Rid:          ndr.DWORD(rid),

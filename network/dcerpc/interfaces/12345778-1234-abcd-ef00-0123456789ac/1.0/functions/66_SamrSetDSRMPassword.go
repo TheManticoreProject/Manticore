@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrSetDSRMPasswordRequest carries the [in] parameters. The handle_t binding
@@ -16,14 +16,14 @@ import (
 type samrSetDSRMPasswordRequest struct {
 	Unused                 *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
 	UserId                 ndr.DWORD
-	EncryptedNtOwfPassword *structures.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
+	EncryptedNtOwfPassword *mssamr.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
 }
 
 func (*samrSetDSRMPasswordRequest) Opnum() uint16 { return samr.OpnumSamrSetDSRMPassword }
 
 // SamrSetDSRMPassword calls SamrSetDSRMPassword (opnum 66), setting the local
 // Directory Services Restore Mode administrator password ([MS-SAMR] 3.1.5.13.7).
-func SamrSetDSRMPassword(rpc ndr.Invoker, userId uint32, encryptedNtOwfPassword *structures.ENCRYPTED_NT_OWF_PASSWORD) error {
+func SamrSetDSRMPassword(rpc ndr.Invoker, userId uint32, encryptedNtOwfPassword *mssamr.ENCRYPTED_NT_OWF_PASSWORD) error {
 	req := &samrSetDSRMPasswordRequest{
 		UserId:                 ndr.DWORD(userId),
 		EncryptedNtOwfPassword: encryptedNtOwfPassword,

@@ -5,8 +5,8 @@
 package functions
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // statusResponse is the reply shape for methods whose only output is the NTSTATUS return
@@ -18,14 +18,14 @@ type statusResponse struct {
 // handleResponse is the reply shape for the [in,out] SAMPR_HANDLE close/delete methods:
 // the (now zeroed) handle followed by the NTSTATUS.
 type handleResponse struct {
-	Handle structures.SAMPR_HANDLE
+	Handle mssamr.SAMPR_HANDLE
 	Status ndr.DWORD `ndr:"retval"`
 }
 
 // openHandleResponse is the reply shape for the Open*/Create* methods that return a fresh
 // [out] SAMPR_HANDLE plus the NTSTATUS.
 type openHandleResponse struct {
-	Handle structures.SAMPR_HANDLE
+	Handle mssamr.SAMPR_HANDLE
 	Status ndr.DWORD `ndr:"retval"`
 }
 

@@ -5,7 +5,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0/structures"
+	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
 // samrChangePasswordUserRequest carries the [in] user handle and the (mutually
@@ -13,24 +13,24 @@ import (
 // order. Each [in,unique] OWF pointer is optional; the *Present flags indicate which arms
 // are supplied.
 type samrChangePasswordUserRequest struct {
-	UserHandle               structures.SAMPR_HANDLE
+	UserHandle               mssamr.SAMPR_HANDLE
 	LmPresent                uint8
-	OldLmEncryptedWithNewLm  *structures.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
-	NewLmEncryptedWithOldLm  *structures.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
+	OldLmEncryptedWithNewLm  *mssamr.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
+	NewLmEncryptedWithOldLm  *mssamr.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
 	NtPresent                uint8
-	OldNtEncryptedWithNewNt  *structures.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
-	NewNtEncryptedWithOldNt  *structures.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
+	OldNtEncryptedWithNewNt  *mssamr.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
+	NewNtEncryptedWithOldNt  *mssamr.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
 	NtCrossEncryptionPresent uint8
-	NewNtEncryptedWithNewLm  *structures.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
+	NewNtEncryptedWithNewLm  *mssamr.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
 	LmCrossEncryptionPresent uint8
-	NewLmEncryptedWithNewNt  *structures.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
+	NewLmEncryptedWithNewNt  *mssamr.ENCRYPTED_LM_OWF_PASSWORD `ndr:"unique"`
 }
 
 func (*samrChangePasswordUserRequest) Opnum() uint16 { return samr.OpnumSamrChangePasswordUser }
 
 // SamrChangePasswordUser calls SamrChangePasswordUser (opnum 38), changing a user's password
 // given the old and new LM/NT OWFs cross-encrypted with one another ([MS-SAMR] 3.1.5.10.2).
-func SamrChangePasswordUser(rpc ndr.Invoker, userHandle structures.SAMPR_HANDLE, lmPresent uint8, oldLmEncryptedWithNewLm *structures.ENCRYPTED_LM_OWF_PASSWORD, newLmEncryptedWithOldLm *structures.ENCRYPTED_LM_OWF_PASSWORD, ntPresent uint8, oldNtEncryptedWithNewNt *structures.ENCRYPTED_NT_OWF_PASSWORD, newNtEncryptedWithOldNt *structures.ENCRYPTED_NT_OWF_PASSWORD, ntCrossEncryptionPresent uint8, newNtEncryptedWithNewLm *structures.ENCRYPTED_NT_OWF_PASSWORD, lmCrossEncryptionPresent uint8, newLmEncryptedWithNewNt *structures.ENCRYPTED_LM_OWF_PASSWORD) error {
+func SamrChangePasswordUser(rpc ndr.Invoker, userHandle mssamr.SAMPR_HANDLE, lmPresent uint8, oldLmEncryptedWithNewLm *mssamr.ENCRYPTED_LM_OWF_PASSWORD, newLmEncryptedWithOldLm *mssamr.ENCRYPTED_LM_OWF_PASSWORD, ntPresent uint8, oldNtEncryptedWithNewNt *mssamr.ENCRYPTED_NT_OWF_PASSWORD, newNtEncryptedWithOldNt *mssamr.ENCRYPTED_NT_OWF_PASSWORD, ntCrossEncryptionPresent uint8, newNtEncryptedWithNewLm *mssamr.ENCRYPTED_NT_OWF_PASSWORD, lmCrossEncryptionPresent uint8, newLmEncryptedWithNewNt *mssamr.ENCRYPTED_LM_OWF_PASSWORD) error {
 	req := &samrChangePasswordUserRequest{
 		UserHandle:               userHandle,
 		LmPresent:                lmPresent,
