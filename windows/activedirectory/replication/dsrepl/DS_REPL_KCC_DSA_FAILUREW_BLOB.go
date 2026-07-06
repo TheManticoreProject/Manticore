@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_kcc_dsa_failurew_blob_header_size is the size, in bytes, of the fixed
@@ -25,7 +25,7 @@ type DS_REPL_KCC_DSA_FAILUREW_BLOB struct {
 	// DsaObjGuid is the objectGUID of the object represented by DsaDN (uuidDsaObjGuid).
 	DsaObjGuid guid.GUID
 	// FirstFailure is the time the first failure occurred (ftimeFirstFailure).
-	FirstFailure data_structures.FILETIME
+	FirstFailure msdtyp.FILETIME
 	// NumFailures is the number of consecutive failures since the last success (cNumFailures).
 	NumFailures uint32
 	// LastResult is the error code associated with the most recent failure (dwLastResult).

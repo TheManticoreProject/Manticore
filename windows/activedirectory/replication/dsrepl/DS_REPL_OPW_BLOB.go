@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_opw_blob_header_size is the size, in bytes, of the fixed header that
@@ -30,7 +30,7 @@ const (
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/9bdde2d1-1f61-4829-bf73-3a45f85302a3
 type DS_REPL_OPW_BLOB struct {
 	// Enqueued is the time this operation was added to the queue (ftimeEnqueued).
-	Enqueued data_structures.FILETIME
+	Enqueued msdtyp.FILETIME
 	// SerialNumber is the identifier of the operation (ulSerialNumber).
 	SerialNumber uint32
 	// Priority is the priority value of this operation (ulPriority).

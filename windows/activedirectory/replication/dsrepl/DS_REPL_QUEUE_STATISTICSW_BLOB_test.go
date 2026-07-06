@@ -4,18 +4,18 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_QUEUE_STATISTICSW_BLOB_RoundTrip(t *testing.T) {
 	original := &dsrepl.DS_REPL_QUEUE_STATISTICSW_BLOB{
-		CurrentOpStarted: data_structures.FILETIME{DwLowDateTime: 1, DwHighDateTime: 0x01D00001},
+		CurrentOpStarted: msdtyp.FILETIME{DwLowDateTime: 1, DwHighDateTime: 0x01D00001},
 		NumPendingOps:    5,
-		OldestSync:       data_structures.FILETIME{DwLowDateTime: 2, DwHighDateTime: 0x01D00002},
-		OldestAdd:        data_structures.FILETIME{DwLowDateTime: 3, DwHighDateTime: 0x01D00003},
-		OldestMod:        data_structures.FILETIME{DwLowDateTime: 4, DwHighDateTime: 0x01D00004},
-		OldestDel:        data_structures.FILETIME{DwLowDateTime: 5, DwHighDateTime: 0x01D00005},
-		OldestUpdRefs:    data_structures.FILETIME{DwLowDateTime: 6, DwHighDateTime: 0x01D00006},
+		OldestSync:       msdtyp.FILETIME{DwLowDateTime: 2, DwHighDateTime: 0x01D00002},
+		OldestAdd:        msdtyp.FILETIME{DwLowDateTime: 3, DwHighDateTime: 0x01D00003},
+		OldestMod:        msdtyp.FILETIME{DwLowDateTime: 4, DwHighDateTime: 0x01D00004},
+		OldestDel:        msdtyp.FILETIME{DwLowDateTime: 5, DwHighDateTime: 0x01D00005},
+		OldestUpdRefs:    msdtyp.FILETIME{DwLowDateTime: 6, DwHighDateTime: 0x01D00006},
 	}
 
 	marshalled, err := original.Marshal()

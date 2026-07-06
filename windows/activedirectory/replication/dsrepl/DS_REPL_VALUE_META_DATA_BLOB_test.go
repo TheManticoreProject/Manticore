@@ -6,7 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
@@ -16,10 +16,10 @@ func TestDS_REPL_VALUE_META_DATA_BLOB_RoundTrip(t *testing.T) {
 		AttributeName:                  strptr("member"),
 		ObjectDn:                       strptr("CN=Group,DC=example,DC=com"),
 		Data:                           []byte{0x01, 0x02, 0x03, 0x04, 0x05},
-		Deleted:                        data_structures.FILETIME{DwLowDateTime: 0, DwHighDateTime: 0},
-		Created:                        data_structures.FILETIME{DwLowDateTime: 0xAAAA, DwHighDateTime: 0x01D00001},
+		Deleted:                        msdtyp.FILETIME{DwLowDateTime: 0, DwHighDateTime: 0},
+		Created:                        msdtyp.FILETIME{DwLowDateTime: 0xAAAA, DwHighDateTime: 0x01D00001},
 		Version:                        2,
-		LastOriginatingChange:          data_structures.FILETIME{DwLowDateTime: 0xBBBB, DwHighDateTime: 0x01D00002},
+		LastOriginatingChange:          msdtyp.FILETIME{DwLowDateTime: 0xBBBB, DwHighDateTime: 0x01D00002},
 		LastOriginatingDsaInvocationID: *g,
 		OriginatingChange:              111,
 		LocalChange:                    222,

@@ -1,20 +1,25 @@
 package types
 
 import (
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_types"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
-type UCHAR = data_types.UCHAR
-type USHORT = data_types.USHORT
-type ULONG = data_types.ULONG
+type UCHAR = msdtyp.UCHAR
+type USHORT = msdtyp.USHORT
+type ULONG = msdtyp.ULONG
 
-type CHAR = data_types.CHAR
-type SHORT = data_types.SHORT
-type LONG = data_types.LONG
+type CHAR = msdtyp.CHAR
+type SHORT = msdtyp.SHORT
+type LONG = msdtyp.LONG
 
-type DWORD = data_types.DWORD
+type DWORD = msdtyp.DWORD
 
-type LARGE_INTEGER = data_structures.LARGE_INTEGER
+// LARGE_INTEGER is SMB's fixed-layout 64-bit value, kept as a struct{QuadPart} local to
+// the SMB types package. The shared msdtyp.LARGE_INTEGER is the NDR-oriented named scalar
+// (int64); SMB marshals the QuadPart field directly into its little-endian wire buffers,
+// so it keeps the struct form here.
+type LARGE_INTEGER struct {
+	QuadPart uint64
+}
 
-type FILETIME = data_structures.FILETIME
+type FILETIME = msdtyp.FILETIME

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_value_meta_data_blob_header_size is the size, in bytes, of the fixed
@@ -27,13 +27,13 @@ type DS_REPL_VALUE_META_DATA_BLOB struct {
 	// Data is the attribute replication metadata buffer (cbData / pbData).
 	Data []byte
 	// Deleted is the timeDeleted of the LinkValueStamp (ftimeDeleted).
-	Deleted data_structures.FILETIME
+	Deleted msdtyp.FILETIME
 	// Created is the timeCreated of the LinkValueStamp (ftimeCreated).
-	Created data_structures.FILETIME
+	Created msdtyp.FILETIME
 	// Version is the dwVersion of the LinkValueStamp (dwVersion).
 	Version uint32
 	// LastOriginatingChange is the timeChanged of the LinkValueStamp (ftimeLastOriginatingChange).
-	LastOriginatingChange data_structures.FILETIME
+	LastOriginatingChange msdtyp.FILETIME
 	// LastOriginatingDsaInvocationID is the uuidOriginating of the LinkValueStamp (uuidLastOriginatingDsaInvocationID).
 	LastOriginatingDsaInvocationID guid.GUID
 	// OriginatingChange is the usnOriginating of the LinkValueStamp (usnOriginatingChange).
