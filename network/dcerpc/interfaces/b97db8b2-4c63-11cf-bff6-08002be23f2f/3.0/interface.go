@@ -175,7 +175,7 @@ const (
 	OpnumApiExecuteReadBatch                       uint16 = 145
 	OpnumApiRestartResource                        uint16 = 146
 	OpnumApiGetNotifyAsync                         uint16 = 147
-	OpnumOpnum149otUsedOnWire                      uint16 = 149
+	Opnum149NotUsedOnWire                          uint16 = 149
 	OpnumApiAddNotifyResourceTypeV2                uint16 = 155
 	OpnumApiExecuteReadBatchEx                     uint16 = 157
 	OpnumApiCreateGroupSet                         uint16 = 163
@@ -200,84 +200,84 @@ const (
 	OpnumApiAddGroupToGroupSetEx                   uint16 = 183
 	OpnumApiChangeResourceGroupEx                  uint16 = 184
 	OpnumApiClusterNativeUpdateControl             uint16 = 185
-	OpnumOpnum186Reserved                          uint16 = 186
-	OpnumOpnum187Reserved                          uint16 = 187
-	OpnumOpnum188Reserved                          uint16 = 188
-	OpnumOpnum189Reserved                          uint16 = 189
-	OpnumOpnum190Reserved                          uint16 = 190
-	OpnumOpnum191Reserved                          uint16 = 191
-	OpnumOpnum192Reserved                          uint16 = 192
-	OpnumOpnum193Reserved                          uint16 = 193
-	OpnumOpnum194Reserved                          uint16 = 194
-	OpnumOpnum195Reserved                          uint16 = 195
-	OpnumOpnum196Reserved                          uint16 = 196
-	OpnumOpnum197Reserved                          uint16 = 197
-	OpnumOpnum198Reserved                          uint16 = 198
-	OpnumOpnum199Reserved                          uint16 = 199
-	OpnumOpnum200Reserved                          uint16 = 200
-	OpnumOpnum201Reserved                          uint16 = 201
-	OpnumOpnum202Reserved                          uint16 = 202
-	OpnumOpnum203Reserved                          uint16 = 203
-	OpnumOpnum204Reserved                          uint16 = 204
-	OpnumOpnum205Reserved                          uint16 = 205
-	OpnumOpnum206Reserved                          uint16 = 206
-	OpnumOpnum207Reserved                          uint16 = 207
-	OpnumOpnum208Reserved                          uint16 = 208
-	OpnumOpnum209Reserved                          uint16 = 209
-	OpnumOpnum210Reserved                          uint16 = 210
-	OpnumOpnum211Reserved                          uint16 = 211
-	OpnumOpnum212Reserved                          uint16 = 212
-	OpnumOpnum213Reserved                          uint16 = 213
-	OpnumOpnum214Reserved                          uint16 = 214
-	OpnumOpnum215Reserved                          uint16 = 215
-	OpnumOpnum216Reserved                          uint16 = 216
-	OpnumOpnum217Reserved                          uint16 = 217
-	OpnumOpnum218Reserved                          uint16 = 218
-	OpnumOpnum219Reserved                          uint16 = 219
-	OpnumOpnum220Reserved                          uint16 = 220
-	OpnumOpnum221Reserved                          uint16 = 221
-	OpnumOpnum222Reserved                          uint16 = 222
-	OpnumOpnum223Reserved                          uint16 = 223
-	OpnumOpnum224Reserved                          uint16 = 224
-	OpnumOpnum225Reserved                          uint16 = 225
-	OpnumOpnum226Reserved                          uint16 = 226
-	OpnumOpnum227Reserved                          uint16 = 227
-	OpnumOpnum228Reserved                          uint16 = 228
-	OpnumOpnum229Reserved                          uint16 = 229
-	OpnumOpnum230Reserved                          uint16 = 230
-	OpnumOpnum231Reserved                          uint16 = 231
-	OpnumOpnum232Reserved                          uint16 = 232
-	OpnumOpnum233Reserved                          uint16 = 233
-	OpnumOpnum234Reserved                          uint16 = 234
-	OpnumOpnum235Reserved                          uint16 = 235
-	OpnumOpnum236Reserved                          uint16 = 236
-	OpnumOpnum237Reserved                          uint16 = 237
-	OpnumOpnum238Reserved                          uint16 = 238
-	OpnumOpnum239Reserved                          uint16 = 239
-	OpnumOpnum240Reserved                          uint16 = 240
-	OpnumOpnum241Reserved                          uint16 = 241
-	OpnumOpnum242Reserved                          uint16 = 242
-	OpnumOpnum243Reserved                          uint16 = 243
-	OpnumOpnum244Reserved                          uint16 = 244
-	OpnumOpnum245Reserved                          uint16 = 245
-	OpnumOpnum246Reserved                          uint16 = 246
-	OpnumOpnum247Reserved                          uint16 = 247
-	OpnumOpnum248Reserved                          uint16 = 248
-	OpnumOpnum249Reserved                          uint16 = 249
-	OpnumOpnum250Reserved                          uint16 = 250
-	OpnumOpnum251Reserved                          uint16 = 251
-	OpnumOpnum252Reserved                          uint16 = 252
-	OpnumOpnum253Reserved                          uint16 = 253
-	OpnumOpnum254Reserved                          uint16 = 254
-	OpnumOpnum255Reserved                          uint16 = 255
-	OpnumOpnum256Reserved                          uint16 = 256
-	OpnumOpnum257Reserved                          uint16 = 257
-	OpnumOpnum258Reserved                          uint16 = 258
-	OpnumOpnum259Reserved                          uint16 = 259
-	OpnumOpnum260Reserved                          uint16 = 260
-	OpnumOpnum261Reserved                          uint16 = 261
-	OpnumOpnum262Reserved                          uint16 = 262
-	OpnumOpnum263Reserved                          uint16 = 263
+	Opnum186Reserved                               uint16 = 186
+	Opnum187Reserved                               uint16 = 187
+	Opnum188Reserved                               uint16 = 188
+	Opnum189Reserved                               uint16 = 189
+	Opnum190Reserved                               uint16 = 190
+	Opnum191Reserved                               uint16 = 191
+	Opnum192Reserved                               uint16 = 192
+	Opnum193Reserved                               uint16 = 193
+	Opnum194Reserved                               uint16 = 194
+	Opnum195Reserved                               uint16 = 195
+	Opnum196Reserved                               uint16 = 196
+	Opnum197Reserved                               uint16 = 197
+	Opnum198Reserved                               uint16 = 198
+	Opnum199Reserved                               uint16 = 199
+	Opnum200Reserved                               uint16 = 200
+	Opnum201Reserved                               uint16 = 201
+	Opnum202Reserved                               uint16 = 202
+	Opnum203Reserved                               uint16 = 203
+	Opnum204Reserved                               uint16 = 204
+	Opnum205Reserved                               uint16 = 205
+	Opnum206Reserved                               uint16 = 206
+	Opnum207Reserved                               uint16 = 207
+	Opnum208Reserved                               uint16 = 208
+	Opnum209Reserved                               uint16 = 209
+	Opnum210Reserved                               uint16 = 210
+	Opnum211Reserved                               uint16 = 211
+	Opnum212Reserved                               uint16 = 212
+	Opnum213Reserved                               uint16 = 213
+	Opnum214Reserved                               uint16 = 214
+	Opnum215Reserved                               uint16 = 215
+	Opnum216Reserved                               uint16 = 216
+	Opnum217Reserved                               uint16 = 217
+	Opnum218Reserved                               uint16 = 218
+	Opnum219Reserved                               uint16 = 219
+	Opnum220Reserved                               uint16 = 220
+	Opnum221Reserved                               uint16 = 221
+	Opnum222Reserved                               uint16 = 222
+	Opnum223Reserved                               uint16 = 223
+	Opnum224Reserved                               uint16 = 224
+	Opnum225Reserved                               uint16 = 225
+	Opnum226Reserved                               uint16 = 226
+	Opnum227Reserved                               uint16 = 227
+	Opnum228Reserved                               uint16 = 228
+	Opnum229Reserved                               uint16 = 229
+	Opnum230Reserved                               uint16 = 230
+	Opnum231Reserved                               uint16 = 231
+	Opnum232Reserved                               uint16 = 232
+	Opnum233Reserved                               uint16 = 233
+	Opnum234Reserved                               uint16 = 234
+	Opnum235Reserved                               uint16 = 235
+	Opnum236Reserved                               uint16 = 236
+	Opnum237Reserved                               uint16 = 237
+	Opnum238Reserved                               uint16 = 238
+	Opnum239Reserved                               uint16 = 239
+	Opnum240Reserved                               uint16 = 240
+	Opnum241Reserved                               uint16 = 241
+	Opnum242Reserved                               uint16 = 242
+	Opnum243Reserved                               uint16 = 243
+	Opnum244Reserved                               uint16 = 244
+	Opnum245Reserved                               uint16 = 245
+	Opnum246Reserved                               uint16 = 246
+	Opnum247Reserved                               uint16 = 247
+	Opnum248Reserved                               uint16 = 248
+	Opnum249Reserved                               uint16 = 249
+	Opnum250Reserved                               uint16 = 250
+	Opnum251Reserved                               uint16 = 251
+	Opnum252Reserved                               uint16 = 252
+	Opnum253Reserved                               uint16 = 253
+	Opnum254Reserved                               uint16 = 254
+	Opnum255Reserved                               uint16 = 255
+	Opnum256Reserved                               uint16 = 256
+	Opnum257Reserved                               uint16 = 257
+	Opnum258Reserved                               uint16 = 258
+	Opnum259Reserved                               uint16 = 259
+	Opnum260Reserved                               uint16 = 260
+	Opnum261Reserved                               uint16 = 261
+	Opnum262Reserved                               uint16 = 262
+	Opnum263Reserved                               uint16 = 263
 )
 
 // Status codes ([MS-CMRP] uses Win32 error codes from [MS-ERREF] 2.2).
@@ -658,7 +658,7 @@ var OpnumToName = map[uint16]string{
 	OpnumApiExecuteReadBatch:                       "ApiExecuteReadBatch",
 	OpnumApiRestartResource:                        "ApiRestartResource",
 	OpnumApiGetNotifyAsync:                         "ApiGetNotifyAsync",
-	OpnumOpnum149otUsedOnWire:                      "Opnum149otUsedOnWire",
+	Opnum149NotUsedOnWire:                          "Opnum149NotUsedOnWire",
 	OpnumApiAddNotifyResourceTypeV2:                "ApiAddNotifyResourceTypeV2",
 	OpnumApiExecuteReadBatchEx:                     "ApiExecuteReadBatchEx",
 	OpnumApiCreateGroupSet:                         "ApiCreateGroupSet",
@@ -683,84 +683,84 @@ var OpnumToName = map[uint16]string{
 	OpnumApiAddGroupToGroupSetEx:                   "ApiAddGroupToGroupSetEx",
 	OpnumApiChangeResourceGroupEx:                  "ApiChangeResourceGroupEx",
 	OpnumApiClusterNativeUpdateControl:             "ApiClusterNativeUpdateControl",
-	OpnumOpnum186Reserved:                          "Opnum186Reserved",
-	OpnumOpnum187Reserved:                          "Opnum187Reserved",
-	OpnumOpnum188Reserved:                          "Opnum188Reserved",
-	OpnumOpnum189Reserved:                          "Opnum189Reserved",
-	OpnumOpnum190Reserved:                          "Opnum190Reserved",
-	OpnumOpnum191Reserved:                          "Opnum191Reserved",
-	OpnumOpnum192Reserved:                          "Opnum192Reserved",
-	OpnumOpnum193Reserved:                          "Opnum193Reserved",
-	OpnumOpnum194Reserved:                          "Opnum194Reserved",
-	OpnumOpnum195Reserved:                          "Opnum195Reserved",
-	OpnumOpnum196Reserved:                          "Opnum196Reserved",
-	OpnumOpnum197Reserved:                          "Opnum197Reserved",
-	OpnumOpnum198Reserved:                          "Opnum198Reserved",
-	OpnumOpnum199Reserved:                          "Opnum199Reserved",
-	OpnumOpnum200Reserved:                          "Opnum200Reserved",
-	OpnumOpnum201Reserved:                          "Opnum201Reserved",
-	OpnumOpnum202Reserved:                          "Opnum202Reserved",
-	OpnumOpnum203Reserved:                          "Opnum203Reserved",
-	OpnumOpnum204Reserved:                          "Opnum204Reserved",
-	OpnumOpnum205Reserved:                          "Opnum205Reserved",
-	OpnumOpnum206Reserved:                          "Opnum206Reserved",
-	OpnumOpnum207Reserved:                          "Opnum207Reserved",
-	OpnumOpnum208Reserved:                          "Opnum208Reserved",
-	OpnumOpnum209Reserved:                          "Opnum209Reserved",
-	OpnumOpnum210Reserved:                          "Opnum210Reserved",
-	OpnumOpnum211Reserved:                          "Opnum211Reserved",
-	OpnumOpnum212Reserved:                          "Opnum212Reserved",
-	OpnumOpnum213Reserved:                          "Opnum213Reserved",
-	OpnumOpnum214Reserved:                          "Opnum214Reserved",
-	OpnumOpnum215Reserved:                          "Opnum215Reserved",
-	OpnumOpnum216Reserved:                          "Opnum216Reserved",
-	OpnumOpnum217Reserved:                          "Opnum217Reserved",
-	OpnumOpnum218Reserved:                          "Opnum218Reserved",
-	OpnumOpnum219Reserved:                          "Opnum219Reserved",
-	OpnumOpnum220Reserved:                          "Opnum220Reserved",
-	OpnumOpnum221Reserved:                          "Opnum221Reserved",
-	OpnumOpnum222Reserved:                          "Opnum222Reserved",
-	OpnumOpnum223Reserved:                          "Opnum223Reserved",
-	OpnumOpnum224Reserved:                          "Opnum224Reserved",
-	OpnumOpnum225Reserved:                          "Opnum225Reserved",
-	OpnumOpnum226Reserved:                          "Opnum226Reserved",
-	OpnumOpnum227Reserved:                          "Opnum227Reserved",
-	OpnumOpnum228Reserved:                          "Opnum228Reserved",
-	OpnumOpnum229Reserved:                          "Opnum229Reserved",
-	OpnumOpnum230Reserved:                          "Opnum230Reserved",
-	OpnumOpnum231Reserved:                          "Opnum231Reserved",
-	OpnumOpnum232Reserved:                          "Opnum232Reserved",
-	OpnumOpnum233Reserved:                          "Opnum233Reserved",
-	OpnumOpnum234Reserved:                          "Opnum234Reserved",
-	OpnumOpnum235Reserved:                          "Opnum235Reserved",
-	OpnumOpnum236Reserved:                          "Opnum236Reserved",
-	OpnumOpnum237Reserved:                          "Opnum237Reserved",
-	OpnumOpnum238Reserved:                          "Opnum238Reserved",
-	OpnumOpnum239Reserved:                          "Opnum239Reserved",
-	OpnumOpnum240Reserved:                          "Opnum240Reserved",
-	OpnumOpnum241Reserved:                          "Opnum241Reserved",
-	OpnumOpnum242Reserved:                          "Opnum242Reserved",
-	OpnumOpnum243Reserved:                          "Opnum243Reserved",
-	OpnumOpnum244Reserved:                          "Opnum244Reserved",
-	OpnumOpnum245Reserved:                          "Opnum245Reserved",
-	OpnumOpnum246Reserved:                          "Opnum246Reserved",
-	OpnumOpnum247Reserved:                          "Opnum247Reserved",
-	OpnumOpnum248Reserved:                          "Opnum248Reserved",
-	OpnumOpnum249Reserved:                          "Opnum249Reserved",
-	OpnumOpnum250Reserved:                          "Opnum250Reserved",
-	OpnumOpnum251Reserved:                          "Opnum251Reserved",
-	OpnumOpnum252Reserved:                          "Opnum252Reserved",
-	OpnumOpnum253Reserved:                          "Opnum253Reserved",
-	OpnumOpnum254Reserved:                          "Opnum254Reserved",
-	OpnumOpnum255Reserved:                          "Opnum255Reserved",
-	OpnumOpnum256Reserved:                          "Opnum256Reserved",
-	OpnumOpnum257Reserved:                          "Opnum257Reserved",
-	OpnumOpnum258Reserved:                          "Opnum258Reserved",
-	OpnumOpnum259Reserved:                          "Opnum259Reserved",
-	OpnumOpnum260Reserved:                          "Opnum260Reserved",
-	OpnumOpnum261Reserved:                          "Opnum261Reserved",
-	OpnumOpnum262Reserved:                          "Opnum262Reserved",
-	OpnumOpnum263Reserved:                          "Opnum263Reserved",
+	Opnum186Reserved:                               "Opnum186Reserved",
+	Opnum187Reserved:                               "Opnum187Reserved",
+	Opnum188Reserved:                               "Opnum188Reserved",
+	Opnum189Reserved:                               "Opnum189Reserved",
+	Opnum190Reserved:                               "Opnum190Reserved",
+	Opnum191Reserved:                               "Opnum191Reserved",
+	Opnum192Reserved:                               "Opnum192Reserved",
+	Opnum193Reserved:                               "Opnum193Reserved",
+	Opnum194Reserved:                               "Opnum194Reserved",
+	Opnum195Reserved:                               "Opnum195Reserved",
+	Opnum196Reserved:                               "Opnum196Reserved",
+	Opnum197Reserved:                               "Opnum197Reserved",
+	Opnum198Reserved:                               "Opnum198Reserved",
+	Opnum199Reserved:                               "Opnum199Reserved",
+	Opnum200Reserved:                               "Opnum200Reserved",
+	Opnum201Reserved:                               "Opnum201Reserved",
+	Opnum202Reserved:                               "Opnum202Reserved",
+	Opnum203Reserved:                               "Opnum203Reserved",
+	Opnum204Reserved:                               "Opnum204Reserved",
+	Opnum205Reserved:                               "Opnum205Reserved",
+	Opnum206Reserved:                               "Opnum206Reserved",
+	Opnum207Reserved:                               "Opnum207Reserved",
+	Opnum208Reserved:                               "Opnum208Reserved",
+	Opnum209Reserved:                               "Opnum209Reserved",
+	Opnum210Reserved:                               "Opnum210Reserved",
+	Opnum211Reserved:                               "Opnum211Reserved",
+	Opnum212Reserved:                               "Opnum212Reserved",
+	Opnum213Reserved:                               "Opnum213Reserved",
+	Opnum214Reserved:                               "Opnum214Reserved",
+	Opnum215Reserved:                               "Opnum215Reserved",
+	Opnum216Reserved:                               "Opnum216Reserved",
+	Opnum217Reserved:                               "Opnum217Reserved",
+	Opnum218Reserved:                               "Opnum218Reserved",
+	Opnum219Reserved:                               "Opnum219Reserved",
+	Opnum220Reserved:                               "Opnum220Reserved",
+	Opnum221Reserved:                               "Opnum221Reserved",
+	Opnum222Reserved:                               "Opnum222Reserved",
+	Opnum223Reserved:                               "Opnum223Reserved",
+	Opnum224Reserved:                               "Opnum224Reserved",
+	Opnum225Reserved:                               "Opnum225Reserved",
+	Opnum226Reserved:                               "Opnum226Reserved",
+	Opnum227Reserved:                               "Opnum227Reserved",
+	Opnum228Reserved:                               "Opnum228Reserved",
+	Opnum229Reserved:                               "Opnum229Reserved",
+	Opnum230Reserved:                               "Opnum230Reserved",
+	Opnum231Reserved:                               "Opnum231Reserved",
+	Opnum232Reserved:                               "Opnum232Reserved",
+	Opnum233Reserved:                               "Opnum233Reserved",
+	Opnum234Reserved:                               "Opnum234Reserved",
+	Opnum235Reserved:                               "Opnum235Reserved",
+	Opnum236Reserved:                               "Opnum236Reserved",
+	Opnum237Reserved:                               "Opnum237Reserved",
+	Opnum238Reserved:                               "Opnum238Reserved",
+	Opnum239Reserved:                               "Opnum239Reserved",
+	Opnum240Reserved:                               "Opnum240Reserved",
+	Opnum241Reserved:                               "Opnum241Reserved",
+	Opnum242Reserved:                               "Opnum242Reserved",
+	Opnum243Reserved:                               "Opnum243Reserved",
+	Opnum244Reserved:                               "Opnum244Reserved",
+	Opnum245Reserved:                               "Opnum245Reserved",
+	Opnum246Reserved:                               "Opnum246Reserved",
+	Opnum247Reserved:                               "Opnum247Reserved",
+	Opnum248Reserved:                               "Opnum248Reserved",
+	Opnum249Reserved:                               "Opnum249Reserved",
+	Opnum250Reserved:                               "Opnum250Reserved",
+	Opnum251Reserved:                               "Opnum251Reserved",
+	Opnum252Reserved:                               "Opnum252Reserved",
+	Opnum253Reserved:                               "Opnum253Reserved",
+	Opnum254Reserved:                               "Opnum254Reserved",
+	Opnum255Reserved:                               "Opnum255Reserved",
+	Opnum256Reserved:                               "Opnum256Reserved",
+	Opnum257Reserved:                               "Opnum257Reserved",
+	Opnum258Reserved:                               "Opnum258Reserved",
+	Opnum259Reserved:                               "Opnum259Reserved",
+	Opnum260Reserved:                               "Opnum260Reserved",
+	Opnum261Reserved:                               "Opnum261Reserved",
+	Opnum262Reserved:                               "Opnum262Reserved",
+	Opnum263Reserved:                               "Opnum263Reserved",
 }
 
 // NameToOpnum is the reverse of OpnumToName, built at init so the two never drift.
