@@ -1,0 +1,11 @@
+package msrrasm
+
+// TCP_RTO_ALGORITHM is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-RRASM]).
+type TCP_RTO_ALGORITHM uint16
+
+const (
+	MIB_TCP_RTO_OTHER    TCP_RTO_ALGORITHM = 1
+	MIB_TCP_RTO_CONSTANT TCP_RTO_ALGORITHM = 2
+	MIB_TCP_RTO_RSRE     TCP_RTO_ALGORITHM = 3
+	MIB_TCP_RTO_VANJ     TCP_RTO_ALGORITHM = 4
+)

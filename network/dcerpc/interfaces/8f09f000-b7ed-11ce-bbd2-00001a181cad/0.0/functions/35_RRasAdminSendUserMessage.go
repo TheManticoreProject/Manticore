@@ -1,0 +1,39 @@
+package functions
+
+import (
+	"fmt"
+
+	dimsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/8f09f000-b7ed-11ce-bbd2-00001a181cad/0.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// rRasAdminSendUserMessageRequest carries the [in] parameters of RRasAdminSendUserMessage.
+type rRasAdminSendUserMessageRequest struct {
+	HDimConnection ndr.DWORD
+	LpwszMessage   ndr.WSTR
+}
+
+func (*rRasAdminSendUserMessageRequest) Opnum() uint16 { return dimsvc.OpnumRRasAdminSendUserMessage }
+
+// rRasAdminSendUserMessageResponse carries the [out] parameters and return value of RRasAdminSendUserMessage.
+type rRasAdminSendUserMessageResponse struct {
+	Status ndr.DWORD `ndr:"retval"`
+}
+
+// RRasAdminSendUserMessage calls RRasAdminSendUserMessage (opnum 35) ([MS-RRASM] — verify the parameter
+// modeling and status handling).
+func RRasAdminSendUserMessage(rpc ndr.Invoker, hDimConnection ndr.DWORD, lpwszMessage ndr.WSTR) (err error) {
+	req := &rRasAdminSendUserMessageRequest{
+		HDimConnection: hDimConnection,
+		LpwszMessage:   lpwszMessage,
+	}
+	var resp rRasAdminSendUserMessageResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RRasAdminSendUserMessage: %w", err)
+		return
+	}
+	if uint32(resp.Status) != dimsvc.StatusSuccess {
+		err = fmt.Errorf("RRasAdminSendUserMessage failed: %s", dimsvc.StatusString(uint32(resp.Status)))
+	}
+	return
+}
