@@ -6,6 +6,11 @@
 // filled in from [MS-DLTW] 2.1 and 3.1.4.1.
 package rpcinterface_300f353238cc11d0a3f00020af6b0add_1_2
 
+// IDL source: [MS-DLTW] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dltw/e415dc67-3969-45c8-ba63-731e78870dfc
+// A fetched copy is kept at ms-dltw.idl in the interface directory.
+
 import (
 	"fmt"
 

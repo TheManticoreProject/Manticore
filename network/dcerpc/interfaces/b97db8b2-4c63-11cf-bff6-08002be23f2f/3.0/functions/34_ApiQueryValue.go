@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-CMRP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cmrp/e12b6d8f-c410-49d7-a27d-9992782a9027
+// A fetched copy is kept at ms-cmrp.idl in the interface directory.
+
 import (
 	"fmt"
 

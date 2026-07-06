@@ -7,6 +7,11 @@
 // structures package (the NDR types); neither depends on this one.
 package functions
 
+// IDL source: [MS-LSAD] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/d86ca799-b122-4fb6-bfa0-5c99dd862b11
+// A fetched copy is kept at ms-lsad.idl in the interface directory.
+
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"

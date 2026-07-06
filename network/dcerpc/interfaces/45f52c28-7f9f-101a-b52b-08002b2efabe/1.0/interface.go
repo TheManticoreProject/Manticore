@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_45f52c287f9f101ab52b08002b2efabe_1_0
 
+// IDL source: [MS-RAIW] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-raiw/e59461f5-5486-4ec3-9ad6-14b784c1ecd6
+// A fetched copy is kept at ms-raiw.idl in the interface directory.
+
 import (
 	"fmt"
 

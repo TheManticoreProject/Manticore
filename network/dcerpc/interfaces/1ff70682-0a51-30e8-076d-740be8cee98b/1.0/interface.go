@@ -6,6 +6,11 @@
 // the IDL and were filled in and verified by hand ([MS-TSCH] 2.1, 3.2.5).
 package rpcinterface_1ff706820a5130e8076d740be8cee98b_1_0
 
+// IDL source: [MS-TSCH] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tsch/6fc1f51a-26ec-43fa-a8bd-1c364657f110
+// A fetched copy is kept at ms-tsch.idl in the interface directory.
+
 import (
 	"fmt"
 

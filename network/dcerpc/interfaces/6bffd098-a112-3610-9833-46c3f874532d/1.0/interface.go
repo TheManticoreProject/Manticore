@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_6bffd098a1123610983346c3f874532d_1_0
 
+// IDL source: [MS-DHCPM] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dhcpm/d1932d08-3249-44cb-90f1-8661f8fb5b90
+// A fetched copy is kept at ms-dhcpm.idl in the interface directory.
+
 import (
 	"fmt"
 

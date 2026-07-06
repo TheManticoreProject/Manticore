@@ -9,6 +9,11 @@
 // never the reverse.
 package rpcinterface_6bffd098a11236109833012892020162_0_0
 
+// IDL source: [MS-BRWSA] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-brwsa/c20c5c21-d285-4e98-8480-36922da69adf
+// A fetched copy is kept at ms-brwsa.idl in the interface directory.
+
 import (
 	"fmt"
 

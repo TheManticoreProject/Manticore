@@ -4,6 +4,11 @@
 // by more than one method.
 package functions
 
+// IDL source: [MS-FRS1] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-frs1/dd60a0d9-176a-46f4-9904-000172041b92
+// A fetched copy is kept at ms-frs1.idl in the interface directory.
+
 import "github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 // statusResponse is the response stub for methods whose only [out] value is the returned

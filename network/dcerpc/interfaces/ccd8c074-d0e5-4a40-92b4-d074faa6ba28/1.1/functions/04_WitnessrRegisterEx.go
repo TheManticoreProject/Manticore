@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-SWN] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-swn/ccebaef8-60b0-4847-9ed7-2519d2b6ef19
+// A fetched copy is kept at ms-swn.idl in the interface directory.
+
 import (
 	"fmt"
 

@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-BPAU] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-bpau/723a0a96-2855-402f-a7d5-d97703edb353
+// A fetched copy is kept at ms-bpau.idl in the interface directory.
+
 import (
 	"fmt"
 

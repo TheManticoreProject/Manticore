@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_367abb81984435f1ad3298f038001003_2_0
 
+// IDL source: [MS-SCMR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-scmr/19168537-40b5-4d7a-99e0-d77f0f5e0241
+// A fetched copy is kept at ms-scmr.idl in the interface directory.
+
 import (
 	"fmt"
 

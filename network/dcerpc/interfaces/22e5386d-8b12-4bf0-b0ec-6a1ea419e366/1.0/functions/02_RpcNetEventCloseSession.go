@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-LREC] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lrec/38d3f038-84ba-49ea-8828-3249ff2b5f9a
+// A fetched copy is kept at ms-lrec.idl in the interface directory.
+
 import (
 	"fmt"
 

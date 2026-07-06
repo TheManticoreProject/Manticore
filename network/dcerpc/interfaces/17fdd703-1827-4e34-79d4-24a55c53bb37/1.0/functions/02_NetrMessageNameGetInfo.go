@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-MSRP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-msrp/181965ff-fab4-4ad4-a8d7-16b444cc4e66
+// A fetched copy is kept at ms-msrp.idl in the interface directory.
+
 import (
 	"fmt"
 

@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-EFSR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-efsr/4a25b8e1-fd90-41b6-9301-62ed71334436
+// A fetched copy is kept at ms-efsr.idl in the interface directory.
+
 import (
 	"fmt"
 

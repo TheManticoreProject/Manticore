@@ -14,6 +14,11 @@
 // 0.0/ directory.
 package rpcinterface_99fcfec45260101bbbcb00aa0021347a_0_0
 
+// IDL source: [MS-DCOM] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dcom/49aef5a4-f0ad-4478-abb5-cb9446dc13c6
+// A fetched copy is kept at ms-dcom.idl in the interface directory.
+
 import (
 	"fmt"
 

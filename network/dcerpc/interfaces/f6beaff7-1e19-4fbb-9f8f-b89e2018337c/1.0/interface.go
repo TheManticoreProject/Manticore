@@ -6,6 +6,11 @@
 // table are not derivable from the IDL and were filled in against [MS-EVEN6]/[MS-ERREF].
 package rpcinterface_f6beaff71e194fbb9f8fb89e2018337c_1_0
 
+// IDL source: [MS-EVEN6] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-even6/2d808edd-719a-4c69-b34a-df766adb5f0c
+// A fetched copy is kept at ms-even6.idl in the interface directory.
+
 import (
 	"fmt"
 

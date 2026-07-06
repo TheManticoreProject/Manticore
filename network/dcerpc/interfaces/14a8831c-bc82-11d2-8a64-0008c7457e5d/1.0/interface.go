@@ -12,6 +12,11 @@
 // or interpret these structures can name the interface unambiguously.
 package rpcinterface_14a8831cbc8211d28a640008c7457e5d_1_0
 
+// IDL source: [MS-EERR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-eerr/27966728-b969-4e2e-a32e-f358d9d1922f
+// A fetched copy is kept at ms-eerr.idl in the interface directory.
+
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"

@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-RAA] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-raa/0cae6068-686e-4f85-b064-7ba70d47da44
+// A fetched copy is kept at ms-raa.idl in the interface directory.
+
 import (
 	"fmt"
 

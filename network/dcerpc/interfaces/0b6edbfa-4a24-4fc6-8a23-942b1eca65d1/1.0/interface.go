@@ -7,6 +7,11 @@
 // produced by the IRPCRemoteObject interface (ae33069b-...).
 package rpcinterface_0b6edbfa4a244fc68a23942b1eca65d1_1_0
 
+// IDL source: [MS-PAN] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-pan/3161e1b8-098f-4f42-8a58-7e342114b643
+// A fetched copy is kept at ms-pan.idl in the interface directory.
+
 import (
 	"fmt"
 

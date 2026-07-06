@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_afc07e2e311c4435808cc483ffeec7c9_1_0
 
+// IDL source: [MS-CAPR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-capr/3b30e288-7f4f-4d05-bcac-d8e33086d0cc
+// A fetched copy is kept at ms-capr.idl in the interface directory.
+
 import (
 	"fmt"
 

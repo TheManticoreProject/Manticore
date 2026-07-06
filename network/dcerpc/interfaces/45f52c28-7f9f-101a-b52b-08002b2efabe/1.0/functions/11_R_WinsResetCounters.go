@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-RAIW] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-raiw/e59461f5-5486-4ec3-9ad6-14b784c1ecd6
+// A fetched copy is kept at ms-raiw.idl in the interface directory.
+
 import (
 	"fmt"
 

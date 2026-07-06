@@ -1579,3 +1579,4 @@
          [in,switch_is(Level)] LPSHARE_INFO ShareInfo
      );
  }
+  

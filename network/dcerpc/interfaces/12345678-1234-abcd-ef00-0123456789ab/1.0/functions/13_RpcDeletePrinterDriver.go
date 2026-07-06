@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-RPRN] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rprn/e8f9dad8-d114-41cc-9a52-fc927e908cf4
+// A fetched copy is kept at ms-rprn.idl in the interface directory.
+
 import (
 	"fmt"
 

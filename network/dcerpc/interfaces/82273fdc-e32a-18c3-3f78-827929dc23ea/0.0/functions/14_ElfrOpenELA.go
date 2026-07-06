@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-EVEN] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-even/0d0bee9c-dac5-46d9-b19b-2087826c02db
+// A fetched copy is kept at ms-even.idl in the interface directory.
+
 import (
 	"fmt"
 

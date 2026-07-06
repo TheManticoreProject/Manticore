@@ -12,6 +12,11 @@
 // least RPC_C_AUTHN_LEVEL_PKT_PRIVACY with SPNEGO. PipeName is therefore empty.
 package rpcinterface_b97db8b24c6311cfbff608002be23f2f_3_0
 
+// IDL source: [MS-CMRP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cmrp/e12b6d8f-c410-49d7-a27d-9992782a9027
+// A fetched copy is kept at ms-cmrp.idl in the interface directory.
+
 import (
 	"fmt"
 

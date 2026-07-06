@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_7c44d7d431d5424cbd5e2b3e1f323d22_1_0
 
+// IDL source: [MS-DRSR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-drsr/3f5d9495-9563-44de-876a-ce6f880e3fb2
+// A fetched copy is kept at ms-drsr.idl in the interface directory.
+
 import (
 	"fmt"
 

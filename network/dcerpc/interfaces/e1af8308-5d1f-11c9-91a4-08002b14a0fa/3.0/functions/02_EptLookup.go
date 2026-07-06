@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [C706] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Authoritative IDL reference:
+//   https://pubs.opengroup.org/onlinepubs/9629399/apdxo.htm
+// No standalone MS-* Full IDL page exists; the reference above is authoritative.
+
 import (
 	"fmt"
 

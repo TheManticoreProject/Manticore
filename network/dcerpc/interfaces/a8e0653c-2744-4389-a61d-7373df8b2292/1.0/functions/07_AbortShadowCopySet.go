@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-FSRVP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsrvp/23382633-78f1-419e-bad0-699dff0c6ef1
+// A fetched copy is kept at ms-fsrvp.idl in the interface directory.
+
 import (
 	"fmt"
 

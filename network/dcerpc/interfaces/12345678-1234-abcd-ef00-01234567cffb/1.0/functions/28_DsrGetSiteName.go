@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-NRPC] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/89f9b028-ee68-4fe2-afca-cc188f7079f7
+// A fetched copy is kept at ms-nrpc.idl in the interface directory.
+
 import (
 	"fmt"
 

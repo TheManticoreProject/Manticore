@@ -22,6 +22,11 @@
 //     https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/a0ad7d8b-bb3b-4d3d-8c2e-e0c5b3a2a8b4
 package rpcinterface_123457781234abcdef000123456789ab_0_0
 
+// IDL source: [MS-LSAD] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/d86ca799-b122-4fb6-bfa0-5c99dd862b11
+// A fetched copy is kept at ms-lsad.idl in the interface directory.
+
 import (
 	"fmt"
 

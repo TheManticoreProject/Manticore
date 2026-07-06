@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-MQMP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mqmp/a54c09de-1d72-47f0-9184-d7e5046b2ba1
+// A fetched copy is kept at ms-mqmp.idl in the interface directory.
+
 import (
 	"fmt"
 

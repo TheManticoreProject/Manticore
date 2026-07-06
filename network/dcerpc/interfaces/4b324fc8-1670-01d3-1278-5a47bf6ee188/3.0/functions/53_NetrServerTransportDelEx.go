@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-SRVS] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/77aacc74-f8f9-4b46-b2d8-bfe04a7d9c44
+// A fetched copy is kept at ms-srvs.idl in the interface directory.
+
 import (
 	"fmt"
 

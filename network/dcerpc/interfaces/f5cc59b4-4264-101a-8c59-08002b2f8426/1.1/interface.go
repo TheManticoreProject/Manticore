@@ -7,6 +7,11 @@
 // both depend on this package, never the reverse.
 package rpcinterface_f5cc59b44264101a8c5908002b2f8426_1_1
 
+// IDL source: [MS-FRS1] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-frs1/dd60a0d9-176a-46f4-9904-000172041b92
+// A fetched copy is kept at ms-frs1.idl in the interface directory.
+
 import (
 	"fmt"
 

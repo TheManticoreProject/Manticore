@@ -6,6 +6,11 @@
 // MS-WCCE) are not carried by the IDL and were filled in by hand.
 package rpcinterface_91ae60209e3c11cf8d7c00aa00c091be_0_0
 
+// IDL source: [MS-WCCE] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wcce/df709596-4a70-4a26-ada9-76781250700c
+// A fetched copy is kept at ms-wcce.idl in the interface directory.
+
 import (
 	"fmt"
 
