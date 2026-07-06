@@ -5,13 +5,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // dtypSID builds a representative RPC_SID for union round-trip tests.
-func dtypSID() *dtyp.RPC_SID {
-	s, err := dtyp.ParseSID("S-1-5-21-1004336348-1177238915-682003330-512")
+func dtypSID() *msdtyp.RPC_SID {
+	s, err := msdtyp.ParseSID("S-1-5-21-1004336348-1177238915-682003330-512")
 	if err != nil {
 		panic(err)
 	}

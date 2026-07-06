@@ -1,8 +1,8 @@
 package mststs
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // TS_SYS_PROCESS_INFORMATION describes a single process returned by
@@ -14,12 +14,12 @@ import (
 type TS_SYS_PROCESS_INFORMATION struct {
 	NextEntryOffset              ndr.DWORD
 	NumberOfThreads              ndr.DWORD
-	SpareLi1                     dtyp.LARGE_INTEGER
-	SpareLi2                     dtyp.LARGE_INTEGER
-	SpareLi3                     dtyp.LARGE_INTEGER
-	CreateTime                   dtyp.LARGE_INTEGER
-	UserTime                     dtyp.LARGE_INTEGER
-	KernelTime                   dtyp.LARGE_INTEGER
+	SpareLi1                     msdtyp.LARGE_INTEGER
+	SpareLi2                     msdtyp.LARGE_INTEGER
+	SpareLi3                     msdtyp.LARGE_INTEGER
+	CreateTime                   msdtyp.LARGE_INTEGER
+	UserTime                     msdtyp.LARGE_INTEGER
+	KernelTime                   msdtyp.LARGE_INTEGER
 	ImageName                    TS_UNICODE_STRING
 	BasePriority                 int32
 	UniqueProcessId              ndr.DWORD

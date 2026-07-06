@@ -1,8 +1,8 @@
 package mslsad
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 extends LSAPR_TRUSTED_DOMAIN_INFORMATION_EX with
@@ -10,9 +10,9 @@ import (
 // RPC_SID; ForestTrustInfo is a [unique] pointer to a conformant byte array sized by
 // ForestTrustLength.
 type LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 struct {
-	Name              dtyp.RPC_UNICODE_STRING
-	FlatName          dtyp.RPC_UNICODE_STRING
-	Sid               *dtyp.RPC_SID `ndr:"unique"`
+	Name              msdtyp.RPC_UNICODE_STRING
+	FlatName          msdtyp.RPC_UNICODE_STRING
+	Sid               *msdtyp.RPC_SID `ndr:"unique"`
 	TrustDirection    ndr.DWORD
 	TrustType         ndr.DWORD
 	TrustAttributes   ndr.DWORD

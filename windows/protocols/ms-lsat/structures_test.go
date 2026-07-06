@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -26,9 +26,9 @@ func roundTrip[T any](t *testing.T, name string, in T) {
 	}
 }
 
-func mustSID(t *testing.T, s string) *dtyp.RPC_SID {
+func mustSID(t *testing.T, s string) *msdtyp.RPC_SID {
 	t.Helper()
-	sid, err := dtyp.ParseSID(s)
+	sid, err := msdtyp.ParseSID(s)
 	if err != nil {
 		t.Fatalf("ParseSID(%q): %v", s, err)
 	}
@@ -65,8 +65,8 @@ func TestLSAPR_TRANSLATED_NAMES_RoundTrip(t *testing.T) {
 	in := LSAPR_TRANSLATED_NAMES{
 		Entries: 2,
 		Names: []LSAPR_TRANSLATED_NAME{
-			{Use: SidTypeUser, Name: dtyp.NewUnicodeString("Administrator"), DomainIndex: 0},
-			{Use: SidTypeWellKnownGroup, Name: dtyp.NewUnicodeString("SYSTEM"), DomainIndex: -1},
+			{Use: SidTypeUser, Name: msdtyp.NewUnicodeString("Administrator"), DomainIndex: 0},
+			{Use: SidTypeWellKnownGroup, Name: msdtyp.NewUnicodeString("SYSTEM"), DomainIndex: -1},
 		},
 	}
 	roundTrip(t, "LSAPR_TRANSLATED_NAMES", in)
@@ -80,8 +80,8 @@ func TestLSAPR_REFERENCED_DOMAIN_LIST_RoundTrip(t *testing.T) {
 	in := LSAPR_REFERENCED_DOMAIN_LIST{
 		Entries: 2,
 		Domains: []mslsad.LSAPR_TRUST_INFORMATION{
-			{Name: dtyp.NewUnicodeString("CONTOSO"), Sid: mustSID(t, "S-1-5-21-1-2-3")},
-			{Name: dtyp.NewUnicodeString("FABRIKAM"), Sid: mustSID(t, "S-1-5-21-4-5-6")},
+			{Name: msdtyp.NewUnicodeString("CONTOSO"), Sid: mustSID(t, "S-1-5-21-1-2-3")},
+			{Name: msdtyp.NewUnicodeString("FABRIKAM"), Sid: mustSID(t, "S-1-5-21-4-5-6")},
 		},
 		MaxEntries: 32,
 	}

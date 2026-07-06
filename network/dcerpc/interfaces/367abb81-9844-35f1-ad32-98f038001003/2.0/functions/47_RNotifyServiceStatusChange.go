@@ -3,10 +3,10 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
@@ -14,7 +14,7 @@ import (
 type rNotifyServiceStatusChangeRequest struct {
 	HService           msscmr.SC_RPC_HANDLE
 	NotifyParams       msscmr.SC_RPC_NOTIFY_PARAMS
-	PClientProcessGuid dtyp.GUID
+	PClientProcessGuid msdtyp.GUID
 }
 
 func (*rNotifyServiceStatusChangeRequest) Opnum() uint16 {
@@ -23,7 +23,7 @@ func (*rNotifyServiceStatusChangeRequest) Opnum() uint16 {
 
 // rNotifyServiceStatusChangeResponse carries the [out] parameters and return value of RNotifyServiceStatusChange.
 type rNotifyServiceStatusChangeResponse struct {
-	PSCMProcessGuid     dtyp.GUID
+	PSCMProcessGuid     msdtyp.GUID
 	PfCreateRemoteQueue ndr.BOOL
 	PhNotify            msscmr.LPSC_NOTIFY_RPC_HANDLE
 	Status              ndr.DWORD `ndr:"retval"`
@@ -35,7 +35,7 @@ func RNotifyServiceStatusChange(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, 
 	req := &rNotifyServiceStatusChangeRequest{
 		HService:           hService,
 		NotifyParams:       notifyParams,
-		PClientProcessGuid: dtyp.NewGUID(pClientProcessGuid),
+		PClientProcessGuid: msdtyp.NewGUID(pClientProcessGuid),
 	}
 	var resp rNotifyServiceStatusChangeResponse
 	if err = rpc.Invoke(req, &resp); err != nil {

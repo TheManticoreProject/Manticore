@@ -3,23 +3,23 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
 
 // elfrReportEventExARequest carries the [in] parameters of ElfrReportEventExA.
 type elfrReportEventExARequest struct {
 	LogHandle     mseven.IELF_HANDLE
-	TimeGenerated dtyp.FILETIME
+	TimeGenerated msdtyp.FILETIME
 	EventType     uint16
 	EventCategory uint16
 	EventID       ndr.DWORD
 	NumStrings    uint16
 	DataSize      ndr.DWORD
 	ComputerName  mseven.RPC_STRING
-	UserSID       *dtyp.RPC_SID        `ndr:"unique"`
+	UserSID       *msdtyp.RPC_SID      `ndr:"unique"`
 	Strings       []*mseven.RPC_STRING `ndr:"unique,elem=unique,size_is=NumStrings"`
 	Data          []uint8              `ndr:"unique,size_is=DataSize"`
 	Flags         uint16
@@ -35,7 +35,7 @@ type elfrReportEventExAResponse struct {
 }
 
 // ElfrReportEventExA calls ElfrReportEventExA (opnum 26) ([MS-EVEN] section 3.1.4).
-func ElfrReportEventExA(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, timeGenerated dtyp.FILETIME, eventType uint16, eventCategory uint16, eventID ndr.DWORD, numStrings uint16, dataSize ndr.DWORD, computerName mseven.RPC_STRING, userSID *dtyp.RPC_SID, strings []*mseven.RPC_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD) (RecordNumber *ndr.DWORD, err error) {
+func ElfrReportEventExA(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, timeGenerated msdtyp.FILETIME, eventType uint16, eventCategory uint16, eventID ndr.DWORD, numStrings uint16, dataSize ndr.DWORD, computerName mseven.RPC_STRING, userSID *msdtyp.RPC_SID, strings []*mseven.RPC_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD) (RecordNumber *ndr.DWORD, err error) {
 	req := &elfrReportEventExARequest{
 		LogHandle:     logHandle,
 		TimeGenerated: timeGenerated,

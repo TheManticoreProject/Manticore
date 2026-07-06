@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts
@@ -192,8 +192,8 @@ func TestW3_STATISTICS_STRUCT(t *testing.T) {
 	roundTrip(t, "W3_STATISTICS_STRUCT/case0", W3_STATISTICS_STRUCT{
 		Tag: 0,
 		StatInfo1: &W3_STATISTICS_1{
-			TotalBytesSent:     dtyp.LARGE_INTEGER(1 << 40),
-			TotalBytesReceived: dtyp.LARGE_INTEGER(1 << 20),
+			TotalBytesSent:     msdtyp.LARGE_INTEGER(1 << 40),
+			TotalBytesReceived: msdtyp.LARGE_INTEGER(1 << 20),
 			TotalGets:          123,
 			CurrentConnections: 7,
 			RgCounters:         [20]ndr.DWORD{9, 8, 7},
@@ -206,7 +206,7 @@ func TestFTP_STATISTICS_STRUCT(t *testing.T) {
 	roundTrip(t, "FTP_STATISTICS_STRUCT/case0", FTP_STATISTICS_STRUCT{
 		Tag: 0,
 		StatInfo0: &FTP_STATISTICS_0{
-			TotalBytesSent:       dtyp.LARGE_INTEGER(4096),
+			TotalBytesSent:       msdtyp.LARGE_INTEGER(4096),
 			CurrentConnections:   3,
 			TotalAllowedRequests: 100,
 		},

@@ -1,8 +1,8 @@
 package mslsad
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSA_FOREST_TRUST_DATA is the discriminated union embedded as the ForestTrustData
@@ -14,8 +14,8 @@ import (
 // [default] arm carries an LSA_FOREST_TRUST_BINARY_DATA.
 type LSA_FOREST_TRUST_DATA struct {
 	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE `ndr:"switch,enum"`
-	TopLevelName    dtyp.RPC_UNICODE_STRING      `ndr:"case=0"`
-	TopLevelNameEx  dtyp.RPC_UNICODE_STRING      `ndr:"case=1"`
+	TopLevelName    msdtyp.RPC_UNICODE_STRING    `ndr:"case=0"`
+	TopLevelNameEx  msdtyp.RPC_UNICODE_STRING    `ndr:"case=1"`
 	DomainInfo      LSA_FOREST_TRUST_DOMAIN_INFO `ndr:"case=2"`
 	Data            LSA_FOREST_TRUST_BINARY_DATA `ndr:"default"`
 }
@@ -25,6 +25,6 @@ type LSA_FOREST_TRUST_DATA struct {
 type LSA_FOREST_TRUST_RECORD struct {
 	Flags           ndr.DWORD
 	ForestTrustType LSA_FOREST_TRUST_RECORD_TYPE `ndr:"enum"`
-	Time            dtyp.LARGE_INTEGER
+	Time            msdtyp.LARGE_INTEGER
 	ForestTrustData LSA_FOREST_TRUST_DATA
 }

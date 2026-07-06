@@ -5,10 +5,10 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -133,9 +133,9 @@ func (r *RemoteRegistry) BaseRegDeleteValue(hKey msrrp.RPC_HKEY, lpValueName msr
 }
 
 // BaseRegEnumValue calls BaseRegEnumValue (opnum 10): returns the value at dwIndex.
-func (r *RemoteRegistry) BaseRegEnumValue(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn msrrp.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (dtyp.RPC_UNICODE_STRING, *ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
+func (r *RemoteRegistry) BaseRegEnumValue(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpValueNameIn msrrp.RRP_UNICODE_STRING, lpType *ndr.DWORD, lpData []uint8, lpcbData *ndr.DWORD, lpcbLen *ndr.DWORD) (msdtyp.RPC_UNICODE_STRING, *ndr.DWORD, []uint8, *ndr.DWORD, *ndr.DWORD, error) {
 	if err := r.ensure(); err != nil {
-		return dtyp.RPC_UNICODE_STRING{}, nil, nil, nil, nil, err
+		return msdtyp.RPC_UNICODE_STRING{}, nil, nil, nil, nil, err
 	}
 	return functions.BaseRegEnumValue(r.rpc, hKey, dwIndex, lpValueNameIn, lpType, lpData, lpcbData, lpcbLen)
 }

@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
@@ -13,7 +13,7 @@ import (
 // s_DSGetPropsGuidRequest carries the [in] parameters of S_DSGetPropsGuid.
 type s_DSGetPropsGuidRequest struct {
 	DwObjectType           ndr.DWORD
-	PGuid                  *dtyp.GUID `ndr:"unique"`
+	PGuid                  *msdtyp.GUID `ndr:"unique"`
 	Cp                     ndr.DWORD
 	AProp                  []ndr.DWORD          `ndr:"ref,size_is=Cp"`
 	ApVar                  []msmqmq.PROPVARIANT `ndr:"ref,size_is=Cp"`
@@ -33,7 +33,7 @@ type s_DSGetPropsGuidResponse struct {
 
 // S_DSGetPropsGuid calls S_DSGetPropsGuid (opnum 11) ([MS-MQDS] — verify the parameter
 // modeling and status handling).
-func S_DSGetPropsGuid(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid *dtyp.GUID, cp ndr.DWORD, aProp []ndr.DWORD, apVar []msmqmq.PROPVARIANT, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (ApVar []msmqmq.PROPVARIANT, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
+func S_DSGetPropsGuid(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid *msdtyp.GUID, cp ndr.DWORD, aProp []ndr.DWORD, apVar []msmqmq.PROPVARIANT, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (ApVar []msmqmq.PROPVARIANT, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
 	req := &s_DSGetPropsGuidRequest{
 		DwObjectType:           dwObjectType,
 		PGuid:                  pGuid,

@@ -1,7 +1,7 @@
 package mslsat
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSAPR_TRANSLATED_NAME is the translation of a SID into an account name and domain
@@ -9,6 +9,6 @@ import (
 // signed long.
 type LSAPR_TRANSLATED_NAME struct {
 	Use         SID_NAME_USE `ndr:"enum"`
-	Name        dtyp.RPC_UNICODE_STRING
+	Name        msdtyp.RPC_UNICODE_STRING
 	DomainIndex int32
 }

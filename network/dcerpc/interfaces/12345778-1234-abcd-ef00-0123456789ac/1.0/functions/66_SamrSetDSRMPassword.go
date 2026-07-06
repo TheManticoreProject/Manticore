@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -14,7 +14,7 @@ import (
 // [unique] string, UserId selects the account, and EncryptedNtOwfPassword is the
 // [unique] encrypted NT OWF of the new password.
 type samrSetDSRMPasswordRequest struct {
-	Unused                 *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Unused                 *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
 	UserId                 ndr.DWORD
 	EncryptedNtOwfPassword *mssamr.ENCRYPTED_NT_OWF_PASSWORD `ndr:"unique"`
 }

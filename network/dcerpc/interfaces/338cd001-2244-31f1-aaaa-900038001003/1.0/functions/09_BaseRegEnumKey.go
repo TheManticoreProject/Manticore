@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -15,7 +15,7 @@ type baseRegEnumKeyRequest struct {
 	DwIndex           ndr.DWORD
 	LpNameIn          msrrp.RRP_UNICODE_STRING
 	LpClassIn         *msrrp.RRP_UNICODE_STRING `ndr:"unique"`
-	LpftLastWriteTime *dtyp.FILETIME            `ndr:"unique"`
+	LpftLastWriteTime *msdtyp.FILETIME          `ndr:"unique"`
 }
 
 func (*baseRegEnumKeyRequest) Opnum() uint16 { return winreg.OpnumBaseRegEnumKey }
@@ -23,14 +23,14 @@ func (*baseRegEnumKeyRequest) Opnum() uint16 { return winreg.OpnumBaseRegEnumKey
 // baseRegEnumKeyResponse carries the [out] parameters and return value of BaseRegEnumKey.
 type baseRegEnumKeyResponse struct {
 	LpNameOut         msrrp.RRP_UNICODE_STRING
-	LplpClassOut      *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	LpftLastWriteTime *dtyp.FILETIME           `ndr:"unique"`
-	Status            ndr.DWORD                `ndr:"retval"`
+	LplpClassOut      *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	LpftLastWriteTime *msdtyp.FILETIME           `ndr:"unique"`
+	Status            ndr.DWORD                  `ndr:"retval"`
 }
 
 // BaseRegEnumKey calls BaseRegEnumKey (opnum 9) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegEnumKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn msrrp.RRP_UNICODE_STRING, lpClassIn *msrrp.RRP_UNICODE_STRING, lpftLastWriteTime *dtyp.FILETIME) (LpNameOut msrrp.RRP_UNICODE_STRING, LplpClassOut *dtyp.RPC_UNICODE_STRING, LpftLastWriteTime *dtyp.FILETIME, err error) {
+func BaseRegEnumKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn msrrp.RRP_UNICODE_STRING, lpClassIn *msrrp.RRP_UNICODE_STRING, lpftLastWriteTime *msdtyp.FILETIME) (LpNameOut msrrp.RRP_UNICODE_STRING, LplpClassOut *msdtyp.RPC_UNICODE_STRING, LpftLastWriteTime *msdtyp.FILETIME, err error) {
 	req := &baseRegEnumKeyRequest{
 		HKey:              hKey,
 		DwIndex:           dwIndex,

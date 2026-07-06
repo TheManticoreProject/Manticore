@@ -3,16 +3,16 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	FileServerVssAgent "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/a8e0653c-2744-4389-a61d-7373df8b2292/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // deleteShareMappingRequest carries the [in] parameters of DeleteShareMapping.
 type deleteShareMappingRequest struct {
-	ShadowCopySetId dtyp.GUID
-	ShadowCopyId    dtyp.GUID
+	ShadowCopySetId msdtyp.GUID
+	ShadowCopyId    msdtyp.GUID
 	ShareName       ndr.WSTR
 }
 
@@ -27,8 +27,8 @@ type deleteShareMappingResponse struct {
 // modeling and status handling).
 func DeleteShareMapping(rpc ndr.Invoker, shadowCopySetId guid.GUID, shadowCopyId guid.GUID, shareName ndr.WSTR) (err error) {
 	req := &deleteShareMappingRequest{
-		ShadowCopySetId: dtyp.NewGUID(shadowCopySetId),
-		ShadowCopyId:    dtyp.NewGUID(shadowCopyId),
+		ShadowCopySetId: msdtyp.NewGUID(shadowCopySetId),
+		ShadowCopyId:    msdtyp.NewGUID(shadowCopyId),
 		ShareName:       shareName,
 	}
 	var resp deleteShareMappingResponse

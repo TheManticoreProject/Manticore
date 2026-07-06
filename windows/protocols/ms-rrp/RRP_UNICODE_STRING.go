@@ -1,8 +1,8 @@
 package msrrp
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // RRP_UNICODE_STRING is an alias for RPC_UNICODE_STRING ([MS-RRP]).
-type RRP_UNICODE_STRING = dtyp.RPC_UNICODE_STRING
+type RRP_UNICODE_STRING = msdtyp.RPC_UNICODE_STRING

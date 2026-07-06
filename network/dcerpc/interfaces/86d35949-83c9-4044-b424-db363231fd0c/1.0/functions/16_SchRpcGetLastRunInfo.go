@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // schRpcGetLastRunInfoRequest carries the [in] parameters of SchRpcGetLastRunInfo.
@@ -19,13 +19,13 @@ func (*schRpcGetLastRunInfoRequest) Opnum() uint16 {
 
 // schRpcGetLastRunInfoResponse carries the [out] parameters and return value of SchRpcGetLastRunInfo.
 type schRpcGetLastRunInfoResponse struct {
-	PLastRuntime    dtyp.SYSTEMTIME
+	PLastRuntime    msdtyp.SYSTEMTIME
 	PLastReturnCode ndr.DWORD
 	Status          ndr.DWORD `ndr:"retval"`
 }
 
 // SchRpcGetLastRunInfo calls SchRpcGetLastRunInfo (opnum 16) ([MS-TSCH] section 3.2.5.4.17).
-func SchRpcGetLastRunInfo(rpc ndr.Invoker, path ndr.WSTR) (PLastRuntime dtyp.SYSTEMTIME, PLastReturnCode ndr.DWORD, err error) {
+func SchRpcGetLastRunInfo(rpc ndr.Invoker, path ndr.WSTR) (PLastRuntime msdtyp.SYSTEMTIME, PLastReturnCode ndr.DWORD, err error) {
 	req := &schRpcGetLastRunInfoRequest{
 		Path: path,
 	}

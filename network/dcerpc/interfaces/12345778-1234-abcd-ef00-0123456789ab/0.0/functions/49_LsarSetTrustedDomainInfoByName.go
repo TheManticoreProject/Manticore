@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -15,7 +15,7 @@ import (
 // information.
 type lsarSetTrustedDomainInfoByNameRequest struct {
 	PolicyHandle             mslsad.LSAPR_HANDLE
-	TrustedDomainName        dtyp.RPC_UNICODE_STRING
+	TrustedDomainName        msdtyp.RPC_UNICODE_STRING
 	InformationClass         mslsad.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 	TrustedDomainInformation mslsad.LSAPR_TRUSTED_DOMAIN_INFO
 }
@@ -29,7 +29,7 @@ func (*lsarSetTrustedDomainInfoByNameRequest) Opnum() uint16 {
 // union discriminant is set to the information class before marshalling.
 func LsarSetTrustedDomainInfoByName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, infoClass mslsad.TRUSTED_INFORMATION_CLASS, info mslsad.LSAPR_TRUSTED_DOMAIN_INFO) error {
 	info.Class = infoClass
-	name := dtyp.NewUnicodeString(trustedDomainName)
+	name := msdtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarSetTrustedDomainInfoByNameRequest{
 		PolicyHandle:             policyHandle,
 		TrustedDomainName:        name,

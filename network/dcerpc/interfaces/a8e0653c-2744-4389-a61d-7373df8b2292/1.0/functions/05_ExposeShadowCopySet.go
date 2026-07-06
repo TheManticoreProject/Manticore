@@ -3,15 +3,15 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	FileServerVssAgent "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/a8e0653c-2744-4389-a61d-7373df8b2292/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // exposeShadowCopySetRequest carries the [in] parameters of ExposeShadowCopySet.
 type exposeShadowCopySetRequest struct {
-	ShadowCopySetId       dtyp.GUID
+	ShadowCopySetId       msdtyp.GUID
 	TimeOutInMilliseconds ndr.DWORD
 }
 
@@ -26,7 +26,7 @@ type exposeShadowCopySetResponse struct {
 // modeling and status handling).
 func ExposeShadowCopySet(rpc ndr.Invoker, shadowCopySetId guid.GUID, timeOutInMilliseconds ndr.DWORD) (err error) {
 	req := &exposeShadowCopySetRequest{
-		ShadowCopySetId:       dtyp.NewGUID(shadowCopySetId),
+		ShadowCopySetId:       msdtyp.NewGUID(shadowCopySetId),
 		TimeOutInMilliseconds: timeOutInMilliseconds,
 	}
 	var resp exposeShadowCopySetResponse

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -25,9 +25,9 @@ func roundTrip[T any](t *testing.T, name string, in T) {
 	}
 }
 
-func mustSID(t *testing.T, s string) *dtyp.RPC_SID {
+func mustSID(t *testing.T, s string) *msdtyp.RPC_SID {
 	t.Helper()
-	sid, err := dtyp.ParseSID(s)
+	sid, err := msdtyp.ParseSID(s)
 	if err != nil {
 		t.Fatalf("ParseSID(%q): %v", s, err)
 	}
@@ -52,8 +52,8 @@ func TestLSAPR_PRIVILEGE_SET_RoundTrip(t *testing.T) {
 		PrivilegeCount: 2,
 		Control:        1,
 		Privilege: []LSAPR_LUID_AND_ATTRIBUTES{
-			{Luid: dtyp.LUID{LowPart: 0x14, HighPart: 0}, Attributes: 3},
-			{Luid: dtyp.LUID{LowPart: 0x11, HighPart: 0}, Attributes: 0},
+			{Luid: msdtyp.LUID{LowPart: 0x14, HighPart: 0}, Attributes: 3},
+			{Luid: msdtyp.LUID{LowPart: 0x11, HighPart: 0}, Attributes: 0},
 		},
 	}
 	roundTrip(t, "LSAPR_PRIVILEGE_SET", in)
@@ -104,8 +104,8 @@ func TestLSAPR_REVISION_INFO_RoundTrip(t *testing.T) {
 func TestLSA_FOREST_TRUST_SCANNER_INFO_RoundTrip(t *testing.T) {
 	in := LSA_FOREST_TRUST_SCANNER_INFO{
 		DomainSid:   mustSID(t, "S-1-5-21-7-8-9"),
-		DnsName:     dtyp.NewUnicodeString("contoso.com"),
-		NetbiosName: dtyp.NewUnicodeString("CONTOSO"),
+		DnsName:     msdtyp.NewUnicodeString("contoso.com"),
+		NetbiosName: msdtyp.NewUnicodeString("CONTOSO"),
 	}
 	roundTrip(t, "LSA_FOREST_TRUST_SCANNER_INFO", in)
 }
@@ -121,13 +121,13 @@ func TestLSA_FOREST_TRUST_INFORMATION2_RoundTrip(t *testing.T) {
 			{
 				Flags:           0x1,
 				ForestTrustType: ForestTrustDomainInfo,
-				Time:            dtyp.LARGE_INTEGER(0x0000000512340000),
+				Time:            msdtyp.LARGE_INTEGER(0x0000000512340000),
 				ForestTrustData: LSA_FOREST_TRUST_DATA2{
 					ForestTrustType: ForestTrustDomainInfo,
 					DomainInfo: LSA_FOREST_TRUST_DOMAIN_INFO{
 						Sid:         mustSID(t, "S-1-5-21-1-2-3"),
-						DnsName:     dtyp.NewUnicodeString("child.contoso.com"),
-						NetbiosName: dtyp.NewUnicodeString("CHILD"),
+						DnsName:     msdtyp.NewUnicodeString("child.contoso.com"),
+						NetbiosName: msdtyp.NewUnicodeString("CHILD"),
 					},
 				},
 			},
@@ -138,8 +138,8 @@ func TestLSA_FOREST_TRUST_INFORMATION2_RoundTrip(t *testing.T) {
 					ForestTrustType: ForestTrustScannerInfo,
 					ScannerInfo: LSA_FOREST_TRUST_SCANNER_INFO{
 						DomainSid:   mustSID(t, "S-1-5-21-4-5-6"),
-						DnsName:     dtyp.NewUnicodeString("fabrikam.com"),
-						NetbiosName: dtyp.NewUnicodeString("FABRIKAM"),
+						DnsName:     msdtyp.NewUnicodeString("fabrikam.com"),
+						NetbiosName: msdtyp.NewUnicodeString("FABRIKAM"),
 					},
 				},
 			},
@@ -147,7 +147,7 @@ func TestLSA_FOREST_TRUST_INFORMATION2_RoundTrip(t *testing.T) {
 				ForestTrustType: ForestTrustTopLevelName,
 				ForestTrustData: LSA_FOREST_TRUST_DATA2{
 					ForestTrustType: ForestTrustTopLevelName,
-					TopLevelName:    dtyp.NewUnicodeString("contoso.com"),
+					TopLevelName:    msdtyp.NewUnicodeString("contoso.com"),
 				},
 			},
 		},

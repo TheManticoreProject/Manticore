@@ -1,8 +1,8 @@
 package msmqmp
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
 
@@ -81,15 +81,15 @@ type CACTransferBufferV1 struct {
 	PpSignature          []byte `ndr:"unique,size_is=UlSignatureSize"`
 	UlSignatureSize      ndr.DWORD
 	PulSignatureSizeProp *ndr.DWORD      `ndr:"unique"`
-	PpSrcQMID            *dtyp.GUID      `ndr:"unique"`
+	PpSrcQMID            *msdtyp.GUID    `ndr:"unique"`
 	PUow                 *msmqmq.XACTUOW `ndr:"unique"`
 
 	PpMsgExtension              []byte `ndr:"unique,varying,size_is=UlMsgExtensionBufferInBytes,length_is=UlMsgExtensionBufferInBytes"`
 	UlMsgExtensionBufferInBytes ndr.DWORD
-	PMsgExtensionSize           *ndr.DWORD `ndr:"unique"`
-	PpConnectorType             *dtyp.GUID `ndr:"unique"`
-	PulBodyType                 *ndr.DWORD `ndr:"unique"`
-	PulVersion                  *ndr.DWORD `ndr:"unique"`
+	PMsgExtensionSize           *ndr.DWORD   `ndr:"unique"`
+	PpConnectorType             *msdtyp.GUID `ndr:"unique"`
+	PulBodyType                 *ndr.DWORD   `ndr:"unique"`
+	PulVersion                  *ndr.DWORD   `ndr:"unique"`
 }
 
 // CACTransferBufferV1Union is the [switch_is(uTransferType)] union of CACTransferBufferV1

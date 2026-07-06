@@ -1,8 +1,8 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_DOMAIN_GENERAL_INFORMATION contains general per-domain attributes
@@ -11,9 +11,9 @@ import (
 // DomainModifiedCount are OLD_LARGE_INTEGER values defined by the base family.
 type SAMPR_DOMAIN_GENERAL_INFORMATION struct {
 	ForceLogoff              OLD_LARGE_INTEGER
-	OemInformation           dtyp.RPC_UNICODE_STRING
-	DomainName               dtyp.RPC_UNICODE_STRING
-	ReplicaSourceNodeName    dtyp.RPC_UNICODE_STRING
+	OemInformation           msdtyp.RPC_UNICODE_STRING
+	DomainName               msdtyp.RPC_UNICODE_STRING
+	ReplicaSourceNodeName    msdtyp.RPC_UNICODE_STRING
 	DomainModifiedCount      OLD_LARGE_INTEGER
 	DomainServerState        ndr.DWORD
 	DomainServerRole         ndr.DWORD

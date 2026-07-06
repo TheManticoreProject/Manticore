@@ -3,18 +3,18 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // lsarGetUserNameRequest is the [in]/[in,out] parameter set of LsarGetUserName: a [unique]
 // SystemName string (sent NULL to target the local system), an [in,out] UserName (a double
 // pointer, sent NULL), and an [in,out,unique] DomainName (a double pointer, sent NULL).
 type lsarGetUserNameRequest struct {
-	SystemName *ndr.WSTR                `ndr:"unique"`
-	UserName   *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	DomainName *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	SystemName *ndr.WSTR                  `ndr:"unique"`
+	UserName   *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	DomainName *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
 }
 
 func (*lsarGetUserNameRequest) Opnum() uint16 { return lsarpc.OpnumLsarGetUserName }
@@ -22,16 +22,16 @@ func (*lsarGetUserNameRequest) Opnum() uint16 { return lsarpc.OpnumLsarGetUserNa
 // lsarGetUserNameResponse is the reply: the [in,out] UserName, the [in,out,unique]
 // DomainName, and the NTSTATUS return value.
 type lsarGetUserNameResponse struct {
-	UserName   *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	DomainName *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	Status     ndr.DWORD                `ndr:"retval"`
+	UserName   *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	DomainName *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Status     ndr.DWORD                  `ndr:"retval"`
 }
 
 // LsarGetUserName calls LsarGetUserName (opnum 45) to retrieve the name (and domain) of
 // the security principal that established the RPC connection ([MS-LSAT] 3.1.4.2).
 // SystemName is sent NULL to target the local system; UserName and DomainName are sent
 // NULL so the server allocates the returned strings.
-func LsarGetUserName(rpc ndr.Invoker) (*dtyp.RPC_UNICODE_STRING, *dtyp.RPC_UNICODE_STRING, error) {
+func LsarGetUserName(rpc ndr.Invoker) (*msdtyp.RPC_UNICODE_STRING, *msdtyp.RPC_UNICODE_STRING, error) {
 	req := &lsarGetUserNameRequest{}
 	var resp lsarGetUserNameResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

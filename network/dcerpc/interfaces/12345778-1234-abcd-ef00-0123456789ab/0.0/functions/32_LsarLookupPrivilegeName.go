@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // is inline).
 type lsarLookupPrivilegeNameRequest struct {
 	PolicyHandle mslsad.LSAPR_HANDLE
-	Value        dtyp.LUID
+	Value        msdtyp.LUID
 }
 
 func (*lsarLookupPrivilegeNameRequest) Opnum() uint16 {
@@ -25,13 +25,13 @@ func (*lsarLookupPrivilegeNameRequest) Opnum() uint16 {
 // pointer to an RPC_UNICODE_STRING, returned through a double pointer) and the NTSTATUS
 // return value.
 type lsarLookupPrivilegeNameResponse struct {
-	Name   *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
-	Status ndr.DWORD                `ndr:"retval"`
+	Name   *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Status ndr.DWORD                  `ndr:"retval"`
 }
 
 // LsarLookupPrivilegeName calls LsarLookupPrivilegeName (opnum 32), mapping a privilege
 // LUID to its name ([MS-LSAD] 3.1.4.5.12).
-func LsarLookupPrivilegeName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, value dtyp.LUID) (*dtyp.RPC_UNICODE_STRING, error) {
+func LsarLookupPrivilegeName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, value msdtyp.LUID) (*msdtyp.RPC_UNICODE_STRING, error) {
 	req := &lsarLookupPrivilegeNameRequest{
 		PolicyHandle: policyHandle,
 		Value:        value,

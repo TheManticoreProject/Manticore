@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -13,7 +13,7 @@ import (
 // member to remove (transmitted inline).
 type samrRemoveMemberFromAliasRequest struct {
 	AliasHandle mssamr.SAMPR_HANDLE
-	MemberId    dtyp.RPC_SID
+	MemberId    msdtyp.RPC_SID
 }
 
 func (*samrRemoveMemberFromAliasRequest) Opnum() uint16 {
@@ -22,7 +22,7 @@ func (*samrRemoveMemberFromAliasRequest) Opnum() uint16 {
 
 // SamrRemoveMemberFromAlias calls SamrRemoveMemberFromAlias (opnum 32), removing a member
 // from an alias ([MS-SAMR] 3.1.5.5.3).
-func SamrRemoveMemberFromAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, memberId dtyp.RPC_SID) error {
+func SamrRemoveMemberFromAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, memberId msdtyp.RPC_SID) error {
 	req := &samrRemoveMemberFromAliasRequest{
 		AliasHandle: aliasHandle,
 		MemberId:    memberId,

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals v (a pointer) then unmarshals into out (a pointer to the same type)
@@ -21,9 +21,9 @@ func roundTrip(t *testing.T, v any, out any) {
 	}
 }
 
-func mustSID(t *testing.T, s string) dtyp.RPC_SID {
+func mustSID(t *testing.T, s string) msdtyp.RPC_SID {
 	t.Helper()
-	sid, err := dtyp.ParseSID(s)
+	sid, err := msdtyp.ParseSID(s)
 	if err != nil {
 		t.Fatalf("ParseSID(%q): %v", s, err)
 	}
@@ -73,7 +73,7 @@ func TestObjectTypeList_RoundTrip(t *testing.T) {
 	in := OBJECT_TYPE_LIST{
 		Level:      1,
 		Remaining:  0x00020019,
-		ObjectType: &dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}},
+		ObjectType: &msdtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}},
 	}
 	var out OBJECT_TYPE_LIST
 	roundTrip(t, &in, &out)
@@ -87,8 +87,8 @@ func TestObjectTypeList_RoundTrip(t *testing.T) {
 func TestAuthzrAccessRequest_RoundTrip(t *testing.T) {
 	sid := mustSID(t, "S-1-5-21-1004336348-1177238915-682003330-512")
 	otl := []OBJECT_TYPE_LIST{
-		{Level: 0, Remaining: 0x1, ObjectType: &dtyp.GUID{Data1: 1}},
-		{Level: 1, Remaining: 0x2, ObjectType: &dtyp.GUID{Data1: 2}},
+		{Level: 0, Remaining: 0x1, ObjectType: &msdtyp.GUID{Data1: 1}},
+		{Level: 1, Remaining: 0x2, ObjectType: &msdtyp.GUID{Data1: 2}},
 	}
 	in := AUTHZR_ACCESS_REQUEST{
 		DesiredAccess:        0x02000000,

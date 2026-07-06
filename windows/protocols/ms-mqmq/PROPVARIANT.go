@@ -1,8 +1,8 @@
 package msmqmq
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // PROPVARIANT is the Message Queuing property variant ([MS-MQMQ] 2.2.12): a VARTYPE
@@ -47,9 +47,9 @@ type PropVariantUnion struct {
 	UhVal   uint64 `ndr:"case=21"` // VT_UI8 (ULARGE_INTEGER)
 	BoolVal int16  `ndr:"case=11"` // VT_BOOL (VARIANT_BOOL)
 
-	Puuid   *dtyp.GUID `ndr:"case=72,unique"` // VT_CLSID
-	Blob    BLOB       `ndr:"case=65"`        // VT_BLOB
-	PwszVal *ndr.WSTR  `ndr:"case=31,unique"` // VT_LPWSTR
+	Puuid   *msdtyp.GUID `ndr:"case=72,unique"` // VT_CLSID
+	Blob    BLOB         `ndr:"case=65"`        // VT_BLOB
+	PwszVal *ndr.WSTR    `ndr:"case=31,unique"` // VT_LPWSTR
 
 	Caub      CAUB          `ndr:"case=0x1011"` // VT_VECTOR|VT_UI1
 	Caui      CAUI          `ndr:"case=0x1012"` // VT_VECTOR|VT_UI2

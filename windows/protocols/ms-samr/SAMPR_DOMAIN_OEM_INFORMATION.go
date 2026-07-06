@@ -1,11 +1,11 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_DOMAIN_OEM_INFORMATION contains the OEM-defined comment string for a domain
 // ([MS-SAMR] 2.2.4.11).
 type SAMPR_DOMAIN_OEM_INFORMATION struct {
-	OemInformation dtyp.RPC_UNICODE_STRING
+	OemInformation msdtyp.RPC_UNICODE_STRING
 }

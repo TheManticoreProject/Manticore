@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -14,7 +14,7 @@ import (
 // the desired access mask for the returned user handle.
 type samrCreateUser2InDomainRequest struct {
 	DomainHandle  mssamr.SAMPR_HANDLE
-	Name          dtyp.RPC_UNICODE_STRING
+	Name          msdtyp.RPC_UNICODE_STRING
 	AccountType   ndr.DWORD
 	DesiredAccess ndr.DWORD
 }
@@ -35,7 +35,7 @@ type samrCreateUser2InDomainResponse struct {
 func SamrCreateUser2InDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, name string, accountType uint32, desiredAccess uint32) (mssamr.SAMPR_HANDLE, uint32, uint32, error) {
 	req := &samrCreateUser2InDomainRequest{
 		DomainHandle:  domainHandle,
-		Name:          dtyp.NewUnicodeString(name),
+		Name:          msdtyp.NewUnicodeString(name),
 		AccountType:   ndr.DWORD(accountType),
 		DesiredAccess: ndr.DWORD(desiredAccess),
 	}

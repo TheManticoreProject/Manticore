@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	dscomm2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/708cca10-9569-11d1-b2a5-0060977d8118/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
@@ -13,7 +13,7 @@ import (
 // s_DSGetPropsGuidExRequest carries the [in] parameters of S_DSGetPropsGuidEx.
 type s_DSGetPropsGuidExRequest struct {
 	DwObjectType           ndr.DWORD
-	PGuid                  *dtyp.GUID `ndr:"unique"`
+	PGuid                  *msdtyp.GUID `ndr:"unique"`
 	Cp                     ndr.DWORD
 	AProp                  []msmqmq.PROPID      `ndr:"ref,size_is=Cp"`
 	ApVar                  []msmqmq.PROPVARIANT `ndr:"ref,size_is=Cp"`
@@ -33,7 +33,7 @@ type s_DSGetPropsGuidExResponse struct {
 
 // S_DSGetPropsGuidEx calls S_DSGetPropsGuidEx (opnum 2) ([MS-MQDS] — verify the parameter
 // modeling and status handling).
-func S_DSGetPropsGuidEx(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid *dtyp.GUID, cp ndr.DWORD, aProp []msmqmq.PROPID, apVar []msmqmq.PROPVARIANT, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (ApVar []msmqmq.PROPVARIANT, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
+func S_DSGetPropsGuidEx(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid *msdtyp.GUID, cp ndr.DWORD, aProp []msmqmq.PROPID, apVar []msmqmq.PROPVARIANT, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (ApVar []msmqmq.PROPVARIANT, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
 	req := &s_DSGetPropsGuidExRequest{
 		DwObjectType:           dwObjectType,
 		PGuid:                  pGuid,

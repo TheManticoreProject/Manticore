@@ -884,10 +884,10 @@ _DTYP_SCALAR = {
     "ACCESS_MASK": "ndr.DWORD", "SECURITY_INFORMATION": "ndr.DWORD",
     "RPC_STATUS": "int32",
 }
-# [MS-DTYP] aggregate types provided by network/dcerpc/dtyp (reuse, don't emit).
+# [MS-DTYP] aggregate types provided by windows/ms-dtyp (reuse, don't emit).
 _DTYP_STRUCT = {"RPC_SID", "RPC_UNICODE_STRING", "LARGE_INTEGER",
                 "ULARGE_INTEGER", "LUID"}
-# Built-in [MS-DTYP] pointer aliases -> canonical dtyp type.
+# Built-in [MS-DTYP] pointer aliases -> canonical msdtyp type.
 _DTYP_PALIAS = {
     "PRPC_SID": "RPC_SID", "PRPC_UNICODE_STRING": "RPC_UNICODE_STRING",
     "PLARGE_INTEGER": "LARGE_INTEGER", "PLUID": "LUID",
@@ -963,7 +963,7 @@ class TypeResolver:
 
     def resolve_base(self, base: str, _depth: int = 0) -> tuple[str, int, str]:
         """Return (go_type, extra_ptr, import) for a base type spelling;
-        import is "" or "dtyp"."""
+        import is "" or "msdtyp"."""
         if _depth > 16:
             return base, 0, ""  # guard against any pathological alias cycle
         if base == "GUID":
@@ -971,9 +971,9 @@ class TypeResolver:
         if base in _STR_TYPES or base in self.str_handles:
             return "ndr.WSTR", 1, ""
         if base in _DTYP_STRUCT:
-            return f"dtyp.{base}", 0, "dtyp"
+            return f"msdtyp.{base}", 0, "msdtyp"
         if base in _DTYP_PALIAS:
-            return f"dtyp.{_DTYP_PALIAS[base]}", 1, "dtyp"
+            return f"msdtyp.{_DTYP_PALIAS[base]}", 1, "msdtyp"
         if base in self.palias:
             canon, depth = self.palias[base]
             go, _, imp = self.resolve_base(canon, _depth + 1)
@@ -1229,7 +1229,7 @@ def gen_structures(iface: Interface, spec: str) -> dict[str, str]:
             elif name in res.scalar_alias:
                 body = gen_scalar_alias(name, res.scalar_alias[name], spec)
             elif td.base and (res.is_local(td.base) or td.base in _DTYP_STRUCT):
-                # typedef <aggregate-or-dtyp> NewName; -> a Go type alias.
+                # typedef <aggregate-or-msdtyp> NewName; -> a Go type alias.
                 tgt, _, timp = res.resolve_base(td.base)
                 if timp:
                     imports.add(timp)
@@ -1251,8 +1251,8 @@ def gen_structures(iface: Interface, spec: str) -> dict[str, str]:
         imps = []
         if "ndr." in body:  # struct tags are strings; only ndr.<Type> needs the import
             imps.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"')
-        if "dtyp" in imports or "dtyp." in body:
-            imps.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"')
+        if "msdtyp" in imports or "msdtyp." in body:
+            imps.append('\tmsdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"')
         if "guid." in body:
             imps.append('\t"github.com/TheManticoreProject/Manticore/windows/guid"')
         if imps:
@@ -1434,8 +1434,8 @@ def gen_functions(iface: Interface, spec: str, import_base: str) -> dict[str, st
         header.append('\t"fmt"')
         header.append("")
         header.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"')
-        if "dtyp." in body:
-            header.append('\t"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"')
+        if "msdtyp." in body:
+            header.append('\tmsdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"')
         if "guid." in body:
             header.append('\t"github.com/TheManticoreProject/Manticore/windows/guid"')
         header.append(f'\t{short} "{import_base}"')

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -23,7 +23,7 @@ const maximumAllowed ndr.DWORD = 0x02000000
 // regName builds a NUL-terminated RRP_UNICODE_STRING for a key/value name. [MS-RRP] 3.1.1
 // counts the terminating NUL in the length, so it is appended explicitly.
 func regName(s string) msrrp.RRP_UNICODE_STRING {
-	return dtyp.NewUnicodeString(s + "\x00")
+	return msdtyp.NewUnicodeString(s + "\x00")
 }
 
 // isStatus reports whether err carries the given winreg Win32 status code, matched by the

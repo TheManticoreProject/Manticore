@@ -3,10 +3,10 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // netrDfsModifyPrefixRequest is the [in] parameter set of NetrDfsModifyPrefix: the
@@ -14,7 +14,7 @@ import (
 // prefix.
 type netrDfsModifyPrefixRequest struct {
 	ServerName *ndr.WSTR `ndr:"unique"`
-	Uid        dtyp.GUID
+	Uid        msdtyp.GUID
 	Prefix     ndr.WSTR
 }
 
@@ -25,7 +25,7 @@ func (*netrDfsModifyPrefixRequest) Opnum() uint16 { return srvsvc.OpnumNetrDfsMo
 func NetrDfsModifyPrefix(rpc ndr.Invoker, serverName string, uid guid.GUID, prefix string) error {
 	req := &netrDfsModifyPrefixRequest{
 		ServerName: optWStr(serverName),
-		Uid:        dtyp.NewGUID(uid),
+		Uid:        msdtyp.NewGUID(uid),
 		Prefix:     ndr.WSTR(prefix),
 	}
 	var resp statusResponse

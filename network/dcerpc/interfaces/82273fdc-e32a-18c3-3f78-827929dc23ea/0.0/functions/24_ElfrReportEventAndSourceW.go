@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
 
@@ -16,13 +16,13 @@ type elfrReportEventAndSourceWRequest struct {
 	EventType     uint16
 	EventCategory uint16
 	EventID       ndr.DWORD
-	SourceName    dtyp.RPC_UNICODE_STRING
+	SourceName    msdtyp.RPC_UNICODE_STRING
 	NumStrings    uint16
 	DataSize      ndr.DWORD
-	ComputerName  dtyp.RPC_UNICODE_STRING
-	UserSID       *dtyp.RPC_SID              `ndr:"unique"`
-	Strings       []*dtyp.RPC_UNICODE_STRING `ndr:"unique,elem=unique,size_is=NumStrings"`
-	Data          []uint8                    `ndr:"unique,size_is=DataSize"`
+	ComputerName  msdtyp.RPC_UNICODE_STRING
+	UserSID       *msdtyp.RPC_SID              `ndr:"unique"`
+	Strings       []*msdtyp.RPC_UNICODE_STRING `ndr:"unique,elem=unique,size_is=NumStrings"`
+	Data          []uint8                      `ndr:"unique,size_is=DataSize"`
 	Flags         uint16
 	RecordNumber  *ndr.DWORD `ndr:"unique"`
 	TimeWritten   *ndr.DWORD `ndr:"unique"`
@@ -40,7 +40,7 @@ type elfrReportEventAndSourceWResponse struct {
 }
 
 // ElfrReportEventAndSourceW calls ElfrReportEventAndSourceW (opnum 24) ([MS-EVEN] section 3.1.4).
-func ElfrReportEventAndSourceW(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, time ndr.DWORD, eventType uint16, eventCategory uint16, eventID ndr.DWORD, sourceName dtyp.RPC_UNICODE_STRING, numStrings uint16, dataSize ndr.DWORD, computerName dtyp.RPC_UNICODE_STRING, userSID *dtyp.RPC_SID, strings []*dtyp.RPC_UNICODE_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD, timeWritten *ndr.DWORD) (RecordNumber *ndr.DWORD, TimeWritten *ndr.DWORD, err error) {
+func ElfrReportEventAndSourceW(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, time ndr.DWORD, eventType uint16, eventCategory uint16, eventID ndr.DWORD, sourceName msdtyp.RPC_UNICODE_STRING, numStrings uint16, dataSize ndr.DWORD, computerName msdtyp.RPC_UNICODE_STRING, userSID *msdtyp.RPC_SID, strings []*msdtyp.RPC_UNICODE_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD, timeWritten *ndr.DWORD) (RecordNumber *ndr.DWORD, TimeWritten *ndr.DWORD, err error) {
 	req := &elfrReportEventAndSourceWRequest{
 		LogHandle:     logHandle,
 		Time:          time,

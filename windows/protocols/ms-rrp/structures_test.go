@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // TestRPCHKEYSize pins the 20-byte context-handle representation ([MS-RPCE] 2.3.2.2).
@@ -26,7 +26,7 @@ func TestRPCHKEYSize(t *testing.T) {
 // TestRVALENTRoundTrip exercises a struct with a [unique] RPC_UNICODE_STRING pointer and a
 // [unique] DWORD pointer (the value_ent record).
 func TestRVALENTRoundTrip(t *testing.T) {
-	name := dtyp.NewUnicodeString("Version")
+	name := msdtyp.NewUnicodeString("Version")
 	ptr := ndr.DWORD(0x40)
 	in := RVALENT{Ve_valuename: &name, Ve_valuelen: 8, Ve_valueptr: &ptr, Ve_type: 1}
 	raw, err := ndr.Marshal(&in)

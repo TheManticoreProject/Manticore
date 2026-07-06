@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts
@@ -29,17 +29,17 @@ func roundTrip[T any](t *testing.T, name string, in T) {
 
 func wstr(s string) *ndr.WSTR { w := ndr.WSTR(s); return &w }
 
-func mustGUID(t *testing.T, s string) dtyp.GUID {
+func mustGUID(t *testing.T, s string) msdtyp.GUID {
 	t.Helper()
 	g, err := guid.FromString(s)
 	if err != nil {
 		t.Fatalf("FromString(%q): %v", s, err)
 	}
-	return dtyp.NewGUID(*g)
+	return msdtyp.NewGUID(*g)
 }
 
 // TestGUIDFieldWidth pins the wire width: an FSSAGENT_SHARE_MAPPING_1 with NULL strings
-// marshals its two dtyp.GUIDs as 16 octets each (32 total) + a 4-byte referent-id word
+// marshals its two msdtyp.GUIDs as 16 octets each (32 total) + a 4-byte referent-id word
 // for each NULL LPWSTR (null referent id = 0) + 8-byte LONGLONG. This guards against a
 // regression back to windows/guid.GUID (which would over-align to 24 octets/GUID).
 func TestGUIDFieldWidth(t *testing.T) {

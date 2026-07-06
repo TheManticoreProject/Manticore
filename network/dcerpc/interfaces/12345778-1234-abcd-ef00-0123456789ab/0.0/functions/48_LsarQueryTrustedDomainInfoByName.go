@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // and the information class selecting which union arm is returned.
 type lsarQueryTrustedDomainInfoByNameRequest struct {
 	PolicyHandle      mslsad.LSAPR_HANDLE
-	TrustedDomainName dtyp.RPC_UNICODE_STRING
+	TrustedDomainName msdtyp.RPC_UNICODE_STRING
 	InformationClass  mslsad.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
@@ -33,7 +33,7 @@ type lsarQueryTrustedDomainInfoByNameResponse struct {
 // returning the requested trusted-domain information class for the domain identified by name
 // ([MS-LSAD] 3.1.4.7.6).
 func LsarQueryTrustedDomainInfoByName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, infoClass mslsad.TRUSTED_INFORMATION_CLASS) (*mslsad.LSAPR_TRUSTED_DOMAIN_INFO, error) {
-	name := dtyp.NewUnicodeString(trustedDomainName)
+	name := msdtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarQueryTrustedDomainInfoByNameRequest{
 		PolicyHandle:      policyHandle,
 		TrustedDomainName: name,

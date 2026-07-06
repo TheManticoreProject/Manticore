@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // trusted domain to query, and the highest forest-trust record type the caller understands.
 type lsarQueryForestTrustInformationRequest struct {
 	PolicyHandle      mslsad.LSAPR_HANDLE
-	TrustedDomainName dtyp.RPC_UNICODE_STRING
+	TrustedDomainName msdtyp.RPC_UNICODE_STRING
 	HighestRecordType mslsad.LSA_FOREST_TRUST_RECORD_TYPE `ndr:"enum"`
 }
 
@@ -35,7 +35,7 @@ type lsarQueryForestTrustInformationResponse struct {
 func LsarQueryForestTrustInformation(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, highestRecordType mslsad.LSA_FOREST_TRUST_RECORD_TYPE) (*mslsad.LSA_FOREST_TRUST_INFORMATION, error) {
 	req := &lsarQueryForestTrustInformationRequest{
 		PolicyHandle:      policyHandle,
-		TrustedDomainName: dtyp.NewUnicodeString(trustedDomainName),
+		TrustedDomainName: msdtyp.NewUnicodeString(trustedDomainName),
 		HighestRecordType: highestRecordType,
 	}
 	var resp lsarQueryForestTrustInformationResponse

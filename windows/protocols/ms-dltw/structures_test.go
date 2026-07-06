@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -27,9 +27,9 @@ func roundTrip[T any](t *testing.T, name string, in T) []byte {
 	return raw
 }
 
-// sampleGUID is a fixed dtyp.GUID used across the tests; it exercises every octet slot so
+// sampleGUID is a fixed msdtyp.GUID used across the tests; it exercises every octet slot so
 // a byte-order or truncation bug shows up in the round trip.
-var sampleGUID = dtyp.GUID{
+var sampleGUID = msdtyp.GUID{
 	Data1: 0x11223344,
 	Data2: 0x5566,
 	Data3: 0x7788,
@@ -83,7 +83,7 @@ func TestCMachineIdFull(t *testing.T) {
 func TestCDomainRelativeObjId(t *testing.T) {
 	droid := CDomainRelativeObjId{
 		Volume: CVolumeId{Volume: sampleGUID},
-		Object: CObjId{Object: dtyp.GUID{Data1: 0xdeadbeef, Data2: 0x0102, Data3: 0x0304, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}},
+		Object: CObjId{Object: msdtyp.GUID{Data1: 0xdeadbeef, Data2: 0x0102, Data3: 0x0304, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}},
 	}
 	raw := roundTrip(t, "CDomainRelativeObjId", droid)
 	if len(raw) != 32 {

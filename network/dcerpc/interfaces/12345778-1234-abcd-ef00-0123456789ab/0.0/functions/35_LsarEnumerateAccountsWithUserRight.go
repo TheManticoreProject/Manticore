@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // user-right name to filter on (a NULL pointer enumerates all accounts with any right).
 type lsarEnumerateAccountsWithUserRightRequest struct {
 	PolicyHandle mslsad.LSAPR_HANDLE
-	UserRight    *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	UserRight    *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
 }
 
 func (*lsarEnumerateAccountsWithUserRightRequest) Opnum() uint16 {
@@ -31,7 +31,7 @@ type lsarEnumerateAccountsWithUserRightResponse struct {
 // LsarEnumerateAccountsWithUserRight calls LsarEnumerateAccountsWithUserRight (opnum 35),
 // returning the SIDs of accounts that hold the named user right; a nil userRight enumerates
 // accounts holding any right ([MS-LSAD] 3.1.4.5.10).
-func LsarEnumerateAccountsWithUserRight(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, userRight *dtyp.RPC_UNICODE_STRING) (mslsad.LSAPR_ACCOUNT_ENUM_BUFFER, error) {
+func LsarEnumerateAccountsWithUserRight(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, userRight *msdtyp.RPC_UNICODE_STRING) (mslsad.LSAPR_ACCOUNT_ENUM_BUFFER, error) {
 	req := &lsarEnumerateAccountsWithUserRightRequest{PolicyHandle: policyHandle, UserRight: userRight}
 	var resp lsarEnumerateAccountsWithUserRightResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

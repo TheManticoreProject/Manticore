@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -21,13 +21,13 @@ func (*samrRidToSidRequest) Opnum() uint16 { return samr.OpnumSamrRidToSid }
 // samrRidToSidResponse carries the [out] double pointer to the constructed SID and
 // the NTSTATUS.
 type samrRidToSidResponse struct {
-	Sid    *dtyp.RPC_SID `ndr:"unique"`
-	Status ndr.DWORD     `ndr:"retval"`
+	Sid    *msdtyp.RPC_SID `ndr:"unique"`
+	Status ndr.DWORD       `ndr:"retval"`
 }
 
 // SamrRidToSid calls SamrRidToSid (opnum 65), constructing the full SID for a RID
 // in the object's domain ([MS-SAMR] 3.1.5.11.2).
-func SamrRidToSid(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, rid uint32) (*dtyp.RPC_SID, error) {
+func SamrRidToSid(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, rid uint32) (*msdtyp.RPC_SID, error) {
 	req := &samrRidToSidRequest{
 		ObjectHandle: handle,
 		Rid:          ndr.DWORD(rid),

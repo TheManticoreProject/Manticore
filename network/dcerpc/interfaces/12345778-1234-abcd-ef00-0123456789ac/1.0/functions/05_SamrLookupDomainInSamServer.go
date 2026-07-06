@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -14,7 +14,7 @@ import (
 // resolve (modeled inline as an RPC_UNICODE_STRING).
 type samrLookupDomainInSamServerRequest struct {
 	ServerHandle mssamr.SAMPR_HANDLE
-	Name         dtyp.RPC_UNICODE_STRING
+	Name         msdtyp.RPC_UNICODE_STRING
 }
 
 func (*samrLookupDomainInSamServerRequest) Opnum() uint16 {
@@ -24,16 +24,16 @@ func (*samrLookupDomainInSamServerRequest) Opnum() uint16 {
 // samrLookupDomainInSamServerResponse carries the [out] double pointer to the
 // resolved domain SID and the NTSTATUS.
 type samrLookupDomainInSamServerResponse struct {
-	DomainId *dtyp.RPC_SID `ndr:"unique"`
-	Status   ndr.DWORD     `ndr:"retval"`
+	DomainId *msdtyp.RPC_SID `ndr:"unique"`
+	Status   ndr.DWORD       `ndr:"retval"`
 }
 
 // SamrLookupDomainInSamServer calls SamrLookupDomainInSamServer (opnum 5),
 // resolving a domain name to its SID ([MS-SAMR] 3.1.5.11.1).
-func SamrLookupDomainInSamServer(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, name string) (*dtyp.RPC_SID, error) {
+func SamrLookupDomainInSamServer(rpc ndr.Invoker, handle mssamr.SAMPR_HANDLE, name string) (*msdtyp.RPC_SID, error) {
 	req := &samrLookupDomainInSamServerRequest{
 		ServerHandle: handle,
-		Name:         dtyp.NewUnicodeString(name),
+		Name:         msdtyp.NewUnicodeString(name),
 	}
 	var resp samrLookupDomainInSamServerResponse
 	if err := rpc.Invoke(req, &resp); err != nil {

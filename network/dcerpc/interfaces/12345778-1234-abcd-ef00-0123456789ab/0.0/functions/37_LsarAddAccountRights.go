@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // add (a top-level [ref] struct).
 type lsarAddAccountRightsRequest struct {
 	PolicyHandle mslsad.LSAPR_HANDLE
-	AccountSid   *dtyp.RPC_SID `ndr:"unique"`
+	AccountSid   *msdtyp.RPC_SID `ndr:"unique"`
 	UserRights   mslsad.LSAPR_USER_RIGHT_SET
 }
 
@@ -23,7 +23,7 @@ func (*lsarAddAccountRightsRequest) Opnum() uint16 { return lsarpc.OpnumLsarAddA
 // LsarAddAccountRights calls LsarAddAccountRights (opnum 37), granting the named user rights
 // to the account identified by SID, creating the account if it does not exist
 // ([MS-LSAD] 3.1.4.5.12).
-func LsarAddAccountRights(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, accountSid *dtyp.RPC_SID, userRights mslsad.LSAPR_USER_RIGHT_SET) error {
+func LsarAddAccountRights(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, accountSid *msdtyp.RPC_SID, userRights mslsad.LSAPR_USER_RIGHT_SET) error {
 	req := &lsarAddAccountRightsRequest{
 		PolicyHandle: policyHandle,
 		AccountSid:   accountSid,

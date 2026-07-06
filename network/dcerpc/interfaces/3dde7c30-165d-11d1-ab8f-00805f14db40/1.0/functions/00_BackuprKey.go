@@ -3,17 +3,17 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	BackupKey "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/3dde7c30-165d-11d1-ab8f-00805f14db40/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // backuprKeyRequest carries the [in] parameters of BackuprKey. PguidActionAgent is the
 // NDR-marshallable [MS-DTYP] GUID (16 octets on the wire), not windows/guid.GUID whose
 // uint64 tail would marshal to 24 octets.
 type backuprKeyRequest struct {
-	PguidActionAgent dtyp.GUID
+	PguidActionAgent msdtyp.GUID
 	PDataIn          []uint8 `ndr:"ref,size_is=CbDataIn"`
 	CbDataIn         ndr.DWORD
 	DwParam          ndr.DWORD
@@ -39,7 +39,7 @@ type backuprKeyResponse struct {
 // ppDataOut with its length in pcbDataOut.
 func BackuprKey(rpc ndr.Invoker, pguidActionAgent guid.GUID, pDataIn []uint8, cbDataIn ndr.DWORD, dwParam ndr.DWORD) (PpDataOut []uint8, PcbDataOut ndr.DWORD, err error) {
 	req := &backuprKeyRequest{
-		PguidActionAgent: dtyp.NewGUID(pguidActionAgent),
+		PguidActionAgent: msdtyp.NewGUID(pguidActionAgent),
 		PDataIn:          pDataIn,
 		CbDataIn:         cbDataIn,
 		DwParam:          dwParam,

@@ -1,8 +1,8 @@
 package msraa
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // OBJECT_TYPE_LIST identifies an object-type element in a hierarchy of object types
@@ -18,5 +18,5 @@ import (
 type OBJECT_TYPE_LIST struct {
 	Level      uint16
 	Remaining  ndr.DWORD
-	ObjectType *dtyp.GUID `ndr:"unique"`
+	ObjectType *msdtyp.GUID `ndr:"unique"`
 }

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -28,8 +28,8 @@ func roundTrip[T any](t *testing.T, name string, in T) []byte {
 }
 
 // sampleGUID exercises every octet slot so a byte-order or truncation bug in the 16-octet
-// dtyp.GUID field shows up in the round trip.
-var sampleGUID = dtyp.GUID{
+// msdtyp.GUID field shows up in the round trip.
+var sampleGUID = msdtyp.GUID{
 	Data1: 0x11223344,
 	Data2: 0x5566,
 	Data3: 0x7788,
@@ -73,7 +73,7 @@ func TestDsrolerPrimaryDomainInfoBasicNull(t *testing.T) {
 	roundTrip(t, "DSROLER_PRIMARY_DOMAIN_INFO_BASIC(null)", DSROLER_PRIMARY_DOMAIN_INFO_BASIC{
 		MachineRole: DsRole_RoleStandaloneWorkstation,
 		Flags:       0,
-		DomainGuid:  dtyp.GUID{},
+		DomainGuid:  msdtyp.GUID{},
 	})
 }
 

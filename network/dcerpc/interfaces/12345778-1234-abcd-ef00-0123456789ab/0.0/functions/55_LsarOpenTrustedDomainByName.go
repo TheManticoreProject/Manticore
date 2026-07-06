@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // domain to open, and the desired access mask for the returned handle.
 type lsarOpenTrustedDomainByNameRequest struct {
 	PolicyHandle      mslsad.LSAPR_HANDLE
-	TrustedDomainName dtyp.RPC_UNICODE_STRING
+	TrustedDomainName msdtyp.RPC_UNICODE_STRING
 	DesiredAccess     ndr.DWORD
 }
 
@@ -25,7 +25,7 @@ func (*lsarOpenTrustedDomainByNameRequest) Opnum() uint16 {
 // LsarOpenTrustedDomainByName calls LsarOpenTrustedDomainByName (opnum 55), opening the
 // trusted domain object identified by name and returning a handle to it.
 func LsarOpenTrustedDomainByName(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
-	name := dtyp.NewUnicodeString(trustedDomainName)
+	name := msdtyp.NewUnicodeString(trustedDomainName)
 	req := &lsarOpenTrustedDomainByNameRequest{
 		PolicyHandle:      policyHandle,
 		TrustedDomainName: name,

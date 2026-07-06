@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
 
@@ -26,9 +26,9 @@ func roundTrip[T any](t *testing.T, name string, in T) {
 	}
 }
 
-func mustSID(t *testing.T, s string) *dtyp.RPC_SID {
+func mustSID(t *testing.T, s string) *msdtyp.RPC_SID {
 	t.Helper()
-	sid, err := dtyp.ParseSID(s)
+	sid, err := msdtyp.ParseSID(s)
 	if err != nil {
 		t.Fatalf("ParseSID(%q): %v", s, err)
 	}

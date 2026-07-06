@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ---- from base_test.go ----
@@ -31,9 +31,9 @@ func roundTripBase[T any](t *testing.T, name string, in T) {
 	}
 }
 
-func mustBaseSID(t *testing.T, s string) *dtyp.RPC_SID {
+func mustBaseSID(t *testing.T, s string) *msdtyp.RPC_SID {
 	t.Helper()
-	sid, err := dtyp.ParseSID(s)
+	sid, err := msdtyp.ParseSID(s)
 	if err != nil {
 		t.Fatalf("ParseSID(%q): %v", s, err)
 	}
@@ -46,8 +46,8 @@ func TestSAMPR_ENUMERATION_BUFFER_RoundTrip(t *testing.T) {
 	in := SAMPR_ENUMERATION_BUFFER{
 		EntriesRead: 2,
 		Buffer: []SAMPR_RID_ENUMERATION{
-			{RelativeId: 500, Name: dtyp.NewUnicodeString("Administrator")},
-			{RelativeId: 501, Name: dtyp.NewUnicodeString("Guest")},
+			{RelativeId: 500, Name: msdtyp.NewUnicodeString("Administrator")},
+			{RelativeId: 501, Name: msdtyp.NewUnicodeString("Guest")},
 		},
 	}
 	roundTripBase(t, "SAMPR_ENUMERATION_BUFFER", in)
@@ -74,7 +74,7 @@ func TestSAMPR_DOMAIN_INFO_BUFFER_RoundTrip(t *testing.T) {
 	in := SAMPR_DOMAIN_INFO_BUFFER{
 		Tag: DomainNameInformation,
 		Name: SAMPR_DOMAIN_NAME_INFORMATION{
-			DomainName: dtyp.NewUnicodeString("CONTOSO"),
+			DomainName: msdtyp.NewUnicodeString("CONTOSO"),
 		},
 	}
 
@@ -156,7 +156,7 @@ func TestSAMPR_GROUP_INFO_BUFFER_RoundTrip(t *testing.T) {
 	groupAliasRoundTrip(t, "GroupNameInformation(case2)", SAMPR_GROUP_INFO_BUFFER{
 		Tag: GroupNameInformation,
 		Name: SAMPR_GROUP_NAME_INFORMATION{
-			Name: dtyp.NewUnicodeString("Domain Admins"),
+			Name: msdtyp.NewUnicodeString("Domain Admins"),
 		},
 	})
 }
@@ -167,9 +167,9 @@ func TestSAMPR_ALIAS_INFO_BUFFER_RoundTrip(t *testing.T) {
 	groupAliasRoundTrip(t, "AliasGeneralInformation(case1)", SAMPR_ALIAS_INFO_BUFFER{
 		Tag: AliasGeneralInformation,
 		General: SAMPR_ALIAS_GENERAL_INFORMATION{
-			Name:         dtyp.NewUnicodeString("Administrators"),
+			Name:         msdtyp.NewUnicodeString("Administrators"),
 			MemberCount:  3,
-			AdminComment: dtyp.NewUnicodeString("Built-in admins"),
+			AdminComment: msdtyp.NewUnicodeString("Built-in admins"),
 		},
 	})
 }
@@ -207,8 +207,8 @@ func TestSamprUserInfoBufferNameRoundTrip(t *testing.T) {
 	in := SAMPR_USER_INFO_BUFFER{
 		Tag: UserNameInformation,
 		Name: SAMPR_USER_NAME_INFORMATION{
-			UserName: dtyp.NewUnicodeString("administrator"),
-			FullName: dtyp.NewUnicodeString("Administrator Account"),
+			UserName: msdtyp.NewUnicodeString("administrator"),
+			FullName: msdtyp.NewUnicodeString("Administrator Account"),
 		},
 	}
 
@@ -282,9 +282,9 @@ func TestSAM_VALIDATE_OUTPUT_ARG_RoundTrip(t *testing.T) {
 		ValidateAuthenticationOutput: SAM_VALIDATE_STANDARD_OUTPUT_ARG{
 			ChangedPersistedFields: SAM_VALIDATE_PERSISTED_FIELDS{
 				PresentFields:         0x00000007,
-				PasswordLastSet:       dtyp.LARGE_INTEGER(0x1122334455667788),
-				BadPasswordTime:       dtyp.LARGE_INTEGER(0x0000000000000000),
-				LockoutTime:           dtyp.LARGE_INTEGER(0x00000000DEADBEEF),
+				PasswordLastSet:       msdtyp.LARGE_INTEGER(0x1122334455667788),
+				BadPasswordTime:       msdtyp.LARGE_INTEGER(0x0000000000000000),
+				LockoutTime:           msdtyp.LARGE_INTEGER(0x00000000DEADBEEF),
 				BadPasswordCount:      3,
 				PasswordHistoryLength: 2,
 				PasswordHistory: []SAM_VALIDATE_PASSWORD_HASH{

@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	PerflibV2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/da5a86c5-12c2-4943-ab30-7f74a813d853/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // perflibV2EnumerateCounterSetRequest carries the [in] parameters of PerflibV2EnumerateCounterSet.
@@ -28,14 +28,14 @@ type perflibV2EnumerateCounterSetResponse struct {
 	// arrive inline on the wire, so the decoder reads both directly; size_is/length_is are
 	// marshal-only hints, and size_is names dwInSize, which is [in]-only and thus absent
 	// from this response struct — so the tag is dropped here.
-	LpData []dtyp.GUID `ndr:"ref,varying"`
-	Status ndr.DWORD   `ndr:"retval"`
+	LpData []msdtyp.GUID `ndr:"ref,varying"`
+	Status ndr.DWORD     `ndr:"retval"`
 }
 
 // PerflibV2EnumerateCounterSet calls PerflibV2EnumerateCounterSet (opnum 0) ([MS-PCQ] 3.1.4.1).
 // A dwInSize of 0 is the size-probe form: the server returns ERROR_NOT_ENOUGH_MEMORY with
 // the required buffer size in pdwRtnSize, which this stub tolerates as a non-error.
-func PerflibV2EnumerateCounterSet(rpc ndr.Invoker, szMachine ndr.WSTR, dwInSize ndr.DWORD) (PdwOutSize ndr.DWORD, PdwRtnSize ndr.DWORD, LpData []dtyp.GUID, err error) {
+func PerflibV2EnumerateCounterSet(rpc ndr.Invoker, szMachine ndr.WSTR, dwInSize ndr.DWORD) (PdwOutSize ndr.DWORD, PdwRtnSize ndr.DWORD, LpData []msdtyp.GUID, err error) {
 	req := &perflibV2EnumerateCounterSetRequest{
 		SzMachine: szMachine,
 		DwInSize:  dwInSize,

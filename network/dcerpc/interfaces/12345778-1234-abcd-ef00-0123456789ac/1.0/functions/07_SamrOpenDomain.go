@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -14,14 +14,14 @@ import (
 type samrOpenDomainRequest struct {
 	ServerHandle  mssamr.SAMPR_HANDLE
 	DesiredAccess ndr.DWORD
-	DomainId      dtyp.RPC_SID
+	DomainId      msdtyp.RPC_SID
 }
 
 func (*samrOpenDomainRequest) Opnum() uint16 { return samr.OpnumSamrOpenDomain }
 
 // SamrOpenDomain calls SamrOpenDomain (opnum 7), obtaining a handle to a domain object
 // given its SID ([MS-SAMR] 3.1.5.1.5).
-func SamrOpenDomain(rpc ndr.Invoker, serverHandle mssamr.SAMPR_HANDLE, desiredAccess uint32, domainId dtyp.RPC_SID) (mssamr.SAMPR_HANDLE, error) {
+func SamrOpenDomain(rpc ndr.Invoker, serverHandle mssamr.SAMPR_HANDLE, desiredAccess uint32, domainId msdtyp.RPC_SID) (mssamr.SAMPR_HANDLE, error) {
 	req := &samrOpenDomainRequest{
 		ServerHandle:  serverHandle,
 		DesiredAccess: ndr.DWORD(desiredAccess),

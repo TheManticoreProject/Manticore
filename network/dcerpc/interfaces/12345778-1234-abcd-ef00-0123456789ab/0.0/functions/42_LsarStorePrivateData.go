@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -15,7 +15,7 @@ import (
 // server interprets as a request to delete the value ([MS-LSAD] 3.1.4.7.1).
 type lsarStorePrivateDataRequest struct {
 	PolicyHandle  mslsad.LSAPR_HANDLE
-	KeyName       dtyp.RPC_UNICODE_STRING
+	KeyName       msdtyp.RPC_UNICODE_STRING
 	EncryptedData *mslsad.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
 }
 
@@ -26,7 +26,7 @@ func (*lsarStorePrivateDataRequest) Opnum() uint16 { return lsarpc.OpnumLsarStor
 func LsarStorePrivateData(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, keyName string, encryptedData *mslsad.LSAPR_CR_CIPHER_VALUE) error {
 	req := &lsarStorePrivateDataRequest{
 		PolicyHandle:  policyHandle,
-		KeyName:       dtyp.NewUnicodeString(keyName),
+		KeyName:       msdtyp.NewUnicodeString(keyName),
 		EncryptedData: encryptedData,
 	}
 	var resp statusResponse

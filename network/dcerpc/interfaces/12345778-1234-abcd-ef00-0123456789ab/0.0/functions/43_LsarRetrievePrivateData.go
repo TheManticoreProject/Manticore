@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -16,7 +16,7 @@ import (
 // referent and the server fills it in ([MS-LSAD] 3.1.4.7.2).
 type lsarRetrievePrivateDataRequest struct {
 	PolicyHandle  mslsad.LSAPR_HANDLE
-	KeyName       dtyp.RPC_UNICODE_STRING
+	KeyName       msdtyp.RPC_UNICODE_STRING
 	EncryptedData *mslsad.LSAPR_CR_CIPHER_VALUE `ndr:"unique"`
 }
 
@@ -35,7 +35,7 @@ type lsarRetrievePrivateDataResponse struct {
 func LsarRetrievePrivateData(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, keyName string) (*mslsad.LSAPR_CR_CIPHER_VALUE, error) {
 	req := &lsarRetrievePrivateDataRequest{
 		PolicyHandle: policyHandle,
-		KeyName:      dtyp.NewUnicodeString(keyName),
+		KeyName:      msdtyp.NewUnicodeString(keyName),
 	}
 	var resp lsarRetrievePrivateDataResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
