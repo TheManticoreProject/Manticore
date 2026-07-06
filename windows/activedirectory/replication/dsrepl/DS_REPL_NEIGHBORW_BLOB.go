@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_neighborw_blob_header_size is the size, in bytes, of the fixed header
@@ -45,9 +45,9 @@ type DS_REPL_NEIGHBORW_BLOB struct {
 	// AttributeFilter is the LastObjChangeSynced value at the end of the last complete cycle (usnAttributeFilter).
 	AttributeFilter int64
 	// LastSyncSuccess is the time the last successful replication cycle completed (ftimeLastSyncSuccess).
-	LastSyncSuccess data_structures.FILETIME
+	LastSyncSuccess msdtyp.FILETIME
 	// LastSyncAttempt is the time of the last replication attempt (ftimeLastSyncAttempt).
-	LastSyncAttempt data_structures.FILETIME
+	LastSyncAttempt msdtyp.FILETIME
 	// LastSyncResult is the Windows error code of the last replication attempt (dwLastSyncResult).
 	LastSyncResult uint32
 	// NumConsecutiveSyncFailures is the number of failed replication attempts since the last success (cNumConsecutiveSyncFailures).

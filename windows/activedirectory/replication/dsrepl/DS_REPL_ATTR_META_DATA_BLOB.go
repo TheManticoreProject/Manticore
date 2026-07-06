@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_attr_meta_data_blob_header_size is the size, in bytes, of the fixed
@@ -25,7 +25,7 @@ type DS_REPL_ATTR_META_DATA_BLOB struct {
 	// Version is the dwVersion of the attribute's AttributeStamp (dwVersion).
 	Version uint32
 	// LastOriginatingChange is the timeChanged of the AttributeStamp (ftimeLastOriginatingChange).
-	LastOriginatingChange data_structures.FILETIME
+	LastOriginatingChange msdtyp.FILETIME
 	// LastOriginatingDsaInvocationID is the uuidOriginating of the AttributeStamp (uuidLastOriginatingDsaInvocationID).
 	LastOriginatingDsaInvocationID guid.GUID
 	// OriginatingChange is the usnOriginating of the AttributeStamp (usnOriginatingChange).

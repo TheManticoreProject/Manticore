@@ -6,12 +6,12 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestGetRemoteServerTimeReturnsNegotiatedTime(t *testing.T) {
 	want := time.Date(2021, time.June, 15, 12, 30, 45, 0, time.UTC)
-	ft := data_structures.NewFILETIMEFromTime(want)
+	ft := msdtyp.NewFILETIMEFromTime(want)
 
 	c := &client.Client{
 		Connection: &client.Connection{

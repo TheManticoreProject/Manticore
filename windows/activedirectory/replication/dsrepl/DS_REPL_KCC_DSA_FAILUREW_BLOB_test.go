@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_KCC_DSA_FAILUREW_BLOB_RoundTrip(t *testing.T) {
@@ -14,7 +14,7 @@ func TestDS_REPL_KCC_DSA_FAILUREW_BLOB_RoundTrip(t *testing.T) {
 	original := &dsrepl.DS_REPL_KCC_DSA_FAILUREW_BLOB{
 		DsaDN:        strptr("CN=NTDS Settings,CN=DC02"),
 		DsaObjGuid:   *g,
-		FirstFailure: data_structures.FILETIME{DwLowDateTime: 0xAABBCCDD, DwHighDateTime: 0x01D12345},
+		FirstFailure: msdtyp.FILETIME{DwLowDateTime: 0xAABBCCDD, DwHighDateTime: 0x01D12345},
 		NumFailures:  7,
 		LastResult:   1722,
 	}

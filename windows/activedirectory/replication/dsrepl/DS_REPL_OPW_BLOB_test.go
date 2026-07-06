@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_OPW_BLOB_RoundTrip(t *testing.T) {
@@ -13,7 +13,7 @@ func TestDS_REPL_OPW_BLOB_RoundTrip(t *testing.T) {
 	g2, _ := guid.FromString("ffffffff-0000-1111-2222-333333333333")
 
 	original := &dsrepl.DS_REPL_OPW_BLOB{
-		Enqueued:             data_structures.FILETIME{DwLowDateTime: 0x12345678, DwHighDateTime: 0x01D0ABCD},
+		Enqueued:             msdtyp.FILETIME{DwLowDateTime: 0x12345678, DwHighDateTime: 0x01D0ABCD},
 		SerialNumber:         42,
 		Priority:             100,
 		OpType:               dsrepl.DS_REPL_OP_TYPE_SYNC,

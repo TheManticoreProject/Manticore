@@ -3,10 +3,10 @@ package types
 import (
 	"time"
 
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
-type SMB_TIME = data_structures.FILETIME
+type SMB_TIME = msdtyp.FILETIME
 
 // NewSMB_TIMEFromTime creates a new SMB_TIME from a time.Time
 //
@@ -16,5 +16,5 @@ type SMB_TIME = data_structures.FILETIME
 // Returns:
 // - The new SMB_TIME
 func NewSMB_TIMEFromTime(t time.Time) *SMB_TIME {
-	return data_structures.NewFILETIMEFromTime(t)
+	return msdtyp.NewFILETIMEFromTime(t)
 }

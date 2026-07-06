@@ -3,8 +3,6 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
-
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_types"
 )
 
 // SMB_FEA_LIST
@@ -12,10 +10,10 @@ import (
 type SMB_FEA_LIST struct {
 	// SizeOfListInBytes (4 bytes): The total size of the FEAList field plus the size
 	// of the SizeOfListInBytes field itself (4 bytes).
-	SizeOfListInBytes data_types.ULONG
+	SizeOfListInBytes ULONG
 	// FEAList (variable): A concatenated list of SMB_FEA structures, held here as raw
 	// bytes.
-	FEAList []data_types.UCHAR
+	FEAList []UCHAR
 }
 
 // Marshal serializes the SMB_FEA_LIST into a byte slice.
@@ -25,7 +23,7 @@ type SMB_FEA_LIST struct {
 // - An error if marshalling fails
 func (s *SMB_FEA_LIST) Marshal() ([]byte, error) {
 	// SizeOfListInBytes counts the 4-byte size field plus the FEAList payload.
-	s.SizeOfListInBytes = data_types.ULONG(4 + len(s.FEAList))
+	s.SizeOfListInBytes = ULONG(4 + len(s.FEAList))
 
 	marshalled := make([]byte, 4)
 	binary.LittleEndian.PutUint32(marshalled, uint32(s.SizeOfListInBytes))
@@ -46,7 +44,7 @@ func (s *SMB_FEA_LIST) Unmarshal(data []byte) (int, error) {
 	if len(data) < 4 {
 		return 0, fmt.Errorf("data too short for SMB_FEA_LIST SizeOfListInBytes")
 	}
-	s.SizeOfListInBytes = data_types.ULONG(binary.LittleEndian.Uint32(data[0:4]))
+	s.SizeOfListInBytes = ULONG(binary.LittleEndian.Uint32(data[0:4]))
 
 	// SizeOfListInBytes includes the 4-byte size field itself.
 	if s.SizeOfListInBytes < 4 {
@@ -56,7 +54,7 @@ func (s *SMB_FEA_LIST) Unmarshal(data []byte) (int, error) {
 	if len(data) < 4+payloadLen {
 		return 0, fmt.Errorf("data too short for SMB_FEA_LIST payload (need %d bytes, have %d)", payloadLen, len(data)-4)
 	}
-	s.FEAList = append([]data_types.UCHAR{}, data[4:4+payloadLen]...)
+	s.FEAList = append([]UCHAR{}, data[4:4+payloadLen]...)
 
 	return 4 + payloadLen, nil
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_cursor_blob_header_size is the size, in bytes, of the fixed header that
@@ -25,7 +25,7 @@ type DS_REPL_CURSOR_BLOB struct {
 	// AttributeFilter is the maximum USN recorded for the originating server (usnAttributeFilter).
 	AttributeFilter int64
 	// LastSyncSuccess is the time of the last successful synchronization (fTimeLastSyncSuccess).
-	LastSyncSuccess data_structures.FILETIME
+	LastSyncSuccess msdtyp.FILETIME
 	// SourceDsaDN is the DN of the DSA of the source server (oszSourceDsaDN). nil if NULL.
 	SourceDsaDN *string
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_NEIGHBORW_BLOB_RoundTrip(t *testing.T) {
@@ -27,8 +27,8 @@ func TestDS_REPL_NEIGHBORW_BLOB_RoundTrip(t *testing.T) {
 		AsyncIntersiteTransportObjGuid: *g4,
 		LastObjChangeSynced:            123456,
 		AttributeFilter:                123000,
-		LastSyncSuccess:                data_structures.FILETIME{DwLowDateTime: 0x11111111, DwHighDateTime: 0x01D00000},
-		LastSyncAttempt:                data_structures.FILETIME{DwLowDateTime: 0x22222222, DwHighDateTime: 0x01D00001},
+		LastSyncSuccess:                msdtyp.FILETIME{DwLowDateTime: 0x11111111, DwHighDateTime: 0x01D00000},
+		LastSyncAttempt:                msdtyp.FILETIME{DwLowDateTime: 0x22222222, DwHighDateTime: 0x01D00001},
 		LastSyncResult:                 0,
 		NumConsecutiveSyncFailures:     3,
 	}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_CURSOR_BLOB_RoundTrip(t *testing.T) {
@@ -14,7 +14,7 @@ func TestDS_REPL_CURSOR_BLOB_RoundTrip(t *testing.T) {
 	original := &dsrepl.DS_REPL_CURSOR_BLOB{
 		SourceDsaInvocationID: *g,
 		AttributeFilter:       987654321,
-		LastSyncSuccess:       data_structures.FILETIME{DwLowDateTime: 0xCAFEBABE, DwHighDateTime: 0x01D0FACE},
+		LastSyncSuccess:       msdtyp.FILETIME{DwLowDateTime: 0xCAFEBABE, DwHighDateTime: 0x01D0FACE},
 		SourceDsaDN:           strptr("CN=NTDS Settings,CN=DC04"),
 	}
 

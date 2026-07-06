@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/activedirectory/replication/dsrepl"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 func TestDS_REPL_ATTR_META_DATA_BLOB_RoundTrip(t *testing.T) {
@@ -14,7 +14,7 @@ func TestDS_REPL_ATTR_META_DATA_BLOB_RoundTrip(t *testing.T) {
 	original := &dsrepl.DS_REPL_ATTR_META_DATA_BLOB{
 		AttributeName:                  strptr("objectClass"),
 		Version:                        4,
-		LastOriginatingChange:          data_structures.FILETIME{DwLowDateTime: 0x11223344, DwHighDateTime: 0x01D05566},
+		LastOriginatingChange:          msdtyp.FILETIME{DwLowDateTime: 0x11223344, DwHighDateTime: 0x01D05566},
 		LastOriginatingDsaInvocationID: *g,
 		OriginatingChange:              555000,
 		LocalChange:                    556000,

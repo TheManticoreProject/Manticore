@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/TheManticoreProject/Manticore/windows/ms_dtyp/common/data_structures"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ds_repl_queue_statisticsw_blob_size is the fixed size, in bytes, of the
@@ -19,19 +19,19 @@ const ds_repl_queue_statisticsw_blob_size = 52
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/aa5923c9-48bf-4182-93ff-6353dd9f0b00
 type DS_REPL_QUEUE_STATISTICSW_BLOB struct {
 	// CurrentOpStarted is the time the currently running operation started (ftimeCurrentOpStarted).
-	CurrentOpStarted data_structures.FILETIME
+	CurrentOpStarted msdtyp.FILETIME
 	// NumPendingOps is the number of currently pending operations (cNumPendingOps).
 	NumPendingOps uint32
 	// OldestSync is the time of the oldest synchronization operation (ftimeOldestSync).
-	OldestSync data_structures.FILETIME
+	OldestSync msdtyp.FILETIME
 	// OldestAdd is the time of the oldest add operation (ftimeOldestAdd).
-	OldestAdd data_structures.FILETIME
+	OldestAdd msdtyp.FILETIME
 	// OldestMod is the time of the oldest modification operation (ftimeOldestMod).
-	OldestMod data_structures.FILETIME
+	OldestMod msdtyp.FILETIME
 	// OldestDel is the time of the oldest delete operation (ftimeOldestDel).
-	OldestDel data_structures.FILETIME
+	OldestDel msdtyp.FILETIME
 	// OldestUpdRefs is the time of the oldest reference update operation (ftimeOldestUpdRefs).
-	OldestUpdRefs data_structures.FILETIME
+	OldestUpdRefs msdtyp.FILETIME
 }
 
 // NewDS_REPL_QUEUE_STATISTICSW_BLOB creates a new, empty DS_REPL_QUEUE_STATISTICSW_BLOB structure.
@@ -95,7 +95,7 @@ func (b *DS_REPL_QUEUE_STATISTICSW_BLOB) Marshal() ([]byte, error) {
 
 	for _, field := range []struct {
 		offset int
-		ft     *data_structures.FILETIME
+		ft     *msdtyp.FILETIME
 	}{
 		{12, &b.OldestSync},
 		{20, &b.OldestAdd},
