@@ -270,6 +270,19 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 	}
 
 	switch fv.Kind() {
+	case reflect.Pointer:
+		// A pointer reached as an inline value is the inner level of a multiply-indirected
+		// pointer (e.g. **T): the enclosing referent body is itself a pointer. Emit this
+		// level's referent id (0 for NULL) and then its own referent body, exactly as an
+		// embedded [unique] pointer does ([C706] section 14.3.10). marshalReferentBody
+		// dereferences one level and recurses here, so arbitrary depth (**T, ***T) works.
+		// Used by [MS-MQMP] CACTransferBuffer's OBJECTID**/GUID** fields.
+		if isNilReferent(fv) {
+			e.writeReferent(0)
+			return nil
+		}
+		e.writeReferent(e.nextReferent())
+		return marshalReferentBody(e, fv, tag)
 	case reflect.Struct:
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
 			return marshalUnion(e, fv, swIdx)
@@ -551,6 +564,18 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 	}
 
 	switch fv.Kind() {
+	case reflect.Pointer:
+		// Symmetric with marshalInlineValue: the inner level of a multiply-indirected
+		// pointer (**T). Read this level's referent id; a NULL (0) leaves the zero value,
+		// otherwise unmarshalReferentBody allocates and recurses for the referent body.
+		refid, err := d.readReferent()
+		if err != nil {
+			return err
+		}
+		if refid == 0 {
+			return nil
+		}
+		return unmarshalReferentBody(d, fv, tag)
 	case reflect.Struct:
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
 			return unmarshalUnion(d, fv, swIdx)
