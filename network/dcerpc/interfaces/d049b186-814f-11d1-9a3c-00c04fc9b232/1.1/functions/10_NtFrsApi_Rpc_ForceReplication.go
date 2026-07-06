@@ -3,17 +3,17 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	frsapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/d049b186-814f-11d1-9a3c-00c04fc9b232/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // ntFrsApi_Rpc_ForceReplicationRequest carries the [in] parameters of NtFrsApi_Rpc_ForceReplication.
 type ntFrsApi_Rpc_ForceReplicationRequest struct {
-	ReplicaSetGuid *dtyp.GUID `ndr:"unique"`
-	CxtionGuid     *dtyp.GUID `ndr:"unique"`
-	ReplicaSetName *ndr.WSTR  `ndr:"unique"`
-	PartnerDnsName *ndr.WSTR  `ndr:"unique"`
+	ReplicaSetGuid *msdtyp.GUID `ndr:"unique"`
+	CxtionGuid     *msdtyp.GUID `ndr:"unique"`
+	ReplicaSetName *ndr.WSTR    `ndr:"unique"`
+	PartnerDnsName *ndr.WSTR    `ndr:"unique"`
 }
 
 func (*ntFrsApi_Rpc_ForceReplicationRequest) Opnum() uint16 {
@@ -21,7 +21,7 @@ func (*ntFrsApi_Rpc_ForceReplicationRequest) Opnum() uint16 {
 }
 
 // NtFrsApi_Rpc_ForceReplication calls NtFrsApi_Rpc_ForceReplication (opnum 10) ([MS-FRS1] section 3.2.4.6).
-func NtFrsApi_Rpc_ForceReplication(rpc ndr.Invoker, replicaSetGuid *dtyp.GUID, cxtionGuid *dtyp.GUID, replicaSetName *ndr.WSTR, partnerDnsName *ndr.WSTR) (err error) {
+func NtFrsApi_Rpc_ForceReplication(rpc ndr.Invoker, replicaSetGuid *msdtyp.GUID, cxtionGuid *msdtyp.GUID, replicaSetName *ndr.WSTR, partnerDnsName *ndr.WSTR) (err error) {
 	req := &ntFrsApi_Rpc_ForceReplicationRequest{
 		ReplicaSetGuid: replicaSetGuid,
 		CxtionGuid:     cxtionGuid,

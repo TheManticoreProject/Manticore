@@ -3,18 +3,18 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	authzr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/0b1c2170-5732-4e0e-8cd3-d9b16f3b84d7/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msraa "github.com/TheManticoreProject/Manticore/windows/protocols/ms-raa"
 )
 
 // authzrInitializeContextFromSidRequest carries the [in] parameters of AuthzrInitializeContextFromSid.
 type authzrInitializeContextFromSidRequest struct {
 	Flags           ndr.DWORD
-	Sid             dtyp.RPC_SID
-	PExpirationTime *dtyp.LARGE_INTEGER `ndr:"unique"`
-	Identifier      dtyp.LUID
+	Sid             msdtyp.RPC_SID
+	PExpirationTime *msdtyp.LARGE_INTEGER `ndr:"unique"`
+	Identifier      msdtyp.LUID
 }
 
 func (*authzrInitializeContextFromSidRequest) Opnum() uint16 {
@@ -29,7 +29,7 @@ type authzrInitializeContextFromSidResponse struct {
 
 // AuthzrInitializeContextFromSid calls AuthzrInitializeContextFromSid (opnum 1) ([MS-RAA] — verify the parameter
 // modeling and status handling).
-func AuthzrInitializeContextFromSid(rpc ndr.Invoker, flags ndr.DWORD, sid dtyp.RPC_SID, pExpirationTime *dtyp.LARGE_INTEGER, identifier dtyp.LUID) (ContextHandle msraa.AUTHZR_HANDLE, err error) {
+func AuthzrInitializeContextFromSid(rpc ndr.Invoker, flags ndr.DWORD, sid msdtyp.RPC_SID, pExpirationTime *msdtyp.LARGE_INTEGER, identifier msdtyp.LUID) (ContextHandle msraa.AUTHZR_HANDLE, err error) {
 	req := &authzrInitializeContextFromSidRequest{
 		Flags:           flags,
 		Sid:             sid,

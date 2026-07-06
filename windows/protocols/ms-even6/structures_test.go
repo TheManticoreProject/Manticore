@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals v (a pointer), unmarshals into out (a pointer to the same type), and
@@ -23,7 +23,7 @@ func roundTrip(t *testing.T, v any, out any) {
 
 func wstr(s string) *ndr.WSTR { w := ndr.WSTR(s); return &w }
 
-var sampleGUID = dtyp.GUID{
+var sampleGUID = msdtyp.GUID{
 	Data1: 0xf6beaff7,
 	Data2: 0x1e19,
 	Data3: 0x4fbb,
@@ -103,7 +103,7 @@ func TestStringArray_RoundTrip(t *testing.T) {
 // TestGuidArray_RoundTrip exercises GuidArray ([MS-EVEN6] 2.2.9): a [unique] pointer to a
 // conformant array of 16-octet GUIDs.
 func TestGuidArray_RoundTrip(t *testing.T) {
-	in := GuidArray{Count: 1, Ptr: []dtyp.GUID{sampleGUID}}
+	in := GuidArray{Count: 1, Ptr: []msdtyp.GUID{sampleGUID}}
 	var out GuidArray
 	roundTrip(t, &in, &out)
 	if !reflect.DeepEqual(in, out) {

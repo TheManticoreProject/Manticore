@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -13,7 +13,7 @@ import (
 // handle_t binding handle is implicit (the RPC client) and is not marshalled;
 // Unused is an ignored [unique] string per the protocol.
 type samrGetDomainPasswordInformationRequest struct {
-	Unused *dtyp.RPC_UNICODE_STRING `ndr:"unique"`
+	Unused *msdtyp.RPC_UNICODE_STRING `ndr:"unique"`
 }
 
 func (*samrGetDomainPasswordInformationRequest) Opnum() uint16 {

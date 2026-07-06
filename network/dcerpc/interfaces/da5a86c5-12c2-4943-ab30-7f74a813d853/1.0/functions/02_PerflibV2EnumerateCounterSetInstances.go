@@ -3,15 +3,15 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	PerflibV2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/da5a86c5-12c2-4943-ab30-7f74a813d853/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // perflibV2EnumerateCounterSetInstancesRequest carries the [in] parameters of PerflibV2EnumerateCounterSetInstances.
 type perflibV2EnumerateCounterSetInstancesRequest struct {
 	SzMachine      ndr.WSTR
-	CounterSetGuid dtyp.GUID
+	CounterSetGuid msdtyp.GUID
 	DwInSize       ndr.DWORD
 }
 
@@ -32,7 +32,7 @@ type perflibV2EnumerateCounterSetInstancesResponse struct {
 // PerflibV2EnumerateCounterSetInstances calls PerflibV2EnumerateCounterSetInstances (opnum 2) ([MS-PCQ] 3.1.4.3).
 // A dwInSize of 0 is the size-probe form; the server returns ERROR_NOT_ENOUGH_MEMORY with the
 // required buffer size in pdwRtnSize, which this stub tolerates as a non-error.
-func PerflibV2EnumerateCounterSetInstances(rpc ndr.Invoker, szMachine ndr.WSTR, counterSetGuid dtyp.GUID, dwInSize ndr.DWORD) (PdwOutSize ndr.DWORD, PdwRtnSize ndr.DWORD, LpData []uint8, err error) {
+func PerflibV2EnumerateCounterSetInstances(rpc ndr.Invoker, szMachine ndr.WSTR, counterSetGuid msdtyp.GUID, dwInSize ndr.DWORD) (PdwOutSize ndr.DWORD, PdwRtnSize ndr.DWORD, LpData []uint8, err error) {
 	req := &perflibV2EnumerateCounterSetInstancesRequest{
 		SzMachine:      szMachine,
 		CounterSetGuid: counterSetGuid,

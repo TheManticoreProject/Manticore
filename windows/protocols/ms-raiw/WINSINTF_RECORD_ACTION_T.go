@@ -1,8 +1,8 @@
 package msraiw
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // WINSINTF_RECORD_ACTION_T ([MS-RAIW] 2.2.2.1) is the record acted on by
@@ -19,7 +19,7 @@ type WINSINTF_RECORD_ACTION_T struct {
 	NoOfAdds   ndr.DWORD
 	PAdd       []WINSINTF_ADD_T `ndr:"unique,size_is=NoOfAdds"`
 	Add        WINSINTF_ADD_T
-	VersNo     dtyp.LARGE_INTEGER
+	VersNo     msdtyp.LARGE_INTEGER
 	NodeTyp    uint8
 	OwnerId    ndr.DWORD
 	State_e    ndr.DWORD

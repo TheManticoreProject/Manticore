@@ -1,11 +1,11 @@
 package mslsad
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSAPR_ACCOUNT_INFORMATION identifies an account by SID ([MS-LSAD] 2.2.5.3). Sid is a
 // [unique] pointer to an RPC_SID.
 type LSAPR_ACCOUNT_INFORMATION struct {
-	Sid *dtyp.RPC_SID `ndr:"unique"`
+	Sid *msdtyp.RPC_SID `ndr:"unique"`
 }

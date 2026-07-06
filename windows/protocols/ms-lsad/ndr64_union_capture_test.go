@@ -3,8 +3,8 @@ package mslsad
 import (
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // policyInfoResponse mirrors the LsarQueryInformationPolicy reply: the [out] union as a
@@ -38,11 +38,11 @@ func roundTripNDR64(t *testing.T, in *LSAPR_POLICY_INFORMATION) *LSAPR_POLICY_IN
 // members. Values are synthetic; the on-wire framing was verified against a live capture
 // during development (issue #596).
 func TestNDR64_PolicyInformationUnion(t *testing.T) {
-	sid, err := dtyp.ParseSID("S-1-5-21-1-2-3")
+	sid, err := msdtyp.ParseSID("S-1-5-21-1-2-3")
 	if err != nil {
 		t.Fatalf("ParseSID: %v", err)
 	}
-	g := dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}}
+	g := msdtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}}
 
 	// Server-role arm (class 6): a 4-octet enum within the arm.
 	role := roundTripNDR64(t, &LSAPR_POLICY_INFORMATION{
@@ -56,7 +56,7 @@ func TestNDR64_PolicyInformationUnion(t *testing.T) {
 	// Account-domain arm (class 5): counted string + [unique] SID.
 	acct := roundTripNDR64(t, &LSAPR_POLICY_INFORMATION{
 		Class:                   PolicyAccountDomainInformation,
-		PolicyAccountDomainInfo: LSAPR_POLICY_ACCOUNT_DOM_INFO{DomainName: dtyp.NewUnicodeString("TESTDOM"), DomainSid: &sid},
+		PolicyAccountDomainInfo: LSAPR_POLICY_ACCOUNT_DOM_INFO{DomainName: msdtyp.NewUnicodeString("TESTDOM"), DomainSid: &sid},
 	})
 	if acct.Class != PolicyAccountDomainInformation {
 		t.Fatalf("account-domain class = %d", acct.Class)
@@ -72,9 +72,9 @@ func TestNDR64_PolicyInformationUnion(t *testing.T) {
 	dns := roundTripNDR64(t, &LSAPR_POLICY_INFORMATION{
 		Class: PolicyDnsDomainInformation,
 		PolicyDnsDomainInfo: LSAPR_POLICY_DNS_DOMAIN_INFO{
-			Name:          dtyp.NewUnicodeString("TESTDOM"),
-			DnsDomainName: dtyp.NewUnicodeString("test.example"),
-			DnsForestName: dtyp.NewUnicodeString("test.example"),
+			Name:          msdtyp.NewUnicodeString("TESTDOM"),
+			DnsDomainName: msdtyp.NewUnicodeString("test.example"),
+			DnsForestName: msdtyp.NewUnicodeString("test.example"),
 			DomainGuid:    g,
 			Sid:           &sid,
 		},

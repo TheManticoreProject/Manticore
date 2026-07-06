@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // class selecting which union arm is returned.
 type lsarQueryTrustedDomainInfoRequest struct {
 	PolicyHandle     mslsad.LSAPR_HANDLE
-	TrustedDomainSid *dtyp.RPC_SID                    `ndr:"unique"`
+	TrustedDomainSid *msdtyp.RPC_SID                  `ndr:"unique"`
 	InformationClass mslsad.TRUSTED_INFORMATION_CLASS `ndr:"enum"`
 }
 
@@ -32,7 +32,7 @@ type lsarQueryTrustedDomainInfoResponse struct {
 // LsarQueryTrustedDomainInfo calls LsarQueryTrustedDomainInfo (opnum 39), returning the
 // requested trusted-domain information class for the domain identified by SID
 // ([MS-LSAD] 3.1.4.7.2).
-func LsarQueryTrustedDomainInfo(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainSid *dtyp.RPC_SID, infoClass mslsad.TRUSTED_INFORMATION_CLASS) (*mslsad.LSAPR_TRUSTED_DOMAIN_INFO, error) {
+func LsarQueryTrustedDomainInfo(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainSid *msdtyp.RPC_SID, infoClass mslsad.TRUSTED_INFORMATION_CLASS) (*mslsad.LSAPR_TRUSTED_DOMAIN_INFO, error) {
 	req := &lsarQueryTrustedDomainInfoRequest{
 		PolicyHandle:     policyHandle,
 		TrustedDomainSid: trustedDomainSid,

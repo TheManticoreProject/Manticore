@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals v under both transfer syntaxes, unmarshals into a fresh value of the
@@ -35,8 +35,8 @@ func TestCountedArraysRoundTrip(t *testing.T) {
 	roundTrip(t, "CAUI", CAUI{CElems: 2, PElems: []uint16{0x1111, 0x2222}})
 	roundTrip(t, "CAL", CAL{CElems: 2, PElems: []int32{-5, 7}})
 	roundTrip(t, "CAUL", CAUL{CElems: 2, PElems: []ndr.DWORD{100, 200}})
-	roundTrip(t, "CAUH", CAUH{CElems: 1, PElems: []dtyp.ULARGE_INTEGER{0x1122334455667788}})
-	roundTrip(t, "CACLSID", CACLSID{CElems: 1, PElems: []dtyp.GUID{{Data1: 0xDEAD, Data2: 1, Data3: 2, Data4: [8]byte{3, 4, 5, 6, 7, 8, 9, 10}}}})
+	roundTrip(t, "CAUH", CAUH{CElems: 1, PElems: []msdtyp.ULARGE_INTEGER{0x1122334455667788}})
+	roundTrip(t, "CACLSID", CACLSID{CElems: 1, PElems: []msdtyp.GUID{{Data1: 0xDEAD, Data2: 1, Data3: 2, Data4: [8]byte{3, 4, 5, 6, 7, 8, 9, 10}}}})
 	roundTrip(t, "CALPWSTR", CALPWSTR{CElems: 2, PElems: []*ndr.WSTR{wstr("alpha"), wstr("beta")}})
 }
 
@@ -67,7 +67,7 @@ func TestPropVariantPointerArms(t *testing.T) {
 	p.SetVt(VT_LPWSTR)
 	roundTrip(t, "VT_LPWSTR", p)
 
-	p = PROPVARIANT{Value: PropVariantUnion{Puuid: &dtyp.GUID{Data1: 0x1234, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}}}
+	p = PROPVARIANT{Value: PropVariantUnion{Puuid: &msdtyp.GUID{Data1: 0x1234, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}}}
 	p.SetVt(VT_CLSID)
 	roundTrip(t, "VT_CLSID", p)
 }
@@ -108,7 +108,7 @@ func TestPropVariantEmpty(t *testing.T) {
 // TestMQMPSharedTypesRoundTrip covers the [MS-MQMQ] wire types reused by [MS-MQMP]:
 // OBJECTID, XACTUOW, MULTICAST_ID, DL_ID, and each QUEUE_FORMAT union arm.
 func TestMQMPSharedTypesRoundTrip(t *testing.T) {
-	g := dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
+	g := msdtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
 
 	roundTrip(t, "OBJECTID", OBJECTID{Lineage: g, Uniquifier: 0xDEADBEEF})
 	roundTrip(t, "XACTUOW", XACTUOW{Rgb: [16]uint8{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}})
@@ -119,7 +119,7 @@ func TestMQMPSharedTypesRoundTrip(t *testing.T) {
 // TestQueueFormatArms exercises each selectable QUEUE_FORMAT arm plus the UNKNOWN (empty)
 // discriminant. SetQft keeps the outer and mirrored discriminants consistent.
 func TestQueueFormatArms(t *testing.T) {
-	g := dtyp.GUID{Data1: 0xAABBCCDD, Data2: 0x1122, Data3: 0x3344, Data4: [8]byte{9, 8, 7, 6, 5, 4, 3, 2}}
+	g := msdtyp.GUID{Data1: 0xAABBCCDD, Data2: 0x1122, Data3: 0x3344, Data4: [8]byte{9, 8, 7, 6, 5, 4, 3, 2}}
 
 	var q QUEUE_FORMAT
 

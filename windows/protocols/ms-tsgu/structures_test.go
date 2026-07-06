@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTripTSGU marshals in, unmarshals into a fresh value of the same type, and
@@ -110,7 +110,7 @@ func TestTSG_PACKET_QUARENC_RESPONSE_RoundTrip(t *testing.T) {
 		Flags:         0,
 		CertChainLen:  4,
 		CertChainData: []uint16{'C', 'E', 'R', 0},
-		Nonce:         dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}},
+		Nonce:         msdtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}},
 		VersionCaps: &TSG_PACKET_VERSIONCAPS{
 			TsgHeader:       TSG_PACKET_HEADER{ComponentId: 0x5644, PacketId: 0x5643},
 			TSGCaps:         nil,

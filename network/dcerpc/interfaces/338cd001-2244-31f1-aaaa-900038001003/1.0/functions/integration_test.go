@@ -29,16 +29,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // regName builds an RRP_UNICODE_STRING for a key/value name, including the terminating NUL
 // in the counted length as [MS-RRP] 3.1.1 requires.
-func regName(s string) msrrp.RRP_UNICODE_STRING { return dtyp.NewUnicodeString(s + "\x00") }
+func regName(s string) msrrp.RRP_UNICODE_STRING { return msdtyp.NewUnicodeString(s + "\x00") }
 
 // isFault reports whether err is a DCE/RPC fault (a wire-modeling failure) rather than a
 // clean Win32 error returned by the server (which validates the wire).
@@ -125,7 +125,7 @@ func TestIntegration_Winreg(t *testing.T) {
 
 		// BaseRegQueryInfoKey (opnum 16): inline class in/out, eight [out] DWORD scalars,
 		// and a [out] FILETIME.
-		if _, nSub, _, _, nVal, _, _, _, ft, err := functions.BaseRegQueryInfoKey(rpc, hkey, dtyp.RPC_UNICODE_STRING{}); err != nil {
+		if _, nSub, _, _, nVal, _, _, _, ft, err := functions.BaseRegQueryInfoKey(rpc, hkey, msdtyp.RPC_UNICODE_STRING{}); err != nil {
 			if isFault(err) {
 				t.Errorf("[WIRE FAIL] BaseRegQueryInfoKey: %v", err)
 			} else {

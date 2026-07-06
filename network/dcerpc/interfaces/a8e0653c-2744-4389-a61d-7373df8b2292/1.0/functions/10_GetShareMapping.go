@@ -3,17 +3,17 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	FileServerVssAgent "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/a8e0653c-2744-4389-a61d-7373df8b2292/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msfsrvp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fsrvp"
 )
 
 // getShareMappingRequest carries the [in] parameters of GetShareMapping.
 type getShareMappingRequest struct {
-	ShadowCopyId    dtyp.GUID
-	ShadowCopySetId dtyp.GUID
+	ShadowCopyId    msdtyp.GUID
+	ShadowCopySetId msdtyp.GUID
 	ShareName       ndr.WSTR
 	Level           ndr.DWORD
 }
@@ -30,8 +30,8 @@ type getShareMappingResponse struct {
 // modeling and status handling).
 func GetShareMapping(rpc ndr.Invoker, shadowCopyId guid.GUID, shadowCopySetId guid.GUID, shareName ndr.WSTR, level ndr.DWORD) (ShareMapping msfsrvp.FSSAGENT_SHARE_MAPPING, err error) {
 	req := &getShareMappingRequest{
-		ShadowCopyId:    dtyp.NewGUID(shadowCopyId),
-		ShadowCopySetId: dtyp.NewGUID(shadowCopySetId),
+		ShadowCopyId:    msdtyp.NewGUID(shadowCopyId),
+		ShadowCopySetId: msdtyp.NewGUID(shadowCopySetId),
 		ShareName:       shareName,
 		Level:           level,
 	}

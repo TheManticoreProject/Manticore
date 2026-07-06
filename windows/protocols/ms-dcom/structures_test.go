@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -77,8 +77,8 @@ func TestIPID(t *testing.T) {
 	if len(raw) != 16 {
 		t.Fatalf("IPID marshaled to %d octets, want 16", len(raw))
 	}
-	// The IPID must render identically through its own helper and the shared dtyp.GUID.
-	if got, want := ipid.String(), dtyp.GUID(ipid).String(); got != want {
-		t.Fatalf("IPID/dtyp.GUID string mismatch: %s vs %s", got, want)
+	// The IPID must render identically through its own helper and the shared msdtyp.GUID.
+	if got, want := ipid.String(), msdtyp.GUID(ipid).String(); got != want {
+		t.Fatalf("IPID/msdtyp.GUID string mismatch: %s vs %s", got, want)
 	}
 }

@@ -3,16 +3,16 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	FileServerVssAgent "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/a8e0653c-2744-4389-a61d-7373df8b2292/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // addToShadowCopySetRequest carries the [in] parameters of AddToShadowCopySet.
 type addToShadowCopySetRequest struct {
-	ClientShadowCopyId dtyp.GUID
-	ShadowCopySetId    dtyp.GUID
+	ClientShadowCopyId msdtyp.GUID
+	ShadowCopySetId    msdtyp.GUID
 	ShareName          ndr.WSTR
 }
 
@@ -20,7 +20,7 @@ func (*addToShadowCopySetRequest) Opnum() uint16 { return FileServerVssAgent.Opn
 
 // addToShadowCopySetResponse carries the [out] parameters and return value of AddToShadowCopySet.
 type addToShadowCopySetResponse struct {
-	PShadowCopyId dtyp.GUID
+	PShadowCopyId msdtyp.GUID
 	Status        ndr.DWORD `ndr:"retval"`
 }
 
@@ -28,8 +28,8 @@ type addToShadowCopySetResponse struct {
 // modeling and status handling).
 func AddToShadowCopySet(rpc ndr.Invoker, clientShadowCopyId guid.GUID, shadowCopySetId guid.GUID, shareName ndr.WSTR) (PShadowCopyId guid.GUID, err error) {
 	req := &addToShadowCopySetRequest{
-		ClientShadowCopyId: dtyp.NewGUID(clientShadowCopyId),
-		ShadowCopySetId:    dtyp.NewGUID(shadowCopySetId),
+		ClientShadowCopyId: msdtyp.NewGUID(clientShadowCopyId),
+		ShadowCopySetId:    msdtyp.NewGUID(shadowCopySetId),
 		ShareName:          shareName,
 	}
 	var resp addToShadowCopySetResponse

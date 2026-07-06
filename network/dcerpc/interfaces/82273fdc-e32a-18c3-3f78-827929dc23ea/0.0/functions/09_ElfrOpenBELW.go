@@ -3,16 +3,16 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
 
 // elfrOpenBELWRequest carries the [in] parameters of ElfrOpenBELW.
 type elfrOpenBELWRequest struct {
 	UNCServerName  ndr.WSTR `ndr:"unique"`
-	BackupFileName dtyp.RPC_UNICODE_STRING
+	BackupFileName msdtyp.RPC_UNICODE_STRING
 	MajorVersion   ndr.DWORD
 	MinorVersion   ndr.DWORD
 }
@@ -20,7 +20,7 @@ type elfrOpenBELWRequest struct {
 func (*elfrOpenBELWRequest) Opnum() uint16 { return eventlog.OpnumElfrOpenBELW }
 
 // ElfrOpenBELW calls ElfrOpenBELW (opnum 9) ([MS-EVEN] section 3.1.4).
-func ElfrOpenBELW(rpc ndr.Invoker, uNCServerName ndr.WSTR, backupFileName dtyp.RPC_UNICODE_STRING, majorVersion ndr.DWORD, minorVersion ndr.DWORD) (LogHandle mseven.IELF_HANDLE, err error) {
+func ElfrOpenBELW(rpc ndr.Invoker, uNCServerName ndr.WSTR, backupFileName msdtyp.RPC_UNICODE_STRING, majorVersion ndr.DWORD, minorVersion ndr.DWORD) (LogHandle mseven.IELF_HANDLE, err error) {
 	req := &elfrOpenBELWRequest{
 		UNCServerName:  uNCServerName,
 		BackupFileName: backupFileName,

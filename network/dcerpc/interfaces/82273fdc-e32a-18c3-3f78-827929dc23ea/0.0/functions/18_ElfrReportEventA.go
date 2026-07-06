@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
 
@@ -19,7 +19,7 @@ type elfrReportEventARequest struct {
 	NumStrings    uint16
 	DataSize      ndr.DWORD
 	ComputerName  mseven.RPC_STRING
-	UserSID       *dtyp.RPC_SID        `ndr:"unique"`
+	UserSID       *msdtyp.RPC_SID      `ndr:"unique"`
 	Strings       []*mseven.RPC_STRING `ndr:"unique,elem=unique,size_is=NumStrings"`
 	Data          []uint8              `ndr:"unique,size_is=DataSize"`
 	Flags         uint16
@@ -37,7 +37,7 @@ type elfrReportEventAResponse struct {
 }
 
 // ElfrReportEventA calls ElfrReportEventA (opnum 18) ([MS-EVEN] section 3.1.4).
-func ElfrReportEventA(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, time ndr.DWORD, eventType uint16, eventCategory uint16, eventID ndr.DWORD, numStrings uint16, dataSize ndr.DWORD, computerName mseven.RPC_STRING, userSID *dtyp.RPC_SID, strings []*mseven.RPC_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD, timeWritten *ndr.DWORD) (RecordNumber *ndr.DWORD, TimeWritten *ndr.DWORD, err error) {
+func ElfrReportEventA(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, time ndr.DWORD, eventType uint16, eventCategory uint16, eventID ndr.DWORD, numStrings uint16, dataSize ndr.DWORD, computerName mseven.RPC_STRING, userSID *msdtyp.RPC_SID, strings []*mseven.RPC_STRING, data []uint8, flags uint16, recordNumber *ndr.DWORD, timeWritten *ndr.DWORD) (RecordNumber *ndr.DWORD, TimeWritten *ndr.DWORD, err error) {
 	req := &elfrReportEventARequest{
 		LogHandle:     logHandle,
 		Time:          time,

@@ -1,7 +1,7 @@
 package mslsat
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSAPR_SID_INFORMATION wraps a single SID ([MS-LSAT] 2.2.17). Sid is a [unique]
@@ -13,5 +13,5 @@ import (
 // (LSAPR_SID_ENUM_BUFFER, the LSAPR_TRANSLATED_* types, LSAPR_REFERENCED_DOMAIN_LIST, and
 // this one); lsarpc's LsarLookupSids*/LsarLookupNames* methods bind to these definitions.
 type LSAPR_SID_INFORMATION struct {
-	Sid *dtyp.RPC_SID `ndr:"unique"`
+	Sid *msdtyp.RPC_SID `ndr:"unique"`
 }

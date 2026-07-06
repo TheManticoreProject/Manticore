@@ -1,8 +1,8 @@
 package msnrpc
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // NETLOGON_DELTA_ID_UNION ([MS-NRPC] 2.2.1.5.18) is the discriminated union that identifies
@@ -37,11 +37,11 @@ type NETLOGON_DELTA_ID_UNION struct {
 	RidDeleteUserByName      ndr.DWORD `ndr:"case=21"`
 
 	// Sid arm — a [unique] pointer to an RPC_SID (IDL PRPC_SID).
-	SidAddOrChangeLsaPolicy  *dtyp.RPC_SID `ndr:"case=13,unique"`
-	SidAddOrChangeLsaTDomain *dtyp.RPC_SID `ndr:"case=14,unique"`
-	SidDeleteLsaTDomain      *dtyp.RPC_SID `ndr:"case=15,unique"`
-	SidAddOrChangeLsaAccount *dtyp.RPC_SID `ndr:"case=16,unique"`
-	SidDeleteLsaAccount      *dtyp.RPC_SID `ndr:"case=17,unique"`
+	SidAddOrChangeLsaPolicy  *msdtyp.RPC_SID `ndr:"case=13,unique"`
+	SidAddOrChangeLsaTDomain *msdtyp.RPC_SID `ndr:"case=14,unique"`
+	SidDeleteLsaTDomain      *msdtyp.RPC_SID `ndr:"case=15,unique"`
+	SidAddOrChangeLsaAccount *msdtyp.RPC_SID `ndr:"case=16,unique"`
+	SidDeleteLsaAccount      *msdtyp.RPC_SID `ndr:"case=17,unique"`
 
 	// Name arm — a [unique][string] wide string (IDL wchar_t*).
 	NameAddOrChangeLsaSecret *ndr.WSTR `ndr:"case=18,unique"`

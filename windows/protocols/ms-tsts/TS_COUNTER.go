@@ -1,8 +1,8 @@
 package mststs
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // TS_COUNTER_HEADER identifies a Terminal Services performance counter and whether the
@@ -19,5 +19,5 @@ type TS_COUNTER_HEADER struct {
 type TS_COUNTER struct {
 	CounterHead TS_COUNTER_HEADER
 	DwValue     ndr.DWORD
-	StartTime   dtyp.LARGE_INTEGER
+	StartTime   msdtyp.LARGE_INTEGER
 }

@@ -1,11 +1,11 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_USER_PROFILE_INFORMATION holds a user's profile path ([MS-SAMR]
 // 2.2.6, ProfileInformation).
 type SAMPR_USER_PROFILE_INFORMATION struct {
-	ProfilePath dtyp.RPC_UNICODE_STRING
+	ProfilePath msdtyp.RPC_UNICODE_STRING
 }

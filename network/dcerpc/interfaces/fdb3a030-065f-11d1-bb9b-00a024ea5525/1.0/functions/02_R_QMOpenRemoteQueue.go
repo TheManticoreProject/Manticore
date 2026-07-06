@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	qmcomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/fdb3a030-065f-11d1-bb9b-00a024ea5525/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqmp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmp"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
@@ -16,7 +16,7 @@ type r_QMOpenRemoteQueueRequest struct {
 	DwCallingProcessID ndr.DWORD
 	DwDesiredAccess    ndr.DWORD
 	DwShareMode        ndr.DWORD
-	PLicGuid           dtyp.GUID
+	PLicGuid           msdtyp.GUID
 	DwMQS              ndr.DWORD
 }
 
@@ -33,7 +33,7 @@ type r_QMOpenRemoteQueueResponse struct {
 
 // R_QMOpenRemoteQueue calls R_QMOpenRemoteQueue (opnum 2) ([MS-MQMP] — verify the parameter
 // modeling and status handling).
-func R_QMOpenRemoteQueue(rpc ndr.Invoker, pQueueFormat *msmqmq.QUEUE_FORMAT, dwCallingProcessID ndr.DWORD, dwDesiredAccess ndr.DWORD, dwShareMode ndr.DWORD, pLicGuid dtyp.GUID, dwMQS ndr.DWORD) (PphContext msmqmp.PCTX_OPENREMOTE_HANDLE_TYPE, PdwContext ndr.DWORD, DwpQueue ndr.DWORD, PhQueue ndr.DWORD, err error) {
+func R_QMOpenRemoteQueue(rpc ndr.Invoker, pQueueFormat *msmqmq.QUEUE_FORMAT, dwCallingProcessID ndr.DWORD, dwDesiredAccess ndr.DWORD, dwShareMode ndr.DWORD, pLicGuid msdtyp.GUID, dwMQS ndr.DWORD) (PphContext msmqmp.PCTX_OPENREMOTE_HANDLE_TYPE, PdwContext ndr.DWORD, DwpQueue ndr.DWORD, PhQueue ndr.DWORD, err error) {
 	req := &r_QMOpenRemoteQueueRequest{
 		PQueueFormat:       pQueueFormat,
 		DwCallingProcessID: dwCallingProcessID,

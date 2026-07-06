@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // wstr returns a pointer to an ndr.WSTR carrying s, for building [unique] string fields.
@@ -120,7 +120,7 @@ func TestTS_COUNTER_RoundTrip(t *testing.T) {
 	roundTrip(t, "TS_COUNTER", TS_COUNTER{
 		CounterHead: TS_COUNTER_HEADER{DwCounterID: 42, BResult: true},
 		DwValue:     1000,
-		StartTime:   dtyp.LARGE_INTEGER(0x01d9a1b2c3d4e5f6),
+		StartTime:   msdtyp.LARGE_INTEGER(0x01d9a1b2c3d4e5f6),
 	})
 }
 

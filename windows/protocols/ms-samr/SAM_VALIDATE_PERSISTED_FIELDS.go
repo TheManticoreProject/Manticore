@@ -1,8 +1,8 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAM_VALIDATE_PERSISTED_FIELDS holds user account properties that the client is
@@ -11,9 +11,9 @@ import (
 // PasswordHistoryLength SAM_VALIDATE_PASSWORD_HASH structures.
 type SAM_VALIDATE_PERSISTED_FIELDS struct {
 	PresentFields         ndr.DWORD
-	PasswordLastSet       dtyp.LARGE_INTEGER
-	BadPasswordTime       dtyp.LARGE_INTEGER
-	LockoutTime           dtyp.LARGE_INTEGER
+	PasswordLastSet       msdtyp.LARGE_INTEGER
+	BadPasswordTime       msdtyp.LARGE_INTEGER
+	LockoutTime           msdtyp.LARGE_INTEGER
 	BadPasswordCount      ndr.DWORD
 	PasswordHistoryLength ndr.DWORD
 	PasswordHistory       []SAM_VALIDATE_PASSWORD_HASH `ndr:"unique,size_is=PasswordHistoryLength"`

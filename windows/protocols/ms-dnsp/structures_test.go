@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -29,7 +29,7 @@ func roundTrip[T any](t *testing.T, name string, in T) []byte {
 	return raw
 }
 
-var sampleGUID = dtyp.GUID{
+var sampleGUID = msdtyp.GUID{
 	Data1: 0x11223344,
 	Data2: 0x5566,
 	Data3: 0x7788,
@@ -120,7 +120,7 @@ func TestDnsRpcZoneListW2K(t *testing.T) {
 	})
 }
 
-// TestDnsRpcSkd round-trips the signing-key descriptor, pinning the embedded dtyp.GUID
+// TestDnsRpcSkd round-trips the signing-key descriptor, pinning the embedded msdtyp.GUID
 // (16 octets) — the guard against modeling it on windows/guid.GUID (24 octets under NDR).
 func TestDnsRpcSkd(t *testing.T) {
 	ksp := ndr.WSTR("Microsoft Software Key Storage Provider")

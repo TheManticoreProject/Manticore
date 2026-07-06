@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -14,7 +14,7 @@ import (
 // handle.
 type samrCreateUserInDomainRequest struct {
 	DomainHandle  mssamr.SAMPR_HANDLE
-	Name          dtyp.RPC_UNICODE_STRING
+	Name          msdtyp.RPC_UNICODE_STRING
 	DesiredAccess ndr.DWORD
 }
 
@@ -33,7 +33,7 @@ type samrCreateUserInDomainResponse struct {
 func SamrCreateUserInDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, name string, desiredAccess uint32) (mssamr.SAMPR_HANDLE, uint32, error) {
 	req := &samrCreateUserInDomainRequest{
 		DomainHandle:  domainHandle,
-		Name:          dtyp.NewUnicodeString(name),
+		Name:          msdtyp.NewUnicodeString(name),
 		DesiredAccess: ndr.DWORD(desiredAccess),
 	}
 	var resp samrCreateUserInDomainResponse

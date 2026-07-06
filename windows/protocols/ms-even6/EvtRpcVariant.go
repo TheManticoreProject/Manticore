@@ -1,8 +1,8 @@
 package mseven6
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // EvtRpcVariant ([MS-EVEN6] 2.2.6) carries a tagged value. Type is the discriminant (a
@@ -26,7 +26,7 @@ type EvtRpcVariant_Field struct {
 	Uint32Val    ndr.DWORD    `ndr:"case=2"`
 	Uint64Val    uint64       `ndr:"case=3"`
 	StringVal    *ndr.WSTR    `ndr:"case=4,unique"`
-	GuidVal      *dtyp.GUID   `ndr:"case=5,unique"`
+	GuidVal      *msdtyp.GUID `ndr:"case=5,unique"`
 	BooleanArray BooleanArray `ndr:"case=6"`
 	Uint32Array  UInt32Array  `ndr:"case=7"`
 	Uint64Array  UInt64Array  `ndr:"case=8"`

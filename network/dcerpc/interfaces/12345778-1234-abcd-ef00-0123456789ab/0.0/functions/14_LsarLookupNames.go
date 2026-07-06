@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
@@ -20,7 +20,7 @@ import (
 type lsarLookupNamesRequest struct {
 	PolicyHandle   mslsad.LSAPR_HANDLE
 	Count          ndr.DWORD
-	Names          []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
+	Names          []msdtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=Count"`
 	TranslatedSids mslsat.LSAPR_TRANSLATED_SIDS
 	LookupLevel    mslsat.LSAP_LOOKUP_LEVEL `ndr:"enum"`
 	MappedCount    ndr.DWORD
@@ -42,7 +42,7 @@ type lsarLookupNamesResponse struct {
 // STATUS_NONE_MAPPED when not all names resolved; in those cases the (partial) results
 // are still returned without error, so callers should inspect the translated SIDs and
 // mapped count. Any other non-success status is reported as an error.
-func LsarLookupNames(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, names []dtyp.RPC_UNICODE_STRING, lookupLevel mslsat.LSAP_LOOKUP_LEVEL) (*mslsat.LSAPR_REFERENCED_DOMAIN_LIST, mslsat.LSAPR_TRANSLATED_SIDS, uint32, error) {
+func LsarLookupNames(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, names []msdtyp.RPC_UNICODE_STRING, lookupLevel mslsat.LSAP_LOOKUP_LEVEL) (*mslsat.LSAPR_REFERENCED_DOMAIN_LIST, mslsat.LSAPR_TRANSLATED_SIDS, uint32, error) {
 	req := &lsarLookupNamesRequest{
 		PolicyHandle: policyHandle,
 		Count:        ndr.DWORD(len(names)),

@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mstsch "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsch"
 )
 
@@ -61,7 +61,7 @@ func TestEnumFoldersResponse(t *testing.T) {
 func TestScheduledRuntimesResponse(t *testing.T) {
 	roundTrip(t, "ScheduledRuntimes", schRpcScheduledRuntimesResponse{
 		PcRuntimes: 2,
-		PRuntimes: []dtyp.SYSTEMTIME{
+		PRuntimes: []msdtyp.SYSTEMTIME{
 			{WYear: 2026, WMonth: 7, WDay: 5, WHour: 9, WMinute: 30},
 			{WYear: 2026, WMonth: 7, WDay: 6, WHour: 12},
 		},

@@ -1,8 +1,8 @@
 package mslsad
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // POLICY_AUDIT_LOG_INFO contains information about the state of the audit log
@@ -10,8 +10,8 @@ import (
 type POLICY_AUDIT_LOG_INFO struct {
 	AuditLogPercentFull            ndr.DWORD
 	MaximumLogSize                 ndr.DWORD
-	AuditRetentionPeriod           dtyp.LARGE_INTEGER
+	AuditRetentionPeriod           msdtyp.LARGE_INTEGER
 	AuditLogFullShutdownInProgress uint8
-	TimeToShutdown                 dtyp.LARGE_INTEGER
+	TimeToShutdown                 msdtyp.LARGE_INTEGER
 	NextAuditRecordId              ndr.DWORD
 }

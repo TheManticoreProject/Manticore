@@ -4,15 +4,15 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
-// TestServiceTrigger_GUIDPointerRoundTrip exercises a populated [unique] dtyp.GUID
+// TestServiceTrigger_GUIDPointerRoundTrip exercises a populated [unique] msdtyp.GUID
 // pointer (PTriggerSubtype) round-tripping under both transfer syntaxes, confirming the
 // migration off windows/guid.GUID encodes a real 16-octet GUID correctly.
 func TestServiceTrigger_GUIDPointerRoundTrip(t *testing.T) {
-	g := dtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
+	g := msdtyp.GUID{Data1: 0x11223344, Data2: 0x5566, Data3: 0x7788, Data4: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
 	for _, s := range []ndr.Syntax{ndr.NDR20, ndr.NDR64} {
 		in := SERVICE_TRIGGER{DwTriggerType: 6, DwAction: 1, PTriggerSubtype: &g}
 		raw, err := ndr.MarshalAs(&in, s)

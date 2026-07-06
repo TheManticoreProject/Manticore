@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mscmrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmrp"
 )
 
@@ -24,14 +24,14 @@ type apiQueryInfoKeyResponse struct {
 	LpcbMaxValueNameLen    ndr.DWORD
 	LpcbMaxValueLen        ndr.DWORD
 	LpcbSecurityDescriptor ndr.DWORD
-	LpftLastWriteTime      dtyp.FILETIME
+	LpftLastWriteTime      msdtyp.FILETIME
 	Rpc_status             ndr.DWORD
 	Status                 ndr.DWORD `ndr:"retval"`
 }
 
 // ApiQueryInfoKey calls ApiQueryInfoKey (opnum 38) ([MS-CMRP] — verify the parameter
 // modeling and status handling).
-func ApiQueryInfoKey(rpc ndr.Invoker, hKey mscmrp.HKEY_RPC) (LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime dtyp.FILETIME, Rpc_status ndr.DWORD, err error) {
+func ApiQueryInfoKey(rpc ndr.Invoker, hKey mscmrp.HKEY_RPC) (LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime msdtyp.FILETIME, Rpc_status ndr.DWORD, err error) {
 	req := &apiQueryInfoKeyRequest{
 		HKey: hKey,
 	}

@@ -1,9 +1,9 @@
 package ms_rrp
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -101,7 +101,7 @@ func (r *RemoteRegistry) BaseRegDeleteKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RR
 }
 
 // BaseRegEnumKey calls BaseRegEnumKey (opnum 9): returns the subkey at dwIndex.
-func (r *RemoteRegistry) BaseRegEnumKey(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn msrrp.RRP_UNICODE_STRING, lpClassIn *msrrp.RRP_UNICODE_STRING, lpftLastWriteTime *dtyp.FILETIME) (msrrp.RRP_UNICODE_STRING, *dtyp.RPC_UNICODE_STRING, *dtyp.FILETIME, error) {
+func (r *RemoteRegistry) BaseRegEnumKey(hKey msrrp.RPC_HKEY, dwIndex ndr.DWORD, lpNameIn msrrp.RRP_UNICODE_STRING, lpClassIn *msrrp.RRP_UNICODE_STRING, lpftLastWriteTime *msdtyp.FILETIME) (msrrp.RRP_UNICODE_STRING, *msdtyp.RPC_UNICODE_STRING, *msdtyp.FILETIME, error) {
 	if err := r.ensure(); err != nil {
 		return msrrp.RRP_UNICODE_STRING{}, nil, nil, err
 	}
@@ -134,9 +134,9 @@ func (r *RemoteRegistry) BaseRegOpenKey(hKey msrrp.RPC_HKEY, lpSubKey msrrp.RRP_
 
 // BaseRegQueryInfoKey calls BaseRegQueryInfoKey (opnum 16): returns subkey/value counts,
 // maximum lengths, and the last-write time of a key.
-func (r *RemoteRegistry) BaseRegQueryInfoKey(hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (dtyp.RPC_UNICODE_STRING, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, dtyp.FILETIME, error) {
+func (r *RemoteRegistry) BaseRegQueryInfoKey(hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (msdtyp.RPC_UNICODE_STRING, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, ndr.DWORD, msdtyp.FILETIME, error) {
 	if err := r.ensure(); err != nil {
-		return dtyp.RPC_UNICODE_STRING{}, 0, 0, 0, 0, 0, 0, 0, dtyp.FILETIME{}, err
+		return msdtyp.RPC_UNICODE_STRING{}, 0, 0, 0, 0, 0, 0, 0, msdtyp.FILETIME{}, err
 	}
 	return functions.BaseRegQueryInfoKey(r.rpc, hKey, lpClassIn)
 }

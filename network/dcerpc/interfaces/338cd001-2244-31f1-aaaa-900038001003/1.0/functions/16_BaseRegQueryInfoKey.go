@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -19,7 +19,7 @@ func (*baseRegQueryInfoKeyRequest) Opnum() uint16 { return winreg.OpnumBaseRegQu
 
 // baseRegQueryInfoKeyResponse carries the [out] parameters and return value of BaseRegQueryInfoKey.
 type baseRegQueryInfoKeyResponse struct {
-	LpClassOut             dtyp.RPC_UNICODE_STRING
+	LpClassOut             msdtyp.RPC_UNICODE_STRING
 	LpcSubKeys             ndr.DWORD
 	LpcbMaxSubKeyLen       ndr.DWORD
 	LpcbMaxClassLen        ndr.DWORD
@@ -27,13 +27,13 @@ type baseRegQueryInfoKeyResponse struct {
 	LpcbMaxValueNameLen    ndr.DWORD
 	LpcbMaxValueLen        ndr.DWORD
 	LpcbSecurityDescriptor ndr.DWORD
-	LpftLastWriteTime      dtyp.FILETIME
+	LpftLastWriteTime      msdtyp.FILETIME
 	Status                 ndr.DWORD `ndr:"retval"`
 }
 
 // BaseRegQueryInfoKey calls BaseRegQueryInfoKey (opnum 16) ([MS-RRP] — verify the parameter
 // modeling and status handling).
-func BaseRegQueryInfoKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (LpClassOut dtyp.RPC_UNICODE_STRING, LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcbMaxClassLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime dtyp.FILETIME, err error) {
+func BaseRegQueryInfoKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpClassIn msrrp.RRP_UNICODE_STRING) (LpClassOut msdtyp.RPC_UNICODE_STRING, LpcSubKeys ndr.DWORD, LpcbMaxSubKeyLen ndr.DWORD, LpcbMaxClassLen ndr.DWORD, LpcValues ndr.DWORD, LpcbMaxValueNameLen ndr.DWORD, LpcbMaxValueLen ndr.DWORD, LpcbSecurityDescriptor ndr.DWORD, LpftLastWriteTime msdtyp.FILETIME, err error) {
 	req := &baseRegQueryInfoKeyRequest{
 		HKey:      hKey,
 		LpClassIn: lpClassIn,

@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
 
@@ -18,20 +18,20 @@ type s_DSCreateObjectRequest struct {
 	Cp                 ndr.DWORD
 	AProp              []ndr.DWORD          `ndr:"ref,size_is=Cp"`
 	ApVar              []msmqmq.PROPVARIANT `ndr:"ref,size_is=Cp"`
-	PObjGuid           *dtyp.GUID           `ndr:"unique"`
+	PObjGuid           *msdtyp.GUID         `ndr:"unique"`
 }
 
 func (*s_DSCreateObjectRequest) Opnum() uint16 { return dscomm.OpnumS_DSCreateObject }
 
 // s_DSCreateObjectResponse carries the [out] parameters and return value of S_DSCreateObject.
 type s_DSCreateObjectResponse struct {
-	PObjGuid *dtyp.GUID `ndr:"unique"`
-	Status   ndr.DWORD  `ndr:"retval"`
+	PObjGuid *msdtyp.GUID `ndr:"unique"`
+	Status   ndr.DWORD    `ndr:"retval"`
 }
 
 // S_DSCreateObject calls S_DSCreateObject (opnum 0) ([MS-MQDS] — verify the parameter
 // modeling and status handling).
-func S_DSCreateObject(rpc ndr.Invoker, dwObjectType ndr.DWORD, pwcsPathName *ndr.WSTR, dwSDLength ndr.DWORD, securityDescriptor []uint8, cp ndr.DWORD, aProp []ndr.DWORD, apVar []msmqmq.PROPVARIANT, pObjGuid *dtyp.GUID) (PObjGuid *dtyp.GUID, err error) {
+func S_DSCreateObject(rpc ndr.Invoker, dwObjectType ndr.DWORD, pwcsPathName *ndr.WSTR, dwSDLength ndr.DWORD, securityDescriptor []uint8, cp ndr.DWORD, aProp []ndr.DWORD, apVar []msmqmq.PROPVARIANT, pObjGuid *msdtyp.GUID) (PObjGuid *msdtyp.GUID, err error) {
 	req := &s_DSCreateObjectRequest{
 		DwObjectType:       dwObjectType,
 		PwcsPathName:       pwcsPathName,

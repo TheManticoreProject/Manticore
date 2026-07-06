@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -27,8 +27,8 @@ func roundTrip[T any](t *testing.T, name string, in T) {
 	}
 }
 
-func testGUID(a uint32) dtyp.GUID {
-	return dtyp.GUID{Data1: a, Data2: 0x1234, Data3: 0x5678, Data4: [8]byte{0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78}}
+func testGUID(a uint32) msdtyp.GUID {
+	return msdtyp.GUID{Data1: a, Data2: 0x1234, Data3: 0x5678, Data4: [8]byte{0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78}}
 }
 
 // TestScalarStructs covers the plain fixed-layout structures (no pointers or arrays).
@@ -42,20 +42,20 @@ func TestScalarStructs(t *testing.T) {
 	roundTrip(t, "FRS_RDC_SOURCE_NEED", FRS_RDC_SOURCE_NEED{NeedOffset: 0x1000, NeedSize: 0x400})
 	roundTrip(t, "FRS_EPOQUE_VECTOR", FRS_EPOQUE_VECTOR{
 		Machine: testGUID(0x04),
-		Epoque:  dtyp.SYSTEMTIME{WYear: 2026, WMonth: 7, WDayOfWeek: 4, WDay: 2, WHour: 13, WMinute: 30, WSecond: 15, WMilliseconds: 500},
+		Epoque:  msdtyp.SYSTEMTIME{WYear: 2026, WMonth: 7, WDayOfWeek: 4, WDay: 2, WHour: 13, WMinute: 30, WSecond: 15, WMilliseconds: 500},
 	})
 }
 
 // TestFRS_UPDATE covers the fixed-size arrays ([20]/[16] byte hashes, the [261]uint16
-// name) and the embedded dtyp.FILETIME members.
+// name) and the embedded msdtyp.FILETIME members.
 func TestFRS_UPDATE(t *testing.T) {
 	u := FRS_UPDATE{
 		Present:      1,
 		NameConflict: 0,
 		Attributes:   0x20,
-		Fence:        dtyp.FILETIME{DwLowDateTime: 0xAABBCCDD, DwHighDateTime: 0x01D7F00D},
-		Clock:        dtyp.FILETIME{DwLowDateTime: 1, DwHighDateTime: 2},
-		CreateTime:   dtyp.FILETIME{DwLowDateTime: 3, DwHighDateTime: 4},
+		Fence:        msdtyp.FILETIME{DwLowDateTime: 0xAABBCCDD, DwHighDateTime: 0x01D7F00D},
+		Clock:        msdtyp.FILETIME{DwLowDateTime: 1, DwHighDateTime: 2},
+		CreateTime:   msdtyp.FILETIME{DwLowDateTime: 3, DwHighDateTime: 4},
 		ContentSetId: testGUID(0x10),
 		UidDbGuid:    testGUID(0x11),
 		UidVersion:   100,
@@ -130,7 +130,7 @@ func TestFRS_ASYNC_VERSION_VECTOR_RESPONSE(t *testing.T) {
 		},
 		EpoqueVectorCount: 1,
 		EpoqueVector: []FRS_EPOQUE_VECTOR{
-			{Machine: testGUID(0x32), Epoque: dtyp.SYSTEMTIME{WYear: 2026, WMonth: 1, WDay: 1}},
+			{Machine: testGUID(0x32), Epoque: msdtyp.SYSTEMTIME{WYear: 2026, WMonth: 1, WDay: 1}},
 		},
 	})
 	roundTrip(t, "FRS_ASYNC_VERSION_VECTOR_RESPONSE/empty", FRS_ASYNC_VERSION_VECTOR_RESPONSE{

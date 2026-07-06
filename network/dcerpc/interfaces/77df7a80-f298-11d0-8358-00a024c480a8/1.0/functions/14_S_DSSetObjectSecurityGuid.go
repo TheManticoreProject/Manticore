@@ -3,15 +3,15 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // s_DSSetObjectSecurityGuidRequest carries the [in] parameters of S_DSSetObjectSecurityGuid.
 type s_DSSetObjectSecurityGuidRequest struct {
 	DwObjectType        ndr.DWORD
-	PGuid               dtyp.GUID
+	PGuid               msdtyp.GUID
 	SecurityInformation ndr.DWORD
 	PSecurityDescriptor []uint8 `ndr:"ref,size_is=NLength"`
 	NLength             ndr.DWORD
@@ -26,7 +26,7 @@ type s_DSSetObjectSecurityGuidResponse struct {
 
 // S_DSSetObjectSecurityGuid calls S_DSSetObjectSecurityGuid (opnum 14) ([MS-MQDS] — verify the parameter
 // modeling and status handling).
-func S_DSSetObjectSecurityGuid(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid dtyp.GUID, securityInformation ndr.DWORD, pSecurityDescriptor []uint8, nLength ndr.DWORD) (err error) {
+func S_DSSetObjectSecurityGuid(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid msdtyp.GUID, securityInformation ndr.DWORD, pSecurityDescriptor []uint8, nLength ndr.DWORD) (err error) {
 	req := &s_DSSetObjectSecurityGuidRequest{
 		DwObjectType:        dwObjectType,
 		PGuid:               pGuid,

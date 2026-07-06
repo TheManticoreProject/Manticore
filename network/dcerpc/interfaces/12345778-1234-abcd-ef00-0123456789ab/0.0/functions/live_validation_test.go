@@ -25,13 +25,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
@@ -157,7 +157,7 @@ func TestLiveValidation(t *testing.T) {
 	withPolicy("LsarLookupSids", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
 		var sidInfos []mslsat.LSAPR_SID_INFORMATION
 		for _, s := range []string{"S-1-5-32-544", "S-1-1-0", "S-1-5-18"} {
-			sid, perr := dtyp.ParseSID(s)
+			sid, perr := msdtyp.ParseSID(s)
 			if perr != nil {
 				t.Fatalf("ParseSID(%s): %v", s, perr)
 			}
@@ -179,7 +179,7 @@ func TestLiveValidation(t *testing.T) {
 
 	// --- name->SID: LsarLookupNames (RPC_UNICODE_STRING array in + translated-sids out) ---
 	withPolicy("LsarLookupNames", func(rpc *client.Client, policy mslsad.LSAPR_HANDLE) {
-		names := []dtyp.RPC_UNICODE_STRING{dtyp.NewUnicodeString("Administrator"), dtyp.NewUnicodeString("Guest")}
+		names := []msdtyp.RPC_UNICODE_STRING{msdtyp.NewUnicodeString("Administrator"), msdtyp.NewUnicodeString("Guest")}
 		dom, sids, mapped, err := functions.LsarLookupNames(rpc, policy, names, mslsat.LsapLookupWksta)
 		if _, ok := classify(t, "LsarLookupNames(Administrator,Guest)", err); ok && err == nil {
 			t.Logf("    mapped=%d sids.Entries=%d referencedDomains=%d", mapped, sids.Entries, domCount(dom))

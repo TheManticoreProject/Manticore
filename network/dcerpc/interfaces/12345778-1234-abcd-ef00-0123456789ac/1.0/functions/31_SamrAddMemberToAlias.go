@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -13,14 +13,14 @@ import (
 // to add (transmitted inline).
 type samrAddMemberToAliasRequest struct {
 	AliasHandle mssamr.SAMPR_HANDLE
-	MemberId    dtyp.RPC_SID
+	MemberId    msdtyp.RPC_SID
 }
 
 func (*samrAddMemberToAliasRequest) Opnum() uint16 { return samr.OpnumSamrAddMemberToAlias }
 
 // SamrAddMemberToAlias calls SamrAddMemberToAlias (opnum 31), adding a member to an alias
 // ([MS-SAMR] 3.1.5.4.2).
-func SamrAddMemberToAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, memberId dtyp.RPC_SID) error {
+func SamrAddMemberToAlias(rpc ndr.Invoker, aliasHandle mssamr.SAMPR_HANDLE, memberId msdtyp.RPC_SID) error {
 	req := &samrAddMemberToAliasRequest{
 		AliasHandle: aliasHandle,
 		MemberId:    memberId,

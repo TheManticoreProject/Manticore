@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -16,7 +16,7 @@ import (
 // validates the information and reports collisions without storing it).
 type lsarSetForestTrustInformationRequest struct {
 	PolicyHandle      mslsad.LSAPR_HANDLE
-	TrustedDomainName dtyp.RPC_UNICODE_STRING
+	TrustedDomainName msdtyp.RPC_UNICODE_STRING
 	HighestRecordType mslsad.LSA_FOREST_TRUST_RECORD_TYPE `ndr:"enum"`
 	ForestTrustInfo   mslsad.LSA_FOREST_TRUST_INFORMATION
 	CheckOnly         uint8
@@ -40,7 +40,7 @@ type lsarSetForestTrustInformationResponse struct {
 func LsarSetForestTrustInformation(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, trustedDomainName string, highestRecordType mslsad.LSA_FOREST_TRUST_RECORD_TYPE, forestTrustInfo mslsad.LSA_FOREST_TRUST_INFORMATION, checkOnly uint8) (*mslsad.LSA_FOREST_TRUST_COLLISION_INFORMATION, error) {
 	req := &lsarSetForestTrustInformationRequest{
 		PolicyHandle:      policyHandle,
-		TrustedDomainName: dtyp.NewUnicodeString(trustedDomainName),
+		TrustedDomainName: msdtyp.NewUnicodeString(trustedDomainName),
 		HighestRecordType: highestRecordType,
 		ForestTrustInfo:   forestTrustInfo,
 		CheckOnly:         checkOnly,

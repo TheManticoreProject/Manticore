@@ -1,8 +1,8 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_RETURNED_USTRING_ARRAY is a counted array of RPC_UNICODE_STRING values
@@ -10,5 +10,5 @@ import (
 // by Count.
 type SAMPR_RETURNED_USTRING_ARRAY struct {
 	Count   ndr.DWORD
-	Element []dtyp.RPC_UNICODE_STRING `ndr:"unique,size_is=Count"`
+	Element []msdtyp.RPC_UNICODE_STRING `ndr:"unique,size_is=Count"`
 }

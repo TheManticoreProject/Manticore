@@ -1,8 +1,8 @@
 package msmqmq
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // QUEUE_FORMAT_TYPE enumerates the queue format-name kinds ([MS-MQMQ] 2.2.7.1). Its
@@ -53,11 +53,11 @@ func (q *QUEUE_FORMAT) SetQft(qft QUEUE_FORMAT_TYPE) *QUEUE_FORMAT {
 type QueueFormatUnion struct {
 	MQft QUEUE_FORMAT_TYPE `ndr:"switch"`
 
-	MGPublicID         dtyp.GUID    `ndr:"case=1"`        // QUEUE_FORMAT_TYPE_PUBLIC
+	MGPublicID         msdtyp.GUID  `ndr:"case=1"`        // QUEUE_FORMAT_TYPE_PUBLIC
 	MOPrivateID        OBJECTID     `ndr:"case=2"`        // QUEUE_FORMAT_TYPE_PRIVATE
 	MPDirectID         *ndr.WSTR    `ndr:"case=3,unique"` // QUEUE_FORMAT_TYPE_DIRECT
-	MGMachineID        dtyp.GUID    `ndr:"case=4"`        // QUEUE_FORMAT_TYPE_MACHINE
-	MGConnectorID      dtyp.GUID    `ndr:"case=5"`        // QUEUE_FORMAT_TYPE_CONNECTOR
+	MGMachineID        msdtyp.GUID  `ndr:"case=4"`        // QUEUE_FORMAT_TYPE_MACHINE
+	MGConnectorID      msdtyp.GUID  `ndr:"case=5"`        // QUEUE_FORMAT_TYPE_CONNECTOR
 	MDlID              DL_ID        `ndr:"case=6"`        // QUEUE_FORMAT_TYPE_DL
 	MMulticastID       MULTICAST_ID `ndr:"case=7"`        // QUEUE_FORMAT_TYPE_MULTICAST
 	MPDirectSubqueueID *ndr.WSTR    `ndr:"case=8,unique"` // QUEUE_FORMAT_TYPE_SUBQUEUE

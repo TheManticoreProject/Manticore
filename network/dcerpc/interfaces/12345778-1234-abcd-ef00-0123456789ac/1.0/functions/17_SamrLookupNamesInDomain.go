@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -21,7 +21,7 @@ import (
 type samrLookupNamesInDomainRequest struct {
 	DomainHandle mssamr.SAMPR_HANDLE
 	Count        ndr.DWORD
-	Names        []dtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=1000,varying"`
+	Names        []msdtyp.RPC_UNICODE_STRING `ndr:"ref,size_is=1000,varying"`
 }
 
 func (*samrLookupNamesInDomainRequest) Opnum() uint16 { return samr.OpnumSamrLookupNamesInDomain }
@@ -37,9 +37,9 @@ type samrLookupNamesInDomainResponse struct {
 // SamrLookupNamesInDomain calls SamrLookupNamesInDomain (opnum 17), translating account
 // names into RIDs and their SID_NAME_USE classifications ([MS-SAMR] 3.1.5.11.2).
 func SamrLookupNamesInDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, names []string) (mssamr.SAMPR_ULONG_ARRAY, mssamr.SAMPR_ULONG_ARRAY, error) {
-	wnames := make([]dtyp.RPC_UNICODE_STRING, len(names))
+	wnames := make([]msdtyp.RPC_UNICODE_STRING, len(names))
 	for i, n := range names {
-		wnames[i] = dtyp.NewUnicodeString(n)
+		wnames[i] = msdtyp.NewUnicodeString(n)
 	}
 	req := &samrLookupNamesInDomainRequest{
 		DomainHandle: domainHandle,

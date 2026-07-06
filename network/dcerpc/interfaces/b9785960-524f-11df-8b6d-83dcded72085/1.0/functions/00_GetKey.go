@@ -3,21 +3,21 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	ISDKey "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b9785960-524f-11df-8b6d-83dcded72085/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // getKeyRequest carries the [in] parameters of GetKey.
 //
-// PRootKeyID is [unique] GUID* (nullable) — the NDR-marshallable dtyp.GUID
+// PRootKeyID is [unique] GUID* (nullable) — the NDR-marshallable msdtyp.GUID
 // (16 octets on the wire), NOT windows/guid.GUID whose uint64 tail would
 // marshal to 24 octets. A nil pointer requests the latest / time-derived key.
 type getKeyRequest struct {
 	CbTargetSD ndr.DWORD
-	PbTargetSD []byte     `ndr:"ref,size_is=CbTargetSD"`
-	PRootKeyID *dtyp.GUID `ndr:"unique"`
+	PbTargetSD []byte       `ndr:"ref,size_is=CbTargetSD"`
+	PRootKeyID *msdtyp.GUID `ndr:"unique"`
 	L0KeyID    int32
 	L1KeyID    int32
 	L2KeyID    int32
@@ -44,9 +44,9 @@ type getKeyResponse struct {
 // BLOB (section 2.2.4) and its length. The wire return value is an HRESULT
 // (zero on success, nonzero on error).
 func GetKey(rpc ndr.Invoker, cbTargetSD ndr.DWORD, pbTargetSD []byte, pRootKeyID *guid.GUID, l0KeyID int32, l1KeyID int32, l2KeyID int32) (PcbOut ndr.DWORD, PpbOut []byte, err error) {
-	var rootKeyID *dtyp.GUID
+	var rootKeyID *msdtyp.GUID
 	if pRootKeyID != nil {
-		g := dtyp.NewGUID(*pRootKeyID)
+		g := msdtyp.NewGUID(*pRootKeyID)
 		rootKeyID = &g
 	}
 	req := &getKeyRequest{

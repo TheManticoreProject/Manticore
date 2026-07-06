@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -59,8 +59,8 @@ func TestScalarInfoStructs(t *testing.T) {
 // TestStatWorkstation0 covers the large LARGE_INTEGER-heavy statistics structure.
 func TestStatWorkstation0(t *testing.T) {
 	roundTrip(t, "STAT_WORKSTATION_0", STAT_WORKSTATION_0{
-		StatisticsStartTime: dtyp.LARGE_INTEGER(0x01D7_0000_DEAD_BEEF),
-		BytesReceived:       dtyp.LARGE_INTEGER(1024),
+		StatisticsStartTime: msdtyp.LARGE_INTEGER(0x01D7_0000_DEAD_BEEF),
+		BytesReceived:       msdtyp.LARGE_INTEGER(1024),
 		ReadOperations:      42,
 		Sessions:            7,
 	})
@@ -156,9 +156,9 @@ func TestJoinPasswordFixedArrays(t *testing.T) {
 func TestNetComputerNameArray(t *testing.T) {
 	roundTrip(t, "NET_COMPUTER_NAME_ARRAY", NET_COMPUTER_NAME_ARRAY{
 		EntryCount: 2,
-		ComputerNames: []dtyp.RPC_UNICODE_STRING{
-			dtyp.NewUnicodeString("host.contoso.com"),
-			dtyp.NewUnicodeString("alias.contoso.com"),
+		ComputerNames: []msdtyp.RPC_UNICODE_STRING{
+			msdtyp.NewUnicodeString("host.contoso.com"),
+			msdtyp.NewUnicodeString("alias.contoso.com"),
 		},
 	})
 	roundTrip(t, "NET_COMPUTER_NAME_ARRAY/empty", NET_COMPUTER_NAME_ARRAY{EntryCount: 0, ComputerNames: nil})

@@ -3,16 +3,16 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 )
 
 // s_DSQMGetObjectSecurityRequest carries the [in] parameters of S_DSQMGetObjectSecurity.
 type s_DSQMGetObjectSecurityRequest struct {
 	DwObjectType           ndr.DWORD
-	PGuid                  dtyp.GUID
+	PGuid                  msdtyp.GUID
 	SecurityInformation    ndr.DWORD
 	NLength                ndr.DWORD
 	DwContext              ndr.DWORD
@@ -33,7 +33,7 @@ type s_DSQMGetObjectSecurityResponse struct {
 
 // S_DSQMGetObjectSecurity calls S_DSQMGetObjectSecurity (opnum 21) ([MS-MQDS] — verify the parameter
 // modeling and status handling).
-func S_DSQMGetObjectSecurity(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid dtyp.GUID, securityInformation ndr.DWORD, nLength ndr.DWORD, dwContext ndr.DWORD, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (PSecurityDescriptor []uint8, LpnLengthNeeded ndr.DWORD, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
+func S_DSQMGetObjectSecurity(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid msdtyp.GUID, securityInformation ndr.DWORD, nLength ndr.DWORD, dwContext ndr.DWORD, phServerAuth msmqds.PCONTEXT_HANDLE_SERVER_AUTH_TYPE, pdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE) (PSecurityDescriptor []uint8, LpnLengthNeeded ndr.DWORD, PbServerSignature []uint8, PdwServerSignatureSize msmqds.LPBOUNDED_SIGNATURE_SIZE, err error) {
 	req := &s_DSQMGetObjectSecurityRequest{
 		DwObjectType:           dwObjectType,
 		PGuid:                  pGuid,

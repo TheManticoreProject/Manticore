@@ -53,10 +53,10 @@ import (
 ## Dependency direction (must stay acyclic)
 
 ```
-dtyp (shared [MS-DTYP] base types)   structures  →  import ndr (+ dtyp, guid)
+msdtyp (shared [MS-DTYP] base types)   structures  →  import ndr (+ msdtyp, guid)
                           ▲                ▲
                           └────────────────┤
-functions   →  imports ndr, structures, dtyp, and the root descriptor (aliased)
+functions   →  imports ndr, structures, msdtyp, and the root descriptor (aliased)
    ▲
 callers / ms-protocols  →  import the descriptor (to bind) + functions (to call)
 
@@ -86,7 +86,7 @@ No `functions` file imports a concrete client or transport. Only the integration
 | Status / NTSTATUS codes + `StatusString` | `interface.go` |
 | Access-mask / flag constants | `interface.go` |
 | Interface-specific NDR data types (one per file) | `structures/` |
-| Shared [MS-DTYP] types (`RPC_SID`, `RPC_UNICODE_STRING`, `LUID`, …) | reuse `network/dcerpc/dtyp` — do **not** redefine |
+| Shared [MS-DTYP] types (`RPC_SID`, `RPC_UNICODE_STRING`, `LUID`, …) | reuse `windows/ms-dtyp` — do **not** redefine |
 | Method stubs (one per opnum file) | `functions/` |
 | Request/response shapes used by >1 method | `functions/functions.go` |
 | Request/response shapes used by 1 method | that method's `functions/<NN>_<Name>.go` |
@@ -118,18 +118,18 @@ Translating an IDL to Go is mostly about getting the `ndr` struct tags right. Th
 | `align=N` | explicit alignment override |
 | `wstr` / `str` | force wide/ASCII string mode |
 
-Scalar type mapping: `unsigned long`/`ACCESS_MASK`/`SECURITY_INFORMATION` → `ndr.DWORD` (uint32); `long` → `int32`; `unsigned short` → `uint16`; `short` → `int16`; `unsigned char` → `uint8`; `LARGE_INTEGER` → `dtyp.LARGE_INTEGER`.
+Scalar type mapping: `unsigned long`/`ACCESS_MASK`/`SECURITY_INFORMATION` → `ndr.DWORD` (uint32); `long` → `int32`; `unsigned short` → `uint16`; `short` → `int16`; `unsigned char` → `uint8`; `LARGE_INTEGER` → `msdtyp.LARGE_INTEGER`.
 
 **NDR enums are 16-bit** ([C706] §14.3.6; no `v1_enum` in these IDLs). Model every enum as a named `uint16` with its constants — *not* `uint32`. A `uint32` silently emits 4 bytes and corrupts the wire.
 
-### Reuse the `dtyp` base types
+### Reuse the `msdtyp` base types
 
-`network/dcerpc/dtyp` holds the [MS-DTYP] common types. Reuse them; never redefine:
-- `dtyp.RPC_SID` — conformant `SubAuthority`; helpers `ParseSID`, `String`.
-- `dtyp.RPC_UNICODE_STRING` — counted UTF-16. **Byte-vs-char gotcha:** `Length`/`MaximumLength` are *byte* counts; the buffer is a `[]uint16` char array. Build with `dtyp.NewUnicodeString(goString)`; read with `.String()`. Cannot be modeled by a bare `ndr.WSTR`.
-- `dtyp.LUID` (`LowPart`/`HighPart`), `dtyp.LARGE_INTEGER`, `dtyp.ULARGE_INTEGER`.
+`windows/ms-dtyp` (package `msdtyp`) holds the [MS-DTYP] common types. Reuse them; never redefine:
+- `msdtyp.RPC_SID` — conformant `SubAuthority`; helpers `ParseSID`, `String`.
+- `msdtyp.RPC_UNICODE_STRING` — counted UTF-16. **Byte-vs-char gotcha:** `Length`/`MaximumLength` are *byte* counts; the buffer is a `[]uint16` char array. Build with `msdtyp.NewUnicodeString(goString)`; read with `.String()`. Cannot be modeled by a bare `ndr.WSTR`.
+- `msdtyp.LUID` (`LowPart`/`HighPart`), `msdtyp.LARGE_INTEGER`, `msdtyp.ULARGE_INTEGER`.
 
-If a needed base type is missing from `dtyp`, add it there (with a round-trip test), not in an interface's `structures/`.
+If a needed base type is missing from `msdtyp`, add it there (with a round-trip test), not in an interface's `structures/`.
 
 ### The single-vs-double pointer rule (the one that bites)
 
@@ -138,7 +138,7 @@ Mapping IDL parameters/fields to Go fields hinges on pointer depth:
 - A **single** top-level pointer `P<TYPE> X` is `[ref]` (NDR transmits no referent id; the referent is in place) → model as the **inline value** `structures.<TYPE>` (no pointer, no tag).
 - A **double** pointer `P<TYPE> *X` (or a `[unique]`-marked single pointer) → model the inner as `*structures.<TYPE> \`ndr:"unique"\``.
 - A top-level `[out] scalar *X` (e.g. `unsigned long *`) → inline scalar in the response.
-- `PLUID Value` at top level → inline `dtyp.LUID`.
+- `PLUID Value` at top level → inline `msdtyp.LUID`.
 
 ### Arrays
 
@@ -245,7 +245,7 @@ Build the GUID literal by splitting the UUID `AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEE
 package structures
 
 import "github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-// + dtyp / guid when the type embeds RPC_SID, RPC_UNICODE_STRING, GUID, etc.
+// + msdtyp / guid when the type embeds RPC_SID, RPC_UNICODE_STRING, GUID, etc.
 
 // <TYPE> models <TYPE> ([MS-XXX] 2.2.x). <notes on NDR layout>.
 type <TYPE> struct {
@@ -318,7 +318,7 @@ Live-test note: set `smb.NativeOS`/`smb.NativeLanMan` before `SessionSetup`, and
 
 ## Implementing a whole interface from an IDL
 
-**Generate the skeleton with the bundled `idlgen.py` first — do not hand-write the tree.** The generator (`idlgen.py`, in this skill directory) encodes every convention in this document — package naming, the single-vs-double pointer rule, `dtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
+**Generate the skeleton with the bundled `idlgen.py` first — do not hand-write the tree.** The generator (`idlgen.py`, in this skill directory) encodes every convention in this document — package naming, the single-vs-double pointer rule, `msdtyp` reuse, the union/array tag rules, the opnum maps — and emits a skeleton that **builds and `go vet`s with zero errors** out of the box (validated against lsarpc, srvsvc, and samr). This skill is then the reference for reviewing the ~10–20% the IDL can't express. Everything below (the NDR modeling reference, pointer/response rules, templates) is exactly what the generator emits and what you verify by hand.
 
 It is a stdlib-only Python script; run it from the repo root (it resolves the Go import path from the nearest `go.mod` above `--out-root`) with `gofmt` on `PATH`. Subcommands: `fetch` (download the IDL from the spec), `parse` (AST/summary), `gen-descriptor`, `gen-structures`, `gen-functions`, `generate` (whole tree), `check` (drift report).
 
@@ -353,7 +353,7 @@ Grep for `TODO(idlgen)` and reconcile each against the rules above:
 - **Types referenced but absent from the IDL** get a `type X struct{}` placeholder with a `TODO(idlgen)` (e.g. MS-SRVS `SERVER_INFO_100/101`); fill in their fields by hand.
 - **NDR `pipe` types** (`typedef pipe …`, e.g. MS-EFSR's `EFS_EXIM_PIPE`) are generated as a slice type plus `ndr:"pipe"` on the parameter (the codec marshals the [C706] 14.7 chunked stream). The whole pipe is buffered in one chunk rather than streamed incrementally, and live validation of pipe methods needs the real service — review those.
 
-If the codec genuinely lacks a feature a type needs (rather than the generator mis-modeling it), file an enhancement issue against `network/dcerpc/ndr` (or `dtyp`) and defer those methods rather than shipping code that can't be correct.
+If the codec genuinely lacks a feature a type needs (rather than the generator mis-modeling it), file an enhancement issue against `network/dcerpc/ndr` (or `msdtyp`) and defer those methods rather than shipping code that can't be correct.
 
 ### 4. Verify
 
@@ -401,6 +401,6 @@ One protocol may reference multiple interfaces; one interface may be reused by m
 ## Checklist when adding to an interface
 
 1. **New opnum:** add `functions/<NN>_<Method>.go` (zero-padded), add `Opnum<Method>` to `interface.go` **and** an entry to `OpnumToName`, put request/response shapes in the method file (or `functions.go` if shared). Apply the pointer/response rules above.
-2. **New NDR type:** add `structures/<TYPE>.go` (`package structures`); reuse `dtyp` for base types; add a round-trip test.
+2. **New NDR type:** add `structures/<TYPE>.go` (`package structures`); reuse `msdtyp` for base types; add a round-trip test.
 3. **New status/flag constant:** add to `interface.go` (extend `StatusString` if it is a status code).
 4. Run `gofmt -w`, `go build`, `go vet`, `go test ./<path>/...`, and `go build -tags integration ./<path>/...` before finishing.

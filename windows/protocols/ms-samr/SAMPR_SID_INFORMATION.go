@@ -1,11 +1,11 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_SID_INFORMATION holds a single SID pointer ([MS-SAMR] 2.2.7.4).
 // SidPointer is a [unique] pointer to an RPC_SID.
 type SAMPR_SID_INFORMATION struct {
-	SidPointer *dtyp.RPC_SID `ndr:"unique"`
+	SidPointer *msdtyp.RPC_SID `ndr:"unique"`
 }

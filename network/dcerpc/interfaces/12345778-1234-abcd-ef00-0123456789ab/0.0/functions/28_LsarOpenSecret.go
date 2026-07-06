@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -14,7 +14,7 @@ import (
 // access mask.
 type lsarOpenSecretRequest struct {
 	PolicyHandle  mslsad.LSAPR_HANDLE
-	SecretName    dtyp.RPC_UNICODE_STRING
+	SecretName    msdtyp.RPC_UNICODE_STRING
 	DesiredAccess ndr.DWORD
 }
 
@@ -25,7 +25,7 @@ func (*lsarOpenSecretRequest) Opnum() uint16 { return lsarpc.OpnumLsarOpenSecret
 func LsarOpenSecret(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, secretName string, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
 	req := &lsarOpenSecretRequest{
 		PolicyHandle:  policyHandle,
-		SecretName:    dtyp.NewUnicodeString(secretName),
+		SecretName:    msdtyp.NewUnicodeString(secretName),
 		DesiredAccess: ndr.DWORD(desiredAccess),
 	}
 	var resp handleResponse

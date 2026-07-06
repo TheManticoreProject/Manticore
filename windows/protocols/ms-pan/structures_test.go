@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -47,7 +47,7 @@ func TestContextHandles(t *testing.T) {
 // carried as.
 func TestPrintAsyncNotificationType(t *testing.T) {
 	type wrap struct{ T PrintAsyncNotificationType }
-	in := wrap{T: PrintAsyncNotificationType(dtyp.GUID{
+	in := wrap{T: PrintAsyncNotificationType(msdtyp.GUID{
 		Data1: 0x23cbe492,
 		Data2: 0xf6bf,
 		Data3: 0x4b5b,

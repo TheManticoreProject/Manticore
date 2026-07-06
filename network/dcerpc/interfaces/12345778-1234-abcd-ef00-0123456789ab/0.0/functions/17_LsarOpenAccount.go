@@ -3,9 +3,9 @@ package functions
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -13,7 +13,7 @@ import (
 // handle, the SID of the account to open, and the desired access mask.
 type lsarOpenAccountRequest struct {
 	PolicyHandle  mslsad.LSAPR_HANDLE
-	AccountSid    *dtyp.RPC_SID `ndr:"unique"`
+	AccountSid    *msdtyp.RPC_SID `ndr:"unique"`
 	DesiredAccess ndr.DWORD
 }
 
@@ -21,7 +21,7 @@ func (*lsarOpenAccountRequest) Opnum() uint16 { return lsarpc.OpnumLsarOpenAccou
 
 // LsarOpenAccount calls LsarOpenAccount (opnum 17), opening the account object identified
 // by the given SID and returning a handle to it ([MS-LSAD] 3.1.4.5.3).
-func LsarOpenAccount(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, accountSid *dtyp.RPC_SID, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
+func LsarOpenAccount(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, accountSid *msdtyp.RPC_SID, desiredAccess uint32) (mslsad.LSAPR_HANDLE, error) {
 	req := &lsarOpenAccountRequest{
 		PolicyHandle:  policyHandle,
 		AccountSid:    accountSid,

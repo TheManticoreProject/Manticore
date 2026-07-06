@@ -1,8 +1,8 @@
 package mslsad
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // LSA_FOREST_TRUST_COLLISION_RECORD describes a single forest-trust collision ([MS-LSAD]
@@ -11,5 +11,5 @@ type LSA_FOREST_TRUST_COLLISION_RECORD struct {
 	Index ndr.DWORD
 	Type  LSA_FOREST_TRUST_COLLISION_RECORD_TYPE `ndr:"enum"`
 	Flags ndr.DWORD
-	Name  dtyp.RPC_UNICODE_STRING
+	Name  msdtyp.RPC_UNICODE_STRING
 }

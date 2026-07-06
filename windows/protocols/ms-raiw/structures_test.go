@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // syntaxes is the set of NDR transfer syntaxes every round-trip is exercised under.
@@ -57,7 +57,7 @@ func TestWINSINTF_ADD_T_RoundTrip(t *testing.T) {
 func TestWINSINTF_ADD_VERS_MAP_T_RoundTrip(t *testing.T) {
 	roundTrip(t, "WINSINTF_ADD_VERS_MAP_T", WINSINTF_ADD_VERS_MAP_T{
 		Add:    WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000001},
-		VersNo: dtyp.LARGE_INTEGER(0x0000000100000005),
+		VersNo: msdtyp.LARGE_INTEGER(0x0000000100000005),
 	})
 }
 
@@ -86,7 +86,7 @@ func TestWINSINTF_RECORD_ACTION_T_RoundTrip(t *testing.T) {
 			{Type: 1, Len: 4, IPAdd: 0x0A000002},
 		},
 		Add:       WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000003},
-		VersNo:    dtyp.LARGE_INTEGER(0x000000020000000A),
+		VersNo:    msdtyp.LARGE_INTEGER(0x000000020000000A),
 		NodeTyp:   1,
 		OwnerId:   7,
 		State_e:   0,
@@ -102,7 +102,7 @@ func TestWINSINTF_RECORD_ACTION_T_NilPointers(t *testing.T) {
 		Cmd_e:   WINSINTF_E_QUERY,
 		NameLen: 0,
 		Add:     WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x7F000001},
-		VersNo:  dtyp.LARGE_INTEGER(0),
+		VersNo:  msdtyp.LARGE_INTEGER(0),
 	})
 }
 
@@ -116,7 +116,7 @@ func TestWINSINTF_RECS_T_RoundTrip(t *testing.T) {
 		NoOfAdds: 1,
 		PAdd:     []WINSINTF_ADD_T{{Type: 1, Len: 4, IPAdd: 0x0A000005}},
 		Add:      WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000005},
-		VersNo:   dtyp.LARGE_INTEGER(1),
+		VersNo:   msdtyp.LARGE_INTEGER(1),
 	}
 	roundTrip(t, "WINSINTF_RECS_T", WINSINTF_RECS_T{
 		BuffSize:      1,
@@ -129,7 +129,7 @@ func TestWINSINTF_RECS_T_RoundTrip(t *testing.T) {
 // statWithData builds a populated WINSINTF_STAT_T (nested Counters/TimeStamps structs,
 // SYSTEMTIME members, and a [unique,size_is] replication-partner array).
 func statWithData() WINSINTF_STAT_T {
-	ts := dtyp.SYSTEMTIME{WYear: 2024, WMonth: 4, WDay: 23, WHour: 12}
+	ts := msdtyp.SYSTEMTIME{WYear: 2024, WMonth: 4, WDay: 23, WHour: 12}
 	return WINSINTF_STAT_T{
 		Counters: WINSINTF_STAT_T_Counters{
 			NoOfUniqueReg: 10, NoOfGroupReg: 20, NoOfQueries: 30,
@@ -157,12 +157,12 @@ func TestWINSINTF_RESULTS_T_RoundTrip(t *testing.T) {
 	var res WINSINTF_RESULTS_T
 	res.NoOfOwners = 2
 	res.AddVersMaps[0] = WINSINTF_ADD_VERS_MAP_T{
-		Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000001}, VersNo: dtyp.LARGE_INTEGER(5),
+		Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000001}, VersNo: msdtyp.LARGE_INTEGER(5),
 	}
 	res.AddVersMaps[1] = WINSINTF_ADD_VERS_MAP_T{
-		Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000002}, VersNo: dtyp.LARGE_INTEGER(9),
+		Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000002}, VersNo: msdtyp.LARGE_INTEGER(9),
 	}
-	res.MyMaxVersNo = dtyp.LARGE_INTEGER(9)
+	res.MyMaxVersNo = msdtyp.LARGE_INTEGER(9)
 	res.RefreshInterval = 345600
 	res.WINSStat = statWithData()
 	roundTrip(t, "WINSINTF_RESULTS_T", res)
@@ -174,10 +174,10 @@ func TestWINSINTF_RESULTS_NEW_T_RoundTrip(t *testing.T) {
 	roundTrip(t, "WINSINTF_RESULTS_NEW_T", WINSINTF_RESULTS_NEW_T{
 		NoOfOwners: 2,
 		PAddVersMaps: []WINSINTF_ADD_VERS_MAP_T{
-			{Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000001}, VersNo: dtyp.LARGE_INTEGER(5)},
-			{Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000002}, VersNo: dtyp.LARGE_INTEGER(9)},
+			{Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000001}, VersNo: msdtyp.LARGE_INTEGER(5)},
+			{Add: WINSINTF_ADD_T{Type: 1, Len: 4, IPAdd: 0x0A000002}, VersNo: msdtyp.LARGE_INTEGER(9)},
 		},
-		MyMaxVersNo:     dtyp.LARGE_INTEGER(9),
+		MyMaxVersNo:     msdtyp.LARGE_INTEGER(9),
 		RefreshInterval: 345600,
 		WINSStat:        statWithData(),
 	})

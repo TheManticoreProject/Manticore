@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // roundTrip marshals in, unmarshals into a fresh value of the same type, and asserts the
@@ -131,7 +131,7 @@ func TestRestriction(t *testing.T) {
 
 // TestFILETIMEAlias guards the dtyp alias so a wrong redefinition is caught at compile+run.
 func TestFILETIMEAlias(t *testing.T) {
-	var ft FILETIME = dtyp.FILETIME{DwLowDateTime: 0x11111111, DwHighDateTime: 0x22222222}
+	var ft FILETIME = msdtyp.FILETIME{DwLowDateTime: 0x11111111, DwHighDateTime: 0x22222222}
 	roundTrip(t, "FILETIME", ft)
 }
 

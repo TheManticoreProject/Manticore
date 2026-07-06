@@ -1,8 +1,8 @@
 package mssamr
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/dtyp"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
 // SAMPR_USER_ALL_INFORMATION holds the full set of attributes for a user
@@ -15,19 +15,19 @@ type SAMPR_USER_ALL_INFORMATION struct {
 	AccountExpires       OLD_LARGE_INTEGER
 	PasswordCanChange    OLD_LARGE_INTEGER
 	PasswordMustChange   OLD_LARGE_INTEGER
-	UserName             dtyp.RPC_UNICODE_STRING
-	FullName             dtyp.RPC_UNICODE_STRING
-	HomeDirectory        dtyp.RPC_UNICODE_STRING
-	HomeDirectoryDrive   dtyp.RPC_UNICODE_STRING
-	ScriptPath           dtyp.RPC_UNICODE_STRING
-	ProfilePath          dtyp.RPC_UNICODE_STRING
-	AdminComment         dtyp.RPC_UNICODE_STRING
-	WorkStations         dtyp.RPC_UNICODE_STRING
-	UserComment          dtyp.RPC_UNICODE_STRING
-	Parameters           dtyp.RPC_UNICODE_STRING
+	UserName             msdtyp.RPC_UNICODE_STRING
+	FullName             msdtyp.RPC_UNICODE_STRING
+	HomeDirectory        msdtyp.RPC_UNICODE_STRING
+	HomeDirectoryDrive   msdtyp.RPC_UNICODE_STRING
+	ScriptPath           msdtyp.RPC_UNICODE_STRING
+	ProfilePath          msdtyp.RPC_UNICODE_STRING
+	AdminComment         msdtyp.RPC_UNICODE_STRING
+	WorkStations         msdtyp.RPC_UNICODE_STRING
+	UserComment          msdtyp.RPC_UNICODE_STRING
+	Parameters           msdtyp.RPC_UNICODE_STRING
 	LmOwfPassword        RPC_SHORT_BLOB
 	NtOwfPassword        RPC_SHORT_BLOB
-	PrivateData          dtyp.RPC_UNICODE_STRING
+	PrivateData          msdtyp.RPC_UNICODE_STRING
 	SecurityDescriptor   SAMPR_SR_SECURITY_DESCRIPTOR
 	UserId               ndr.DWORD
 	PrimaryGroupId       ndr.DWORD
