@@ -9,11 +9,11 @@ import (
 
 	epm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/functions"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msrpce "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rpce"
 )
 
 // fakeTransport is an in-memory transport.Transport for driving the client without a
@@ -100,16 +100,16 @@ func pad4(b []byte) []byte {
 // conformant-varying header (max_count, offset, actual_count), one element referent id,
 // the twr_t body, then the status. max_count is set larger than actual_count (as a server
 // echoing the requested max_towers does) to pin that the decoder sizes from actual_count.
-func eptMapResponseStub(tower structures.Tower, maxTowers uint32) []byte {
+func eptMapResponseStub(tower msrpce.Tower, maxTowers uint32) []byte {
 	towerBytes := tower.Marshal()
 
 	var b []byte
-	b = append(b, make([]byte, structures.ContextHandleSize)...) // entry_handle
-	b = le32(b, 1)                                               // num_towers
-	b = le32(b, maxTowers)                                       // array maximum_count (size_is) — inline, no referent id
-	b = le32(b, 0)                                               // array offset
-	b = le32(b, 1)                                               // array actual_count (length_is)
-	b = le32(b, 0x00020004)                                      // element[0] twr_p_t referent id (non-null)
+	b = append(b, make([]byte, msrpce.ContextHandleSize)...) // entry_handle
+	b = le32(b, 1)                                           // num_towers
+	b = le32(b, maxTowers)                                   // array maximum_count (size_is) — inline, no referent id
+	b = le32(b, 0)                                           // array offset
+	b = le32(b, 1)                                           // array actual_count (length_is)
+	b = le32(b, 0x00020004)                                  // element[0] twr_p_t referent id (non-null)
 	// twr_t body: hoisted maximum_count, tower_length, octet string, pad to 4.
 	b = le32(b, uint32(len(towerBytes)))
 	b = le32(b, uint32(len(towerBytes)))
@@ -123,16 +123,16 @@ func TestEptMap_RoundTrip(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
-	resolved := structures.Tower{Floors: []structures.Floor{
-		structures.InterfaceFloor(sampleIface(), 1, 0),
-		structures.TransferSyntaxFloor(),
-		{LHS: []byte{structures.FloorProtoNCACN}, RHS: []byte{0, 0}},
-		structures.TCPFloor(49664),
-		structures.IPFloor(net.IPv4(10, 0, 0, 30)),
+	resolved := msrpce.Tower{Floors: []msrpce.Floor{
+		msrpce.InterfaceFloor(sampleIface(), 1, 0),
+		msrpce.TransferSyntaxFloor(),
+		{LHS: []byte{msrpce.FloorProtoNCACN}, RHS: []byte{0, 0}},
+		msrpce.TCPFloor(49664),
+		msrpce.IPFloor(net.IPv4(10, 0, 0, 30)),
 	}}
 	ft.queue(responsePDU(t, 2, eptMapResponseStub(resolved, functions.DefaultMaxTowers)))
 
-	towers, err := functions.EptMap(c, nil, structures.BuildMapTowerTCP(sampleIface(), 1, 0), functions.DefaultMaxTowers)
+	towers, err := functions.EptMap(c, nil, msrpce.BuildMapTowerTCP(sampleIface(), 1, 0), functions.DefaultMaxTowers)
 	if err != nil {
 		t.Fatalf("EptMap() error = %v", err)
 	}
@@ -164,12 +164,12 @@ func TestMap_ReturnsEndpoints(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
-	resolved := structures.Tower{Floors: []structures.Floor{
-		structures.InterfaceFloor(sampleIface(), 1, 0),
-		structures.TransferSyntaxFloor(),
-		{LHS: []byte{structures.FloorProtoNCACN}, RHS: []byte{0, 0}},
-		structures.TCPFloor(135),
-		structures.IPFloor(net.IPv4(192, 0, 2, 1)),
+	resolved := msrpce.Tower{Floors: []msrpce.Floor{
+		msrpce.InterfaceFloor(sampleIface(), 1, 0),
+		msrpce.TransferSyntaxFloor(),
+		{LHS: []byte{msrpce.FloorProtoNCACN}, RHS: []byte{0, 0}},
+		msrpce.TCPFloor(135),
+		msrpce.IPFloor(net.IPv4(192, 0, 2, 1)),
 	}}
 	ft.queue(responsePDU(t, 2, eptMapResponseStub(resolved, functions.DefaultMaxTowers)))
 
@@ -188,13 +188,13 @@ func TestEptMap_StatusError(t *testing.T) {
 
 	// num_towers = 0, null ITowers pointer, non-zero status.
 	var stub []byte
-	stub = append(stub, make([]byte, structures.ContextHandleSize)...)
+	stub = append(stub, make([]byte, msrpce.ContextHandleSize)...)
 	stub = le32(stub, 0)                          // num_towers
 	stub = le32(stub, 0)                          // ITowers null pointer
 	stub = le32(stub, epm.EptStatusNotRegistered) // status
 	ft.queue(responsePDU(t, 2, stub))
 
-	if _, err := functions.EptMap(c, nil, structures.BuildMapTowerTCP(sampleIface(), 1, 0), functions.DefaultMaxTowers); err == nil {
+	if _, err := functions.EptMap(c, nil, msrpce.BuildMapTowerTCP(sampleIface(), 1, 0), functions.DefaultMaxTowers); err == nil {
 		t.Fatal("EptMap() with ept_s_not_registered: error = nil, want non-nil")
 	}
 }
@@ -216,7 +216,7 @@ func TestEptMap_StatusError(t *testing.T) {
 // to a value larger than actual_count (as a real server echoing the requested max_ents
 // does) so the test also pins that the decoder sizes the result from actual_count, not
 // max_count.
-func eptLookupStub(t *testing.T, handle structures.ContextHandle, status uint32, entries []structures.EptEntry) []byte {
+func eptLookupStub(t *testing.T, handle msrpce.ContextHandle, status uint32, entries []msrpce.EptEntry) []byte {
 	t.Helper()
 	var b []byte
 	b = append(b, handle[:]...)           // entry_handle (20 octets)
@@ -262,24 +262,24 @@ func eptLookupStub(t *testing.T, handle structures.ContextHandle, status uint32,
 }
 
 // tcpEntry builds an ept_entry_t with an ncacn_ip_tcp tower on the given port.
-func tcpEntry(obj guid.GUID, port uint16, annotation string) structures.EptEntry {
-	tw := structures.NewTwr(structures.Tower{Floors: []structures.Floor{
-		structures.InterfaceFloor(sampleIface(), 1, 0),
-		structures.TransferSyntaxFloor(),
-		{LHS: []byte{structures.FloorProtoNCACN}, RHS: []byte{0, 0}},
-		structures.TCPFloor(port),
-		structures.IPFloor(net.IPv4(10, 0, 0, 1)),
+func tcpEntry(obj guid.GUID, port uint16, annotation string) msrpce.EptEntry {
+	tw := msrpce.NewTwr(msrpce.Tower{Floors: []msrpce.Floor{
+		msrpce.InterfaceFloor(sampleIface(), 1, 0),
+		msrpce.TransferSyntaxFloor(),
+		{LHS: []byte{msrpce.FloorProtoNCACN}, RHS: []byte{0, 0}},
+		msrpce.TCPFloor(port),
+		msrpce.IPFloor(net.IPv4(10, 0, 0, 1)),
 	}})
-	return structures.EptEntry{
-		Object:     structures.NewEptUUID(obj),
+	return msrpce.EptEntry{
+		Object:     msrpce.NewEptUUID(obj),
 		Tower:      &tw,
-		Annotation: structures.Annotation(annotation),
+		Annotation: msrpce.Annotation(annotation),
 	}
 }
 
 // nonNullHandle returns a context handle with a non-zero UUID portion.
-func nonNullHandle() structures.ContextHandle {
-	var h structures.ContextHandle
+func nonNullHandle() msrpce.ContextHandle {
+	var h msrpce.ContextHandle
 	h[4] = 0xAB // first UUID octet
 	return h
 }
@@ -288,12 +288,12 @@ func TestLookup_SingleBatch(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
 
-	entries := []structures.EptEntry{
+	entries := []msrpce.EptEntry{
 		tcpEntry(sampleIface(), 49664, "Service A"),
 		tcpEntry(sampleIface(), 135, "Service B"),
 	}
 	// Null handle on the response => enumeration complete after this batch.
-	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess, entries)))
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, msrpce.ContextHandle{}, epm.EptStatusSuccess, entries)))
 
 	got, err := functions.Lookup(c)
 	if err != nil {
@@ -321,10 +321,10 @@ func TestLookup_MultiBatch(t *testing.T) {
 	h1 := nonNullHandle()
 	// Batch 1: two entries, non-null handle => more to come.
 	ft.queue(responsePDU(t, 2, eptLookupStub(t, h1, epm.EptStatusSuccess,
-		[]structures.EptEntry{tcpEntry(sampleIface(), 1000, "A"), tcpEntry(sampleIface(), 1001, "B")})))
+		[]msrpce.EptEntry{tcpEntry(sampleIface(), 1000, "A"), tcpEntry(sampleIface(), 1001, "B")})))
 	// Batch 2: one entry, null handle => done.
-	ft.queue(responsePDU(t, 3, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess,
-		[]structures.EptEntry{tcpEntry(sampleIface(), 1002, "C")})))
+	ft.queue(responsePDU(t, 3, eptLookupStub(t, msrpce.ContextHandle{}, epm.EptStatusSuccess,
+		[]msrpce.EptEntry{tcpEntry(sampleIface(), 1002, "C")})))
 
 	got, err := functions.Lookup(c)
 	if err != nil {
@@ -351,7 +351,7 @@ func TestLookup_EmptyRegistry(t *testing.T) {
 	c := boundClient(t, ft)
 
 	// No entries, null handle, ept_s_not_registered => clean, empty result.
-	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusNotRegistered, nil)))
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, msrpce.ContextHandle{}, epm.EptStatusNotRegistered, nil)))
 
 	got, err := functions.Lookup(c)
 	if err != nil {
@@ -365,7 +365,7 @@ func TestLookup_EmptyRegistry(t *testing.T) {
 func TestEptLookup_RequestShape(t *testing.T) {
 	ft := &fakeTransport{}
 	c := boundClient(t, ft)
-	ft.queue(responsePDU(t, 2, eptLookupStub(t, structures.ContextHandle{}, epm.EptStatusSuccess, nil)))
+	ft.queue(responsePDU(t, 2, eptLookupStub(t, msrpce.ContextHandle{}, epm.EptStatusSuccess, nil)))
 
 	if _, err := functions.Lookup(c); err != nil {
 		t.Fatalf("Lookup() error = %v", err)
@@ -403,7 +403,7 @@ func TestEptLookupHandleFree(t *testing.T) {
 
 	// [out] stub: 20-octet nulled entry_handle, then status = rpc_s_ok.
 	var stub []byte
-	stub = append(stub, make([]byte, structures.ContextHandleSize)...)
+	stub = append(stub, make([]byte, msrpce.ContextHandleSize)...)
 	stub = le32(stub, epm.EptStatusSuccess)
 	ft.queue(responsePDU(t, 2, stub))
 
@@ -426,7 +426,7 @@ func TestEptLookupHandleFree(t *testing.T) {
 	if req.Opnum != 4 {
 		t.Errorf("opnum = %d, want 4 (ept_lookup_handle_free; opnum 1 is ept_delete)", req.Opnum)
 	}
-	if got := req.Stub[:structures.ContextHandleSize]; !bytes.Equal(got, in[:]) {
+	if got := req.Stub[:msrpce.ContextHandleSize]; !bytes.Equal(got, in[:]) {
 		t.Errorf("request handle = %x, want %x", got, in[:])
 	}
 }

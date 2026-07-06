@@ -1,4 +1,4 @@
-package structures
+package msrpce
 
 import "github.com/TheManticoreProject/Manticore/windows/guid"
 

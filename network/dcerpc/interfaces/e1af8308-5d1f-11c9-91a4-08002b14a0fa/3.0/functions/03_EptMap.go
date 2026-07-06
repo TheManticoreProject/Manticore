@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	epm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msrpce "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rpce"
 )
 
 // eptMapRequest carries the [in] parameters of ept_map. The explicit binding handle
@@ -14,9 +14,9 @@ import (
 // full pointer to a uuid_t; map_tower is a full pointer to a twr_t; entry_handle is the
 // 20-octet context handle (null on the first call); max_towers caps the result.
 type eptMapRequest struct {
-	Object      *structures.EptUUID `ndr:"ptr"`
-	MapTower    *structures.Twr     `ndr:"ptr"`
-	EntryHandle structures.ContextHandle
+	Object      *msrpce.EptUUID `ndr:"ptr"`
+	MapTower    *msrpce.Twr     `ndr:"ptr"`
+	EntryHandle msrpce.ContextHandle
 	MaxTowers   ndr.DWORD
 }
 
@@ -37,9 +37,9 @@ func (*eptMapRequest) Opnum() uint16 { return epm.OpnumEptMap }
 // tag selects that framing, "varying" supplies the offset/actual_count words, and
 // "elem=ptr" makes the elements full pointers.
 type eptMapResponse struct {
-	EntryHandle structures.ContextHandle
+	EntryHandle msrpce.ContextHandle
 	NumTowers   ndr.DWORD
-	ITowers     []*structures.Twr `ndr:"varying,inline,elem=ptr"`
+	ITowers     []*msrpce.Twr `ndr:"varying,inline,elem=ptr"`
 	Status      ndr.DWORD
 }
 
@@ -49,14 +49,14 @@ type eptMapResponse struct {
 // towers the server returns. The decoded result towers are returned; use Tower.Endpoint
 // to extract a transport endpoint, or call Map for the common interface-to-endpoint
 // path.
-func EptMap(rpc ndr.Invoker, object *guid.GUID, mapTower structures.Tower, maxTowers uint32) ([]structures.Tower, error) {
-	twr := structures.NewTwr(mapTower)
+func EptMap(rpc ndr.Invoker, object *guid.GUID, mapTower msrpce.Tower, maxTowers uint32) ([]msrpce.Tower, error) {
+	twr := msrpce.NewTwr(mapTower)
 	req := &eptMapRequest{
 		MapTower:  &twr,
 		MaxTowers: ndr.DWORD(maxTowers),
 	}
 	if object != nil {
-		u := structures.NewEptUUID(*object)
+		u := msrpce.NewEptUUID(*object)
 		req.Object = &u
 	}
 
@@ -68,7 +68,7 @@ func EptMap(rpc ndr.Invoker, object *guid.GUID, mapTower structures.Tower, maxTo
 		return nil, fmt.Errorf("ept_map failed: %s", epm.StatusString(uint32(resp.Status)))
 	}
 
-	towers := make([]structures.Tower, 0, len(resp.ITowers))
+	towers := make([]msrpce.Tower, 0, len(resp.ITowers))
 	for _, tw := range resp.ITowers {
 		if tw == nil {
 			continue
