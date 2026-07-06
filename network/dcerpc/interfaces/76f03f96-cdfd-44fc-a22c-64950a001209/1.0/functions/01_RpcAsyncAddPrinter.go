@@ -1,0 +1,48 @@
+package functions
+
+import (
+	"fmt"
+
+	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	mspar "github.com/TheManticoreProject/Manticore/windows/protocols/ms-par"
+)
+
+// rpcAsyncAddPrinterRequest carries the [in] parameters of RpcAsyncAddPrinter.
+type rpcAsyncAddPrinterRequest struct {
+	PName              *ndr.WSTR `ndr:"unique"`
+	PPrinterContainer  mspar.PRINTER_CONTAINER
+	PDevModeContainer  mspar.DEVMODE_CONTAINER
+	PSecurityContainer mspar.SECURITY_CONTAINER
+	PClientInfo        mspar.SPLCLIENT_CONTAINER
+}
+
+func (*rpcAsyncAddPrinterRequest) Opnum() uint16 { return IRemoteWinspool.OpnumRpcAsyncAddPrinter }
+
+// rpcAsyncAddPrinterResponse carries the [out] parameters and return value of RpcAsyncAddPrinter.
+type rpcAsyncAddPrinterResponse struct {
+	PHandle mspar.PRINTER_HANDLE
+	Status  ndr.DWORD `ndr:"retval"`
+}
+
+// RpcAsyncAddPrinter calls RpcAsyncAddPrinter (opnum 1) ([MS-PAR] — verify the parameter
+// modeling and status handling).
+func RpcAsyncAddPrinter(rpc ndr.Invoker, pName *ndr.WSTR, pPrinterContainer mspar.PRINTER_CONTAINER, pDevModeContainer mspar.DEVMODE_CONTAINER, pSecurityContainer mspar.SECURITY_CONTAINER, pClientInfo mspar.SPLCLIENT_CONTAINER) (PHandle mspar.PRINTER_HANDLE, err error) {
+	req := &rpcAsyncAddPrinterRequest{
+		PName:              pName,
+		PPrinterContainer:  pPrinterContainer,
+		PDevModeContainer:  pDevModeContainer,
+		PSecurityContainer: pSecurityContainer,
+		PClientInfo:        pClientInfo,
+	}
+	var resp rpcAsyncAddPrinterResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RpcAsyncAddPrinter: %w", err)
+		return
+	}
+	PHandle = resp.PHandle
+	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
+		err = fmt.Errorf("RpcAsyncAddPrinter failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	}
+	return
+}
