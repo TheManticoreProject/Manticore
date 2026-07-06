@@ -1,0 +1,4 @@
+package msrrasm
+
+// IPX_STATIC_SERVICE_INFO is an alias for IPX_SERVER_ENTRY ([MS-RRASM]).
+type IPX_STATIC_SERVICE_INFO = IPX_SERVER_ENTRY

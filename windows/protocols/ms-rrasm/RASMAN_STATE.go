@@ -1,0 +1,13 @@
+package msrrasm
+
+// RASMAN_STATE is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-RRASM]).
+type RASMAN_STATE uint16
+
+const (
+	CONNECTING      RASMAN_STATE = 0
+	LISTENING       RASMAN_STATE = 1
+	CONNECTED       RASMAN_STATE = 2
+	DISCONNECTING   RASMAN_STATE = 3
+	DISCONNECTED    RASMAN_STATE = 4
+	LISTENCOMPLETED RASMAN_STATE = 5
+)

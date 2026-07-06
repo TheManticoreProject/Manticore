@@ -1,0 +1,9 @@
+package msrrasm
+
+// MIB_IPSTATS_FORWARDING is an NDR enum, transmitted as a 16-bit value ([C706] 14.3.6, [MS-RRASM]).
+type MIB_IPSTATS_FORWARDING uint16
+
+const (
+	MIB_IP_FORWARDING     MIB_IPSTATS_FORWARDING = 1
+	MIB_IP_NOT_FORWARDING MIB_IPSTATS_FORWARDING = 2
+)
