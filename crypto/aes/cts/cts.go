@@ -1,7 +1,7 @@
 // Package aescts implements AES-CTS (Ciphertext Stealing) mode as used by
 // Kerberos per RFC 3962. The variant used is CBC-CTS where the last two
 // ciphertext blocks are swapped before output (Kerberos / CS3 style).
-package aescts
+package cts
 
 import (
 	"crypto/aes"

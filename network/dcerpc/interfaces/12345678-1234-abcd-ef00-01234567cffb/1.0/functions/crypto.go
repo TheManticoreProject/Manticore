@@ -10,7 +10,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 
-	"github.com/TheManticoreProject/Manticore/crypto/cfb8"
+	"github.com/TheManticoreProject/Manticore/crypto/aes/cfb8"
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )

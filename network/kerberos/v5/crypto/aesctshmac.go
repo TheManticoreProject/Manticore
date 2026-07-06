@@ -6,7 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 
-	"github.com/TheManticoreProject/Manticore/crypto/aescts"
+	"github.com/TheManticoreProject/Manticore/crypto/aes/cts"
 	"github.com/TheManticoreProject/Manticore/crypto/nfold"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -104,7 +104,7 @@ func aesEncrypt(key []byte, etype, usage int, plaintext []byte) ([]byte, error) 
 
 	// AES-CTS encrypt with zero IV
 	zero_iv := make([]byte, 16)
-	ciphertext, err := aescts.Encrypt(ke, zero_iv, ptc)
+	ciphertext, err := cts.Encrypt(ke, zero_iv, ptc)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func aesDecrypt(key []byte, etype, usage int, ciphertext []byte) ([]byte, error)
 
 	// AES-CTS decrypt with zero IV
 	zero_iv := make([]byte, 16)
-	ptc, err := aescts.Decrypt(ke, zero_iv, enc)
+	ptc, err := cts.Decrypt(ke, zero_iv, enc)
 	if err != nil {
 		return nil, err
 	}
