@@ -886,7 +886,7 @@ _DTYP_SCALAR = {
 }
 # [MS-DTYP] aggregate types provided by windows/ms-dtyp (reuse, don't emit).
 _DTYP_STRUCT = {"RPC_SID", "RPC_UNICODE_STRING", "LARGE_INTEGER",
-                "ULARGE_INTEGER", "LUID"}
+                "ULARGE_INTEGER", "LUID", "FILETIME", "SYSTEMTIME"}
 # Built-in [MS-DTYP] pointer aliases -> canonical msdtyp type.
 _DTYP_PALIAS = {
     "PRPC_SID": "RPC_SID", "PRPC_UNICODE_STRING": "RPC_UNICODE_STRING",
