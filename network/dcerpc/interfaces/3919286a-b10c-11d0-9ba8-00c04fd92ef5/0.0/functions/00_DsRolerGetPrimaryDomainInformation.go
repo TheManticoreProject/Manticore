@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-DSSP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dssp/ae6edaa5-b40e-4cc9-9ebc-42cc657ce61e
+// A fetched copy is kept at ms-dssp.idl in the interface directory.
+
 import (
 	"fmt"
 

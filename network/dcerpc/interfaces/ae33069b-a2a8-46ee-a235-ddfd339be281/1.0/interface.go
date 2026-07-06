@@ -5,6 +5,11 @@
 // IRPCAsyncNotify calls take as their registration/channel arguments ([MS-PAN] 3.1.2).
 package rpcinterface_ae33069ba2a846eea235ddfd339be281_1_0
 
+// IDL source: [MS-PAN] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-pan/3161e1b8-098f-4f42-8a58-7e342114b643
+// A fetched copy is kept at ms-pan.idl in the interface directory.
+
 import (
 	"fmt"
 

@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_76f03f96cdfd44fca22c64950a001209_1_0
 
+// IDL source: [MS-PAR] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-par/d81865df-838d-4c13-a705-d41ee24890de
+// A fetched copy is kept at ms-par.idl in the interface directory.
+
 import (
 	"fmt"
 

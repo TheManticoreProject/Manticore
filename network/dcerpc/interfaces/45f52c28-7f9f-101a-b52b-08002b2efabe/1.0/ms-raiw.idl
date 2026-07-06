@@ -1,3 +1,4 @@
+// ==== ms-raiw section a27384fe-594f-4a48-8a2f-0d1dc655c77e ====
  import "ms-dtyp.idl";
   
  #define WINSINTF_MAX_NO_RPL_PNRS 25
@@ -310,3 +311,37 @@
  }
   
   
+
+// ==== ms-raiw section 27384d02-a918-4b22-90ac-d00043f31a55 ====
+ import "ms-raiw_winsif.idl";
+  
+ [
+     uuid(811109bf-a4e1-11d1-ab54-00a0c91e9b45),
+     version(1.0),
+     pointer_default(unique)
+ ]
+  
+ interface winsi2 {
+  
+ #define MIDL_PASS
+  
+ typedef handle_t WINSIF2_HANDLE;
+  
+ DWORD
+ R_WinsTombstoneDbRecs(
+     [in]      WINSIF2_HANDLE ServerHdl,
+     [in, ref] PWINSINTF_ADD_T pWinsAdd,
+     [in]      WINSINTF_VERS_NO_T MinVersNo,
+     [in]      WINSINTF_VERS_NO_T MaxVersNo
+ );
+  
+ DWORD
+ R_WinsCheckAccess(
+     [in]      WINSIF2_HANDLE ServerHdl,
+     [out]     DWORD *Access
+ );
+ }
+  
+  
+  
+

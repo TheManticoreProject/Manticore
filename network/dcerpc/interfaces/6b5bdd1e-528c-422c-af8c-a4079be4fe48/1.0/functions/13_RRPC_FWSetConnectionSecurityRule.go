@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-FASP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fasp/1503b9d7-7fec-4793-9972-6ad58720c9db
+// A fetched copy is kept at ms-fasp.idl in the interface directory.
+
 import (
 	"fmt"
 

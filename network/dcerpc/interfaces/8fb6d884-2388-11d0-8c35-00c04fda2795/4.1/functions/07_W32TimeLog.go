@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-W32T] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-w32t/5793e908-22ef-4cea-962f-fca8a72c485a
+// A fetched copy is kept at ms-w32t.idl in the interface directory.
+
 import (
 	"fmt"
 

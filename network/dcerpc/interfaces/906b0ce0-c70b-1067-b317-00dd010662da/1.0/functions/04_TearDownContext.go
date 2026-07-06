@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-CMPO] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cmpo/3a4677f0-9aef-41f9-9bca-f9c2469cefa6
+// A fetched copy is kept at ms-cmpo.idl in the interface directory.
+
 import (
 	"fmt"
 

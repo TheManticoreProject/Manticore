@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-FAX] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fax/0907310f-0693-47e7-a6cb-3e599c89a1dd
+// A fetched copy is kept at ms-fax.idl in the interface directory.
+
 import (
 	"fmt"
 

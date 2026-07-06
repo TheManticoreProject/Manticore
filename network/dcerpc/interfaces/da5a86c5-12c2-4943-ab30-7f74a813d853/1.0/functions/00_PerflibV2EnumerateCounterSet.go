@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-PCQ] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-pcq/dcee10e3-0512-495e-9566-26e56cc21c5c
+// A fetched copy is kept at ms-pcq.idl in the interface directory.
+
 import (
 	"fmt"
 

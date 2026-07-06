@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_41208ee0e97011d19b9e00e02c064c39_1_0
 
+// IDL source: [MS-MQMQ] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mqmq/56cc73e0-f57a-4bd9-aa45-861be5b85049
+// A fetched copy is kept at ms-mqmq.idl in the interface directory.
+
 import (
 	"fmt"
 

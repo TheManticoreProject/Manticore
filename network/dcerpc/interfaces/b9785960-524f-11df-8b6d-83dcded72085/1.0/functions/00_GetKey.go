@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-GKDI] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/441a75fd-ab11-478c-881a-332e6f3a4bf7
+// A fetched copy is kept at ms-gkdi.idl in the interface directory.
+
 import (
 	"fmt"
 

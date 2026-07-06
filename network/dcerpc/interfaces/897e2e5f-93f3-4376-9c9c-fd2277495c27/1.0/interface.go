@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_897e2e5f93f343769c9cfd2277495c27_1_0
 
+// IDL source: [MS-FRS2] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-frs2/39bd498b-2a94-41b7-914e-10921d543912
+// A fetched copy is kept at ms-frs2.idl in the interface directory.
+
 import (
 	"fmt"
 

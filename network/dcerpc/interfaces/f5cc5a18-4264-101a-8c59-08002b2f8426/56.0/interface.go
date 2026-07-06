@@ -6,6 +6,11 @@
 // ([MS-NSPI] 2.2.2 / [MS-OXCDATA]) are not derivable from the IDL.
 package rpcinterface_f5cc5a184264101a8c5908002b2f8426_56_0
 
+// IDL source: [MS-NSPI] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nspi/2554418c-a060-473a-950a-e009a53e33d9
+// A fetched copy is kept at ms-nspi.idl in the interface directory.
+
 import (
 	"fmt"
 

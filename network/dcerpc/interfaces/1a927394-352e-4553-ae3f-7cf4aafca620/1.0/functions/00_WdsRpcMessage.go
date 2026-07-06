@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-WDSC] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wdsc/d2d48508-bda0-4dce-b6b2-1c314566a9c5
+// A fetched copy is kept at ms-wdsc.idl in the interface directory.
+
 import (
 	"fmt"
 

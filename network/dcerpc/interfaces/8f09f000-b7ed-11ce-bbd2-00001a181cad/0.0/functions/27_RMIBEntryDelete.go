@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-RRASM] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rrasm/8e6e89fb-9c80-4a9a-a222-d7d8948244bb
+// A fetched copy is kept at ms-rrasm.idl in the interface directory.
+
 import (
 	"fmt"
 

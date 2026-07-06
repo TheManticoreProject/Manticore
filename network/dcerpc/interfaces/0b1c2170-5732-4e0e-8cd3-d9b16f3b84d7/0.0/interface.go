@@ -14,6 +14,11 @@
 // 5fc860e0-6f6e-4fc2-83cd-46324f25e90b. PipeName is therefore empty.
 package rpcinterface_0b1c217057324e0e8cd3d9b16f3b84d7_0_0
 
+// IDL source: [MS-RAA] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-raa/0cae6068-686e-4f85-b064-7ba70d47da44
+// A fetched copy is kept at ms-raa.idl in the interface directory.
+
 import (
 	"fmt"
 

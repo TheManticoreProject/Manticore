@@ -6,6 +6,11 @@
 // the IDL and must be confirmed by hand (see the TODO markers).
 package rpcinterface_338cd001224431f1aaaa900038001003_1_0
 
+// IDL source: [MS-RRP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rrp/47f3edf6-4c2d-45d8-ab5b-2dc077738903
+// A fetched copy is kept at ms-rrp.idl in the interface directory.
+
 import (
 	"fmt"
 

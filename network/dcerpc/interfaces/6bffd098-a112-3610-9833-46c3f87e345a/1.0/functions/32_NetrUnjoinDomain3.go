@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-WKST] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wkst/9fdbc753-0397-4236-bbfc-a380f9d23789
+// A fetched copy is kept at ms-wkst.idl in the interface directory.
+
 import (
 	"fmt"
 

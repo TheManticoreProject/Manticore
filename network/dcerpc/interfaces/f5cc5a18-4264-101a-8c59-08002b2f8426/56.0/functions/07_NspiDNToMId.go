@@ -1,5 +1,10 @@
 package functions
 
+// IDL source: [MS-NSPI] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nspi/2554418c-a060-473a-950a-e009a53e33d9
+// A fetched copy is kept at ms-nspi.idl in the interface directory.
+
 import (
 	"fmt"
 

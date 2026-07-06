@@ -6,6 +6,11 @@
 // ([MS-ERREF] 2.2) are not carried by the IDL and were filled in from the spec.
 package rpcinterface_4fc742e04a1011cf827300aa004ae673_3_0
 
+// IDL source: [MS-DFSNM] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsnm/b471e023-618d-4c48-877f-f30c3005320c
+// A fetched copy is kept at ms-dfsnm.idl in the interface directory.
+
 import (
 	"fmt"
 

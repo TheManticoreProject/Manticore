@@ -6,6 +6,11 @@
 // doc comments are not derivable from the IDL and were confirmed against the spec.
 package rpcinterface_1088a980eae511d08d9b00a02453c337_1_0
 
+// IDL source: [MS-MQQP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mqqp/e3ad0b4f-51ab-4a7c-936b-c4f3e6f57b2d
+// A fetched copy is kept at ms-mqqp.idl in the interface directory.
+
 import (
 	"fmt"
 

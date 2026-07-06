@@ -16,6 +16,11 @@
 // both depend on this package, never the reverse.
 package rpcinterface_2f5f6521ca471068b31900dd010662db_1_0
 
+// IDL source: [MS-TRP] — this interface is translated from and verified
+// against the protocol's authoritative IDL. Full IDL (Appendix A):
+//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-trp/e86aca98-76e9-4515-9de1-2cadb9084a2b
+// A fetched copy is kept at ms-trp.idl in the interface directory.
+
 import (
 	"fmt"
 
