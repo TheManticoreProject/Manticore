@@ -93,9 +93,11 @@ No `functions` file imports a concrete client or transport. Only the integration
 
 Naming follows the spec: type names as in the IDL (`LSAPR_HANDLE`, `LSAPR_OBJECT_ATTRIBUTES`), method names with their interface prefix (`LsarOpenPolicy2`, `LsarClose`), opnum constants `Opnum<MethodName>`.
 
-## API surface: direct
+## API surface: direct (with an optional client layer above)
 
-Callers use the subpackages directly — `functions.LsarOpenPolicy2(rpc, …)`, `structures.LSAPR_HANDLE`. The root stays a thin descriptor and does **not** re-export. No facade boilerplate to keep in sync.
+The interface exposes **stateless primitives**: callers use the subpackages directly — `functions.LsarOpenPolicy2(rpc, …)`, `structures.LSAPR_HANDLE`. The root stays a thin descriptor and does **not** re-export; there is no per-interface facade re-exporting `functions` (that boilerplate would just drift). This is the low-level layer — one func per opnum, each taking an `ndr.Invoker`, no binding or state of its own.
+
+Higher-level, *stateful* ergonomics (bind once, chain context handles, multi-call workflows) do not belong on the interface — they live one layer up in `network/dcerpc/ms-protocols/` (see [Protocol layer](#protocol-layer-networkdcerpcms-protocols)). So "no facade" is about the interface package, not a ban on client structs.
 
 ---
 
@@ -382,7 +384,33 @@ When there is no IDL or you are adding a single opnum/type, the manual order sti
 
 ## Protocol layer (`network/dcerpc/ms-protocols/`)
 
-A protocol composes interfaces. It binds via the descriptor's `SyntaxID()` / `PipeName` and calls into `functions`:
+### The two layers
+
+DCE/RPC code in this repo is split into two deliberate layers — know which one you are writing:
+
+| | **Interface layer** — `network/dcerpc/interfaces/<uuid>/<ver>/` | **Protocol (client) layer** — `network/dcerpc/ms-protocols/<ms-xxx>/` |
+|---|---|---|
+| Grain | one **opnum** per `functions/<NN>_*.go` | one **workflow client** per protocol |
+| State | **stateless** — each func takes `rpc ndr.Invoker`, binds nothing | **stateful** — binds the syntax once, holds the association + chained context handles |
+| API | free functions: `functions.BaseRegOpenKey(rpc, …)` | methods on a struct: `reg.BaseRegOpenKey(…)`, `reg.OpenKeyByPath(…)` |
+| Contains | wire primitives only (opnums, request/response shapes) | binding lifecycle, handle chaining, multi-call sequences (e.g. DCSync), reg.exe-style helpers |
+| Exists for | **every** interface (~77) | **only** protocols with real workflow value (3 today: ms-rrp, ms-srvs, ms-drsr) |
+
+The interface layer is the reusable building block; the protocol layer is an *optional* ergonomic client on top of it. A caller that needs one call uses the interface layer directly (`functions.Xxx(rpc, …)`); add a protocol client only when a protocol needs bind-once semantics, chained handles, or a multi-call workflow. Do **not** mechanically wrap every interface in a client — a facade with no workflow is pure maintenance surface. This is also why the interface's root package does not re-export `functions`: "no facade" is about the interface package, not a ban on client structs.
+
+### The `msproto` shared contract
+
+`network/dcerpc/ms-protocols/msproto` captures only what every client shares, independent of transport and session model:
+
+- **`Protocol`** — every client reports `Interface() syntax.SyntaxID` and is `Close()`-able (io.Closer semantics; safe when nothing is held).
+- **`Session`** — the subset holding a *persistent* bound association also exposes `Connect()` / `IsConnected()`; their context handles chain and are scoped to that one association (e.g. MS-RRP `HKLM → subkey → close`). Per-call stateless clients satisfy `Protocol` but not `Session`.
+- **`Binder`** — the "open a transport and bind a syntax" step, one impl per transport provenance: `PipeBinder` (a borrowed SMB named pipe, via the `PipeDialer` capability `network/smb/client.Client` satisfies) and `TCPBinder` (an owned `ncacn_ip_tcp` connection).
+
+It deliberately does **not** unify context-handle types (interface-specific) nor the bind-per-call vs. persistent-bind policy (each client's choice).
+
+### Writing a client
+
+A client binds via the descriptor's `SyntaxID()` / `PipeName` and calls into `functions`:
 
 ```go
 // network/dcerpc/ms-protocols/ms-lsad/  package mslsad
@@ -396,7 +424,9 @@ h, _ := functions.LsarOpenPolicy2(rpc, lsarpc.MaximumAllowed)
 functions.LsarClose(rpc, h)
 ```
 
-One protocol may reference multiple interfaces; one interface may be reused by multiple protocols. Keep interface packages free of protocol-level logic.
+Dependency direction: `ms-protocols/<ms-xxx>` → the interface descriptor + `functions` + `msproto` + the transport/client layers; never the reverse. One protocol may reference multiple interfaces; one interface may be reused by multiple protocols. Keep interface packages free of protocol-level logic.
+
+**Naming — two `ms-<spec>` homes, don't confuse them:** `network/dcerpc/ms-protocols/ms-rrp` (package `ms_rrp`) is the *client/workflow* layer; `windows/protocols/ms-rrp` (package `msrrp`) is the *NDR structures* for the same spec. A client imports its structures package, not the reverse.
 
 ## Checklist when adding to an interface
 
