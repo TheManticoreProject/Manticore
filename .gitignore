@@ -30,3 +30,7 @@ go.work.sum
 
 # Local files for debug
 .private/
+
+# Python bytecode (e.g. .claude/skills/*/__pycache__ from idlgen.py)
+__pycache__/
+*.pyc
