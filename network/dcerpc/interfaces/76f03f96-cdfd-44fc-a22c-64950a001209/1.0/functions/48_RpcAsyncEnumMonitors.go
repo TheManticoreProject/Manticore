@@ -1,0 +1,49 @@
+package functions
+
+import (
+	"fmt"
+
+	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+)
+
+// rpcAsyncEnumMonitorsRequest carries the [in] parameters of RpcAsyncEnumMonitors.
+type rpcAsyncEnumMonitorsRequest struct {
+	PName    *ndr.WSTR `ndr:"unique"`
+	Level    ndr.DWORD
+	PMonitor []uint8 `ndr:"ref,size_is=CbBuf"`
+	CbBuf    ndr.DWORD
+}
+
+func (*rpcAsyncEnumMonitorsRequest) Opnum() uint16 { return IRemoteWinspool.OpnumRpcAsyncEnumMonitors }
+
+// rpcAsyncEnumMonitorsResponse carries the [out] parameters and return value of RpcAsyncEnumMonitors.
+type rpcAsyncEnumMonitorsResponse struct {
+	PMonitor   []uint8 `ndr:"ref,size_is=CbBuf"`
+	PcbNeeded  ndr.DWORD
+	PcReturned ndr.DWORD
+	Status     ndr.DWORD `ndr:"retval"`
+}
+
+// RpcAsyncEnumMonitors calls RpcAsyncEnumMonitors (opnum 48) ([MS-PAR] — verify the parameter
+// modeling and status handling).
+func RpcAsyncEnumMonitors(rpc ndr.Invoker, pName *ndr.WSTR, level ndr.DWORD, pMonitor []uint8, cbBuf ndr.DWORD) (PMonitor []uint8, PcbNeeded ndr.DWORD, PcReturned ndr.DWORD, err error) {
+	req := &rpcAsyncEnumMonitorsRequest{
+		PName:    pName,
+		Level:    level,
+		PMonitor: pMonitor,
+		CbBuf:    cbBuf,
+	}
+	var resp rpcAsyncEnumMonitorsResponse
+	if err = rpc.Invoke(req, &resp); err != nil {
+		err = fmt.Errorf("RpcAsyncEnumMonitors: %w", err)
+		return
+	}
+	PMonitor = resp.PMonitor
+	PcbNeeded = resp.PcbNeeded
+	PcReturned = resp.PcReturned
+	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
+		err = fmt.Errorf("RpcAsyncEnumMonitors failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	}
+	return
+}
