@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	epm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e1af8308-5d1f-11c9-91a4-08002b14a0fa/3.0/structures"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	msrpce "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rpce"
 )
 
 // eptLookupRequest carries the [in] parameters of ept_lookup (opnum 2). The binding
@@ -16,10 +16,10 @@ import (
 // MaxEnts caps the batch ([MS-RPCE] range(0,500)).
 type eptLookupRequest struct {
 	InquiryType ndr.DWORD
-	Object      *structures.EptUUID `ndr:"ptr"`
-	Ifid        *structures.RpcIfID `ndr:"ptr"`
+	Object      *msrpce.EptUUID `ndr:"ptr"`
+	Ifid        *msrpce.RpcIfID `ndr:"ptr"`
 	VersOption  ndr.DWORD
-	EntryHandle structures.ContextHandle
+	EntryHandle msrpce.ContextHandle
 	MaxEnts     ndr.DWORD
 }
 
@@ -39,9 +39,9 @@ func (*eptLookupRequest) Opnum() uint16 { return epm.OpnumEptLookup }
 // the offset/actual_count words. (ept_map's ITowers is "ptr,..." because its element type
 // twr_p_t is a pointer; ept_entry_t is not, so entries[] is not pointer-prefixed.)
 type eptLookupResponse struct {
-	EntryHandle structures.ContextHandle
+	EntryHandle msrpce.ContextHandle
 	NumEnts     ndr.DWORD
-	Entries     []structures.EptEntry `ndr:"varying,inline"`
+	Entries     []msrpce.EptEntry `ndr:"varying,inline"`
 	Status      ndr.DWORD
 }
 
@@ -53,7 +53,7 @@ type eptLookupResponse struct {
 // of entries, the advanced entry handle, and the raw [out] status (the caller decides how
 // to treat ept_s_not_registered); err is non-nil only for transport/decoding failures.
 // Lookup wraps this with the paging loop for the common "enumerate everything" case.
-func EptLookup(rpc ndr.Invoker, inquiryType uint32, object *guid.GUID, ifid *structures.RpcIfID, versOption uint32, entryHandle structures.ContextHandle, maxEnts uint32) (entries []structures.EptEntry, next structures.ContextHandle, status uint32, err error) {
+func EptLookup(rpc ndr.Invoker, inquiryType uint32, object *guid.GUID, ifid *msrpce.RpcIfID, versOption uint32, entryHandle msrpce.ContextHandle, maxEnts uint32) (entries []msrpce.EptEntry, next msrpce.ContextHandle, status uint32, err error) {
 	req := &eptLookupRequest{
 		InquiryType: ndr.DWORD(inquiryType),
 		Ifid:        ifid,
@@ -62,13 +62,13 @@ func EptLookup(rpc ndr.Invoker, inquiryType uint32, object *guid.GUID, ifid *str
 		MaxEnts:     ndr.DWORD(maxEnts),
 	}
 	if object != nil {
-		u := structures.NewEptUUID(*object)
+		u := msrpce.NewEptUUID(*object)
 		req.Object = &u
 	}
 
 	var resp eptLookupResponse
 	if err = rpc.Invoke(req, &resp); err != nil {
-		return nil, structures.ContextHandle{}, 0, fmt.Errorf("ept_lookup: %w", err)
+		return nil, msrpce.ContextHandle{}, 0, fmt.Errorf("ept_lookup: %w", err)
 	}
 
 	// num_ents is the authoritative count; clamp to the decoded array as a guard.
@@ -82,25 +82,25 @@ func EptLookup(rpc ndr.Invoker, inquiryType uint32, object *guid.GUID, ifid *str
 // eptLookupHandleFreeRequest carries the [in, out] context handle of
 // ept_lookup_handle_free (opnum 1).
 type eptLookupHandleFreeRequest struct {
-	EntryHandle structures.ContextHandle
+	EntryHandle msrpce.ContextHandle
 }
 
 func (*eptLookupHandleFreeRequest) Opnum() uint16 { return epm.OpnumEptLookupHandleFree }
 
 // eptLookupHandleFreeResponse carries the [out] (nulled) handle and status.
 type eptLookupHandleFreeResponse struct {
-	EntryHandle structures.ContextHandle
+	EntryHandle msrpce.ContextHandle
 	Status      ndr.DWORD
 }
 
 // EptLookupHandleFree calls ept_lookup_handle_free (opnum 1), releasing a lookup context
 // handle obtained from EptLookup. A full enumeration via Lookup nulls the handle on
 // completion and needs no explicit free; this is for abandoning a partial walk early.
-func EptLookupHandleFree(rpc ndr.Invoker, handle structures.ContextHandle) (structures.ContextHandle, error) {
+func EptLookupHandleFree(rpc ndr.Invoker, handle msrpce.ContextHandle) (msrpce.ContextHandle, error) {
 	req := &eptLookupHandleFreeRequest{EntryHandle: handle}
 	var resp eptLookupHandleFreeResponse
 	if err := rpc.Invoke(req, &resp); err != nil {
-		return structures.ContextHandle{}, fmt.Errorf("ept_lookup_handle_free: %w", err)
+		return msrpce.ContextHandle{}, fmt.Errorf("ept_lookup_handle_free: %w", err)
 	}
 	if uint32(resp.Status) != epm.EptStatusSuccess {
 		return resp.EntryHandle, fmt.Errorf("ept_lookup_handle_free failed: %s", epm.StatusString(uint32(resp.Status)))
@@ -114,10 +114,10 @@ func EptLookupHandleFree(rpc ndr.Invoker, handle structures.ContextHandle) (stru
 // reports ept_s_not_registered (no further matches) — both a normal end of enumeration.
 // Each entry's binding is available via EptEntry.DecodeTower / Tower.Binding. For finer
 // control (a filter, a custom batch size, or one page at a time) call EptLookup directly.
-func Lookup(rpc ndr.Invoker) ([]structures.EptEntry, error) {
+func Lookup(rpc ndr.Invoker) ([]msrpce.EptEntry, error) {
 	var (
-		entries []structures.EptEntry
-		handle  structures.ContextHandle
+		entries []msrpce.EptEntry
+		handle  msrpce.ContextHandle
 	)
 	for {
 		batch, next, status, err := EptLookup(rpc, epm.EptInquiryAllElts, nil, nil, epm.EptVersAll, handle, DefaultMaxEnts)

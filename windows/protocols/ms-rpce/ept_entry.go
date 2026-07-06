@@ -1,4 +1,4 @@
-package structures
+package msrpce
 
 import (
 	"fmt"
@@ -31,7 +31,7 @@ func (*Annotation) AlignmentNDR() int { return 4 }
 func (a *Annotation) MarshalNDR(e *ndr.Encoder) error {
 	e.Align(4)
 	s := string(*a)
-	e.WriteUint32(0)                 // offset
+	e.WriteUint32(0)                  // offset
 	e.WriteUint32(uint32(len(s) + 1)) // actual_count, including the NUL terminator
 	e.WriteBytes([]byte(s))
 	e.WriteUint8(0) // NUL terminator
