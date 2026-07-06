@@ -16,7 +16,7 @@ import (
 type opnumUnused47Request struct {
 }
 
-func (*opnumUnused47Request) Opnum() uint16 { return logon.OpnumOpnumUnused47 }
+func (*opnumUnused47Request) Opnum() uint16 { return logon.OpnumUnused47 }
 
 // opnumUnused47Response carries the [out] parameters and return value of OpnumUnused47.
 type opnumUnused47Response struct {

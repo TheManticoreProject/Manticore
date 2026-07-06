@@ -40,7 +40,7 @@ const (
 	OpnumBaseRegFlushKey             uint16 = 11
 	OpnumBaseRegGetKeySecurity       uint16 = 12
 	OpnumBaseRegLoadKey              uint16 = 13
-	OpnumOpnum14NotImplemented       uint16 = 14
+	Opnum14NotImplemented            uint16 = 14
 	OpnumBaseRegOpenKey              uint16 = 15
 	OpnumBaseRegQueryInfoKey         uint16 = 16
 	OpnumBaseRegQueryValue           uint16 = 17
@@ -50,13 +50,13 @@ const (
 	OpnumBaseRegSetKeySecurity       uint16 = 21
 	OpnumBaseRegSetValue             uint16 = 22
 	OpnumBaseRegUnLoadKey            uint16 = 23
-	OpnumOpnum24NotImplemented       uint16 = 24
-	OpnumOpnum25NotImplemented       uint16 = 25
+	Opnum24NotImplemented            uint16 = 24
+	Opnum25NotImplemented            uint16 = 25
 	OpnumBaseRegGetVersion           uint16 = 26
 	OpnumOpenCurrentConfig           uint16 = 27
-	OpnumOpnum28NotImplemented       uint16 = 28
+	Opnum28NotImplemented            uint16 = 28
 	OpnumBaseRegQueryMultipleValues  uint16 = 29
-	OpnumOpnum30NotImplemented       uint16 = 30
+	Opnum30NotImplemented            uint16 = 30
 	OpnumBaseRegSaveKeyEx            uint16 = 31
 	OpnumOpenPerformanceText         uint16 = 32
 	OpnumOpenPerformanceNlsText      uint16 = 33
@@ -198,7 +198,7 @@ var OpnumToName = map[uint16]string{
 	OpnumBaseRegFlushKey:             "BaseRegFlushKey",
 	OpnumBaseRegGetKeySecurity:       "BaseRegGetKeySecurity",
 	OpnumBaseRegLoadKey:              "BaseRegLoadKey",
-	OpnumOpnum14NotImplemented:       "Opnum14NotImplemented",
+	Opnum14NotImplemented:            "Opnum14NotImplemented",
 	OpnumBaseRegOpenKey:              "BaseRegOpenKey",
 	OpnumBaseRegQueryInfoKey:         "BaseRegQueryInfoKey",
 	OpnumBaseRegQueryValue:           "BaseRegQueryValue",
@@ -208,13 +208,13 @@ var OpnumToName = map[uint16]string{
 	OpnumBaseRegSetKeySecurity:       "BaseRegSetKeySecurity",
 	OpnumBaseRegSetValue:             "BaseRegSetValue",
 	OpnumBaseRegUnLoadKey:            "BaseRegUnLoadKey",
-	OpnumOpnum24NotImplemented:       "Opnum24NotImplemented",
-	OpnumOpnum25NotImplemented:       "Opnum25NotImplemented",
+	Opnum24NotImplemented:            "Opnum24NotImplemented",
+	Opnum25NotImplemented:            "Opnum25NotImplemented",
 	OpnumBaseRegGetVersion:           "BaseRegGetVersion",
 	OpnumOpenCurrentConfig:           "OpenCurrentConfig",
-	OpnumOpnum28NotImplemented:       "Opnum28NotImplemented",
+	Opnum28NotImplemented:            "Opnum28NotImplemented",
 	OpnumBaseRegQueryMultipleValues:  "BaseRegQueryMultipleValues",
-	OpnumOpnum30NotImplemented:       "Opnum30NotImplemented",
+	Opnum30NotImplemented:            "Opnum30NotImplemented",
 	OpnumBaseRegSaveKeyEx:            "BaseRegSaveKeyEx",
 	OpnumOpenPerformanceText:         "OpenPerformanceText",
 	OpnumOpenPerformanceNlsText:      "OpenPerformanceNlsText",

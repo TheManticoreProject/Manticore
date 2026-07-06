@@ -16,7 +16,7 @@ import (
 type opnum252ReservedRequest struct {
 }
 
-func (*opnum252ReservedRequest) Opnum() uint16 { return clusapi.OpnumOpnum252Reserved }
+func (*opnum252ReservedRequest) Opnum() uint16 { return clusapi.Opnum252Reserved }
 
 // opnum252ReservedResponse carries the [out] parameters and return value of Opnum252Reserved.
 type opnum252ReservedResponse struct {

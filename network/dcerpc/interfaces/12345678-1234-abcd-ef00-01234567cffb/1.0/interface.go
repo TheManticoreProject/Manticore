@@ -76,7 +76,7 @@ const (
 	OpnumNetrGetForestTrustInformation       uint16 = 44
 	OpnumNetrLogonSamLogonWithFlags          uint16 = 45
 	OpnumNetrServerGetTrustInfo              uint16 = 46
-	OpnumOpnumUnused47                       uint16 = 47
+	OpnumUnused47                            uint16 = 47
 	OpnumDsrUpdateReadOnlyServerDnsRecords   uint16 = 48
 	OpnumNetrChainSetClientAttributes        uint16 = 49
 	OpnumNetrServerAuthenticateKerberos      uint16 = 59
@@ -185,7 +185,7 @@ var OpnumToName = map[uint16]string{
 	OpnumNetrGetForestTrustInformation:       "NetrGetForestTrustInformation",
 	OpnumNetrLogonSamLogonWithFlags:          "NetrLogonSamLogonWithFlags",
 	OpnumNetrServerGetTrustInfo:              "NetrServerGetTrustInfo",
-	OpnumOpnumUnused47:                       "OpnumUnused47",
+	OpnumUnused47:                            "OpnumUnused47",
 	OpnumDsrUpdateReadOnlyServerDnsRecords:   "DsrUpdateReadOnlyServerDnsRecords",
 	OpnumNetrChainSetClientAttributes:        "NetrChainSetClientAttributes",
 	OpnumNetrServerAuthenticateKerberos:      "NetrServerAuthenticateKerberos",
