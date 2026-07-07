@@ -1,4 +1,4 @@
-package dnsproperty
+package msdnsp
 
 // PropertyId is the 32-bit value stored in the Id field of a DNS_PROPERTY (section 2.3.2.1). It
 // specifies the type of data carried in the property's Data field.

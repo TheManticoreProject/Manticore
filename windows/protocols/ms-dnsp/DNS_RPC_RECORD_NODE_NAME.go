@@ -1,4 +1,4 @@
-package dnsrecord
+package msdnsp
 
 // DNS_RPC_RECORD_NODE_NAME is the record-data payload for records whose data is a single
 // FQDN. Per [MS-DNSP] it is used for the following record types:

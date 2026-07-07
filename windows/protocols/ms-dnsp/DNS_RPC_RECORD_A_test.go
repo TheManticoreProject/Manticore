@@ -1,17 +1,17 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"net"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordAWireShape verifies that the IPv4 address is stored as 4 raw bytes in network
 // order (192.0.2.1 -> C0 00 02 01).
 func TestRecordAWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_A()
+	r := msdnsp.NewDNS_RPC_RECORD_A()
 	if err := r.SetIPv4(net.ParseIP("192.0.2.1")); err != nil {
 		t.Fatalf("SetIPv4 failed: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestRecordAWireShape(t *testing.T) {
 
 // TestRecordARoundTrip round-trips an A record and checks the recovered address.
 func TestRecordARoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_A()
+	r := msdnsp.NewDNS_RPC_RECORD_A()
 	if err := r.SetIPv4(net.ParseIP("10.20.30.40")); err != nil {
 		t.Fatalf("SetIPv4 failed: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestRecordARoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_A()
+	in := msdnsp.NewDNS_RPC_RECORD_A()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -52,7 +52,7 @@ func TestRecordARoundTrip(t *testing.T) {
 
 // TestRecordARejectsIPv6 verifies SetIPv4 rejects a non-IPv4 address.
 func TestRecordARejectsIPv6(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_A()
+	r := msdnsp.NewDNS_RPC_RECORD_A()
 	if err := r.SetIPv4(net.ParseIP("2001:db8::1")); err == nil {
 		t.Errorf("expected error setting IPv6 address on A record, got nil")
 	}
@@ -60,7 +60,7 @@ func TestRecordARejectsIPv6(t *testing.T) {
 
 // TestRecordAUnmarshalTruncated verifies that fewer than 4 bytes is an error.
 func TestRecordAUnmarshalTruncated(t *testing.T) {
-	in := dnsrecord.NewDNS_RPC_RECORD_A()
+	in := msdnsp.NewDNS_RPC_RECORD_A()
 	if _, err := in.Unmarshal([]byte{1, 2, 3}); err == nil {
 		t.Errorf("expected error for truncated A record, got nil")
 	}

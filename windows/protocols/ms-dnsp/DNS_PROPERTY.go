@@ -1,4 +1,4 @@
-package dnsproperty
+package msdnsp
 
 import (
 	"encoding/binary"
