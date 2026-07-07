@@ -1,16 +1,16 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordSRVWireShape verifies the big-endian encoding of wPriority/wWeight/wPort followed
 // by the DNS_COUNT_NAME target.
 func TestRecordSRVWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_SRV()
+	r := msdnsp.NewDNS_RPC_RECORD_SRV()
 	r.WPriority = 0x0102
 	r.WWeight = 0x0304
 	r.WPort = 0x0050 // port 80
@@ -31,7 +31,7 @@ func TestRecordSRVWireShape(t *testing.T) {
 
 // TestRecordSRVRoundTrip round-trips an SRV record and checks every field.
 func TestRecordSRVRoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_SRV()
+	r := msdnsp.NewDNS_RPC_RECORD_SRV()
 	r.WPriority = 10
 	r.WWeight = 20
 	r.WPort = 389
@@ -44,7 +44,7 @@ func TestRecordSRVRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_SRV()
+	in := msdnsp.NewDNS_RPC_RECORD_SRV()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)

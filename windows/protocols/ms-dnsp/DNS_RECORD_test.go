@@ -1,24 +1,24 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"net"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestDNSRecordHeaderEndianness pins the mixed-endian header layout: DataLength, Type, Flags,
 // Serial, and TimeStamp are little-endian, while TtlSeconds is big-endian per [MS-DNSP]
 // section 2.3.2.2. This is the field most likely to be marshaled incorrectly.
 func TestDNSRecordHeaderEndianness(t *testing.T) {
-	a := dnsrecord.NewDNS_RPC_RECORD_A()
+	a := msdnsp.NewDNS_RPC_RECORD_A()
 	if err := a.SetIPv4(net.ParseIP("192.0.2.1")); err != nil {
 		t.Fatalf("SetIPv4 failed: %v", err)
 	}
 
-	rec := dnsrecord.NewDNS_RECORD()
-	rec.Type = dnsrecord.DNS_TYPE_A
+	rec := msdnsp.NewDNS_RECORD()
+	rec.Type = msdnsp.DNS_TYPE_A
 	rec.Rank = 0xF0
 	rec.Serial = 0x11223344
 	rec.TtlSeconds = 0x00000E10 // 3600
@@ -51,12 +51,12 @@ func TestDNSRecordHeaderEndianness(t *testing.T) {
 
 // TestDNSRecordRoundTripWithA round-trips a full A record through DNS_RECORD and its payload.
 func TestDNSRecordRoundTripWithA(t *testing.T) {
-	a := dnsrecord.NewDNS_RPC_RECORD_A()
+	a := msdnsp.NewDNS_RPC_RECORD_A()
 	if err := a.SetIPv4(net.ParseIP("203.0.113.9")); err != nil {
 		t.Fatalf("SetIPv4 failed: %v", err)
 	}
-	rec := dnsrecord.NewDNS_RECORD()
-	rec.Type = dnsrecord.DNS_TYPE_A
+	rec := msdnsp.NewDNS_RECORD()
+	rec.Type = msdnsp.DNS_TYPE_A
 	rec.TtlSeconds = 600
 	if err := rec.SetData(a); err != nil {
 		t.Fatalf("SetData failed: %v", err)
@@ -67,7 +67,7 @@ func TestDNSRecordRoundTripWithA(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RECORD()
+	in := msdnsp.NewDNS_RECORD()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -75,7 +75,7 @@ func TestDNSRecordRoundTripWithA(t *testing.T) {
 	if read != len(marshalled) {
 		t.Errorf("Unmarshal read %d bytes; want %d", read, len(marshalled))
 	}
-	if in.Type != dnsrecord.DNS_TYPE_A {
+	if in.Type != msdnsp.DNS_TYPE_A {
 		t.Errorf("Type = %s; want DNS_TYPE_A", in.Type)
 	}
 	if in.Version != 0x05 {
@@ -88,7 +88,7 @@ func TestDNSRecordRoundTripWithA(t *testing.T) {
 		t.Errorf("DataLength = %d; want 4", in.DataLength)
 	}
 
-	parsed := dnsrecord.NewDNS_RPC_RECORD_A()
+	parsed := msdnsp.NewDNS_RPC_RECORD_A()
 	if _, err := parsed.Unmarshal(in.Data); err != nil {
 		t.Fatalf("parsing A payload failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDNSRecordRoundTripWithA(t *testing.T) {
 // TestDNSRecordRoundTripWithSOA exercises a variable-length payload (SOA) inside DNS_RECORD to
 // confirm DataLength is computed and honored across the header/payload boundary.
 func TestDNSRecordRoundTripWithSOA(t *testing.T) {
-	soa := dnsrecord.NewDNS_RPC_RECORD_SOA()
+	soa := msdnsp.NewDNS_RPC_RECORD_SOA()
 	soa.DwSerialNo = 2023111401
 	soa.DwRefresh = 900
 	soa.DwRetry = 600
@@ -113,8 +113,8 @@ func TestDNSRecordRoundTripWithSOA(t *testing.T) {
 		t.Fatalf("SetFQDN(admin) failed: %v", err)
 	}
 
-	rec := dnsrecord.NewDNS_RECORD()
-	rec.Type = dnsrecord.DNS_TYPE_SOA
+	rec := msdnsp.NewDNS_RECORD()
+	rec.Type = msdnsp.DNS_TYPE_SOA
 	if err := rec.SetData(soa); err != nil {
 		t.Fatalf("SetData failed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestDNSRecordRoundTripWithSOA(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RECORD()
+	in := msdnsp.NewDNS_RECORD()
 	if _, err := in.Unmarshal(marshalled); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestDNSRecordRoundTripWithSOA(t *testing.T) {
 		t.Errorf("DataLength %d != len(Data) %d", in.DataLength, len(in.Data))
 	}
 
-	parsed := dnsrecord.NewDNS_RPC_RECORD_SOA()
+	parsed := msdnsp.NewDNS_RPC_RECORD_SOA()
 	if _, err := parsed.Unmarshal(in.Data); err != nil {
 		t.Fatalf("parsing SOA payload failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestDNSRecordRoundTripWithSOA(t *testing.T) {
 // TestDNSRecordUnmarshalTruncated verifies both a short header and a Data field shorter than
 // the declared DataLength are rejected.
 func TestDNSRecordUnmarshalTruncated(t *testing.T) {
-	in := dnsrecord.NewDNS_RECORD()
+	in := msdnsp.NewDNS_RECORD()
 	if _, err := in.Unmarshal(make([]byte, 23)); err == nil {
 		t.Errorf("expected error for short header, got nil")
 	}

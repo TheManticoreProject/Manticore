@@ -1,17 +1,17 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 	"time"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordTSWireShape verifies EntombedTime is encoded little-endian (unlike the big-endian
 // SOA/SRV/preference numeric fields).
 func TestRecordTSWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_TS()
+	r := msdnsp.NewDNS_RPC_RECORD_TS()
 	r.EntombedTime = 0x0102030405060708
 
 	marshalled, err := r.Marshal()
@@ -27,7 +27,7 @@ func TestRecordTSWireShape(t *testing.T) {
 
 // TestRecordTSRoundTrip round-trips the raw EntombedTime value.
 func TestRecordTSRoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_TS()
+	r := msdnsp.NewDNS_RPC_RECORD_TS()
 	r.EntombedTime = 133444736000000000
 
 	marshalled, err := r.Marshal()
@@ -35,7 +35,7 @@ func TestRecordTSRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_TS()
+	in := msdnsp.NewDNS_RPC_RECORD_TS()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -53,7 +53,7 @@ func TestRecordTSRoundTrip(t *testing.T) {
 func TestRecordTSTimeConversion(t *testing.T) {
 	want := time.Date(2023, time.November, 14, 22, 13, 20, 0, time.UTC)
 
-	r := dnsrecord.NewDNS_RPC_RECORD_TS()
+	r := msdnsp.NewDNS_RPC_RECORD_TS()
 	r.SetTime(want)
 
 	got := r.GetTime()

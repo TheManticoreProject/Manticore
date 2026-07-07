@@ -1,16 +1,16 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestDNSCountNameWireShape pins the exact on-directory encoding of "example.com":
 // 07 'example' 03 'com' 00, with Length 13 (including the null terminator) and LabelCount 2.
 func TestDNSCountNameWireShape(t *testing.T) {
-	n, err := dnsrecord.NewDNS_COUNT_NAMEFromFQDN("example.com")
+	n, err := msdnsp.NewDNS_COUNT_NAMEFromFQDN("example.com")
 	if err != nil {
 		t.Fatalf("NewDNS_COUNT_NAMEFromFQDN failed: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestDNSCountNameWireShape(t *testing.T) {
 // FQDN accessors.
 func TestDNSCountNameRoundTrip(t *testing.T) {
 	for _, fqdn := range []string{"example.com", "a.b.c.d.example.org", "single", "trailing.dot."} {
-		out, err := dnsrecord.NewDNS_COUNT_NAMEFromFQDN(fqdn)
+		out, err := msdnsp.NewDNS_COUNT_NAMEFromFQDN(fqdn)
 		if err != nil {
 			t.Fatalf("%q: NewDNS_COUNT_NAMEFromFQDN failed: %v", fqdn, err)
 		}
@@ -50,7 +50,7 @@ func TestDNSCountNameRoundTrip(t *testing.T) {
 			t.Fatalf("%q: Marshal failed: %v", fqdn, err)
 		}
 
-		in := dnsrecord.NewDNS_COUNT_NAME()
+		in := msdnsp.NewDNS_COUNT_NAME()
 		read, err := in.Unmarshal(marshalled)
 		if err != nil {
 			t.Fatalf("%q: Unmarshal failed: %v", fqdn, err)
@@ -76,7 +76,7 @@ func TestDNSCountNameRoundTrip(t *testing.T) {
 
 // TestDNSCountNameEmpty verifies the empty-name encoding: Length 0, LabelCount 0, no RawName.
 func TestDNSCountNameEmpty(t *testing.T) {
-	n, err := dnsrecord.NewDNS_COUNT_NAMEFromFQDN("")
+	n, err := msdnsp.NewDNS_COUNT_NAMEFromFQDN("")
 	if err != nil {
 		t.Fatalf("NewDNS_COUNT_NAMEFromFQDN(\"\") failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestDNSCountNameEmpty(t *testing.T) {
 		t.Errorf("Marshal of empty name = % x; want 00 00", marshalled)
 	}
 
-	in := dnsrecord.NewDNS_COUNT_NAME()
+	in := msdnsp.NewDNS_COUNT_NAME()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -111,14 +111,14 @@ func TestDNSCountNameEmpty(t *testing.T) {
 
 // TestDNSCountNameRejectsBadInput verifies validation of empty and over-long labels.
 func TestDNSCountNameRejectsBadInput(t *testing.T) {
-	if _, err := dnsrecord.NewDNS_COUNT_NAMEFromFQDN("foo..bar"); err == nil {
+	if _, err := msdnsp.NewDNS_COUNT_NAMEFromFQDN("foo..bar"); err == nil {
 		t.Errorf("expected error for empty label, got nil")
 	}
 	long := make([]byte, 64)
 	for i := range long {
 		long[i] = 'a'
 	}
-	if _, err := dnsrecord.NewDNS_COUNT_NAMEFromFQDN(string(long)); err == nil {
+	if _, err := msdnsp.NewDNS_COUNT_NAMEFromFQDN(string(long)); err == nil {
 		t.Errorf("expected error for 64-byte label, got nil")
 	}
 }
@@ -128,7 +128,7 @@ func TestDNSCountNameRejectsBadInput(t *testing.T) {
 func TestDNSCountNameUnmarshalTruncated(t *testing.T) {
 	// Length claims 5 bytes of RawName but only 2 are present.
 	truncated := []byte{5, 1, 0x03, 'c'}
-	in := dnsrecord.NewDNS_COUNT_NAME()
+	in := msdnsp.NewDNS_COUNT_NAME()
 	if _, err := in.Unmarshal(truncated); err == nil {
 		t.Errorf("expected error for truncated RawName, got nil")
 	}

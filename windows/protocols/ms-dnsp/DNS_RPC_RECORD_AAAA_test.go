@@ -1,17 +1,17 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"net"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordAAAAWireShape verifies that the IPv6 address is stored as 16 raw bytes in network
 // order.
 func TestRecordAAAAWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_AAAA()
+	r := msdnsp.NewDNS_RPC_RECORD_AAAA()
 	if err := r.SetIPv6(net.ParseIP("2001:db8::1")); err != nil {
 		t.Fatalf("SetIPv6 failed: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestRecordAAAAWireShape(t *testing.T) {
 
 // TestRecordAAAARoundTrip round-trips an AAAA record and checks the recovered address.
 func TestRecordAAAARoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_AAAA()
+	r := msdnsp.NewDNS_RPC_RECORD_AAAA()
 	if err := r.SetIPv6(net.ParseIP("fe80::20c:29ff:fe1a:2b3c")); err != nil {
 		t.Fatalf("SetIPv6 failed: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestRecordAAAARoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_AAAA()
+	in := msdnsp.NewDNS_RPC_RECORD_AAAA()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -55,7 +55,7 @@ func TestRecordAAAARoundTrip(t *testing.T) {
 
 // TestRecordAAAAUnmarshalTruncated verifies that fewer than 16 bytes is an error.
 func TestRecordAAAAUnmarshalTruncated(t *testing.T) {
-	in := dnsrecord.NewDNS_RPC_RECORD_AAAA()
+	in := msdnsp.NewDNS_RPC_RECORD_AAAA()
 	if _, err := in.Unmarshal(make([]byte, 15)); err == nil {
 		t.Errorf("expected error for truncated AAAA record, got nil")
 	}

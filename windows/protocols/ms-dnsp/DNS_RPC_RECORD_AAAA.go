@@ -1,4 +1,4 @@
-package dnsrecord
+package msdnsp
 
 import (
 	"fmt"

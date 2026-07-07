@@ -1,16 +1,16 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordNodeNameRoundTrip round-trips a NODE_NAME record (used by NS, PTR, CNAME, etc.)
 // and verifies the embedded DNS_COUNT_NAME encoding.
 func TestRecordNodeNameRoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_NODE_NAME()
+	r := msdnsp.NewDNS_RPC_RECORD_NODE_NAME()
 	if err := r.NameNode.SetFQDN("host.example.com"); err != nil {
 		t.Fatalf("SetFQDN failed: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestRecordNodeNameRoundTrip(t *testing.T) {
 		t.Errorf("Marshal = % x; want % x", marshalled, want)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_NODE_NAME()
+	in := msdnsp.NewDNS_RPC_RECORD_NODE_NAME()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)

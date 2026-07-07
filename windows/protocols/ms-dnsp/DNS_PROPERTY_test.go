@@ -1,15 +1,15 @@
-package dnsproperty_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsproperty"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // buildProperty assembles a raw dnsProperty value: a 20-byte little-endian header, the Data
 // field, and the trailing 1-byte Name field.
-func buildProperty(id dnsproperty.PropertyId, data []byte) []byte {
+func buildProperty(id msdnsp.PropertyId, data []byte) []byte {
 	b := make([]byte, 20)
 	// DataLength
 	b[0] = byte(len(data))
@@ -33,9 +33,9 @@ func buildProperty(id dnsproperty.PropertyId, data []byte) []byte {
 
 // TestZoneTypeProperty decodes a DSPROPERTY_ZONE_TYPE property.
 func TestZoneTypeProperty(t *testing.T) {
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_TYPE, []byte{0x01, 0x00, 0x00, 0x00})
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_TYPE, []byte{0x01, 0x00, 0x00, 0x00})
 
-	p := &dnsproperty.DNS_PROPERTY{}
+	p := &msdnsp.DNS_PROPERTY{}
 	read, err := p.Unmarshal(raw)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -43,14 +43,14 @@ func TestZoneTypeProperty(t *testing.T) {
 	if read != len(raw) {
 		t.Errorf("Unmarshal read %d bytes; want %d", read, len(raw))
 	}
-	if p.Id != dnsproperty.DSPROPERTY_ZONE_TYPE {
+	if p.Id != msdnsp.DSPROPERTY_ZONE_TYPE {
 		t.Errorf("Id = %s; want DSPROPERTY_ZONE_TYPE", p.Id)
 	}
 	zt, err := p.AsZoneType()
 	if err != nil {
 		t.Fatalf("AsZoneType failed: %v", err)
 	}
-	if zt != dnsproperty.DNS_ZONE_TYPE_PRIMARY {
+	if zt != msdnsp.DNS_ZONE_TYPE_PRIMARY {
 		t.Errorf("ZoneType = %s; want DNS_ZONE_TYPE_PRIMARY", zt)
 	}
 }
@@ -58,9 +58,9 @@ func TestZoneTypeProperty(t *testing.T) {
 // TestAllowUpdateProperty decodes a DSPROPERTY_ZONE_ALLOW_UPDATE property carrying the
 // insecure-update policy.
 func TestAllowUpdateProperty(t *testing.T) {
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_ALLOW_UPDATE, []byte{0x01, 0x00, 0x00, 0x00})
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_ALLOW_UPDATE, []byte{0x01, 0x00, 0x00, 0x00})
 
-	p := &dnsproperty.DNS_PROPERTY{}
+	p := &msdnsp.DNS_PROPERTY{}
 	if _, err := p.Unmarshal(raw); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestAllowUpdateProperty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AsZoneUpdate failed: %v", err)
 	}
-	if zu != dnsproperty.ZONE_UPDATE_UNSECURE {
+	if zu != msdnsp.ZONE_UPDATE_UNSECURE {
 		t.Errorf("ZoneUpdate = %s; want ZONE_UPDATE_UNSECURE", zu)
 	}
 }
@@ -80,9 +80,9 @@ func TestIP4ArrayProperty(t *testing.T) {
 		192, 0, 2, 1, // 192.0.2.1 (network byte order)
 		10, 20, 30, 40, // 10.20.30.40
 	}
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_SCAVENGING_SERVERS, data)
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_SCAVENGING_SERVERS, data)
 
-	p := &dnsproperty.DNS_PROPERTY{}
+	p := &msdnsp.DNS_PROPERTY{}
 	if _, err := p.Unmarshal(raw); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -100,8 +100,8 @@ func TestIP4ArrayProperty(t *testing.T) {
 
 // TestEmptyIP4Array decodes an empty IP4_ARRAY (AddrCount 0).
 func TestEmptyIP4Array(t *testing.T) {
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_MASTER_SERVERS, []byte{0x00, 0x00, 0x00, 0x00})
-	p := &dnsproperty.DNS_PROPERTY{}
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_MASTER_SERVERS, []byte{0x00, 0x00, 0x00, 0x00})
+	p := &msdnsp.DNS_PROPERTY{}
 	if _, err := p.Unmarshal(raw); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -118,9 +118,9 @@ func TestEmptyIP4Array(t *testing.T) {
 func TestDeletedFromHostnameProperty(t *testing.T) {
 	// "DC1" in UTF-16LE with a NUL terminator.
 	data := []byte{'D', 0, 'C', 0, '1', 0, 0, 0}
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_DELETED_FROM_HOSTNAME, data)
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_DELETED_FROM_HOSTNAME, data)
 
-	p := &dnsproperty.DNS_PROPERTY{}
+	p := &msdnsp.DNS_PROPERTY{}
 	if _, err := p.Unmarshal(raw); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -131,8 +131,8 @@ func TestDeletedFromHostnameProperty(t *testing.T) {
 
 // TestRoundTrip marshals a property built with the constructor and checks the bytes round-trip.
 func TestRoundTrip(t *testing.T) {
-	p := dnsproperty.NewDNS_PROPERTY()
-	p.Id = dnsproperty.DSPROPERTY_ZONE_REFRESH_INTERVAL
+	p := msdnsp.NewDNS_PROPERTY()
+	p.Id = msdnsp.DSPROPERTY_ZONE_REFRESH_INTERVAL
 	p.Data = []byte{0xA8, 0x00, 0x00, 0x00} // 168 hours
 
 	marshalled, err := p.Marshal()
@@ -140,7 +140,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	out := &dnsproperty.DNS_PROPERTY{}
+	out := &msdnsp.DNS_PROPERTY{}
 	read, err := out.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -148,7 +148,7 @@ func TestRoundTrip(t *testing.T) {
 	if read != len(marshalled) {
 		t.Errorf("Unmarshal read %d bytes; want %d", read, len(marshalled))
 	}
-	if out.DataLength != 4 || out.Version != dnsproperty.DNSPropertyVersion {
+	if out.DataLength != 4 || out.Version != msdnsp.DNSPropertyVersion {
 		t.Errorf("header mismatch: DataLength=%d Version=%d", out.DataLength, out.Version)
 	}
 	v, err := out.AsUint32()
@@ -171,11 +171,11 @@ func TestRoundTrip(t *testing.T) {
 // TestUnmarshalTruncated verifies that a value too short for the declared Data plus Name field
 // is rejected.
 func TestUnmarshalTruncated(t *testing.T) {
-	raw := buildProperty(dnsproperty.DSPROPERTY_ZONE_TYPE, []byte{0x01, 0x00, 0x00, 0x00})
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_TYPE, []byte{0x01, 0x00, 0x00, 0x00})
 	// Drop the trailing Name byte so the buffer is one byte short.
 	truncated := raw[:len(raw)-1]
 
-	p := &dnsproperty.DNS_PROPERTY{}
+	p := &msdnsp.DNS_PROPERTY{}
 	if _, err := p.Unmarshal(truncated); err == nil {
 		t.Errorf("expected error unmarshalling truncated property, got nil")
 	}
@@ -183,8 +183,8 @@ func TestUnmarshalTruncated(t *testing.T) {
 
 // TestStringFallback verifies String renders a byte-count fallback for an undecoded property.
 func TestStringFallback(t *testing.T) {
-	p := &dnsproperty.DNS_PROPERTY{
-		Id:   dnsproperty.DSPROPERTY_ZONE_SECURE_TIME,
+	p := &msdnsp.DNS_PROPERTY{
+		Id:   msdnsp.DSPROPERTY_ZONE_SECURE_TIME,
 		Data: []byte{1, 2, 3, 4, 5, 6, 7, 8},
 	}
 	if got := p.String(); got != "DSPROPERTY_ZONE_SECURE_TIME = <8 bytes>" {

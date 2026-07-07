@@ -1,4 +1,4 @@
-package dnsrecord
+package msdnsp
 
 // RecordType is a 16-bit value that specifies a DNS resource record's type. It is stored
 // in the Type field of a DNS_RECORD (section 2.3.2.2) and selects which DNS_RPC_RECORD_DATA

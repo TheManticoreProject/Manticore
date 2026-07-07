@@ -1,16 +1,16 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordNamePreferenceWireShape verifies the big-endian wPreference followed by the
 // DNS_COUNT_NAME exchange name (used by MX, AFSDB, RT).
 func TestRecordNamePreferenceWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_NAME_PREFERENCE()
+	r := msdnsp.NewDNS_RPC_RECORD_NAME_PREFERENCE()
 	r.WPreference = 0x000A // 10
 	if err := r.NameExchange.SetFQDN("mail.example.com"); err != nil {
 		t.Fatalf("SetFQDN failed: %v", err)
@@ -28,7 +28,7 @@ func TestRecordNamePreferenceWireShape(t *testing.T) {
 
 // TestRecordNamePreferenceRoundTrip round-trips an MX-style record.
 func TestRecordNamePreferenceRoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_NAME_PREFERENCE()
+	r := msdnsp.NewDNS_RPC_RECORD_NAME_PREFERENCE()
 	r.WPreference = 20
 	if err := r.NameExchange.SetFQDN("mx2.example.com"); err != nil {
 		t.Fatalf("SetFQDN failed: %v", err)
@@ -39,7 +39,7 @@ func TestRecordNamePreferenceRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_NAME_PREFERENCE()
+	in := msdnsp.NewDNS_RPC_RECORD_NAME_PREFERENCE()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)

@@ -1,16 +1,16 @@
-package dnsrecord_test
+package msdnsp_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/network/dns/dnsrecord"
+	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
 // TestRecordSOAWireShape verifies the big-endian encoding of the five numeric fields and the
 // two DNS_COUNT_NAME names.
 func TestRecordSOAWireShape(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_SOA()
+	r := msdnsp.NewDNS_RPC_RECORD_SOA()
 	r.DwSerialNo = 0x01020304
 	r.DwRefresh = 0x05060708
 	r.DwRetry = 0x090a0b0c
@@ -43,7 +43,7 @@ func TestRecordSOAWireShape(t *testing.T) {
 
 // TestRecordSOARoundTrip round-trips an SOA record and checks every field.
 func TestRecordSOARoundTrip(t *testing.T) {
-	r := dnsrecord.NewDNS_RPC_RECORD_SOA()
+	r := msdnsp.NewDNS_RPC_RECORD_SOA()
 	r.DwSerialNo = 42
 	r.DwRefresh = 900
 	r.DwRetry = 600
@@ -61,7 +61,7 @@ func TestRecordSOARoundTrip(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	in := dnsrecord.NewDNS_RPC_RECORD_SOA()
+	in := msdnsp.NewDNS_RPC_RECORD_SOA()
 	read, err := in.Unmarshal(marshalled)
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
