@@ -69,7 +69,9 @@ func NewDNS_PROPERTY() *DNS_PROPERTY {
 // - A byte array representing the DNS_PROPERTY structure
 // - An error if the marshaling fails
 func (p *DNS_PROPERTY) Marshal() ([]byte, error) {
-	if len(p.Data) > 0xFFFFFFFF {
+	// Compare in uint64 so the 0xFFFFFFFF bound does not overflow int on 32-bit platforms
+	// (where int is 32 bits and len returns int).
+	if uint64(len(p.Data)) > 0xFFFFFFFF {
 		return nil, fmt.Errorf("property data is %d bytes, exceeds the 4294967295-byte DataLength limit", len(p.Data))
 	}
 	p.DataLength = uint32(len(p.Data))
