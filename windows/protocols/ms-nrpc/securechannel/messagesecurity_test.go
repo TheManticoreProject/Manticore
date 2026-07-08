@@ -1,9 +1,9 @@
-package functions
+package securechannel
 
-// White-box tests for the Netlogon per-message security tokens. They pin the AES sign/seal
-// output byte-for-byte against vectors generated from impacket's nrpc.SIGN/SEAL (with a
-// round-trip confirmed by nrpc.UNSEAL), which is itself faithful to [MS-NRPC] 3.3.4.2.1.
-// Being in package functions lets the tests inject a deterministic confounder source.
+// White-box tests for the Netlogon per-message security tokens. They pin the AES and legacy
+// RC4 sign/seal output byte-for-byte against vectors generated from impacket's nrpc.SIGN/SEAL
+// (round-trip confirmed by nrpc.UNSEAL), itself faithful to [MS-NRPC] 3.3.4.2.1. Being in
+// package securechannel lets the tests inject a deterministic confounder source.
 
 import (
 	"bytes"
@@ -77,6 +77,61 @@ func TestSignVector(t *testing.T) {
 	}
 	if len(token) != 48 {
 		t.Errorf("integrity token length = %d, want 48", len(token))
+	}
+}
+
+// TestSealVectorRC4 pins the legacy RC4 sealing token and encrypted stub to the impacket
+// vector (same inputs as the AES vector).
+func TestSealVectorRC4(t *testing.T) {
+	m := NewMessageSecurityRC4(vecSessionKey)
+	m.confounderSrc = repeatReader{0xAA}
+
+	sealed, token, err := m.Seal(vecPlaintext)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	wantSealed := "41eb4da19b8cda2c6f81f179e1a8984217dc903e0163cca6afcc836a0a61750cca7f906a96"
+	if got := hex.EncodeToString(sealed); got != wantSealed {
+		t.Errorf("sealed stub\n got  %s\n want %s", got, wantSealed)
+	}
+	wantToken := "77007a00ffff000045e2288b79d6236883f5eb861b2a9b92a52493797d4917e9"
+	if got := hex.EncodeToString(token); got != wantToken {
+		t.Errorf("token\n got  %s\n want %s", got, wantToken)
+	}
+	if len(token) != 32 {
+		t.Errorf("RC4 sealing token length = %d, want 32", len(token))
+	}
+}
+
+// TestSignVectorRC4 pins the legacy RC4 integrity-only token to the impacket vector.
+func TestSignVectorRC4(t *testing.T) {
+	token, err := NewMessageSecurityRC4(vecSessionKey).Sign(vecPlaintext)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	wantToken := "7700ffffffff0000dd77e182e1e415bd7f9d413ed81ad00e"
+	if got := hex.EncodeToString(token); got != wantToken {
+		t.Errorf("token\n got  %s\n want %s", got, wantToken)
+	}
+	if len(token) != 24 {
+		t.Errorf("RC4 integrity token length = %d, want 24", len(token))
+	}
+}
+
+// TestSealUnsealRoundTripRC4 confirms the legacy suite round-trips seal->unseal.
+func TestSealUnsealRoundTripRC4(t *testing.T) {
+	sender := NewMessageSecurityRC4(vecSessionKey)
+	sender.confounderSrc = repeatReader{0x5a}
+	sealed, token, err := sender.Seal(vecPlaintext)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	got, err := NewMessageSecurityRC4(vecSessionKey).Unseal(sealed, token)
+	if err != nil {
+		t.Fatalf("Unseal: %v", err)
+	}
+	if !bytes.Equal(got, vecPlaintext) {
+		t.Fatalf("round-trip plaintext = %x, want %x", got, vecPlaintext)
 	}
 }
 

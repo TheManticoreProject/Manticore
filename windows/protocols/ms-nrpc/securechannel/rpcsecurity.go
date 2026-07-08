@@ -1,9 +1,7 @@
-package functions
+package securechannel
 
-// IDL source: [MS-NRPC] — this interface is translated from and verified
-// against the protocol's authoritative IDL. Full IDL (Appendix A):
-//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/89f9b028-ee68-4fe2-afca-cc188f7079f7
-// A fetched copy is kept at ms-nrpc.idl in the interface directory.
+// IDL source: [MS-NRPC] — verified against the protocol's authoritative IDL
+// (https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/89f9b028-ee68-4fe2-afca-cc188f7079f7).
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
@@ -17,27 +15,38 @@ import (
 // operate on the stub. A context is stateful (its sequence number advances per request) and
 // must not be shared across connections.
 type NetlogonSecurityContext struct {
-	ms *MessageSecurity
+	ms  *MessageSecurity
+	aes bool
 }
 
-// NewNetlogonSecurityContext builds an RPC security provider for the AES cipher suite from a
-// secure-channel session key (SecureChannel.SessionKey). It is passed to the client's
-// SetAuthProvider together with the NL_AUTH_MESSAGE bind token.
-func NewNetlogonSecurityContext(sessionKey [16]byte) *NetlogonSecurityContext {
-	return &NetlogonSecurityContext{ms: NewMessageSecurityAES(sessionKey)}
-}
-
-// AuthValueLen is the NL_AUTH_SHA2_SIGNATURE length: 56 octets when sealing (the confounder
-// is present), 48 when only signing.
-func (n *NetlogonSecurityContext) AuthValueLen(seal bool) int {
-	if seal {
-		return 56
+// NewNetlogonSecurityContext builds an RPC security provider from a secure channel: the
+// cipher suite (AES vs legacy RC4) follows the channel, and the session key is taken from it.
+// It is passed to the client's SetAuthProvider together with the NL_AUTH_MESSAGE bind token.
+func NewNetlogonSecurityContext(sc *SecureChannel) *NetlogonSecurityContext {
+	key := sc.SessionKey()
+	if sc.UsesAES() {
+		return &NetlogonSecurityContext{ms: NewMessageSecurityAES(key), aes: true}
 	}
-	return 48
+	return &NetlogonSecurityContext{ms: NewMessageSecurityRC4(key), aes: false}
+}
+
+// AuthValueLen is the token length: AES (NL_AUTH_SHA2_SIGNATURE) 56 sealing / 48 signing;
+// legacy (NL_AUTH_SIGNATURE) 32 sealing / 24 signing.
+func (n *NetlogonSecurityContext) AuthValueLen(seal bool) int {
+	if n.aes {
+		if seal {
+			return 56
+		}
+		return 48
+	}
+	if seal {
+		return 32
+	}
+	return 24
 }
 
 // ProtectRequest seals (privacy) or signs (integrity) the request stub, returning the
-// on-wire stub and the NL_AUTH_SHA2_SIGNATURE token.
+// on-wire stub and the token.
 func (n *NetlogonSecurityContext) ProtectRequest(_, stub []byte, seal bool) ([]byte, []byte, error) {
 	if seal {
 		return n.ms.Seal(stub)
