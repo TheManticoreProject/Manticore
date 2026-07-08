@@ -79,6 +79,21 @@ type SecureChannel struct {
 // rpc must already be bound to the Netlogon interface (an anonymous/unauthenticated binding
 // is sufficient for the handshake itself).
 func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error) {
+	// Validate the machine secret up front so a wrong-length hash or a missing secret fails
+	// clearly here rather than deriving a bad session key and failing as ACCESS_DENIED at
+	// NetrServerAuthenticate3. An NTHash must be the raw 16 octets; anything else (including
+	// a non-nil empty slice) is treated as "not provided" and normalised to nil.
+	if len(cfg.NTHash) != 0 && len(cfg.NTHash) != 16 {
+		return nil, fmt.Errorf("netlogon secure channel: NTHash must be 16 bytes, got %d", len(cfg.NTHash))
+	}
+	var ntHash []byte
+	if len(cfg.NTHash) == 16 {
+		ntHash = cfg.NTHash
+	}
+	if cfg.Password == "" && ntHash == nil {
+		return nil, fmt.Errorf("netlogon secure channel: one of Password or a 16-byte NTHash must be set")
+	}
+
 	src := cfg.Rand
 	if src == nil {
 		src = rand.Reader
@@ -104,9 +119,9 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 
 	var sessionKey [16]byte
 	if aes {
-		sessionKey = nrpccrypto.ComputeSessionKeyAES(cfg.Password, cfg.NTHash, clientChallenge, serverChallenge)
+		sessionKey = nrpccrypto.ComputeSessionKeyAES(cfg.Password, ntHash, clientChallenge, serverChallenge)
 	} else {
-		sessionKey = nrpccrypto.ComputeSessionKeyStrongKey(cfg.Password, cfg.NTHash, clientChallenge, serverChallenge)
+		sessionKey = nrpccrypto.ComputeSessionKeyStrongKey(cfg.Password, ntHash, clientChallenge, serverChallenge)
 	}
 	credential := func(in msnrpc.NETLOGON_CREDENTIAL) msnrpc.NETLOGON_CREDENTIAL {
 		if aes {

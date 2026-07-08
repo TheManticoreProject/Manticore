@@ -158,6 +158,21 @@ func TestUnprotectResponseStubPlumbing(t *testing.T) {
 	}
 }
 
+func TestSetAuthProviderNetlogonRequiresBindToken(t *testing.T) {
+	// Netlogon without a bind token is rejected.
+	if err := (&Client{}).SetAuthProvider(pdu.AuthTypeNetlogon, pdu.AuthLevelPktPrivacy, &fakeSecCtx{tokenLen: 56}, nil); err == nil {
+		t.Fatal("SetAuthProvider accepted netlogon with a nil bind token")
+	}
+	// Netlogon with a bind token is accepted.
+	if err := (&Client{}).SetAuthProvider(pdu.AuthTypeNetlogon, pdu.AuthLevelPktPrivacy, &fakeSecCtx{tokenLen: 56}, []byte{1, 2, 3, 4}); err != nil {
+		t.Fatalf("SetAuthProvider(netlogon, bindToken) = %v, want nil", err)
+	}
+	// A non-netlogon single-leg provider may still omit the bind token.
+	if err := (&Client{}).SetAuthProvider(pdu.AuthTypeGSSKerberos, pdu.AuthLevelPktPrivacy, &fakeSecCtx{tokenLen: 16}, nil); err != nil {
+		t.Fatalf("SetAuthProvider(non-netlogon, nil bindToken) = %v, want nil", err)
+	}
+}
+
 func TestAuthVerifierOverheadUsesProviderTokenLen(t *testing.T) {
 	c := &Client{authLevel: pdu.AuthLevelPktPrivacy, sec: &fakeSecCtx{tokenLen: 56}}
 	// 3 worst-case pad + 8-byte sec_trailer + 56-byte token.
