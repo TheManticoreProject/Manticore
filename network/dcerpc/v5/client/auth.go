@@ -75,8 +75,11 @@ func (c *Client) protectsRequests() bool {
 
 // authVerifierOverhead is the worst-case number of bytes an authenticated request PDU
 // adds after the stub: up to 3 padding bytes to 4-byte-align the trailer, the 8-byte
-// sec_trailer, and the 16-byte signature.
-const authVerifierOverhead = 3 + pdu.SecTrailerSize + security.SignatureSize
+// sec_trailer, and the auth_value token. The token size is provider-specific (NTLM: 16;
+// Netlogon: larger), so it is taken from the active security context at its sealing level.
+func (c *Client) authVerifierOverhead() int {
+	return 3 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy)
+}
 
 // negotiateToken builds the raw NTLM NEGOTIATE token carried in the bind's auth_value.
 func (c *Client) negotiateToken() ([]byte, error) {
@@ -153,20 +156,24 @@ func (c *Client) completeAuth(bindAckFrag []byte) error {
 	if err != nil {
 		return fmt.Errorf("init security context: %w", err)
 	}
-	c.sec = sec
+	c.sec = &ntlmSecurityContext{ctx: sec}
 	c.sessionKey = append([]byte(nil), auth.SessionKey...)
 	return nil
 }
 
-// marshalProtectedRequest serializes a request PDU with an NTLM auth verifier. The stub
-// is padded so the sec_trailer starts on a 4-byte boundary; for PKT_INTEGRITY the
-// signature covers the whole PDU (header, body, padded stub, sec_trailer) in cleartext,
-// and for PKT_PRIVACY the same region is signed over plaintext while only the stub and
-// its padding are sealed ([MS-RPCE] 3.3, NTLM2).
+// marshalProtectedRequest serializes a request PDU with a per-PDU auth verifier. The stub
+// is padded so the sec_trailer starts on a 4-byte boundary; the security context signs the
+// PDU (for PKT_INTEGRITY) or signs and seals the stub (for PKT_PRIVACY). The auth_value
+// token format and which bytes are signed are provider-specific — the client supplies both
+// the whole signed region (header, body, padded stub, sec_trailer, over plaintext) and the
+// padded stub, and the provider uses whichever it needs.
 func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	if req.ObjectUUID != nil {
 		return nil, fmt.Errorf("authenticated request with object UUID is not supported")
 	}
+
+	seal := c.authLevel == pdu.AuthLevelPktPrivacy
+	tokenLen := c.sec.AuthValueLen(seal)
 
 	allocHint := req.AllocHint
 	if allocHint == 0 {
@@ -191,8 +198,8 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	}
 
 	req.Header.PacketType = pdu.PacketTypeRequest
-	req.Header.AuthLength = uint16(security.SignatureSize)
-	fragLen := pdu.HeaderSize + len(bodyHdr) + len(stubPad) + pdu.SecTrailerSize + security.SignatureSize
+	req.Header.AuthLength = uint16(tokenLen)
+	fragLen := pdu.HeaderSize + len(bodyHdr) + len(stubPad) + pdu.SecTrailerSize + tokenLen
 	req.Header.FragLength = uint16(fragLen)
 	hdrBytes, err := req.Header.Marshal()
 	if err != nil {
@@ -201,19 +208,18 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 
 	// The signed region is the whole PDU up to (but not including) the auth_value,
 	// computed over the plaintext stub.
-	toSign := make([]byte, 0, fragLen-security.SignatureSize)
-	toSign = append(toSign, hdrBytes...)
-	toSign = append(toSign, bodyHdr...)
-	toSign = append(toSign, stubPad...)
-	toSign = append(toSign, st.Marshal()...)
+	signedRegion := make([]byte, 0, fragLen-tokenLen)
+	signedRegion = append(signedRegion, hdrBytes...)
+	signedRegion = append(signedRegion, bodyHdr...)
+	signedRegion = append(signedRegion, stubPad...)
+	signedRegion = append(signedRegion, st.Marshal()...)
 
-	var onWireStub []byte
-	var sig [security.SignatureSize]byte
-	if c.authLevel == pdu.AuthLevelPktPrivacy {
-		onWireStub, sig = c.sec.SealWith(toSign, stubPad)
-	} else {
-		sig = c.sec.Sign(toSign)
-		onWireStub = stubPad
+	onWireStub, authValue, err := c.sec.ProtectRequest(signedRegion, stubPad, seal)
+	if err != nil {
+		return nil, err
+	}
+	if len(authValue) != tokenLen {
+		return nil, fmt.Errorf("auth token length %d does not match reserved length %d", len(authValue), tokenLen)
 	}
 
 	out := make([]byte, 0, fragLen)
@@ -221,21 +227,24 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	out = append(out, bodyHdr...)
 	out = append(out, onWireStub...)
 	out = append(out, st.Marshal()...)
-	out = append(out, sig[:]...)
+	out = append(out, authValue...)
 	return out, nil
 }
 
 // unprotectResponseStub recovers the cleartext stub from an authenticated response
-// fragment: for PKT_PRIVACY it decrypts the stub in place, then it verifies the
-// signature over the whole PDU (minus the auth_value) and strips the auth padding.
+// fragment: the security context decrypts the stub in place (for PKT_PRIVACY) and verifies
+// its per-PDU token, after which the auth padding is stripped. The token length and the
+// verified region are provider-specific, so both the signed region (whole PDU minus the
+// auth_value) and the stub sub-slice are handed to the provider.
 func (c *Client) unprotectResponseStub(frag []byte) ([]byte, error) {
 	hdr, err := pdu.PeekHeader(frag)
 	if err != nil {
 		return nil, err
 	}
+	seal := c.authLevel == pdu.AuthLevelPktPrivacy
 	authLen := int(hdr.AuthLength)
-	if authLen != security.SignatureSize {
-		return nil, fmt.Errorf("unexpected auth_length %d, want %d", authLen, security.SignatureSize)
+	if want := c.sec.AuthValueLen(seal); authLen != want {
+		return nil, fmt.Errorf("unexpected auth_length %d, want %d", authLen, want)
 	}
 	fragLen := int(hdr.FragLength)
 	if fragLen > len(frag) {
@@ -246,8 +255,6 @@ func (c *Client) unprotectResponseStub(frag []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var sig [security.SignatureSize]byte
-	copy(sig[:], authValue)
 
 	stubStart := pdu.HeaderSize + 8 // response body: alloc_hint, ctx_id, cancel_count, reserved
 	stubEnd := fragLen - authLen - pdu.SecTrailerSize
@@ -255,18 +262,17 @@ func (c *Client) unprotectResponseStub(frag []byte) ([]byte, error) {
 		return nil, fmt.Errorf("authenticated response stub bounds invalid")
 	}
 
-	if c.authLevel == pdu.AuthLevelPktPrivacy {
-		c.sec.DecryptInbound(frag[stubStart:stubEnd])
-	}
-	// Verify over the whole PDU minus the trailing auth_value, now that the stub is
-	// plaintext.
-	if err := c.sec.VerifySignature(frag[:fragLen-authLen], sig); err != nil {
+	// signedRegion is the whole PDU up to the auth_value; stub is a sub-slice of it, so an
+	// in-place decrypt by the provider is reflected in signedRegion before verification.
+	signedRegion := frag[:fragLen-authLen]
+	plainStub, err := c.sec.UnprotectResponse(signedRegion, frag[stubStart:stubEnd], authValue, seal)
+	if err != nil {
 		return nil, err
 	}
 
-	if int(st.AuthPadLength) > stubEnd-stubStart {
+	if int(st.AuthPadLength) > len(plainStub) {
 		return nil, fmt.Errorf("auth_pad_length %d exceeds stub length", st.AuthPadLength)
 	}
-	stub := frag[stubStart : stubEnd-int(st.AuthPadLength)]
+	stub := plainStub[:len(plainStub)-int(st.AuthPadLength)]
 	return append([]byte(nil), stub...), nil
 }

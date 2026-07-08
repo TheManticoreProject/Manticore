@@ -27,7 +27,6 @@ package client
 import (
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/security"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
@@ -71,8 +70,8 @@ type Client struct {
 	authContextID uint32
 	workstation   string
 	creds         *credentials.Credentials
-	sec           *security.Context // non-nil once an authenticated bind completes
-	sessionKey    []byte            // NTLM exported session key, captured at completeAuth
+	sec           securityContext // non-nil once an authenticated bind completes
+	sessionKey    []byte          // NTLM exported session key, captured at completeAuth
 }
 
 // SessionKey returns the NTLM exported session key established during an authenticated
@@ -275,7 +274,7 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 	// request is signed or sealed.
 	overhead := requestHeaderOverhead
 	if c.protectsRequests() {
-		overhead += authVerifierOverhead
+		overhead += c.authVerifierOverhead()
 	}
 	budget := int(c.sendFragMax) - overhead
 	if budget <= 0 {
