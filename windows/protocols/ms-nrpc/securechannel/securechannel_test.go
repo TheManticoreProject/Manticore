@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/crypto/nt"
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
@@ -213,6 +214,45 @@ func TestEstablishRejectsForgedServerCredential(t *testing.T) {
 	inv, cfg, _, _ := establishFixture(true, true, netlogon.StatusSuccess)
 	if _, err := Establish(inv, cfg); err == nil {
 		t.Fatal("Establish accepted a forged server credential")
+	}
+}
+
+// TestEstablishRejectsBadSecret confirms Establish validates the machine secret before
+// issuing any RPC: a wrong-length NTHash and a missing secret both fail fast.
+func TestEstablishRejectsBadSecret(t *testing.T) {
+	inv, cfg, _, _ := establishFixture(true, false, netlogon.StatusSuccess)
+
+	bad := cfg
+	bad.NTHash = make([]byte, 10)
+	if _, err := Establish(inv, bad); err == nil {
+		t.Error("Establish accepted a 10-byte NTHash")
+	}
+	noSecret := cfg
+	noSecret.Password = ""
+	noSecret.NTHash = nil
+	if _, err := Establish(inv, noSecret); err == nil {
+		t.Error("Establish accepted a config with neither Password nor NTHash")
+	}
+	if len(inv.opnums) != 0 {
+		t.Fatalf("Establish issued RPCs %v before validating inputs", inv.opnums)
+	}
+}
+
+// TestEstablishPassTheHash confirms a raw 16-byte NTHash (no password) drives the same
+// session key as the equivalent password, i.e. the pass-the-hash path works.
+func TestEstablishPassTheHash(t *testing.T) {
+	inv, cfg, _, sk := establishFixture(true, false, netlogon.StatusSuccess)
+	h := nt.NTHash(cfg.Password)
+	cfg.Password = ""
+	cfg.NTHash = h[:]
+	cfg.Rand = bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8}) // same fixed client challenge
+
+	sc, err := Establish(inv, cfg)
+	if err != nil {
+		t.Fatalf("Establish (pass-the-hash): %v", err)
+	}
+	if sc.SessionKey() != sk {
+		t.Errorf("session key = %x, want %x (must match the password-derived key)", sc.SessionKey(), sk)
 	}
 }
 

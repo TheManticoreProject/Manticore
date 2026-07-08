@@ -76,6 +76,12 @@ func (c *Client) SetAuthProvider(authType, authLevel uint8, sec SecurityContext,
 	if authType == pdu.AuthTypeNone {
 		return fmt.Errorf("dcerpc auth: auth_type must not be none")
 	}
+	// Netlogon authenticates the bind with an NL_AUTH_MESSAGE token; without it the bind
+	// carries a sec_trailer with an empty auth_value and the DC rejects the association,
+	// which would otherwise surface only as an opaque bind or first-call failure.
+	if authType == pdu.AuthTypeNetlogon && len(bindToken) == 0 {
+		return fmt.Errorf("dcerpc auth: netlogon (0x%02x) requires a bind token (NL_AUTH_MESSAGE)", pdu.AuthTypeNetlogon)
+	}
 	if authLevel == pdu.AuthLevelCall {
 		authLevel = pdu.AuthLevelPkt
 	}
