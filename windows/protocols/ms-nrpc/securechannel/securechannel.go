@@ -1,9 +1,7 @@
-package functions
+package securechannel
 
-// IDL source: [MS-NRPC] — this interface is translated from and verified
-// against the protocol's authoritative IDL. Full IDL (Appendix A):
-//   https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/89f9b028-ee68-4fe2-afca-cc188f7079f7
-// A fetched copy is kept at ms-nrpc.idl in the interface directory.
+// IDL source: [MS-NRPC] — verified against the protocol's authoritative IDL
+// (https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/89f9b028-ee68-4fe2-afca-cc188f7079f7).
 
 import (
 	"crypto/rand"
@@ -13,13 +11,16 @@ import (
 	"time"
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
+	nrpccrypto "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc/crypto"
 )
 
 // DefaultNegotiateFlags is a capable client negotiate-flag set ([MS-NRPC] 3.1.4.2) that
-// advertises AES/strong-key secure-channel support. Establish forces NegotiateAES on top of
-// whatever flags it is given, because SecureChannel implements only the AES cipher suite.
+// advertises AES support. Establish derives the cipher suite from the flags it is given:
+// with NegotiateAES set (as here) it uses the AES suite; with that bit cleared it falls back
+// to the legacy strong-key (RC4/DES) suite.
 const DefaultNegotiateFlags uint32 = 0x212fffff
 
 // SecureChannelConfig holds the inputs to Establish. Exactly one of Password or NTHash
@@ -44,6 +45,7 @@ type SecureChannelConfig struct {
 	// the key material from Password instead.
 	NTHash []byte
 	// NegotiateFlags is the client negotiate-flag set; zero selects DefaultNegotiateFlags.
+	// Whether NegotiateAES is set selects the cipher suite (AES vs legacy strong-key).
 	NegotiateFlags uint32
 	// Rand is the source of the 8-byte client challenge; nil selects crypto/rand. It exists
 	// as a seam for deterministic testing and must be left nil in production.
@@ -51,8 +53,8 @@ type SecureChannelConfig struct {
 }
 
 // SecureChannel is an established Netlogon secure channel ([MS-NRPC] 3.1.4): it holds the
-// negotiated AES session key and negotiate flags and maintains the rolling stored credential
-// used to compute and verify per-call Netlogon authenticators (3.1.4.5).
+// negotiated session key, the negotiate flags, the cipher suite, and the rolling stored
+// credential used to compute and verify per-call Netlogon authenticators (3.1.4.5).
 //
 // A SecureChannel is stateful and not safe for concurrent use: the stored credential
 // advances on every NextAuthenticator/VerifyResponseAuthenticator call, and the two must be
@@ -60,17 +62,19 @@ type SecureChannelConfig struct {
 type SecureChannel struct {
 	sessionKey       [16]byte
 	negotiateFlags   uint32
+	aes              bool
 	clientStoredCred msnrpc.NETLOGON_CREDENTIAL
 	now              func() time.Time
 }
 
 // Establish runs the Netlogon secure-channel handshake over the bound RPC connection rpc
-// ([MS-NRPC] 3.1.4.1, AES suite): it generates a client challenge, exchanges it for the
-// server challenge via NetrServerReqChallenge (opnum 4), derives the AES session key, and
-// proves possession of the machine secret via NetrServerAuthenticate3 (opnum 26). It then
-// verifies the server's returned credential equals ComputeNetlogonCredentialAES of the
-// server challenge before returning the channel; a mismatch means the server did not prove
-// knowledge of the shared secret and the channel is rejected.
+// ([MS-NRPC] 3.1.4.1): it generates a client challenge, exchanges it for the server challenge
+// via NetrServerReqChallenge (opnum 4), derives the session key, and proves possession of the
+// machine secret via NetrServerAuthenticate3 (opnum 26). The cipher suite (AES vs legacy
+// strong-key) follows the NegotiateAES bit in the negotiate flags. It then verifies the
+// server's returned credential equals the computed credential of the server challenge before
+// returning the channel; a mismatch means the server did not prove knowledge of the shared
+// secret and the channel is rejected.
 //
 // rpc must already be bound to the Netlogon interface (an anonymous/unauthenticated binding
 // is sufficient for the handshake itself).
@@ -84,7 +88,7 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 		return nil, fmt.Errorf("netlogon secure channel: generate client challenge: %w", err)
 	}
 
-	serverChallenge, status, err := NetrServerReqChallenge(rpc, cfg.PrimaryName, cfg.ComputerName, clientChallenge)
+	serverChallenge, status, err := functions.NetrServerReqChallenge(rpc, cfg.PrimaryName, cfg.ComputerName, clientChallenge)
 	if err != nil {
 		return nil, fmt.Errorf("netlogon secure channel: NetrServerReqChallenge: %w", err)
 	}
@@ -92,14 +96,25 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 		return nil, fmt.Errorf("netlogon secure channel: NetrServerReqChallenge: %s", logon.StatusString(status))
 	}
 
-	sessionKey := ComputeSessionKeyAES(cfg.Password, cfg.NTHash, clientChallenge, serverChallenge)
-	clientCredential := ComputeNetlogonCredentialAES(clientChallenge, sessionKey)
-
 	flags := cfg.NegotiateFlags
 	if flags == 0 {
 		flags = DefaultNegotiateFlags
 	}
-	flags |= logon.NegotiateAES
+	aes := flags&logon.NegotiateAES != 0
+
+	var sessionKey [16]byte
+	if aes {
+		sessionKey = nrpccrypto.ComputeSessionKeyAES(cfg.Password, cfg.NTHash, clientChallenge, serverChallenge)
+	} else {
+		sessionKey = nrpccrypto.ComputeSessionKeyStrongKey(cfg.Password, cfg.NTHash, clientChallenge, serverChallenge)
+	}
+	credential := func(in msnrpc.NETLOGON_CREDENTIAL) msnrpc.NETLOGON_CREDENTIAL {
+		if aes {
+			return nrpccrypto.ComputeNetlogonCredentialAES(in, sessionKey)
+		}
+		return nrpccrypto.ComputeNetlogonCredential(in, sessionKey)
+	}
+	clientCredential := credential(clientChallenge)
 
 	var primaryPtr *ndr.WSTR
 	if cfg.PrimaryName != "" {
@@ -107,7 +122,7 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 		primaryPtr = &p
 	}
 
-	serverCredential, negFlags, _, err := NetrServerAuthenticate3(
+	serverCredential, negFlags, _, err := functions.NetrServerAuthenticate3(
 		rpc,
 		primaryPtr,
 		ndr.WSTR(cfg.AccountName),
@@ -120,7 +135,7 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 		return nil, fmt.Errorf("netlogon secure channel: NetrServerAuthenticate3: %w", err)
 	}
 
-	expectedServer := ComputeNetlogonCredentialAES(serverChallenge, sessionKey)
+	expectedServer := credential(serverChallenge)
 	if subtle.ConstantTimeCompare(expectedServer[:], serverCredential[:]) != 1 {
 		return nil, fmt.Errorf("netlogon secure channel: server credential mismatch (access denied or wrong machine secret)")
 	}
@@ -128,16 +143,29 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 	return &SecureChannel{
 		sessionKey:       sessionKey,
 		negotiateFlags:   uint32(negFlags),
+		aes:              aes,
 		clientStoredCred: clientCredential,
 		now:              time.Now,
 	}, nil
 }
 
-// SessionKey returns the negotiated 16-byte AES session key.
+// SessionKey returns the negotiated 16-byte session key.
 func (s *SecureChannel) SessionKey() [16]byte { return s.sessionKey }
 
 // NegotiateFlags returns the negotiate flags the server agreed to (its echoed subset).
 func (s *SecureChannel) NegotiateFlags() uint32 { return s.negotiateFlags }
+
+// UsesAES reports whether the AES cipher suite was negotiated; it selects the matching
+// MessageSecurity (AES vs RC4) for RPC-level sealing.
+func (s *SecureChannel) UsesAES() bool { return s.aes }
+
+// credential computes a Netlogon credential with the channel's cipher suite.
+func (s *SecureChannel) credential(input msnrpc.NETLOGON_CREDENTIAL) msnrpc.NETLOGON_CREDENTIAL {
+	if s.aes {
+		return nrpccrypto.ComputeNetlogonCredentialAES(input, s.sessionKey)
+	}
+	return nrpccrypto.ComputeNetlogonCredential(input, s.sessionKey)
+}
 
 // NextAuthenticator computes the client authenticator to send with the next authenticated
 // request ([MS-NRPC] 3.1.4.5 step 1): it advances the stored credential by the current
@@ -146,9 +174,9 @@ func (s *SecureChannel) NegotiateFlags() uint32 { return s.negotiateFlags }
 // VerifyResponseAuthenticator on the server's reply.
 func (s *SecureChannel) NextAuthenticator() msnrpc.NETLOGON_AUTHENTICATOR {
 	ts := uint32(s.now().Unix())
-	s.clientStoredCred = addToCredential(s.clientStoredCred, ts)
+	s.clientStoredCred = nrpccrypto.AddToCredential(s.clientStoredCred, ts)
 	return msnrpc.NETLOGON_AUTHENTICATOR{
-		Credential: ComputeNetlogonCredentialAES(s.clientStoredCred, s.sessionKey),
+		Credential: s.credential(s.clientStoredCred),
 		Timestamp:  ts,
 	}
 }
@@ -159,8 +187,8 @@ func (s *SecureChannel) NextAuthenticator() msnrpc.NETLOGON_AUTHENTICATOR {
 // means the secure channel is no longer valid and the caller should re-establish it. It must
 // be called once per request, paired with the preceding NextAuthenticator.
 func (s *SecureChannel) VerifyResponseAuthenticator(server msnrpc.NETLOGON_AUTHENTICATOR) error {
-	s.clientStoredCred = addToCredential(s.clientStoredCred, 1)
-	expected := ComputeNetlogonCredentialAES(s.clientStoredCred, s.sessionKey)
+	s.clientStoredCred = nrpccrypto.AddToCredential(s.clientStoredCred, 1)
+	expected := s.credential(s.clientStoredCred)
 	if subtle.ConstantTimeCompare(expected[:], server.Credential[:]) != 1 {
 		return fmt.Errorf("netlogon secure channel: server authenticator mismatch (channel invalid, re-establish)")
 	}

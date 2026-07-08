@@ -8,8 +8,10 @@
 //	NETLOGON_COMPUTER=MANTICORE1 NETLOGON_PASS='Manticore1Pass!' \
 //	NETLOGON_SERVER='\\TMP-W-2016' NETLOGON_DOMAIN=TMP-W-2016.local \
 //	go test -tags integration -v -run Integration_Netlogon \
-//	  ./network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/functions/
-package functions_test
+//	  ./windows/protocols/ms-nrpc/securechannel/
+//
+// Set NETLOGON_SUITE=rc4 to negotiate the legacy strong-key (RC4) suite instead of AES.
+package securechannel_test
 
 import (
 	"os"
@@ -23,6 +25,7 @@ import (
 	smbclient "github.com/TheManticoreProject/Manticore/network/smb/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
+	"github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc/securechannel"
 )
 
 func TestIntegration_NetlogonSecureChannel(t *testing.T) {
@@ -63,18 +66,32 @@ func TestIntegration_NetlogonSecureChannel(t *testing.T) {
 		t.Fatalf("bind #1 (anon netlogon): %v", err)
 	}
 
-	sc, err := functions.Establish(rpc1, functions.SecureChannelConfig{
+	cfg := securechannel.SecureChannelConfig{
 		ComputerName:      computer,
 		AccountName:       computer + "$",
 		SecureChannelType: msnrpc.WorkstationSecureChannel,
 		Password:          machinePass,
-	})
+	}
+	if os.Getenv("NETLOGON_SUITE") == "rc4" {
+		cfg.NegotiateFlags = securechannel.DefaultNegotiateFlags &^ netlogon.NegotiateAES
+	}
+	sc, err := securechannel.Establish(rpc1, cfg)
 	if err != nil {
 		t.Fatalf("STAGE A FAILED — SecureChannel.Establish: %v", err)
 	}
 	_ = rpc1.Close()
-	t.Logf("[STAGE A ok] secure channel established; session key %x, negotiated flags %#08x",
-		sc.SessionKey(), sc.NegotiateFlags())
+	t.Logf("[STAGE A ok] secure channel established (aes=%v); session key %x, negotiated flags %#08x",
+		sc.UsesAES(), sc.SessionKey(), sc.NegotiateFlags())
+
+	// The RPC-transport per-message token cipher tracks the session's AES negotiation. On an
+	// AES-capable DC the RPC SSP uses NL_AUTH_SHA2_SIGNATURE tokens even if a strong-key
+	// session was forced, so the legacy RC4 token path only applies to genuinely pre-AES DCs
+	// and cannot be exercised here; the strong-key session itself is validated by Stage A.
+	if !sc.UsesAES() {
+		t.Logf("[RC4 ok] strong-key secure channel validated (Stage A); RPC-transport RC4 sealing " +
+			"is for pre-AES DCs and is not exercised against this AES-capable DC")
+		return
+	}
 
 	// ---- Binding #2: RPC_C_AUTHN_NETLOGON sealed (PR-D) ----
 	tr2, err := smb.RPCTransport(netlogon.PipeName)
@@ -84,7 +101,7 @@ func TestIntegration_NetlogonSecureChannel(t *testing.T) {
 	rpc2 := dcerpcclient.NewClient(tr2)
 	defer rpc2.Close()
 
-	provider := functions.NewNetlogonSecurityContext(sc.SessionKey())
+	provider := securechannel.NewNetlogonSecurityContext(sc)
 	bindToken := msnrpc.BuildClientNlAuthMessage(computer, domain).Marshal()
 	if err := rpc2.SetAuthProvider(pdu.AuthTypeNetlogon, pdu.AuthLevelPktPrivacy, provider, bindToken); err != nil {
 		t.Fatalf("SetAuthProvider(netlogon): %v", err)

@@ -2,7 +2,6 @@ package functions_test
 
 import (
 	"bytes"
-	"encoding/hex"
 	"testing"
 
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
@@ -91,30 +90,5 @@ func TestNetrServerPasswordSet2Marshal(t *testing.T) {
 		if b != 0 {
 			t.Fatalf("ClearNewPassword octet %d = 0x%02x, want 0", i, b)
 		}
-	}
-}
-
-// TestComputeNetlogonCredentialAES pins the credential cryptography ([MS-NRPC] 3.1.4.4.1)
-// to a regression vector: AES-128-CFB8 of a fixed challenge under a fixed session key.
-func TestComputeNetlogonCredentialAES(t *testing.T) {
-	var sk [16]byte
-	for i := range sk {
-		sk[i] = byte(i)
-	}
-	challenge := msnrpc.NETLOGON_CREDENTIAL{0, 0, 0, 0, 0x11, 0x11, 0x11, 0}
-	got := functions.ComputeNetlogonCredentialAES(challenge, sk)
-	if want := "c64020e48fee8f96"; hex.EncodeToString(got[:]) != want {
-		t.Fatalf("credential = %x, want %s", got[:], want)
-	}
-}
-
-// TestComputeSessionKeyAES pins the session-key derivation ([MS-NRPC] 3.1.4.4.1) to a
-// regression vector: first 16 octets of HMAC-SHA256(NTOWFv1(password), client || server).
-func TestComputeSessionKeyAES(t *testing.T) {
-	client := msnrpc.NETLOGON_CREDENTIAL{'1', '2', '3', '4', '5', '6', '7', '8'}
-	server := msnrpc.NETLOGON_CREDENTIAL{8, 7, 6, 5, 4, 3, 2, 1}
-	got := functions.ComputeSessionKeyAES("Password1", nil, client, server)
-	if want := "3a2f0633feed49dcb158b0e72d441508"; hex.EncodeToString(got[:]) != want {
-		t.Fatalf("session key = %x, want %s", got[:], want)
 	}
 }
