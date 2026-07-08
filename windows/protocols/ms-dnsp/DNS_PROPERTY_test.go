@@ -31,6 +31,43 @@ func buildProperty(id msdnsp.PropertyId, data []byte) []byte {
 	return b
 }
 
+// TestAllowUpdateSingleByte decodes a DSPROPERTY_ZONE_ALLOW_UPDATE property stored in a single
+// byte, as a Windows DNS server actually writes it (DataLength=1, Data=0x02), rather than the
+// full DWORD described by [MS-DNSP].
+func TestAllowUpdateSingleByte(t *testing.T) {
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_ALLOW_UPDATE, []byte{0x02})
+
+	p := &msdnsp.DNS_PROPERTY{}
+	if _, err := p.Unmarshal(raw); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if p.DataLength != 1 {
+		t.Fatalf("DataLength = %d; want 1", p.DataLength)
+	}
+	v, err := p.AsUint32()
+	if err != nil {
+		t.Fatalf("AsUint32 on 1-byte data failed: %v", err)
+	}
+	if v != 2 {
+		t.Errorf("AsUint32 = %d; want 2", v)
+	}
+	zu, err := p.AsZoneUpdate()
+	if err != nil {
+		t.Fatalf("AsZoneUpdate on 1-byte data failed: %v", err)
+	}
+	if zu != msdnsp.ZONE_UPDATE_SECURE {
+		t.Errorf("ZoneUpdate = %s; want ZONE_UPDATE_SECURE", zu)
+	}
+}
+
+// TestAsUint32EmptyData verifies AsUint32 rejects an empty Data field.
+func TestAsUint32EmptyData(t *testing.T) {
+	p := &msdnsp.DNS_PROPERTY{Id: msdnsp.DSPROPERTY_ZONE_TYPE, Data: nil}
+	if _, err := p.AsUint32(); err == nil {
+		t.Error("AsUint32 on empty Data = nil error; want error")
+	}
+}
+
 // TestZoneTypeProperty decodes a DSPROPERTY_ZONE_TYPE property.
 func TestZoneTypeProperty(t *testing.T) {
 	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_TYPE, []byte{0x01, 0x00, 0x00, 0x00})

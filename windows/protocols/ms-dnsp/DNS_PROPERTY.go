@@ -128,19 +128,31 @@ func (p *DNS_PROPERTY) Unmarshal(rawData []byte) (int, error) {
 	return offset, nil
 }
 
-// AsUint32 interprets the Data field as a little-endian 32-bit scalar, the form used by the
-// scalar zone properties (DSPROPERTY_ZONE_TYPE, DSPROPERTY_ZONE_ALLOW_UPDATE, the interval
-// properties, DSPROPERTY_ZONE_AGING_STATE, DSPROPERTY_ZONE_DCPROMO_CONVERT, and
-// DSPROPERTY_ZONE_NODE_DBFLAGS).
+// AsUint32 interprets the Data field as a little-endian integer, the form used by the scalar
+// zone properties (DSPROPERTY_ZONE_TYPE, DSPROPERTY_ZONE_ALLOW_UPDATE, the interval properties,
+// DSPROPERTY_ZONE_AGING_STATE, DSPROPERTY_ZONE_DCPROMO_CONVERT, and DSPROPERTY_ZONE_NODE_DBFLAGS).
+//
+// Although [MS-DNSP] types these properties as a DWORD, a Windows DNS server stores them in the
+// minimum number of little-endian bytes: for example DSPROPERTY_ZONE_ALLOW_UPDATE is commonly a
+// single byte. AsUint32 therefore reads up to four bytes and zero-extends, rather than requiring
+// exactly four.
 //
 // Returns:
-// - The 32-bit value
-// - An error if Data is shorter than 4 bytes
+// - The value, read from up to the first four bytes of Data (little-endian, zero-extended)
+// - An error if Data is empty
 func (p *DNS_PROPERTY) AsUint32() (uint32, error) {
-	if len(p.Data) < 4 {
-		return 0, fmt.Errorf("DNS_PROPERTY %s: Data is %d bytes, need 4 for a uint32", p.Id, len(p.Data))
+	if len(p.Data) == 0 {
+		return 0, fmt.Errorf("DNS_PROPERTY %s: Data is empty, need at least 1 byte for an integer", p.Id)
 	}
-	return binary.LittleEndian.Uint32(p.Data[0:4]), nil
+	n := len(p.Data)
+	if n > 4 {
+		n = 4
+	}
+	var v uint32
+	for i := 0; i < n; i++ {
+		v |= uint32(p.Data[i]) << (8 * i)
+	}
+	return v, nil
 }
 
 // AsZoneType interprets the Data field as a ZoneType (dwZoneType). It is meaningful for a
@@ -148,7 +160,7 @@ func (p *DNS_PROPERTY) AsUint32() (uint32, error) {
 //
 // Returns:
 // - The zone type
-// - An error if Data is shorter than 4 bytes
+// - An error if Data is empty
 func (p *DNS_PROPERTY) AsZoneType() (ZoneType, error) {
 	v, err := p.AsUint32()
 	if err != nil {
@@ -162,7 +174,7 @@ func (p *DNS_PROPERTY) AsZoneType() (ZoneType, error) {
 //
 // Returns:
 // - The dynamic-update policy
-// - An error if Data is shorter than 4 bytes
+// - An error if Data is empty
 func (p *DNS_PROPERTY) AsZoneUpdate() (ZoneUpdate, error) {
 	v, err := p.AsUint32()
 	if err != nil {
