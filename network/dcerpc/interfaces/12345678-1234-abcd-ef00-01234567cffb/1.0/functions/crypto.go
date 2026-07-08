@@ -9,6 +9,7 @@ import (
 	"crypto/aes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/binary"
 
 	"github.com/TheManticoreProject/Manticore/crypto/aes/cfb8"
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
@@ -69,4 +70,37 @@ func ComputeNetlogonCredentialAES(challenge msnrpc.NETLOGON_CREDENTIAL, sessionK
 	var out msnrpc.NETLOGON_CREDENTIAL
 	cfb8.NewEncrypter(block, iv[:]).XORKeyStream(out[:], challenge[:])
 	return out
+}
+
+// addToCredential adds delta to a credential ([MS-NRPC] 3.1.4.5): the least-significant 4
+// octets are treated as a little-endian 32-bit integer and delta is added with overflow
+// ignored; the most-significant 4 octets are left unchanged. This is the arithmetic used to
+// advance the stored credential by a timestamp or by the constant 1.
+func addToCredential(cred msnrpc.NETLOGON_CREDENTIAL, delta uint32) msnrpc.NETLOGON_CREDENTIAL {
+	var out msnrpc.NETLOGON_CREDENTIAL
+	low := binary.LittleEndian.Uint32(cred[0:4]) + delta // uint32 wraps mod 2^32
+	binary.LittleEndian.PutUint32(out[0:4], low)
+	copy(out[4:8], cred[4:8])
+	return out
+}
+
+// ComputeNetlogonAuthenticatorAES computes a client Netlogon authenticator ([MS-NRPC]
+// 3.1.4.5) for the AES cipher suite: it adds timestamp to the stored credential (low 32
+// bits, overflow ignored) and encrypts the sum with the session key
+// (ComputeNetlogonCredentialAES). This is a pure function — it does not advance the caller's
+// stored credential; a caller that maintains a rolling secure channel should use
+// SecureChannel, which applies the stored-credential updates the protocol requires.
+//
+// Parameters:
+//   - storedCredential: The current stored client credential.
+//   - timestamp: The authenticator timestamp (seconds since 1970-01-01 UTC).
+//   - sessionKey: The 16-byte AES session key.
+//
+// Returns:
+//   - The NETLOGON_AUTHENTICATOR to send with the request.
+func ComputeNetlogonAuthenticatorAES(storedCredential msnrpc.NETLOGON_CREDENTIAL, timestamp uint32, sessionKey [16]byte) msnrpc.NETLOGON_AUTHENTICATOR {
+	return msnrpc.NETLOGON_AUTHENTICATOR{
+		Credential: ComputeNetlogonCredentialAES(addToCredential(storedCredential, timestamp), sessionKey),
+		Timestamp:  timestamp,
+	}
 }
