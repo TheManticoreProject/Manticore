@@ -6,13 +6,13 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/security"
 )
 
-// securityContext protects outbound request stubs and unprotects inbound response stubs for
+// SecurityContext protects outbound request stubs and unprotects inbound response stubs for
 // an authenticated connection-oriented RPC session. Each security provider (NTLM today,
 // Netlogon next) supplies its own auth_value token format and chooses which bytes it signs:
 // NTLM signs the whole PDU and so uses signedRegion, whereas a provider that signs only the
 // stub can ignore signedRegion and operate on stub. The client owns PDU framing (stub
 // padding, header fields, sec_trailer), which is provider-independent ([MS-RPCE] 2.2.2.11).
-type securityContext interface {
+type SecurityContext interface {
 	// AuthValueLen returns the auth_value byte length this provider emits, given whether the
 	// request is sealed (PKT_PRIVACY) or only signed (PKT/PKT_INTEGRITY). It must be known
 	// before the PDU header is marshalled, since it feeds auth_length and frag_length.
@@ -33,7 +33,7 @@ type securityContext interface {
 	UnprotectResponse(signedRegion, stub, authValue []byte, seal bool) (plainStub []byte, err error)
 }
 
-// ntlmSecurityContext adapts an NTLM *security.Context to securityContext. NTLM's token is a
+// ntlmSecurityContext adapts an NTLM *security.Context to SecurityContext. NTLM's token is a
 // fixed 16-byte MESSAGE_SIGNATURE and its signature covers the whole PDU, so both directions
 // operate over signedRegion; only the stub is sealed for PKT_PRIVACY ([MS-RPCE] 3.3, NTLM2).
 type ntlmSecurityContext struct{ ctx *security.Context }

@@ -61,8 +61,42 @@ func (c *Client) SetAuth(authType, authLevel uint8, creds *credentials.Credentia
 	return nil
 }
 
-// authConfigured reports whether SetAuth selected an authenticated bind.
-func (c *Client) authConfigured() bool { return c.creds != nil && c.authType != pdu.AuthTypeNone }
+// SetAuthProvider configures an authenticated bind with a caller-supplied single-leg
+// security provider, for SSPs whose session key is established out of band and whose bind
+// completes in one round trip (no challenge/auth3) — Netlogon (auth_type 0x44) in
+// particular. sec protects and unprotects each PDU; bindToken is the auth_value carried in
+// the bind PDU (for Netlogon, a marshalled NL_AUTH_MESSAGE), or nil. This is the seam that
+// keeps the client free of any specific SSP's dependencies: the provider and its bind token
+// are built by the caller. Unlike SetAuth (NTLM), the security context is active
+// immediately, so protected calls work as soon as Bind returns. Call before Bind.
+func (c *Client) SetAuthProvider(authType, authLevel uint8, sec SecurityContext, bindToken []byte) error {
+	if sec == nil {
+		return fmt.Errorf("dcerpc auth: nil security provider")
+	}
+	if authType == pdu.AuthTypeNone {
+		return fmt.Errorf("dcerpc auth: auth_type must not be none")
+	}
+	if authLevel == pdu.AuthLevelCall {
+		authLevel = pdu.AuthLevelPkt
+	}
+	switch authLevel {
+	case pdu.AuthLevelConnect, pdu.AuthLevelPkt, pdu.AuthLevelPktIntegrity, pdu.AuthLevelPktPrivacy:
+	default:
+		return fmt.Errorf("dcerpc auth: unsupported auth_level %d", authLevel)
+	}
+	c.authType = authType
+	c.authLevel = authLevel
+	c.sec = sec
+	c.bindToken = bindToken
+	return nil
+}
+
+// authConfigured reports whether an authenticated bind was selected, by either SetAuth
+// (NTLM, which supplies creds and derives the context during Bind) or SetAuthProvider (a
+// single-leg provider, which supplies the context up front).
+func (c *Client) authConfigured() bool {
+	return c.authType != pdu.AuthTypeNone && (c.creds != nil || c.sec != nil)
+}
 
 // protectsRequests reports whether each request PDU must carry a per-PDU auth verifier.
 // PKT, PKT_INTEGRITY, and PKT_PRIVACY all attach one (NTLM produces the same signature
@@ -81,8 +115,13 @@ func (c *Client) authVerifierOverhead() int {
 	return 3 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy)
 }
 
-// negotiateToken builds the raw NTLM NEGOTIATE token carried in the bind's auth_value.
+// negotiateToken builds the auth_value carried in the bind's auth verifier. For a single-leg
+// provider (SetAuthProvider) it is the caller-supplied bind token; for NTLM it is a freshly
+// built NEGOTIATE message.
 func (c *Client) negotiateToken() ([]byte, error) {
+	if c.authType != pdu.AuthTypeNTLMSSP {
+		return c.bindToken, nil
+	}
 	neg, err := negotiate.CreateNegotiateMessage("", c.workstation, rpcNTLMNegotiateFlags, nil)
 	if err != nil {
 		return nil, err
@@ -109,11 +148,17 @@ func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authentic
 	return authenticate.CreateAuthenticateMessage(chal, c.creds.GetUsername(), c.creds.GetPassword(), c.creds.GetDomain(), c.workstation)
 }
 
-// completeAuth finishes the NTLM exchange after a bind_ack: it parses the server's
-// CHALLENGE from the bind_ack's auth_value, sends an auth3 carrying the AUTHENTICATE
-// token (to which the server sends no reply), and builds the per-message security
-// context from the derived session key.
+// completeAuth finishes the authenticated bind after a bind_ack. For a single-leg provider
+// (SetAuthProvider, e.g. Netlogon) the security context is already active and the session
+// key was established out of band, so there is no auth3 and nothing to derive — the
+// bind_ack (which for Netlogon carries the server's NL_AUTH_MESSAGE) is simply accepted.
+// For NTLM it parses the server's CHALLENGE from the bind_ack's auth_value, sends an auth3
+// carrying the AUTHENTICATE token (to which the server sends no reply), and builds the
+// per-message security context from the derived session key.
 func (c *Client) completeAuth(bindAckFrag []byte) error {
+	if c.authType != pdu.AuthTypeNTLMSSP {
+		return nil
+	}
 	_, challengeBytes, err := pdu.ExtractAuthVerifier(bindAckFrag)
 	if err != nil {
 		return fmt.Errorf("read challenge: %w", err)

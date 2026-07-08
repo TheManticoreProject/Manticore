@@ -70,8 +70,11 @@ type Client struct {
 	authContextID uint32
 	workstation   string
 	creds         *credentials.Credentials
-	sec           securityContext // non-nil once an authenticated bind completes
+	sec           SecurityContext // non-nil once an authenticated bind completes
 	sessionKey    []byte          // NTLM exported session key, captured at completeAuth
+	// bindToken is the auth_value carried in the bind PDU for a single-leg provider
+	// (e.g. Netlogon) configured via SetAuthProvider; nil for the NTLM multi-leg flow.
+	bindToken []byte
 }
 
 // SessionKey returns the NTLM exported session key established during an authenticated
