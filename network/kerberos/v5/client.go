@@ -71,6 +71,11 @@ type KerberosClient struct {
 	// subsequent retry falls inside the KDC's allowable skew window (RFC 4120
 	// Section 5.9.1). See now / applyClockSkew.
 	clockOffset time.Duration
+
+	// fast, when non-nil, holds an armor TGT enabling RFC 6113 FAST (Kerberos
+	// armoring) on the AS exchange. Configured via WithFASTArmor; consumed by
+	// GetTGT (see fast.go).
+	fast *fastArmor
 }
 
 // preloadedServiceTicket is a service ticket the client will hand back from
@@ -191,6 +196,12 @@ func (c *KerberosClient) applyClockSkew(krbErr messages.KRBError) bool {
 func (c *KerberosClient) GetTGT() error {
 	if c.cred == nil {
 		return fmt.Errorf("kerberos: no credentials configured: call WithPassword/WithNTHash/WithAESKey/WithCredential first")
+	}
+
+	// When a FAST armor TGT is configured, perform an armored AS-REQ with an
+	// encrypted-challenge factor (RFC 6113) instead of the bare PA-ENC-TIMESTAMP.
+	if c.fast != nil {
+		return c.getTGTFAST()
 	}
 
 	// Start with the strongest etype the credential can satisfy and the AD

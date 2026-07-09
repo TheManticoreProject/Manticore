@@ -28,11 +28,15 @@ const (
 	ETypeAES128CTSHMACSHA196 = iana.ETypeAES128CTSHMACSHA196
 	ETypeAES256CTSHMACSHA196 = iana.ETypeAES256CTSHMACSHA196
 
-	PATGSReq          = iana.PATGSReq
-	PAEncTimestamp    = iana.PAEncTimestamp
-	PAETypeInfo2      = iana.PAETypeInfo2
-	PAPACRequest      = iana.PAPACRequest
-	PASvrReferralInfo = iana.PASvrReferralInfo
+	PATGSReq             = iana.PATGSReq
+	PAEncTimestamp       = iana.PAEncTimestamp
+	PAETypeInfo2         = iana.PAETypeInfo2
+	PAPACRequest         = iana.PAPACRequest
+	PASvrReferralInfo    = iana.PASvrReferralInfo
+	PAFXCookie           = iana.PAFXCookie
+	PAFXFast             = iana.PAFXFast
+	PAFXError            = iana.PAFXError
+	PAEncryptedChallenge = iana.PAEncryptedChallenge
 
 	ErrNone              = iana.ErrNone
 	ErrCPrincipalUnknown = iana.ErrCPrincipalUnknown
