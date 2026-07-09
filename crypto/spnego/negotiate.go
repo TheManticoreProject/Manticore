@@ -46,7 +46,13 @@ func (ctx *AuthContext) processNegotiateInnerTokenNTLM(negotiateFlags flags.Nego
 	return CreateNegTokenInit(ntlmNegotiateBytes)
 }
 
-func (ctx *AuthContext) processNegotiateInnerTokenKerberos(negotiateFlags flags.NegotiateFlags, version *version.Version) ([]byte, error) {
-	// TODO: Implement kerberos authentication
-	return nil, errors.New("kerberos authentication is not yet implemented")
+func (ctx *AuthContext) processNegotiateInnerTokenKerberos(_ flags.NegotiateFlags, _ *version.Version) ([]byte, error) {
+	if ctx.Kerberos == nil {
+		return nil, errors.New("spnego: kerberos provider not configured on AuthContext")
+	}
+	mechToken, err := ctx.Kerberos.InitToken()
+	if err != nil {
+		return nil, fmt.Errorf("spnego: kerberos init token: %w", err)
+	}
+	return CreateNegTokenInitKerberos(mechToken)
 }
