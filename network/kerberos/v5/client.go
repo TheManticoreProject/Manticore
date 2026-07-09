@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/credentials"
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
@@ -29,13 +30,14 @@ type KerberosClient struct {
 	realm    string
 	kdcHost  string
 
-	password string
+	cred *credentials.Credential
 
 	// Populated after a successful GetTGT call.
 	tgtTicket    messages.Ticket
 	tgtTicketRaw []byte // raw APPLICATION[1] bytes as received from KDC
 	sessionKey   []byte
 	sessionEType int
+	tgtEnc       messages.EncASRepPart // decrypted AS-REP enc-part: times, flags, sname
 	hasTGT       bool
 }
 
@@ -50,17 +52,40 @@ func NewClient(username, realm, kdcHost string) *KerberosClient {
 	}
 }
 
-// WithPassword stores the password for use in GetTGT.
+// WithPassword configures a password credential for GetTGT.
 // Returns the client to allow fluent chaining.
 func (c *KerberosClient) WithPassword(password string) *KerberosClient {
-	c.password = password
+	c.cred = credentials.NewWithPassword(c.username, c.realm, password)
 	return c
 }
 
-// WithCCache is not yet supported in the native implementation.
-// Use the gokrb5-backed KerberosInit helper for ccache-based LDAP binds.
-func (c *KerberosClient) WithCCache(_ string) error {
-	return fmt.Errorf("kerberos: ccache not supported in native implementation; use gokrb5 KerberosInit for LDAP GSSAPI binds")
+// WithCredential configures an arbitrary credential (password, NT hash, or AES
+// key). Returns the client to allow fluent chaining.
+func (c *KerberosClient) WithCredential(cred *credentials.Credential) *KerberosClient {
+	c.cred = cred
+	return c
+}
+
+// WithNTHash configures an NT-hash (overpass-the-hash) credential from a hex
+// string (accepts an "LM:NT" pair). GetTGT will request an RC4-HMAC TGT.
+func (c *KerberosClient) WithNTHash(hexHash string) error {
+	cred, err := credentials.NewWithHexNTHash(c.username, c.realm, hexHash)
+	if err != nil {
+		return err
+	}
+	c.cred = cred
+	return nil
+}
+
+// WithAESKey configures a pass-the-key credential from a hex-encoded AES key
+// (16 bytes -> AES128, 32 bytes -> AES256).
+func (c *KerberosClient) WithAESKey(hexKey string) error {
+	cred, err := credentials.NewWithHexAESKey(c.username, c.realm, hexKey)
+	if err != nil {
+		return err
+	}
+	c.cred = cred
+	return nil
 }
 
 // GetTGT requests a Ticket Granting Ticket from the KDC using the password
@@ -71,14 +96,14 @@ func (c *KerberosClient) WithCCache(_ string) error {
 // (realm+username). If the KDC returns PREAUTH_REQUIRED with different
 // etype/salt info, we retry once with the corrected values.
 func (c *KerberosClient) GetTGT() error {
-	if c.password == "" {
-		return fmt.Errorf("kerberos: no credentials configured: call WithPassword first")
+	if c.cred == nil {
+		return fmt.Errorf("kerberos: no credentials configured: call WithPassword/WithNTHash/WithAESKey/WithCredential first")
 	}
 
-	// Attempt with default AD salt. The KDC may respond with PREAUTH_REQUIRED
-	// if a different salt or etype is required.
-	etype := messages.ETypeAES256CTSHMACSHA196
-	salt := c.realm + c.username
+	// Start with the strongest etype the credential can satisfy and the AD
+	// default salt. The KDC corrects both via PREAUTH_REQUIRED if needed.
+	etype := c.cred.SupportedETypes()[0]
+	salt := c.cred.DefaultSalt()
 	resp, nonce, err := c.sendASReqWithPreauth(etype, salt, nil)
 	if err != nil {
 		return err
@@ -218,7 +243,9 @@ func (c *KerberosClient) Destroy() {
 		c.sessionKey[i] = 0
 	}
 	c.sessionKey = nil
-	c.password = ""
+	if c.cred != nil {
+		c.cred.Destroy()
+	}
 	c.hasTGT = false
 }
 
@@ -256,11 +283,7 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, erro
 			},
 			Till:  time.Now().UTC().Add(24 * time.Hour),
 			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
+			EType: c.cred.SupportedETypes(),
 		},
 	}
 
@@ -279,8 +302,9 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, erro
 // PA-ETYPE-INFO2 structure embedded in a KRBError's EData.
 // Falls back to AES-256 with the default AD salt if no EData is present.
 func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, string, []byte) {
-	default_salt := c.realm + c.username
-	default_etype := messages.ETypeAES256CTSHMACSHA196
+	preferred := c.cred.SupportedETypes()
+	default_salt := c.cred.DefaultSalt()
+	default_etype := preferred[0]
 
 	if len(krb_err.EData) == 0 {
 		return default_etype, default_salt, nil
@@ -294,7 +318,7 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 			if pa.PADataType == messages.PAETypeInfo2 {
 				var info messages.ETypeInfo2
 				if _, err := info.Unmarshal(pa.PADataValue); err == nil && len(info) > 0 {
-					return pickBestEType(info, default_salt)
+					return pickBestEType(info, preferred, default_salt)
 				}
 			}
 		}
@@ -303,20 +327,17 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 	// Try to parse EData directly as ETYPE-INFO2.
 	var info messages.ETypeInfo2
 	if _, err := info.Unmarshal(krb_err.EData); err == nil && len(info) > 0 {
-		return pickBestEType(info, default_salt)
+		return pickBestEType(info, preferred, default_salt)
 	}
 
 	return default_etype, default_salt, nil
 }
 
-// pickBestEType selects the strongest supported etype from an ETypeInfo2 list.
-func pickBestEType(info messages.ETypeInfo2, default_salt string) (int, string, []byte) {
-	// Preference order: AES256 > AES128 > RC4.
-	preferred := []int{
-		messages.ETypeAES256CTSHMACSHA196,
-		messages.ETypeAES128CTSHMACSHA196,
-		messages.ETypeRC4HMAC,
-	}
+// pickBestEType selects, from an ETYPE-INFO2 list, the strongest etype the
+// credential can actually satisfy (preferred is the credential's supported set
+// in strength order). This prevents choosing, say, AES when only an NT hash is
+// held.
+func pickBestEType(info messages.ETypeInfo2, preferred []int, default_salt string) (int, string, []byte) {
 	for _, want := range preferred {
 		for _, entry := range info {
 			if entry.EType == want {
@@ -328,20 +349,17 @@ func pickBestEType(info messages.ETypeInfo2, default_salt string) (int, string, 
 			}
 		}
 	}
-	// Fallback to first entry.
-	e := info[0]
-	if e.Salt == "" {
-		e.Salt = default_salt
-	}
-	return e.EType, e.Salt, e.S2KParams
+	// No advertised etype is supported by the credential; fall back to the
+	// credential's strongest etype with the default salt.
+	return preferred[0], default_salt, nil
 }
 
 // sendASReqWithPreauth builds and sends an AS-REQ with PA-ENC-TIMESTAMP.
 // Returns the raw KDC response bytes and the nonce placed in the request.
 func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params []byte) ([]byte, int, error) {
-	key, err := kerbcrypto.StringToKey(etype, c.password, salt, s2k_params)
+	key, err := c.cred.Key(etype, salt, s2k_params)
 	if err != nil {
-		return nil, 0, fmt.Errorf("kerberos: StringToKey: %w", err)
+		return nil, 0, fmt.Errorf("kerberos: derive key: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -396,9 +414,9 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 		return fmt.Errorf("kerberos: parse AS-REP: %w", err)
 	}
 
-	key, err := kerbcrypto.StringToKey(etype, c.password, salt, s2k_params)
+	key, err := c.cred.Key(etype, salt, s2k_params)
 	if err != nil {
-		return fmt.Errorf("kerberos: StringToKey for AS-REP decrypt: %w", err)
+		return fmt.Errorf("kerberos: derive key for AS-REP decrypt: %w", err)
 	}
 
 	enc_plain, err := kerbcrypto.Decrypt(etype, key, kerbcrypto.KeyUsageASRepEncPart, as_rep.EncPart.Cipher)
@@ -422,6 +440,7 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 	c.tgtTicketRaw = as_rep.TicketRaw
 	c.sessionKey = enc_as_rep.Key.KeyValue
 	c.sessionEType = enc_as_rep.Key.KeyType
+	c.tgtEnc = enc_as_rep
 	c.hasTGT = true
 	return nil
 }
