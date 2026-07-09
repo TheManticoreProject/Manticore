@@ -75,6 +75,17 @@ func StringToKey(etype int, password, salt string, params []byte) ([]byte, error
 		}
 		return aesStringToKey(password, salt, iter_count, 32)
 
+	case iana.ETypeAES128CTSHMACSHA256, iana.ETypeAES256CTSHMACSHA384:
+		p, _ := aes2ParamsFor(etype)
+		iter_count := aes8009DefaultIterCount
+		if len(params) >= 4 {
+			iter_count = int(params[0])<<24 | int(params[1])<<16 | int(params[2])<<8 | int(params[3])
+			if iter_count <= 0 {
+				iter_count = aes8009DefaultIterCount
+			}
+		}
+		return aes2StringToKey(password, salt, iter_count, p)
+
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedEType, etype)
 	}
@@ -88,6 +99,8 @@ func Encrypt(etype int, key []byte, usage int, plaintext []byte) ([]byte, error)
 		return rc4HMACEncrypt(key, usage, plaintext)
 	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196:
 		return aesEncrypt(key, etype, usage, plaintext)
+	case iana.ETypeAES128CTSHMACSHA256, iana.ETypeAES256CTSHMACSHA384:
+		return aes2Encrypt(key, etype, usage, plaintext)
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedEType, etype)
 	}
@@ -101,6 +114,8 @@ func Decrypt(etype int, key []byte, usage int, ciphertext []byte) ([]byte, error
 		return rc4HMACDecrypt(key, usage, ciphertext)
 	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196:
 		return aesDecrypt(key, etype, usage, ciphertext)
+	case iana.ETypeAES128CTSHMACSHA256, iana.ETypeAES256CTSHMACSHA384:
+		return aes2Decrypt(key, etype, usage, ciphertext)
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedEType, etype)
 	}
@@ -114,6 +129,10 @@ func KeyLen(etype int) int {
 	case iana.ETypeAES128CTSHMACSHA196:
 		return 16
 	case iana.ETypeAES256CTSHMACSHA196:
+		return 32
+	case iana.ETypeAES128CTSHMACSHA256:
+		return 16
+	case iana.ETypeAES256CTSHMACSHA384:
 		return 32
 	default:
 		return 0
