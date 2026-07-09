@@ -47,6 +47,27 @@ func VerifyChecksum(cksumType int, key []byte, usage int, data, want []byte) boo
 	return hmac.Equal(got, want)
 }
 
+// ChecksumTypeForEType returns the checksum type paired with an encryption type
+// (RFC 3961/3962/8009/4757), i.e. the checksum an authenticator or PA-FOR-USER
+// should use when keyed with a key of that etype. Reports false for unsupported
+// etypes.
+func ChecksumTypeForEType(etype int) (int, bool) {
+	switch etype {
+	case iana.ETypeRC4HMAC:
+		return iana.CksumTypeHMACMD5, true
+	case iana.ETypeAES128CTSHMACSHA196:
+		return iana.CksumTypeHMACSHA196AES128, true
+	case iana.ETypeAES256CTSHMACSHA196:
+		return iana.CksumTypeHMACSHA196AES256, true
+	case iana.ETypeAES128CTSHMACSHA256:
+		return iana.CksumTypeHMACSHA256128AES128, true
+	case iana.ETypeAES256CTSHMACSHA384:
+		return iana.CksumTypeHMACSHA384192AES256, true
+	default:
+		return 0, false
+	}
+}
+
 // aesSHA1Checksum implements the RFC 3961 simplified-profile checksum used by
 // the AES-SHA1 enctypes (cksumtype 15/16): Kc = DK(base-key, usage | 0x99),
 // then HMAC-SHA1(Kc, data) truncated to 96 bits (12 bytes). keyLen is the AES

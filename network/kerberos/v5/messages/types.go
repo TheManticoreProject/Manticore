@@ -102,6 +102,14 @@ func realmExplicit(tag int, s string) asn1.RawValue {
 	return asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: tag, IsCompound: true, Bytes: gsBytes}
 }
 
+// ExplicitGeneralString returns s encoded as an ASN.1 [tag] EXPLICIT
+// { GeneralString } context element. Exported for other packages (e.g. the
+// MS-SFU PA-FOR-USER builder) that must emit GeneralString fields the standard
+// library would otherwise encode as PrintableString.
+func ExplicitGeneralString(tag int, s string) asn1.RawValue {
+	return realmExplicit(tag, s)
+}
+
 // PrincipalNameMarshal is the wire representation of PrincipalName for marshaling.
 // It uses []asn1.RawValue (GeneralString) instead of []string, which Go's asn1
 // would incorrectly encode as PrintableString.
