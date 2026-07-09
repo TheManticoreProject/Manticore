@@ -5,6 +5,31 @@ import (
 	"time"
 )
 
+// NewKerberosFlags builds a KerberosFlags/KDCOptions/APOptions/TicketFlags
+// BIT STRING from the given set bit positions. Per RFC 4120 Section 5.2.8 a
+// KerberosFlags value is always at least 32 bits, sent in full (no DER
+// trailing-zero truncation), with bit 0 the most-significant bit of the first
+// octet. This helper guarantees that 32-bit, MSB-first encoding.
+func NewKerberosFlags(bits ...int) asn1.BitString {
+	b := make([]byte, 4)
+	for _, pos := range bits {
+		if pos < 0 || pos > 31 {
+			continue
+		}
+		b[pos/8] |= 1 << (7 - uint(pos%8))
+	}
+	return asn1.BitString{Bytes: b, BitLength: 32}
+}
+
+// normalizeTime converts t to the form required for a KerberosTime
+// (GeneralizedTime): UTC with no fractional seconds. Go's encoding/asn1 already
+// drops sub-second precision when marshaling GeneralizedTime, but it honors a
+// non-UTC location by emitting a numeric offset (e.g. "-0400") instead of the
+// mandatory "Z"; forcing UTC here prevents KDCs from rejecting the timestamp.
+func normalizeTime(t time.Time) time.Time {
+	return t.UTC().Truncate(time.Second)
+}
+
 // KerberosTime represents a Kerberos timestamp (GeneralizedTime without fractional seconds).
 // It is stored as a standard Go time.Time value.
 type KerberosTime = time.Time
@@ -77,6 +102,14 @@ func realmExplicit(tag int, s string) asn1.RawValue {
 	return asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: tag, IsCompound: true, Bytes: gsBytes}
 }
 
+// ExplicitGeneralString returns s encoded as an ASN.1 [tag] EXPLICIT
+// { GeneralString } context element. Exported for other packages (e.g. the
+// MS-SFU PA-FOR-USER builder) that must emit GeneralString fields the standard
+// library would otherwise encode as PrintableString.
+func ExplicitGeneralString(tag int, s string) asn1.RawValue {
+	return realmExplicit(tag, s)
+}
+
 // PrincipalNameMarshal is the wire representation of PrincipalName for marshaling.
 // It uses []asn1.RawValue (GeneralString) instead of []string, which Go's asn1
 // would incorrectly encode as PrintableString.
@@ -108,13 +141,27 @@ func wrapApplication(tag int, seqBytes []byte) ([]byte, error) {
 // unwrapApplication unwraps an ASN.1 APPLICATION tag from data and verifies the tag.
 // Returns the inner bytes and the number of bytes consumed from data.
 func unwrapApplication(data []byte, expected_tag int) (inner []byte, consumed int, err error) {
+	return unwrapApplicationOneOf(data, expected_tag)
+}
+
+// unwrapApplicationOneOf unwraps an ASN.1 APPLICATION tag from data, accepting
+// any of the given tags. It is used where interop leniency is required — most
+// notably KDC-REP enc-parts, which some KDCs tag as APPLICATION[26]
+// (EncTGSRepPart) even inside an AS-REP where RFC 4120 specifies
+// APPLICATION[25]. Returns the inner bytes and the number of bytes consumed.
+func unwrapApplicationOneOf(data []byte, expected_tags ...int) (inner []byte, consumed int, err error) {
 	var raw asn1.RawValue
 	rest, err := asn1.Unmarshal(data, &raw)
 	if err != nil {
 		return nil, 0, err
 	}
-	if raw.Class != asn1.ClassApplication || raw.Tag != expected_tag {
+	if raw.Class != asn1.ClassApplication {
 		return nil, 0, asn1.StructuralError{Msg: "wrong APPLICATION tag"}
 	}
-	return raw.Bytes, len(data) - len(rest), nil
+	for _, t := range expected_tags {
+		if raw.Tag == t {
+			return raw.Bytes, len(data) - len(rest), nil
+		}
+	}
+	return nil, 0, asn1.StructuralError{Msg: "wrong APPLICATION tag"}
 }

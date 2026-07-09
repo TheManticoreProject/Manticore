@@ -68,6 +68,9 @@ type Authenticator struct {
 	CRealm string
 	// CName is the client's principal name.
 	CName PrincipalName
+	// Cksum is an optional checksum over application data. The GSS-API mechanism
+	// (RFC 1964) uses it to carry the 0x8003 channel-binding/flags structure.
+	Cksum *Checksum
 	// CUSec is the microseconds component of CTime.
 	CUSec int
 	// CTime is the client's current time (must match server time within clock skew).
@@ -87,6 +90,9 @@ func (a *Authenticator) Marshal() ([]byte, error) {
 		CUSec:     a.CUSec,
 		CTime:     a.CTime,
 		SeqNumber: a.SeqNumber,
+	}
+	if a.Cksum != nil {
+		inner.Cksum = *a.Cksum
 	}
 	if a.SubKey != nil {
 		inner.SubKey = *a.SubKey
@@ -118,6 +124,11 @@ func (a *Authenticator) Unmarshal(data []byte) (int, error) {
 	a.CUSec = inner.CUSec
 	a.CTime = inner.CTime
 	a.SeqNumber = inner.SeqNumber
+	// Cksum is optional; only set if a checksum type is present.
+	if inner.Cksum.CKSumType != 0 || len(inner.Cksum.Checksum) != 0 {
+		ck := inner.Cksum
+		a.Cksum = &ck
+	}
 	// SubKey is optional; only set if KeyType is non-zero
 	if inner.SubKey.KeyType != 0 {
 		sk := inner.SubKey

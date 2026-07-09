@@ -56,7 +56,9 @@ type EncASRepPart struct {
 // Unmarshal decodes an EncASRepPart from an ASN.1 APPLICATION[25] wrapped SEQUENCE.
 // Returns the number of bytes consumed from data.
 func (e *EncASRepPart) Unmarshal(data []byte) (int, error) {
-	inner_bytes, consumed, err := unwrapApplication(data, 25)
+	// RFC 4120 specifies APPLICATION[25] here, but some KDCs tag an AS-REP
+	// enc-part as APPLICATION[26] (EncTGSRepPart); accept both for interop.
+	inner_bytes, consumed, err := unwrapApplicationOneOf(data, 25, 26)
 	if err != nil {
 		return 0, fmt.Errorf("encasreppart: %w", err)
 	}
@@ -105,7 +107,9 @@ type EncTGSRepPart struct {
 // Unmarshal decodes an EncTGSRepPart from an ASN.1 APPLICATION[26] wrapped SEQUENCE.
 // Returns the number of bytes consumed from data.
 func (e *EncTGSRepPart) Unmarshal(data []byte) (int, error) {
-	inner_bytes, consumed, err := unwrapApplication(data, 26)
+	// RFC 4120 specifies APPLICATION[26]; accept APPLICATION[25] as well for
+	// symmetry with lenient KDC enc-part tagging.
+	inner_bytes, consumed, err := unwrapApplicationOneOf(data, 26, 25)
 	if err != nil {
 		return 0, fmt.Errorf("enctgsreppart: %w", err)
 	}

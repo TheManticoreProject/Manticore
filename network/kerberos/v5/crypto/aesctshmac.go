@@ -3,12 +3,12 @@ package kerbcrypto
 import (
 	"crypto/aes"
 	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/sha1"
 	"encoding/binary"
 
 	"github.com/TheManticoreProject/Manticore/crypto/aes/cts"
 	"github.com/TheManticoreProject/Manticore/crypto/nfold"
-	"golang.org/x/crypto/pbkdf2"
 )
 
 // aesDefaultIterCount is the default PBKDF2 iteration count for AES string-to-key
@@ -58,8 +58,11 @@ func usageConstant(usage int, purpose byte) []byte {
 // then applies the RFC 3961 random-to-key function.
 // Per RFC 3962 Section 4.
 func aesStringToKey(password, salt string, iter_count, key_len int) ([]byte, error) {
-	// PBKDF2-HMAC-SHA1
-	tkey := pbkdf2.Key([]byte(password), []byte(salt), iter_count, key_len, sha1.New)
+	// PBKDF2-HMAC-SHA1 (stdlib crypto/pbkdf2, Go 1.24+)
+	tkey, err := pbkdf2.Key(sha1.New, password, []byte(salt), iter_count, key_len)
+	if err != nil {
+		return nil, err
+	}
 	// Apply DK with the constant "kerberos"
 	dk := deriveKey(tkey, []byte("kerberos"), key_len)
 	return dk, nil
