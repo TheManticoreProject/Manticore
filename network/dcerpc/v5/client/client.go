@@ -182,8 +182,16 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		c.negotiatedSyntax = negotiated
 		c.sendFragMax = negotiateSendMax(c.transport.MaxXmitFrag(), ack.MaxXmitFrag, ack.MaxRecvFrag)
 		if c.authConfigured() {
-			if err := c.completeAuth(respFrag); err != nil {
-				return fmt.Errorf("dcerpc bind: ntlm auth: %w", err)
+			continuation, err := c.completeAuth(respFrag)
+			if err != nil {
+				return fmt.Errorf("dcerpc bind: auth: %w", err)
+			}
+			// Kerberos GSS_C_DCE_STYLE requires a third leg: the initiator's AP-REP,
+			// carried in an alter_context PDU, before the context is usable.
+			if len(continuation) > 0 {
+				if err := c.sendAuthContinuation(bind.ContextList, continuation); err != nil {
+					return fmt.Errorf("dcerpc bind: auth continuation: %w", err)
+				}
 			}
 		}
 		c.bound = true

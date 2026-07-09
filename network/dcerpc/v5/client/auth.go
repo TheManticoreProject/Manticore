@@ -161,30 +161,44 @@ func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authentic
 // For NTLM it parses the server's CHALLENGE from the bind_ack's auth_value, sends an auth3
 // carrying the AUTHENTICATE token (to which the server sends no reply), and builds the
 // per-message security context from the derived session key.
-func (c *Client) completeAuth(bindAckFrag []byte) error {
+//
+// It returns an optional continuation token: under Kerberos GSS_C_DCE_STYLE the
+// handshake has a third leg (the initiator's AP-REP), which the caller sends in
+// an alter_context PDU. NTLM and single-leg providers return a nil continuation.
+func (c *Client) completeAuth(bindAckFrag []byte) ([]byte, error) {
 	if c.authType != pdu.AuthTypeNTLMSSP {
-		return nil
+		// A single-leg provider whose context needs the bind_ack's auth_value to
+		// finish establishing (Kerberos mutual auth: verify the KRB_AP_REP and adopt
+		// any acceptor subkey). Providers without this need (Netlogon) are unchanged.
+		if bc, ok := c.sec.(bindCompleter); ok {
+			_, authValue, err := pdu.ExtractAuthVerifier(bindAckFrag)
+			if err != nil {
+				return nil, fmt.Errorf("read bind_ack auth verifier: %w", err)
+			}
+			return bc.CompleteBind(authValue)
+		}
+		return nil, nil
 	}
 	_, challengeBytes, err := pdu.ExtractAuthVerifier(bindAckFrag)
 	if err != nil {
-		return fmt.Errorf("read challenge: %w", err)
+		return nil, fmt.Errorf("read challenge: %w", err)
 	}
 	if len(challengeBytes) == 0 {
-		return fmt.Errorf("server returned no NTLM challenge in bind_ack")
+		return nil, fmt.Errorf("server returned no NTLM challenge in bind_ack")
 	}
 
 	var chal challenge.ChallengeMessage
 	if _, err := chal.Unmarshal(challengeBytes); err != nil {
-		return fmt.Errorf("parse challenge: %w", err)
+		return nil, fmt.Errorf("parse challenge: %w", err)
 	}
 
 	auth, err := c.buildAuthenticate(&chal)
 	if err != nil {
-		return fmt.Errorf("build authenticate: %w", err)
+		return nil, fmt.Errorf("build authenticate: %w", err)
 	}
 	authBytes, err := auth.Marshal()
 	if err != nil {
-		return fmt.Errorf("marshal authenticate: %w", err)
+		return nil, fmt.Errorf("marshal authenticate: %w", err)
 	}
 
 	a3 := &pdu.Auth3{
@@ -194,22 +208,72 @@ func (c *Client) completeAuth(bindAckFrag []byte) error {
 	a3.Header = pdu.NewHeader(pdu.PacketTypeAuth3, pdu.PFCFirstFrag|pdu.PFCLastFrag, c.callID)
 	raw, err := a3.Marshal()
 	if err != nil {
-		return fmt.Errorf("marshal auth3: %w", err)
+		return nil, fmt.Errorf("marshal auth3: %w", err)
 	}
 	if err := c.transport.Send(raw); err != nil {
-		return fmt.Errorf("send auth3: %w", err)
+		return nil, fmt.Errorf("send auth3: %w", err)
 	}
 
 	if len(auth.SessionKey) == 0 {
-		return fmt.Errorf("no session key derived (NTLMv1 is not supported for RPC auth)")
+		return nil, fmt.Errorf("no session key derived (NTLMv1 is not supported for RPC auth)")
 	}
 	sec, err := security.NewContext(auth.SessionKey, auth.NegotiateFlags)
 	if err != nil {
-		return fmt.Errorf("init security context: %w", err)
+		return nil, fmt.Errorf("init security context: %w", err)
 	}
 	c.sec = &ntlmSecurityContext{ctx: sec}
 	c.sessionKey = append([]byte(nil), auth.SessionKey...)
-	return nil
+	return nil, nil
+}
+
+// sendAuthContinuation sends the DCE-style third-leg continuation token (the
+// initiator's KRB_AP_REP, wrapped in a SPNEGO NegTokenResp) in an alter_context
+// PDU carrying the same presentation contexts, and consumes the
+// alter_context_response that completes context establishment. Windows negotiates
+// the Kerberos DCE-style third leg via alter_context (which the server answers),
+// not auth3.
+func (c *Client) sendAuthContinuation(contexts []pdu.ContextElement, authValue []byte) error {
+	alter := &pdu.Bind{
+		MaxXmitFrag:  c.transport.MaxXmitFrag(),
+		MaxRecvFrag:  c.transport.MaxRecvFrag(),
+		AssocGroupID: 0,
+		ContextList:  contexts,
+		SecTrailer:   pdu.SecTrailer{AuthType: c.authType, AuthLevel: c.authLevel, AuthContextID: c.authContextID},
+		AuthValue:    authValue,
+	}
+	alter.Header = pdu.NewHeader(pdu.PacketTypeAlterContext, pdu.PFCFirstFrag|pdu.PFCLastFrag, c.callID)
+	raw, err := alter.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal alter_context: %w", err)
+	}
+	// Bind.Marshal forces PTYPE=bind; an alter_context PDU is wire-identical to a
+	// bind but with PTYPE=alter_context (offset 2 of the common header).
+	if len(raw) > 2 {
+		raw[2] = byte(pdu.PacketTypeAlterContext)
+	}
+	if err := c.transport.Send(raw); err != nil {
+		return fmt.Errorf("send alter_context: %w", err)
+	}
+	respFrag, err := c.readFragment(&fragmentReader{t: c.transport})
+	if err != nil {
+		return fmt.Errorf("recv alter_context_response: %w", err)
+	}
+	hdr, err := pdu.PeekHeader(respFrag)
+	if err != nil {
+		return fmt.Errorf("alter_context_response: %w", err)
+	}
+	switch hdr.PacketType {
+	case pdu.PacketTypeAlterContextResp:
+		return nil
+	case pdu.PacketTypeBindNak:
+		var nak pdu.BindNak
+		if _, err := nak.Unmarshal(respFrag); err != nil {
+			return fmt.Errorf("parse bind_nak: %w", err)
+		}
+		return fmt.Errorf("alter_context rejected: reject_reason=%d", nak.RejectReason)
+	default:
+		return fmt.Errorf("unexpected alter_context response PDU type %s", hdr.PacketType)
+	}
 }
 
 // marshalProtectedRequest serializes a request PDU with a per-PDU auth verifier. The stub

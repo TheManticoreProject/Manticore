@@ -1,6 +1,6 @@
 // Package ccache reads and writes the MIT Kerberos FILE credential cache
 // (KRB5CCNAME) in format version 4, the interchange format used by Linux
-// Kerberos tooling and Impacket. Version 4 is big-endian throughout and is
+// Kerberos tooling. Version 4 is big-endian throughout and is
 // documented at
 // https://web.mit.edu/kerberos/krb5-latest/doc/formats/ccache_file_format.html.
 //

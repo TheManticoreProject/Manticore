@@ -26,6 +26,11 @@ var (
 	// iso.org.dod.internet.private.enterprise.Microsoft.security.mechanisms.Kerberos
 	// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/211417c4-11ef-46c0-a8fb-f178a51c2088
 	KerberosOID = asn1.ObjectIdentifier{1, 2, 840, 113554, 1, 2, 2}
+
+	// MSKerberosOID: 1.2.840.48018.1.2.2 — Microsoft's legacy "MS KRB5" mechanism
+	// OID. Windows advertises this in the SPNEGO mechTypes for Kerberos, and it is
+	// what Windows RPC clients send, so it is used for the RPC Negotiate bind.
+	MSKerberosOID = asn1.ObjectIdentifier{1, 2, 840, 48018, 1, 2, 2}
 )
 
 // OIDtoString converts an OID to a human-readable string representation
