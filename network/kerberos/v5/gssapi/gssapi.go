@@ -116,6 +116,11 @@ type SecContext struct {
 	// ctime/cusec are retained to match the AP-REP echo (mutual authentication).
 	ctime time.Time
 	cusec int
+	// sendSeq is the running sequence number for outgoing per-message tokens.
+	sendSeq uint64
+	// acceptorSubkey records that the base key is an acceptor-asserted subkey,
+	// so per-message tokens must set the AcceptorSubkey flag.
+	acceptorSubkey bool
 }
 
 // InitOptions configures InitSecContext.
@@ -220,6 +225,7 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 		SeqNumber:    seqNum,
 		ctime:        now.Truncate(time.Second),
 		cusec:        cusec,
+		sendSeq:      uint64(seqNum),
 	}
 	return token, ctx, nil
 }
@@ -256,6 +262,7 @@ func (ctx *SecContext) AcceptAPRep(token []byte) error {
 	if enc.SubKey != nil {
 		ctx.SubKey = enc.SubKey.KeyValue
 		ctx.SubKeyEType = enc.SubKey.KeyType
+		ctx.acceptorSubkey = true
 	}
 	return nil
 }
