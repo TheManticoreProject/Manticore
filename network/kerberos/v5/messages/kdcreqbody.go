@@ -91,6 +91,15 @@ func encodeKDCReqBodyForTGS(b KDCReqBody) ([]byte, error) {
 	return asn1.Marshal(asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: content})
 }
 
+// EncodeKDCReqBody marshals a KDC-REQ-BODY to its bare SEQUENCE TLV (the DER of
+// the "KDC-REQ-BODY" type, without the [4]/[2] context wrapper it carries inside
+// a KDC-REQ or KrbFastReq). It is exported for FAST (RFC 6113), whose
+// req-checksum is computed over exactly these bytes. Additional-tickets, when
+// present, are spliced in with their correct APPLICATION[1] encoding.
+func EncodeKDCReqBody(b KDCReqBody) ([]byte, error) {
+	return encodeKDCReqBodyForTGS(b)
+}
+
 // KDCReqBody is the body of a KDC request (AS-REQ or TGS-REQ),
 // as defined in RFC 4120 Section 5.4.1.
 type KDCReqBody struct {
