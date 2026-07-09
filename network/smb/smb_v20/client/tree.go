@@ -40,6 +40,15 @@ func (c *Client) TreeConnect(shareName string) error {
 	treeId := response.Header.TreeId
 	c.Session.TreeId = treeId
 
+	// An SMB 3.x share may require encryption; when the server sets the
+	// SMB2_SHAREFLAG_ENCRYPT_DATA flag, encrypt all subsequent traffic on this
+	// session.
+	if isSMB3Dialect(c.Connection.Dialect) &&
+		treeConnectResponse.ShareFlags&commands.SMB2_SHAREFLAG_ENCRYPT_DATA != 0 &&
+		len(c.Session.EncryptionKey) > 0 {
+		c.Session.EncryptData = true
+	}
+
 	tc := &TreeConnect{
 		Connection: c.Connection,
 		Session:    c.Session,

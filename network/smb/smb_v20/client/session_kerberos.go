@@ -122,6 +122,15 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 		return err
 	}
 
+	// Capture the exact wire bytes of this SESSION_SETUP request/response for the
+	// SMB 3.1.1 pre-authentication integrity hash. The per-session hash starts
+	// from the connection hash (after NEGOTIATE) and folds in the request that
+	// carried the AP-REQ; the final SUCCESS response is excluded from the hash
+	// used to derive keys.
+	sessionHash := append([]byte(nil), c.Connection.PreauthIntegrityHashValue...)
+	sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+	firstRespBytes := append([]byte(nil), c.lastRecvBytes...)
+
 	status := statusFromResponse(resp)
 	// STATUS_MORE_PROCESSING_REQUIRED can precede the AP-REP on some servers; both
 	// it and STATUS_SUCCESS carry the response token we need to verify.
@@ -173,9 +182,17 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	}
 	c.Session = session
 
+	// finalRespBytes holds the wire bytes of the SESSION_SETUP response that
+	// completed the exchange; for the SMB 3.x dialects the server signs it, and we
+	// verify that signature below to confirm the derived signing key.
+	finalRespBytes := firstRespBytes
+
 	// If the server still requires another leg (unusual for AD Kerberos), send the
 	// final NegTokenResp confirming completion before the session is usable.
 	if status == ntStatusMoreProcessingRequired {
+		// Two-leg: the interim response and the second request also feed the hash.
+		sessionHash = preauthUpdate(sessionHash, firstRespBytes)
+
 		req2 := commands.NewSessionSetupRequest()
 		req2.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 		req2.SecurityBuffer = []byte{}
@@ -188,9 +205,31 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 			c.Session = nil
 			return err
 		}
+		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+		finalRespBytes = append([]byte(nil), c.lastRecvBytes...)
 		if st := statusFromResponse(resp2); st != 0x00000000 {
 			c.Session = nil
 			return fmt.Errorf("kerberos session setup failed: %s", formatNTStatus(st))
+		}
+	}
+
+	// SMB 3.x: derive the signing/encryption/application keys from the session key
+	// via the SP800-108 KDF, using the per-session pre-auth hash as the 3.1.1 KDF
+	// context. For the 2.x dialects the session key remains the signing key.
+	if isSMB3Dialect(c.Connection.Dialect) {
+		session.PreauthHash = sessionHash
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash)
+
+		// The server signs the final SESSION_SETUP response with the derived signing
+		// key; verify it to confirm the key hierarchy is correct.
+		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, session.SigningKey, finalRespBytes) {
+			c.Session = nil
+			return fmt.Errorf("kerberos session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
+		}
+
+		// Honour a server that requires encryption for the whole session.
+		if setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
+			session.EncryptData = true
 		}
 	}
 

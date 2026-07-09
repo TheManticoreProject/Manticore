@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 )
@@ -19,8 +20,14 @@ func (c *Client) newRequest(command command_interface.CommandInterface) *message
 	msg.Header.MessageId = c.Connection.MessageId
 	c.Connection.MessageId++
 
-	// SMB 2.0.2: CreditCharge MUST be 0; request a single credit per message.
-	msg.Header.CreditCharge = 0
+	// The SMB 2.0.2 dialect requires CreditCharge to be 0. From SMB 2.1 onward the
+	// large-MTU credit model applies and a small (single-block) request charges 1
+	// credit; the client requests a single credit back per message.
+	if c.Connection.Dialect >= dialects.SMB2_DIALECT_2_1_0 {
+		msg.Header.CreditCharge = 1
+	} else {
+		msg.Header.CreditCharge = 0
+	}
 	msg.Header.Credit = 1
 
 	if c.Session != nil {
@@ -45,12 +52,27 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		return nil, fmt.Errorf("failed to marshal %s: %w", label, err)
 	}
 
-	// Sign the request in place when signing is active for the session.
-	if c.Session != nil && c.Session.SigningActive {
-		signMessage(c.Session.SigningKey, marshalled)
+	// When the session encrypts data, the message is wrapped in an SMB2
+	// TRANSFORM_HEADER instead of being signed — the AEAD tag supersedes the
+	// per-message signature (MS-SMB2 3.1.4.4). Otherwise sign the request in place
+	// when signing is active, choosing the algorithm the negotiated dialect
+	// mandates (AES-128-CMAC for SMB 3.x, HMAC-SHA256 for SMB 2.x).
+	encrypt := c.Session != nil && c.Session.EncryptData
+	if !encrypt && c.Session != nil && c.Session.SigningActive {
+		signMessageForDialect(c.Connection.Dialect, c.Session.SigningKey, marshalled)
 	}
 
-	if _, err = c.Transport.Send(marshalled); err != nil {
+	// Preserve the plaintext wire bytes of the request for the pre-auth hash.
+	c.lastSentBytes = append([]byte(nil), marshalled...)
+
+	wire := marshalled
+	if encrypt {
+		if wire, err = c.encryptMessage(marshalled); err != nil {
+			return nil, fmt.Errorf("failed to encrypt %s: %w", label, err)
+		}
+	}
+
+	if _, err = c.Transport.Send(wire); err != nil {
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
 
@@ -65,6 +87,18 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		raw, err = c.Transport.Receive()
 		if err != nil {
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
+		}
+
+		// A response wrapped in an SMB2 TRANSFORM_HEADER is decrypted first; the
+		// AEAD tag authenticates it, so no separate signature check is needed.
+		wasEncrypted := false
+		if isTransformHeader(raw) {
+			plaintext, derr := c.decryptMessage(raw)
+			if derr != nil {
+				return nil, fmt.Errorf("%s: %w", label, derr)
+			}
+			raw = plaintext
+			wasEncrypted = true
 		}
 
 		response = message.NewMessage()
@@ -92,8 +126,8 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// conditional on the SMB2_FLAGS_SIGNED bit, so a response that simply
 		// arrives unsigned (zeroed signature) fails verification and is
 		// rejected rather than silently accepted.
-		if c.Session != nil && c.Session.SigningActive && signatureRequired(response) {
-			if !verifySignature(c.Session.SigningKey, raw) {
+		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(response) {
+			if !verifySignatureForDialect(c.Connection.Dialect, c.Session.SigningKey, raw) {
 				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
 			}
 		}
@@ -118,6 +152,9 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		c.setPendingAsync(msg.Header.MessageId, uint64(response.Header.GetAsyncId()))
 	}
 	c.clearPendingAsync()
+
+	// Retain the plaintext wire bytes of the final response for the pre-auth hash.
+	c.lastRecvBytes = append([]byte(nil), raw...)
 
 	// The response command code must match the request's; otherwise the server
 	// answered with a different command than was asked, indicating a corrupt or
