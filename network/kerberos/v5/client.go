@@ -43,6 +43,21 @@ type KerberosClient struct {
 	// stETypes overrides the etype list requested in the TGS-REQ (the service
 	// ticket's session-key etype). nil requests AES256, AES128, then RC4.
 	stETypes []int
+
+	// preloadedTGS holds service tickets supplied out-of-band (a forged silver
+	// ticket, or a captured service ticket) keyed by normalized SPN. When GetTGS
+	// is asked for one of these SPNs it returns the preloaded ticket instead of
+	// contacting the KDC — enabling silver-ticket use with no TGT.
+	preloadedTGS map[string]preloadedServiceTicket
+}
+
+// preloadedServiceTicket is a service ticket the client will hand back from
+// GetTGS without a KDC round-trip.
+type preloadedServiceTicket struct {
+	ticket       messages.Ticket
+	ticketRaw    []byte
+	sessionKey   []byte
+	sessionEType int
 }
 
 // PreferRC4ServiceTicket makes GetTGS request an RC4-HMAC service ticket (RC4
@@ -172,6 +187,11 @@ func pacRequestPA() messages.PAData {
 // AP-REQ via messages.APReq{TicketRaw: ...}.Marshal), and the associated
 // session key bytes.
 func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, []byte, []byte, error) {
+	// A preloaded (forged silver / captured) service ticket for this SPN is
+	// returned directly, with no TGT and no KDC round-trip.
+	if pt, ok := c.preloadedTGS[normalizeSPN(spn)]; ok {
+		return pt.ticket, pt.ticketRaw, pt.sessionKey, nil
+	}
 	if !c.hasTGT {
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}

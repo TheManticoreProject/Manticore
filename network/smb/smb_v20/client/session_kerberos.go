@@ -52,8 +52,43 @@ func (c *Client) SessionSetupKerberos(creds *credentials.Credentials, kdcHost, s
 		kc.WithPassword(creds.GetPassword())
 	}
 
-	mech := kerberos.NewSPNEGOMechanism(kc, spn)
+	return c.sessionSetupKerberosMechanism(kerberos.NewSPNEGOMechanism(kc, spn), creds)
+}
 
+// SessionSetupKerberosWithClient authenticates the session using a caller-built
+// native Kerberos client, targeting service principal spn. Unlike
+// SessionSetupKerberos it does not construct the client from a password/NT hash,
+// so it drives pass-the-ticket and forged-ticket flows: a golden TGT imported
+// with LoadTGT (the client then obtains the service ticket from the KDC) or a
+// forged silver service ticket wired in with LoadServiceTicket (used directly,
+// with no KDC round-trip). The client already carries the KDC host and identity.
+func (c *Client) SessionSetupKerberosWithClient(kc *kerberos.KerberosClient, spn string) error {
+	if kc == nil {
+		return fmt.Errorf("session setup requires a Kerberos client but none was provided")
+	}
+	if !c.Transport.IsConnected() {
+		return fmt.Errorf("transport is not connected")
+	}
+	if spn == "" {
+		spn = "cifs/" + c.Connection.Server.DNSComputerName
+	}
+	if spn == "cifs/" {
+		return fmt.Errorf("kerberos session setup requires a service principal name (or a known server name)")
+	}
+	// Synthesize the credential record the session stores from the client's own
+	// identity; the password is unused on the Kerberos path (the mechanism drives
+	// the exchange).
+	creds, err := credentials.NewCredentials(kc.Realm(), kc.Username(), "", "")
+	if err != nil {
+		return fmt.Errorf("kerberos session setup: %w", err)
+	}
+	return c.sessionSetupKerberosMechanism(kerberos.NewSPNEGOMechanism(kc, spn), creds)
+}
+
+// sessionSetupKerberosMechanism runs the single-leg SPNEGO/Kerberos SESSION_SETUP
+// exchange for a prepared mechanism, shared by SessionSetupKerberos (client built
+// from credentials) and SessionSetupKerberosWithClient (caller-supplied client).
+func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, creds *credentials.Credentials) error {
 	// SMB2 always uses Unicode for its strings.
 	authCtx := spnego.NewAuthContext(
 		spnego.AuthTypeKerberos,
