@@ -6,11 +6,11 @@ import (
 )
 
 // TestMakeMICRC4KnownAnswer checks the RFC 4757 §7.3 RC4-HMAC GSS MIC token
-// against a value produced by impacket's GSSAPI.GSS_GetMIC for the same inputs
-// (RC4 session key, DCE/RPC ept_lookup stub, sequence number 0). This pins the
-// exact key derivation (Ksign / Kseq), the MD5+HMAC-MD5 checksum, the RC4
-// sequence-number encryption, and the GSS InitialContextToken framing that
-// Windows RPC requires — validated live against a Windows DC.
+// against a known-answer vector for a fixed RC4 session key, DCE/RPC ept_lookup
+// stub, and sequence number 0. This pins the exact key derivation (Ksign /
+// Kseq), the MD5+HMAC-MD5 checksum, the RC4 sequence-number encryption, and the
+// GSS InitialContextToken framing that Windows RPC requires — validated live
+// against a Windows DC.
 func TestMakeMICRC4KnownAnswer(t *testing.T) {
 	key, _ := hex.DecodeString("a3cf582b95eeb0afef5ffdddd0483fa5")
 	stub, _ := hex.DecodeString("000000000000000000000000010000000000000000000000000000000000000000000000f4010000")

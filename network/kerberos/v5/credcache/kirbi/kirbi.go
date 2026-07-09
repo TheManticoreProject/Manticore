@@ -1,7 +1,7 @@
 // Package kirbi reads and writes ".kirbi" credential files. A .kirbi file is a
 // DER-encoded Kerberos KRB-CRED message (RFC 4120 Section 5.8.1) carrying one
-// or more tickets — the interchange format used by Rubeus and (via -k) Impacket
-// for pass-the-ticket. By convention the EncKrbCredPart is stored unencrypted
+// or more tickets — the interchange format used by Rubeus and Windows Kerberos
+// tooling for pass-the-ticket. By convention the EncKrbCredPart is stored unencrypted
 // with etype 0, so the session key and ticket metadata are in the clear.
 package kirbi
 

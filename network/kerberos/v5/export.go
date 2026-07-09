@@ -29,7 +29,7 @@ func (c *KerberosClient) tgtCredInfo() messages.KrbCredInfo {
 }
 
 // ExportTGTKirbi returns the current TGT as .kirbi (DER KRB-CRED) bytes, suitable
-// for pass-the-ticket with Rubeus/Impacket. GetTGT must have succeeded first.
+// for pass-the-ticket with Rubeus. GetTGT must have succeeded first.
 func (c *KerberosClient) ExportTGTKirbi() ([]byte, error) {
 	if !c.hasTGT {
 		return nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
