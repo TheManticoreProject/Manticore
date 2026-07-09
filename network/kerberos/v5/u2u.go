@@ -40,7 +40,7 @@ func (c *KerberosClient) buildU2UTGSReq(targetUser, targetRealm string, targetTG
 			),
 			Realm: realm,
 			SName: sname,
-			Till:  time.Now().UTC().Add(24 * time.Hour),
+			Till:  c.now().Add(24 * time.Hour),
 			Nonce: nonce,
 			EType: []int{
 				messages.ETypeAES256CTSHMACSHA196,
@@ -83,7 +83,7 @@ func (c *KerberosClient) GetTGSU2U(targetUser, targetRealm string, targetTGTRaw 
 	if err != nil {
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal U2U TGS-REQ: %w", err)
 	}
-	resp, err := kdcSend(c.kdcHost, defaultKDCPort, tgsReqBytes)
+	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
 		return messages.Ticket{}, nil, nil, err
 	}

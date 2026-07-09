@@ -3,7 +3,6 @@ package kerberos
 import (
 	"encoding/asn1"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -38,37 +37,18 @@ func (c *KerberosClient) WithKDCResolver(fn func(realm string) (string, error)) 
 	return c
 }
 
-// resolveKDCForRealm returns the KDC host to contact for the given realm during
-// referral chasing. Resolution order: explicit WithRealmKDC overrides, then the
-// client's own configured KDC for its home realm, then a custom resolver, then
-// DNS-SRV discovery. Nothing is hardcoded.
+// resolveKDCForRealm returns the primary KDC host to contact for the given realm
+// during referral chasing. Resolution order: explicit WithRealmKDC overrides,
+// then the client's own configured KDC for its home realm, then a custom
+// resolver, then DNS-SRV discovery (see endpointsForRealm). The full failover
+// list is available via endpointsForRealm; this helper exposes just the first
+// (highest-priority) host for callers that want a single name.
 func (c *KerberosClient) resolveKDCForRealm(realm string) (string, error) {
-	realm = strings.ToUpper(realm)
-
-	if host, ok := c.realmKDCs[realm]; ok && host != "" {
-		return host, nil
-	}
-	if realm == strings.ToUpper(c.realm) && c.kdcHost != "" {
-		return c.kdcHost, nil
-	}
-	if c.kdcResolver != nil {
-		return c.kdcResolver(realm)
-	}
-	return discoverKDCViaDNS(realm)
-}
-
-// discoverKDCViaDNS resolves a KDC host for realm via the RFC 4120 Section 7.2.3
-// DNS SRV record "_kerberos._tcp.<realm>". Only the target host is used; the
-// standard Kerberos port (88) is applied by the transport layer.
-func discoverKDCViaDNS(realm string) (string, error) {
-	_, addrs, err := net.LookupSRV("kerberos", "tcp", realm)
+	endpoints, err := c.endpointsForRealm(realm)
 	if err != nil {
-		return "", fmt.Errorf("kerberos: DNS SRV lookup _kerberos._tcp.%s: %w", realm, err)
+		return "", err
 	}
-	if len(addrs) == 0 {
-		return "", fmt.Errorf("kerberos: no _kerberos._tcp.%s SRV records", realm)
-	}
-	return strings.TrimSuffix(addrs[0].Target, "."), nil
+	return endpoints[0].host, nil
 }
 
 // chaseServiceTicket obtains a service ticket for sname, following any
@@ -89,9 +69,13 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	sessionKey := c.sessionKey
 	sessionEType := c.sessionEType
 
-	kdcHost := c.kdcHost
 	// bodyRealm is the KDC-REQ-BODY realm — the realm whose KDC we are asking.
 	bodyRealm := c.realm
+	// endpoints are the failover-ordered KDCs serving bodyRealm.
+	endpoints, err := c.endpointsForRealm(bodyRealm)
+	if err != nil {
+		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: resolve KDC for realm %q: %w", bodyRealm, err)
+	}
 
 	// Realms whose KDC we have already presented a TGT to, to detect referral
 	// cycles (an authority realm must not be revisited).
@@ -101,9 +85,11 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	// from visited so the follow-up referral toward the corrected realm is not
 	// itself mistaken for a cycle.
 	wrongRealmTried := map[string]bool{}
+	// skewRetried guards the single KRB_AP_ERR_SKEW retry.
+	skewRetried := false
 
 	for hop := 0; hop < maxReferralHops; hop++ {
-		rep, encRep, krbErr, err := c.tgsExchange(bodyRealm, kdcHost, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
+		rep, encRep, krbErr, err := c.tgsExchange(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
 		if err != nil {
 			return messages.Ticket{}, nil, nil, err
 		}
@@ -120,6 +106,12 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 					continue
 				}
 			}
+			// KRB_AP_ERR_SKEW: align our clock to the KDC's and retry the same hop
+			// once (RFC 4120 Section 5.9.1).
+			if krbErr.ErrorCode == messages.ErrSkew && !skewRetried && c.applyClockSkew(*krbErr) {
+				skewRetried = true
+				continue
+			}
 			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS error %d: %s", krbErr.ErrorCode, krbErr.EText)
 		}
 
@@ -133,7 +125,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 		if visited[nextRealm] {
 			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: cross-realm referral cycle detected at realm %q", nextRealm)
 		}
-		nextKDC, err := c.resolveKDCForRealm(nextRealm)
+		nextEndpoints, err := c.endpointsForRealm(nextRealm)
 		if err != nil {
 			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: resolve KDC for referral realm %q: %w", nextRealm, err)
 		}
@@ -141,7 +133,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 		// Advance to the next realm, presenting the referral TGT there.
 		visited[nextRealm] = true
 		bodyRealm = nextRealm
-		kdcHost = nextKDC
+		endpoints = nextEndpoints
 		tgt = rep.Ticket
 		tgtRaw = rep.TicketRaw
 		sessionKey = encRep.Key.KeyValue
@@ -151,13 +143,15 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: too many cross-realm referrals (>%d) chasing %s", maxReferralHops, strings.Join(sname.NameString, "/"))
 }
 
-// tgsExchange performs a single TGS-REQ/REP round-trip against kdcHost, using
-// bodyRealm as the KDC-REQ-BODY realm and presenting the supplied ticket-granting
-// ticket. It returns the parsed TGS-REP with its decrypted enc-part on success.
-// If the KDC answers with a KRB-ERROR it is returned as *messages.KRBError (with
-// a nil error) so the caller can react to WRONG_REALM.
+// tgsExchange performs a single TGS-REQ/REP round-trip against the given KDC
+// endpoints (failing over across them), using bodyRealm as the KDC-REQ-BODY
+// realm and presenting the supplied ticket-granting ticket. It returns the
+// parsed TGS-REP with its decrypted enc-part on success. If the KDC answers with
+// a KRB-ERROR it is returned as *messages.KRBError (with a nil error) so the
+// caller can react to WRONG_REALM or KRB_AP_ERR_SKEW.
 func (c *KerberosClient) tgsExchange(
-	bodyRealm, kdcHost string,
+	bodyRealm string,
+	endpoints []kdcEndpoint,
 	sname messages.PrincipalName,
 	includePAC bool,
 	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int,
@@ -185,7 +179,7 @@ func (c *KerberosClient) tgsExchange(
 			KDCOptions: kdcOptionsForTGSReq(),
 			Realm:      bodyRealm,
 			SName:      sname,
-			Till:       time.Now().UTC().Add(24 * time.Hour),
+			Till:       c.now().Add(24 * time.Hour),
 			Nonce:      nonce,
 			EType:      c.serviceTicketETypes(),
 		},
@@ -195,7 +189,7 @@ func (c *KerberosClient) tgsExchange(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("kerberos: marshal TGS-REQ: %w", err)
 	}
-	resp, err := kdcSend(kdcHost, defaultKDCPort, tgsReqBytes)
+	resp, err := kdcSendEndpoints(c.resolver, endpoints, tgsReqBytes)
 	if err != nil {
 		return nil, nil, nil, err
 	}

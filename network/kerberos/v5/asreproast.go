@@ -70,7 +70,7 @@ func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
 		return nil, fmt.Errorf("asreproast: marshal AS-REQ: %w", err)
 	}
 
-	resp, err := kdcSend(kdcHost, defaultKDCPort, req_bytes)
+	resp, err := kdcSend(nil, kdcHost, defaultKDCPort, req_bytes)
 	if err != nil {
 		return nil, err
 	}
