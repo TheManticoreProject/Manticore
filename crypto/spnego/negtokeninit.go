@@ -29,6 +29,17 @@ func CreateNegTokenInit(ntlmToken []byte) ([]byte, error) {
 	return init.Marshal()
 }
 
+// CreateNegTokenInitKerberos creates a SPNEGO NegTokenInit advertising the
+// Kerberos mechanism and carrying the given Kerberos GSS-API token (a
+// KRB_AP_REQ) as the mechToken.
+func CreateNegTokenInitKerberos(kerberosToken []byte) ([]byte, error) {
+	init := NegTokenInit{
+		MechTypes: []asn1.ObjectIdentifier{KerberosOID},
+		MechToken: kerberosToken,
+	}
+	return init.Marshal()
+}
+
 // NewNegTokenInit creates a new NegTokenInit with the specified parameters
 // Parameters:
 //   - mechTypes: The mechanism type identifiers to include

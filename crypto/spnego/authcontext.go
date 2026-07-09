@@ -39,6 +39,26 @@ type AuthContext struct {
 	// wire; callers use it as the MAC key for SMB message signing. It is nil until
 	// authentication has produced a key (and for auth paths that do not derive one).
 	SessionKey []byte
+
+	// Kerberos supplies the GSS-API tokens when Type is AuthTypeKerberos. It is set
+	// by the consumer (SMB/DCE-RPC) so crypto/spnego needs no dependency on the
+	// Kerberos implementation (dependency inversion).
+	Kerberos KerberosProvider
+}
+
+// KerberosProvider produces and verifies the Kerberos GSS-API tokens exchanged
+// inside SPNEGO. A consumer backs it with the native Kerberos stack and assigns
+// it to AuthContext.Kerberos.
+type KerberosProvider interface {
+	// InitToken returns the initial GSS-API token (a KRB_AP_REQ) to carry in the
+	// SPNEGO NegTokenInit mechToken.
+	InitToken() ([]byte, error)
+	// AcceptResponseToken verifies the server's response token (a KRB_AP_REP for
+	// mutual authentication). An empty token is accepted as a no-op.
+	AcceptResponseToken(token []byte) error
+	// SessionKey returns the established context key used for message
+	// signing/sealing after the exchange completes.
+	SessionKey() []byte
 }
 
 // GetSessionKey returns the session key derived during authentication, or nil if

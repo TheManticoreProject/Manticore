@@ -145,6 +145,17 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 //   - []byte: The SPNEGO token containing the Kerberos authenticate message
 //   - error: An error if token processing fails
 func (ctx *AuthContext) processChallengeInnerTokenKerberos(innerToken []byte) ([]byte, error) {
-	// TODO: Implement kerberos authentication
-	return nil, errors.New("kerberos authentication is not yet implemented")
+	if ctx.Kerberos == nil {
+		return nil, errors.New("spnego: kerberos provider not configured on AuthContext")
+	}
+	// innerToken is the server's response token: a KRB_AP_REP for mutual
+	// authentication (empty if the server asserted none). Verifying it also lets
+	// the provider adopt any acceptor subkey.
+	if err := ctx.Kerberos.AcceptResponseToken(innerToken); err != nil {
+		return nil, fmt.Errorf("spnego: kerberos accept response: %w", err)
+	}
+	// The GSS context is established once the AP-REP is verified; capture the
+	// session key for message signing/sealing. Kerberos needs no further token.
+	ctx.SessionKey = ctx.Kerberos.SessionKey()
+	return nil, nil
 }
