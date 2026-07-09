@@ -38,6 +38,8 @@ const (
 	ErrCPrincipalUnknown = iana.ErrCPrincipalUnknown
 	ErrSPrincipalUnknown = iana.ErrSPrincipalUnknown
 	ErrPreauthRequired   = iana.ErrPreauthRequired
+	ErrSkew              = iana.ErrSkew
+	ErrResponseTooBig    = iana.ErrResponseTooBig
 	ErrWrongRealm        = iana.ErrWrongRealm
 
 	APOptionUseSessionKey = iana.APOptionUseSessionKey

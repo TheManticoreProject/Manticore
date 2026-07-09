@@ -70,7 +70,7 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 			KDCOptions: kdcOptionsForTGSReq(),
 			Realm:      c.realm,
 			SName:      self,
-			Till:       time.Now().UTC().Add(24 * time.Hour),
+			Till:       c.now().Add(24 * time.Hour),
 			Nonce:      nonce,
 			EType: []int{
 				messages.ETypeAES256CTSHMACSHA196,
@@ -84,7 +84,7 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 	if err != nil {
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal S4U2Self TGS-REQ: %w", err)
 	}
-	resp, err := kdcSend(c.kdcHost, defaultKDCPort, tgsReqBytes)
+	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
 		return messages.Ticket{}, nil, nil, err
 	}
@@ -164,7 +164,7 @@ func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (
 			),
 			Realm: c.realm,
 			SName: sname,
-			Till:  time.Now().UTC().Add(24 * time.Hour),
+			Till:  c.now().Add(24 * time.Hour),
 			Nonce: nonce,
 			EType: []int{
 				messages.ETypeAES256CTSHMACSHA196,
@@ -179,7 +179,7 @@ func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (
 	if err != nil {
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal S4U2Proxy TGS-REQ: %w", err)
 	}
-	resp, err := kdcSend(c.kdcHost, defaultKDCPort, tgsReqBytes)
+	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
 		return messages.Ticket{}, nil, nil, err
 	}

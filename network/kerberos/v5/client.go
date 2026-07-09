@@ -5,6 +5,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -58,6 +59,18 @@ type KerberosClient struct {
 	// referral chase. It overrides the default DNS-SRV based resolution and is
 	// consulted after realmKDCs and the client's own home realm.
 	kdcResolver func(realm string) (string, error)
+
+	// resolver is the DNS resolver used for KDC discovery (SRV lookups) and for
+	// resolving KDC hostnames to A/AAAA addresses. nil uses net.DefaultResolver.
+	// A custom resolver (see WithResolver) lets callers direct Kerberos DNS at a
+	// specific server without touching the host resolver configuration.
+	resolver *net.Resolver
+
+	// clockOffset is added to the local clock when stamping outgoing requests. It
+	// starts at zero and is set from a KRB_AP_ERR_SKEW reply's server time so a
+	// subsequent retry falls inside the KDC's allowable skew window (RFC 4120
+	// Section 5.9.1). See now / applyClockSkew.
+	clockOffset time.Duration
 }
 
 // preloadedServiceTicket is a service ticket the client will hand back from
@@ -137,6 +150,37 @@ func (c *KerberosClient) WithAESKey(hexKey string) error {
 	return nil
 }
 
+// WithResolver installs the DNS resolver used for KDC discovery (SRV lookups)
+// and for resolving KDC hostnames to A/AAAA addresses. Passing nil restores the
+// default (net.DefaultResolver). This lets a caller point Kerberos DNS at a
+// specific server (e.g. the domain controller) without altering system-wide
+// resolver configuration. Returns the client to allow fluent chaining.
+func (c *KerberosClient) WithResolver(r *net.Resolver) *KerberosClient {
+	c.resolver = r
+	return c
+}
+
+// now returns the current UTC time adjusted by the negotiated clock offset. All
+// outgoing timestamps (PA-ENC-TIMESTAMP, Authenticator ctime) are stamped with
+// it so a KRB_AP_ERR_SKEW retry lands inside the KDC's skew window.
+func (c *KerberosClient) now() time.Time {
+	return time.Now().UTC().Add(c.clockOffset)
+}
+
+// applyClockSkew records the offset between the client's clock and the KDC's,
+// derived from the server time in a KRB_AP_ERR_SKEW reply, so a retry uses a
+// timestamp the KDC will accept (RFC 4120 Section 5.9.1). It reports false when
+// the error carries no usable server time, in which case no retry is warranted.
+func (c *KerberosClient) applyClockSkew(krbErr messages.KRBError) bool {
+	if krbErr.STime.IsZero() {
+		return false
+	}
+	// Offset the local clock forward/back to match the KDC. Reference the raw
+	// system clock (not c.now()) so repeated applications don't compound.
+	c.clockOffset = krbErr.STime.UTC().Sub(time.Now().UTC())
+	return true
+}
+
 // GetTGT requests a Ticket Granting Ticket from the KDC using the password
 // configured via WithPassword.
 //
@@ -153,22 +197,36 @@ func (c *KerberosClient) GetTGT() error {
 	// default salt. The KDC corrects both via PREAUTH_REQUIRED if needed.
 	etype := c.cred.SupportedETypes()[0]
 	salt := c.cred.DefaultSalt()
-	resp, nonce, err := c.sendASReqWithPreauth(etype, salt, nil)
-	if err != nil {
-		return err
-	}
 
-	// If the KDC requires a different etype/salt, it responds with PREAUTH_REQUIRED.
-	var krb_err messages.KRBError
-	if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
-		if krb_err.ErrorCode == messages.ErrPreauthRequired {
-			etype, salt, s2k_params := c.pickETypeFromError(krb_err)
-			return c.doASReqWithPreauth(etype, salt, s2k_params)
+	// At most two attempts: the second only ever follows a KRB_AP_ERR_SKEW, after
+	// the clock offset has been applied (RFC 4120 Section 5.9.1).
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, nonce, err := c.sendASReqWithPreauth(etype, salt, nil)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("kerberos: KDC error %d: %s", krb_err.ErrorCode, krb_err.EText)
-	}
 
-	return c.processASRep(resp, etype, salt, nil, nonce)
+		var krb_err messages.KRBError
+		if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
+			switch krb_err.ErrorCode {
+			case messages.ErrPreauthRequired:
+				// The KDC wants a different etype/salt; retry with the corrected
+				// values (that path applies its own skew retry).
+				etype, salt, s2k_params := c.pickETypeFromError(krb_err)
+				return c.doASReqWithPreauth(etype, salt, s2k_params)
+			case messages.ErrSkew:
+				if attempt == 0 && c.applyClockSkew(krb_err) {
+					continue // retry with the KDC-aligned clock
+				}
+				return fmt.Errorf("kerberos: KDC clock skew too great (error %d): %s", krb_err.ErrorCode, krb_err.EText)
+			default:
+				return fmt.Errorf("kerberos: KDC error %d: %s", krb_err.ErrorCode, krb_err.EText)
+			}
+		}
+
+		return c.processASRep(resp, etype, salt, nil, nonce)
+	}
+	return fmt.Errorf("kerberos: GetTGT: clock-skew retry exhausted")
 }
 
 // pacRequestPA returns a PA-PAC-REQUEST PAData element with include-pac = TRUE.
@@ -262,7 +320,7 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, erro
 				NameType:   messages.NameTypeSRVInst,
 				NameString: []string{"krbtgt", c.realm},
 			},
-			Till:  time.Now().UTC().Add(24 * time.Hour),
+			Till:  c.now().Add(24 * time.Hour),
 			Nonce: nonce,
 			EType: c.cred.SupportedETypes(),
 		},
@@ -272,11 +330,22 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, erro
 	if err != nil {
 		return nil, 0, fmt.Errorf("kerberos: marshal AS-REQ: %w", err)
 	}
-	resp, err := kdcSend(c.kdcHost, defaultKDCPort, req_bytes)
+	resp, err := c.sendToRealm(c.realm, req_bytes)
 	if err != nil {
 		return nil, 0, err
 	}
 	return resp, nonce, nil
+}
+
+// sendToRealm discovers the KDC endpoints serving realm (explicit config, custom
+// resolver, or DNS SRV) and sends msg, failing over across them (see
+// endpointsForRealm and kdcSendEndpoints).
+func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
+	endpoints, err := c.endpointsForRealm(realm)
+	if err != nil {
+		return nil, err
+	}
+	return kdcSendEndpoints(c.resolver, endpoints, msg)
 }
 
 // pickETypeFromError extracts the preferred etype, salt and S2KParams from the
@@ -343,7 +412,7 @@ func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params
 		return nil, 0, fmt.Errorf("kerberos: derive key: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := c.now()
 	ts := &messages.PAEncTSEnc{
 		PATimestamp: now,
 		PAUSec:      now.Nanosecond() / 1000,
@@ -371,19 +440,26 @@ func (c *KerberosClient) sendASReqWithPreauth(etype int, salt string, s2k_params
 	return c.sendASReq(pa_data)
 }
 
-// doASReqWithPreauth sends an AS-REQ with PA-ENC-TIMESTAMP and processes the AS-REP.
+// doASReqWithPreauth sends an AS-REQ with PA-ENC-TIMESTAMP and processes the
+// AS-REP. On KRB_AP_ERR_SKEW it applies the KDC clock offset and retries once.
 func (c *KerberosClient) doASReqWithPreauth(etype int, salt string, s2k_params []byte) error {
-	resp, nonce, err := c.sendASReqWithPreauth(etype, salt, s2k_params)
-	if err != nil {
-		return err
-	}
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, nonce, err := c.sendASReqWithPreauth(etype, salt, s2k_params)
+		if err != nil {
+			return err
+		}
 
-	var krb_err messages.KRBError
-	if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
-		return fmt.Errorf("kerberos: GetTGT failed (error %d): %s", krb_err.ErrorCode, krb_err.EText)
-	}
+		var krb_err messages.KRBError
+		if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
+			if krb_err.ErrorCode == messages.ErrSkew && attempt == 0 && c.applyClockSkew(krb_err) {
+				continue // retry with the KDC-aligned clock
+			}
+			return fmt.Errorf("kerberos: GetTGT failed (error %d): %s", krb_err.ErrorCode, krb_err.EText)
+		}
 
-	return c.processASRep(resp, etype, salt, s2k_params, nonce)
+		return c.processASRep(resp, etype, salt, s2k_params, nonce)
+	}
+	return fmt.Errorf("kerberos: GetTGT: clock-skew retry exhausted")
 }
 
 // processASRep decrypts the AS-REP enc-part, verifies that the returned nonce
@@ -439,7 +515,7 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 // always identify the original client (they must match the crealm embedded in
 // the ticket, which stays the home realm across cross-realm referrals).
 func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
-	now := time.Now().UTC()
+	now := c.now()
 	cusec := now.Nanosecond() / 1000
 
 	var seq_buf [4]byte
