@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
-	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 )
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ func TestStringToKeyRC4(t *testing.T) {
 	// Verify that StringToKey returns the same value as nt.NTHash for any password.
 	for _, password := range []string{"password", "Password", "abc123"} {
 		want := nt.NTHash(password)
-		got, err := StringToKey(messages.ETypeRC4HMAC, password, "", nil)
+		got, err := StringToKey(iana.ETypeRC4HMAC, password, "", nil)
 		if err != nil {
 			t.Fatalf("StringToKey RC4(%q): unexpected error: %v", password, err)
 		}
@@ -34,7 +34,7 @@ func TestStringToKeyRC4(t *testing.T) {
 	// Cross-check against well-known NT hash value for "password" (lowercase).
 	const knownPassword = "password"
 	const knownHex = "8846f7eaee8fb117ad06bdd830b7586c"
-	got, _ := StringToKey(messages.ETypeRC4HMAC, knownPassword, "", nil)
+	got, _ := StringToKey(iana.ETypeRC4HMAC, knownPassword, "", nil)
 	knownBytes, _ := hex.DecodeString(knownHex)
 	if !bytes.Equal(got, knownBytes) {
 		t.Errorf("StringToKey RC4(%q): got %x, want known vector %s", knownPassword, got, knownHex)
@@ -43,7 +43,7 @@ func TestStringToKeyRC4(t *testing.T) {
 
 // TestRC4HMACRoundtrip verifies that encrypting then decrypting recovers the original plaintext.
 func TestRC4HMACRoundtrip(t *testing.T) {
-	key, err := StringToKey(messages.ETypeRC4HMAC, "Password", "", nil)
+	key, err := StringToKey(iana.ETypeRC4HMAC, "Password", "", nil)
 	if err != nil {
 		t.Fatalf("StringToKey: %v", err)
 	}
@@ -61,11 +61,11 @@ func TestRC4HMACRoundtrip(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ciphertext, err := Encrypt(messages.ETypeRC4HMAC, key, tc.usage, []byte(tc.plaintext))
+			ciphertext, err := Encrypt(iana.ETypeRC4HMAC, key, tc.usage, []byte(tc.plaintext))
 			if err != nil {
 				t.Fatalf("Encrypt: %v", err)
 			}
-			plaintext, err := Decrypt(messages.ETypeRC4HMAC, key, tc.usage, ciphertext)
+			plaintext, err := Decrypt(iana.ETypeRC4HMAC, key, tc.usage, ciphertext)
 			if err != nil {
 				t.Fatalf("Decrypt: %v", err)
 			}
@@ -78,14 +78,14 @@ func TestRC4HMACRoundtrip(t *testing.T) {
 
 // TestRC4HMACDecryptTamperedMAC verifies that a tampered MAC causes an integrity error.
 func TestRC4HMACDecryptTamperedMAC(t *testing.T) {
-	key, _ := StringToKey(messages.ETypeRC4HMAC, "Password", "", nil)
-	ct, err := Encrypt(messages.ETypeRC4HMAC, key, KeyUsageASReqPAEncTimestamp, []byte("test"))
+	key, _ := StringToKey(iana.ETypeRC4HMAC, "Password", "", nil)
+	ct, err := Encrypt(iana.ETypeRC4HMAC, key, KeyUsageASReqPAEncTimestamp, []byte("test"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	// Flip a byte in the MAC
 	ct[0] ^= 0xFF
-	_, err = Decrypt(messages.ETypeRC4HMAC, key, KeyUsageASReqPAEncTimestamp, ct)
+	_, err = Decrypt(iana.ETypeRC4HMAC, key, KeyUsageASReqPAEncTimestamp, ct)
 	if err == nil {
 		t.Error("expected integrity error on tampered MAC, got nil")
 	}
@@ -93,8 +93,8 @@ func TestRC4HMACDecryptTamperedMAC(t *testing.T) {
 
 // TestRC4HMACDecryptTooShort verifies that a too-short ciphertext returns an error.
 func TestRC4HMACDecryptTooShort(t *testing.T) {
-	key, _ := StringToKey(messages.ETypeRC4HMAC, "Password", "", nil)
-	_, err := Decrypt(messages.ETypeRC4HMAC, key, 1, []byte("tooshort"))
+	key, _ := StringToKey(iana.ETypeRC4HMAC, "Password", "", nil)
+	_, err := Decrypt(iana.ETypeRC4HMAC, key, 1, []byte("tooshort"))
 	if err == nil {
 		t.Error("expected error for short ciphertext, got nil")
 	}
@@ -113,7 +113,7 @@ func TestRC4HMACDecryptTooShort(t *testing.T) {
 func TestStringToKeyAES128KnownVector(t *testing.T) {
 	// S2KParams encoding of iter_count=1 as 4-byte big-endian
 	params := []byte{0, 0, 0, 1}
-	got, err := StringToKey(messages.ETypeAES128CTSHMACSHA196, "password", "ATHENA.MIT.EDUraeburn", params)
+	got, err := StringToKey(iana.ETypeAES128CTSHMACSHA196, "password", "ATHENA.MIT.EDUraeburn", params)
 	if err != nil {
 		t.Fatalf("StringToKey AES-128: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestStringToKeyAES128KnownVector(t *testing.T) {
 //   key      = fe697b52bc0d3ce14432ba036a92e65bbb52280990a2fa27883998d72af30161
 func TestStringToKeyAES256KnownVector(t *testing.T) {
 	params := []byte{0, 0, 0, 1}
-	got, err := StringToKey(messages.ETypeAES256CTSHMACSHA196, "password", "ATHENA.MIT.EDUraeburn", params)
+	got, err := StringToKey(iana.ETypeAES256CTSHMACSHA196, "password", "ATHENA.MIT.EDUraeburn", params)
 	if err != nil {
 		t.Fatalf("StringToKey AES-256: %v", err)
 	}
@@ -143,20 +143,20 @@ func TestStringToKeyAES256KnownVector(t *testing.T) {
 
 // TestAES128Roundtrip verifies encrypt/decrypt roundtrip for AES-128.
 func TestAES128Roundtrip(t *testing.T) {
-	key, err := StringToKey(messages.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
+	key, err := StringToKey(iana.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
 	if err != nil {
 		t.Fatalf("StringToKey: %v", err)
 	}
-	aesRoundtrip(t, messages.ETypeAES128CTSHMACSHA196, key)
+	aesRoundtrip(t, iana.ETypeAES128CTSHMACSHA196, key)
 }
 
 // TestAES256Roundtrip verifies encrypt/decrypt roundtrip for AES-256.
 func TestAES256Roundtrip(t *testing.T) {
-	key, err := StringToKey(messages.ETypeAES256CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
+	key, err := StringToKey(iana.ETypeAES256CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
 	if err != nil {
 		t.Fatalf("StringToKey: %v", err)
 	}
-	aesRoundtrip(t, messages.ETypeAES256CTSHMACSHA196, key)
+	aesRoundtrip(t, iana.ETypeAES256CTSHMACSHA196, key)
 }
 
 func aesRoundtrip(t *testing.T, etype int, key []byte) {
@@ -192,14 +192,14 @@ func aesRoundtrip(t *testing.T, etype int, key []byte) {
 
 // TestAES128DecryptTamperedMAC verifies that a tampered MAC returns an integrity error.
 func TestAES128DecryptTamperedMAC(t *testing.T) {
-	key, _ := StringToKey(messages.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
-	ct, err := Encrypt(messages.ETypeAES128CTSHMACSHA196, key, KeyUsageASReqPAEncTimestamp, []byte("test data here!"))
+	key, _ := StringToKey(iana.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
+	ct, err := Encrypt(iana.ETypeAES128CTSHMACSHA196, key, KeyUsageASReqPAEncTimestamp, []byte("test data here!"))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	// Flip the last byte of the MAC (last 12 bytes of output)
 	ct[len(ct)-1] ^= 0xFF
-	_, err = Decrypt(messages.ETypeAES128CTSHMACSHA196, key, KeyUsageASReqPAEncTimestamp, ct)
+	_, err = Decrypt(iana.ETypeAES128CTSHMACSHA196, key, KeyUsageASReqPAEncTimestamp, ct)
 	if err == nil {
 		t.Error("expected integrity error on tampered MAC, got nil")
 	}
@@ -207,8 +207,8 @@ func TestAES128DecryptTamperedMAC(t *testing.T) {
 
 // TestAESDecryptTooShort verifies that too-short ciphertext returns an error.
 func TestAESDecryptTooShort(t *testing.T) {
-	key, _ := StringToKey(messages.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
-	_, err := Decrypt(messages.ETypeAES128CTSHMACSHA196, key, 1, []byte("tooshort"))
+	key, _ := StringToKey(iana.ETypeAES128CTSHMACSHA196, "Password", "REALM.EXAMPLEuser", nil)
+	_, err := Decrypt(iana.ETypeAES128CTSHMACSHA196, key, 1, []byte("tooshort"))
 	if err == nil {
 		t.Error("expected error for short ciphertext, got nil")
 	}
@@ -223,9 +223,9 @@ func TestKeyLen(t *testing.T) {
 		etype int
 		want  int
 	}{
-		{messages.ETypeRC4HMAC, 16},
-		{messages.ETypeAES128CTSHMACSHA196, 16},
-		{messages.ETypeAES256CTSHMACSHA196, 32},
+		{iana.ETypeRC4HMAC, 16},
+		{iana.ETypeAES128CTSHMACSHA196, 16},
+		{iana.ETypeAES256CTSHMACSHA196, 32},
 		{99, 0}, // unsupported
 	}
 	for _, tc := range tests {
