@@ -90,6 +90,19 @@ func rotateLeft(b []byte, n int) []byte {
 	return out
 }
 
+// rotateRight rotates b right by n octets (RFC 4121 §4.2.5): the last n octets
+// move to the front.
+func rotateRight(b []byte, n int) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	n %= len(b)
+	out := make([]byte, len(b))
+	copy(out, b[len(b)-n:])
+	copy(out[n:], b[:len(b)-n])
+	return out
+}
+
 // micHeader builds the 16-byte MIC token header.
 func micHeader(flags byte, seq uint64) []byte {
 	h := make([]byte, 16)
@@ -177,14 +190,20 @@ func (ctx *SecContext) Wrap(data []byte, seal bool) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("gssapi: no checksum for etype %d", etype)
 	}
+	// RFC 4121 §4.2.4: the checksum is computed over data | header with EC and
+	// RRC zeroed. hdr already has EC=RRC=0 here.
 	sum, err := kerbcrypto.GetChecksum(ct, key, kgUsageInitiatorSeal, append(append([]byte{}, data...), hdr...))
 	if err != nil {
 		return nil, err
 	}
-	out := append([]byte{}, hdr...)
-	out = append(out, data...)
-	out = append(out, sum...)
-	return out, nil
+	// §4.2.3: for a non-confidential Wrap token, EC encodes the checksum length.
+	// Set EC and RRC to that length and right-rotate {data|checksum} by RRC so
+	// the token is {header | checksum | data}, matching what AD emits/expects.
+	ec := len(sum)
+	binary.BigEndian.PutUint16(hdr[4:6], uint16(ec))
+	binary.BigEndian.PutUint16(hdr[6:8], uint16(ec))
+	body := rotateRight(append(append([]byte{}, data...), sum...), ec)
+	return append(hdr, body...), nil
 }
 
 // Unwrap decodes a Wrap token received from the acceptor, returning the
@@ -224,12 +243,17 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 	if !ok {
 		return nil, false, fmt.Errorf("gssapi: no checksum for etype %d", etype)
 	}
-	ml := micLen(etype)
-	if len(body) < ml {
+	// For a non-confidential Wrap token, EC is the checksum length (RFC 4121
+	// §4.2.3); fall back to the etype's checksum length if EC is absent.
+	cksumLen := ec
+	if cksumLen == 0 {
+		cksumLen = micLen(etype)
+	}
+	if len(body) < cksumLen {
 		return nil, false, fmt.Errorf("gssapi: Wrap token too short for checksum")
 	}
-	payload := body[:len(body)-ml]
-	got := body[len(body)-ml:]
+	payload := body[:len(body)-cksumLen]
+	got := body[len(body)-cksumLen:]
 	// The checksum is over data | header with EC and RRC zeroed.
 	zhdr := append([]byte{}, hdr...)
 	zhdr[4], zhdr[5], zhdr[6], zhdr[7] = 0, 0, 0, 0
