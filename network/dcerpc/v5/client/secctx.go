@@ -33,6 +33,17 @@ type SecurityContext interface {
 	UnprotectResponse(signedRegion, stub, authValue []byte, seal bool) (plainStub []byte, err error)
 }
 
+// bindCompleter is an optional capability of a SecurityContext whose establishment
+// needs the bind_ack's auth_value — Kerberos mutual authentication verifies the
+// KRB_AP_REP returned in the bind_ack. It returns an optional continuation token:
+// under GSS_C_DCE_STYLE the handshake has a third leg (the initiator's own
+// AP-REP), which the client sends in an alter_context PDU. A nil continuation
+// means the context is fully established after the bind_ack. Providers that
+// establish their context entirely up front (Netlogon) do not implement it.
+type bindCompleter interface {
+	CompleteBind(bindAckAuthValue []byte) (continuation []byte, err error)
+}
+
 // ntlmSecurityContext adapts an NTLM *security.Context to SecurityContext. NTLM's token is a
 // fixed 16-byte MESSAGE_SIGNATURE and its signature covers the whole PDU, so both directions
 // operate over signedRegion; only the stub is sealed for PKT_PRIVACY ([MS-RPCE] 3.3, NTLM2).

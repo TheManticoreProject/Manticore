@@ -43,6 +43,11 @@ const (
 	GSSSequenceFlag = 8
 	GSSConfFlag     = 16
 	GSSIntegFlag    = 32
+	// GSSDCEStyleFlag (GSS_C_DCE_STYLE) selects the DCE RPC three-leg mutual
+	// authentication style. Windows RPC requires it for per-message protection
+	// (PKT_INTEGRITY / PKT_PRIVACY); with it the acceptor's AP-REP is followed by
+	// a third leg carrying the initiator's own AP-REP.
+	GSSDCEStyleFlag = 0x1000
 )
 
 // ChecksumTypeGSSAPI is the Kerberos checksum type (0x8003) used for the GSS-API
@@ -121,6 +126,9 @@ type SecContext struct {
 	// acceptorSubkey records that the base key is an acceptor-asserted subkey,
 	// so per-message tokens must set the AcceptorSubkey flag.
 	acceptorSubkey bool
+	// acceptorSeq is the sequence number the acceptor placed in its AP-REP. The
+	// DCE-style third-leg AP-REP must echo it (krb5_rd_rep_dce checks it).
+	acceptorSeq int
 }
 
 // InitOptions configures InitSecContext.
@@ -144,6 +152,10 @@ type InitOptions struct {
 	// if set, SubKeyEType must be set too.
 	SubKey      []byte
 	SubKeyEType int
+	// ZeroSeqNumber sets the authenticator sequence number to 0 instead of a
+	// random value. DCE/RPC requires it (the acceptor's per-message receive
+	// sequence is seeded from it, and the per-PDU counter starts at 0).
+	ZeroSeqNumber bool
 }
 
 // InitSecContext builds the initiator's KRB_AP_REQ GSS token from a service
@@ -163,11 +175,17 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 	now := time.Now().UTC()
 	cusec := now.Nanosecond() / 1000
 
-	var seqBuf [4]byte
-	if _, err := rand.Read(seqBuf[:]); err != nil {
-		return nil, nil, err
+	// The initiator's authenticator sequence number seeds the acceptor's expected
+	// per-message receive sequence. DCE/RPC (which starts its per-PDU counter at 0)
+	// requires it to be 0; other callers use a random value.
+	seqNum := 0
+	if !opts.ZeroSeqNumber {
+		var seqBuf [4]byte
+		if _, err := rand.Read(seqBuf[:]); err != nil {
+			return nil, nil, err
+		}
+		seqNum = int(binary.BigEndian.Uint32(seqBuf[:]) & 0x7fffffff)
 	}
-	seqNum := int(binary.BigEndian.Uint32(seqBuf[:]) & 0x7fffffff)
 
 	cksum := &messages.Checksum{
 		CKSumType: ChecksumTypeGSSAPI,
@@ -243,7 +261,20 @@ func (ctx *SecContext) AcceptAPRep(token []byte) error {
 	if tokID != TokIDAPRep {
 		return fmt.Errorf("gssapi: expected AP-REP token (02 00), got %02x %02x", tokID[0], tokID[1])
 	}
+	return ctx.acceptAPRepMessage(krbMsg)
+}
 
+// AcceptAPRepRaw verifies a bare KRB_AP_REP (APPLICATION[15]) that is not wrapped
+// in a GSS InitialContextToken. DCE RPC (GSS_C_DCE_STYLE) carries the acceptor's
+// AP-REP this way, since the GSS framing OID appears only on the first token.
+func (ctx *SecContext) AcceptAPRepRaw(apRep []byte) error {
+	return ctx.acceptAPRepMessage(apRep)
+}
+
+// acceptAPRepMessage decrypts and verifies a KRB_AP_REP message body: it checks
+// the echoed ctime/cusec against the initiator's authenticator (mutual
+// authentication) and adopts an acceptor subkey into the context if present.
+func (ctx *SecContext) acceptAPRepMessage(krbMsg []byte) error {
 	var apRep messages.APRep
 	if _, err := apRep.Unmarshal(krbMsg); err != nil {
 		return fmt.Errorf("gssapi: parse AP-REP: %w", err)
@@ -264,5 +295,37 @@ func (ctx *SecContext) AcceptAPRep(token []byte) error {
 		ctx.SubKeyEType = enc.SubKey.KeyType
 		ctx.acceptorSubkey = true
 	}
+	ctx.acceptorSeq = enc.SeqNumber
 	return nil
+}
+
+// MakeAPRep builds the initiator's own KRB_AP_REP as a bare APPLICATION[15]
+// message (no GSS wrapper), for the third leg of the DCE-style mutual-auth
+// handshake (GSS_C_DCE_STYLE). Following the Windows/MIT behaviour, it uses a
+// fresh timestamp (not the echoed authenticator time), carries the sequence
+// number the acceptor sent in its AP-REP, has no subkey, and is encrypted with
+// the ticket session key (key usage 12).
+func (ctx *SecContext) MakeAPRep() ([]byte, error) {
+	now := time.Now().UTC()
+	enc := messages.EncAPRepPart{
+		CTime: now,
+		CUSec: now.Nanosecond() / 1000,
+		// The DCE-style acceptor validates that the third-leg AP-REP echoes the
+		// sequence number it sent in its own AP-REP (krb5_rd_rep_dce).
+		SeqNumber: ctx.acceptorSeq,
+	}
+	encBytes, err := enc.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("gssapi: marshal EncAPRepPart: %w", err)
+	}
+	cipher, err := kerbcrypto.Encrypt(ctx.SessionEType, ctx.SessionKey, kerbcrypto.KeyUsageAPRepEncPart, encBytes)
+	if err != nil {
+		return nil, fmt.Errorf("gssapi: encrypt EncAPRepPart: %w", err)
+	}
+	apRep := messages.APRep{
+		PVNO:    messages.KerberosV5,
+		MsgType: messages.MsgTypeAPRep,
+		EncPart: messages.EncryptedData{EType: ctx.SessionEType, Cipher: cipher},
+	}
+	return apRep.Marshal()
 }

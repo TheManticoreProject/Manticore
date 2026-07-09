@@ -60,6 +60,11 @@ func (ctx *SecContext) nextSendSeq() uint64 {
 	return s
 }
 
+// ResetSendSeq overrides the running per-message send sequence. DCE/RPC uses a
+// zero-based per-PDU counter for its GSS tokens rather than the AP-REQ
+// authenticator sequence.
+func (ctx *SecContext) ResetSendSeq(seq uint64) { ctx.sendSeq = seq }
+
 // micLen returns the checksum length appended to MIC / integrity-only Wrap
 // tokens for an etype.
 func micLen(etype int) int {
@@ -126,10 +131,25 @@ func wrapHeader(flags byte, seq uint64) []byte {
 	return h
 }
 
-// MakeMIC produces a MIC token over data as the context initiator (RFC 4121
-// §4.2.6.1): checksum(data | header) keyed with the initiator-sign usage.
+// MICTokenLen returns the length of a MIC token this context emits: for RC4-HMAC
+// the fixed RFC 4757 token length, otherwise the 16-byte CFX header plus the base
+// key's etype checksum.
+func (ctx *SecContext) MICTokenLen() int {
+	_, etype := ctx.baseKey()
+	if etype == rc4HMACEType {
+		return rc4MICTokenLen
+	}
+	return 16 + micLen(etype)
+}
+
+// MakeMIC produces a MIC token over data as the context initiator. For RC4-HMAC
+// it is the RFC 4757 §7.3 token; otherwise the RFC 4121 §4.2.6.1 CFX token
+// (checksum(data | header) keyed with the initiator-sign usage).
 func (ctx *SecContext) MakeMIC(data []byte) ([]byte, error) {
 	key, etype := ctx.baseKey()
+	if etype == rc4HMACEType {
+		return ctx.makeMICRC4(data, ctx.nextSendSeq()), nil
+	}
 	ct, ok := kerbcrypto.ChecksumTypeForEType(etype)
 	if !ok {
 		return nil, fmt.Errorf("gssapi: no checksum for etype %d", etype)
@@ -144,6 +164,9 @@ func (ctx *SecContext) MakeMIC(data []byte) ([]byte, error) {
 
 // VerifyMIC verifies a MIC token received from the acceptor over data.
 func (ctx *SecContext) VerifyMIC(data, token []byte) error {
+	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+		return ctx.verifyMICRC4(data, token)
+	}
 	if len(token) < 16 {
 		return fmt.Errorf("gssapi: MIC token too short")
 	}

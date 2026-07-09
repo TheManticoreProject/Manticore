@@ -39,6 +39,31 @@ type KerberosClient struct {
 	sessionEType int
 	tgtEnc       messages.EncASRepPart // decrypted AS-REP enc-part: times, flags, sname
 	hasTGT       bool
+
+	// stETypes overrides the etype list requested in the TGS-REQ (the service
+	// ticket's session-key etype). nil requests AES256, AES128, then RC4.
+	stETypes []int
+}
+
+// PreferRC4ServiceTicket makes GetTGS request an RC4-HMAC service ticket (RC4
+// session key). Windows RPC's DCE-style Kerberos per-message protection is only
+// interoperable with RC4 on some servers, so the DCE/RPC client forces it.
+func (c *KerberosClient) PreferRC4ServiceTicket() *KerberosClient {
+	c.stETypes = []int{messages.ETypeRC4HMAC}
+	return c
+}
+
+// serviceTicketETypes returns the TGS-REQ etype list: the override if set,
+// otherwise the default strongest-first list.
+func (c *KerberosClient) serviceTicketETypes() []int {
+	if len(c.stETypes) > 0 {
+		return c.stETypes
+	}
+	return []int{
+		messages.ETypeAES256CTSHMACSHA196,
+		messages.ETypeAES128CTSHMACSHA196,
+		messages.ETypeRC4HMAC,
+	}
 }
 
 // NewClient creates a new KerberosClient for the given username, realm and KDC host.
@@ -182,11 +207,7 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 			SName:      sname,
 			Till:       time.Now().UTC().Add(24 * time.Hour),
 			Nonce:      nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
+			EType:      c.serviceTicketETypes(),
 		},
 	}
 
@@ -257,6 +278,9 @@ func (c *KerberosClient) Realm() string { return c.realm }
 
 // KDCHost returns the KDC host configured for this client.
 func (c *KerberosClient) KDCHost() string { return c.kdcHost }
+
+// HasTGT reports whether a Ticket Granting Ticket has been acquired (via GetTGT).
+func (c *KerberosClient) HasTGT() bool { return c.hasTGT }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
