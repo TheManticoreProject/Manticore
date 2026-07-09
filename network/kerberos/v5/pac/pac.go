@@ -5,7 +5,8 @@
 // a cBuffers/Version header followed by a table of PAC_INFO_BUFFER entries, each
 // pointing at an 8-byte-aligned buffer. Individual buffers such as the logon
 // info (KERB_VALIDATION_INFO) are themselves NDR-encoded; this package exposes
-// those buffers as raw bytes and does not yet NDR-decode them.
+// those buffers as raw bytes and additionally NDR-decodes the logon info into a
+// typed KERB_VALIDATION_INFO via PAC.LogonInfo (see logoninfo.go).
 //
 // The security-relevant operations — the Server and KDC signatures ([MS-PAC]
 // 2.8, "Generation of PAC Signatures") — are implemented: both are keyed
