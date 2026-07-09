@@ -6,10 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 
-	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/go-ldap/ldap/v3"
-	"github.com/go-ldap/ldap/v3/gssapi"
-	krb5client "github.com/jcmturner/gokrb5/v8/client"
 )
 
 // Session represents an LDAP session with configuration and connection details.
@@ -163,26 +160,17 @@ func (s *Session) Connect() (bool, error) {
 
 	// Use Kerberos
 	if s.usekerberos {
-		servicePrincipalName, krb5Conf := kerberos.KerberosInit(s.host, s.credentials.GetDomain())
-
-		// Initialize kerberos client
-		// Inspired from: https://github.com/go-ldap/ldap/blob/06d50d1ad03bcd323e48f2fe174d95ceb31b8b90/v3/gssapi/client.go#L51
-		kerberosClient := gssapi.Client{
-			Client: krb5client.NewWithPassword(
-				s.credentials.GetUsername(),
-				s.credentials.GetDomain(),
-				s.credentials.GetPassword(),
-				krb5Conf,
-				// Active Directory does not commonly support FAST negotiation so you will need to disable this on the client.
-				// If this is the case you will see this error: KDC did not respond appropriately to FAST negotiation
-				// https://github.com/jcmturner/gokrb5/blob/master/USAGE.md#active-directory-kdc-and-fast-negotiation
-				krb5client.DisablePAFXFAST(true),
-			),
+		// Native (stdlib-only) GSSAPI SASL bind; the DC is both the LDAP server
+		// and the KDC. Realm is the credentials' domain (upper-cased by the client).
+		servicePrincipalName := fmt.Sprintf("ldap/%s", s.host)
+		gssClient, err := newNativeGSSAPIClient(s.host, s.credentials.GetDomain(), s.credentials)
+		if err != nil {
+			return false, fmt.Errorf("error initializing Kerberos: %w", err)
 		}
-		defer kerberosClient.Close()
+		defer gssClient.DeleteSecContext()
 
 		err = ldapConnection.GSSAPIBindRequest(
-			&kerberosClient,
+			gssClient,
 			&ldap.GSSAPIBindRequest{
 				ServicePrincipalName: servicePrincipalName,
 				AuthZID:              "",
