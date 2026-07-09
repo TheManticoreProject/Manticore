@@ -498,6 +498,7 @@ const (
 	kdcOptionCanonicalize   = 15 // byte 1, 0x01 (RFC 6806)
 	kdcOptionCNameInAddlTkt = 14 // byte 1, 0x02 (MS-SFU S4U2Proxy)
 	kdcOptionRenewableOK    = 27 // byte 3, 0x10
+	kdcOptionEncTktInSKey   = 28 // byte 3, 0x08 (user-to-user)
 )
 
 // encodeKDCOptions packs a list of bit positions into a 32-bit BitString
