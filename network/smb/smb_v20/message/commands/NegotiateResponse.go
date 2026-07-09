@@ -66,6 +66,10 @@ type NegotiateResponse struct {
 	// SecurityBuffer (variable): The GSS security token. SecurityBufferOffset and
 	// SecurityBufferLength are computed from this on marshal.
 	SecurityBuffer []byte
+
+	// Contexts holds the SMB 3.1.1 negotiate contexts the server returned (its
+	// chosen pre-auth integrity hash and cipher). Empty for dialects below 3.1.1.
+	Contexts []*NegotiateContext
 }
 
 // NewNegotiateResponse creates a new SMB2 NEGOTIATE Response.
@@ -136,6 +140,18 @@ func (c *NegotiateResponse) Unmarshal(data []byte) (int, error) {
 		consumed = start + securityBufferLength
 	} else {
 		c.SecurityBuffer = []byte{}
+	}
+
+	// SMB 3.1.1: parse the negotiate contexts the server returned.
+	if c.NegotiateContextCount > 0 && c.NegotiateContextOffset != 0 {
+		contexts, err := parseNegotiateContexts(data, int(c.NegotiateContextOffset), int(c.NegotiateContextCount))
+		if err != nil {
+			return 0, err
+		}
+		c.Contexts = contexts
+		if end := int(c.NegotiateContextOffset) - header.SMB2_HEADER_SIZE; end > consumed && end <= len(data) {
+			consumed = len(data)
+		}
 	}
 
 	return consumed, nil

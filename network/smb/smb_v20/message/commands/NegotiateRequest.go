@@ -43,12 +43,18 @@ type NegotiateRequest struct {
 
 	// ClientStartTime (8 bytes): MUST NOT be used; the client sets this to 0. In
 	// the SMB 3.1.1 dialect this 8-byte span is reinterpreted as the negotiate
-	// context offset/count/reserved, which is deferred to the SMB 3.x work.
+	// context offset (4 bytes) + count (2 bytes) + reserved (2 bytes); when
+	// Contexts is non-empty those fields are written instead of ClientStartTime.
 	ClientStartTime types.UINT64
 
 	// Dialects (variable): The 16-bit dialect revision numbers supported by the
 	// client. DialectCount is derived from this slice on marshal.
 	Dialects []dialects.Dialect
+
+	// Contexts holds the SMB 3.1.1 negotiate contexts (pre-auth integrity,
+	// encryption, ...) appended after the dialects array. Empty for dialects
+	// below 3.1.1.
+	Contexts []*NegotiateContext
 }
 
 // NewNegotiateRequest creates a new SMB2 NEGOTIATE Request.
@@ -81,6 +87,16 @@ func (c *NegotiateRequest) Marshal() ([]byte, error) {
 		buf = append(buf, d...)
 	}
 
+	// SMB 3.1.1: append the negotiate contexts and record their header-relative
+	// offset and count in the reinterpreted ClientStartTime span.
+	if len(c.Contexts) > 0 {
+		ctxBytes, firstOffset := marshalNegotiateContexts(len(buf), c.Contexts)
+		binary.LittleEndian.PutUint32(buf[28:32], uint32(firstOffset))
+		binary.LittleEndian.PutUint16(buf[32:34], uint16(len(c.Contexts)))
+		binary.LittleEndian.PutUint16(buf[34:36], 0) // Reserved2
+		buf = append(buf, ctxBytes...)
+	}
+
 	return buf, nil
 }
 
@@ -106,6 +122,18 @@ func (c *NegotiateRequest) Unmarshal(data []byte) (int, error) {
 	for i := 0; i < dialectCount; i++ {
 		c.Dialects[i] = dialects.Dialect(binary.LittleEndian.Uint16(data[offset : offset+2]))
 		offset += 2
+	}
+
+	// SMB 3.1.1: the reinterpreted ClientStartTime span carries the negotiate
+	// context offset and count. Parse the contexts when present.
+	contextOffset := int(binary.LittleEndian.Uint32(data[28:32]))
+	contextCount := int(binary.LittleEndian.Uint16(data[32:34]))
+	if contextCount > 0 {
+		contexts, err := parseNegotiateContexts(data, contextOffset, contextCount)
+		if err != nil {
+			return 0, err
+		}
+		c.Contexts = contexts
 	}
 
 	return offset, nil

@@ -75,3 +75,27 @@ func (c *Client) SetPort(port int) { c.Connection.Server.Port = port }
 
 // GetPort returns the target server port.
 func (c *Client) GetPort() int { return c.Connection.Server.Port }
+
+// EnableEncryption turns on SMB 3.x per-message encryption for the current
+// session, wrapping every subsequent request in an SMB2 TRANSFORM_HEADER. It
+// requires an SMB 3.x session whose encryption keys have been derived; it
+// returns an error otherwise. The server transparently encrypts its replies once
+// it receives an encrypted request.
+func (c *Client) EnableEncryption() error {
+	if c.Session == nil {
+		return fmt.Errorf("cannot enable encryption: no session established")
+	}
+	if !isSMB3Dialect(c.Connection.Dialect) {
+		return fmt.Errorf("cannot enable encryption: dialect %s does not support SMB3 encryption", c.Connection.Dialect)
+	}
+	if len(c.Session.EncryptionKey) == 0 {
+		return fmt.Errorf("cannot enable encryption: no encryption key derived")
+	}
+	c.Session.EncryptData = true
+	return nil
+}
+
+// IsEncryptionActive reports whether the current session encrypts its traffic.
+func (c *Client) IsEncryptionActive() bool {
+	return c.Session != nil && c.Session.EncryptData
+}

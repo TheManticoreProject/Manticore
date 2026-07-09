@@ -37,6 +37,13 @@ type Client struct {
 	pendingMessageId uint64
 	pendingAsyncId   uint64
 	hasPendingAsync  bool
+
+	// lastSentBytes / lastRecvBytes hold the plaintext wire bytes of the most
+	// recent request sent and final response received. They feed the SMB 3.1.1
+	// pre-authentication integrity hash, which is computed over the exact
+	// NEGOTIATE and SESSION_SETUP messages exchanged (MS-SMB2 3.1.4.2).
+	lastSentBytes []byte
+	lastRecvBytes []byte
 }
 
 // setPendingAsync records the in-flight async operation so a concurrent Cancel
@@ -77,6 +84,22 @@ type Connection struct {
 
 	// Dialect is the SMB2 dialect selected during negotiation.
 	Dialect dialects.Dialect
+
+	// Cipher is the encryption algorithm the server selected in the SMB 3.1.1
+	// SMB2_ENCRYPTION_CAPABILITIES negotiate context (e.g. AES-128-GCM). It is 0
+	// when encryption was not negotiated. For the 3.0/3.0.2 dialects it is
+	// implicitly AES-128-CCM.
+	Cipher uint16
+
+	// PreauthIntegrityHashId is the pre-authentication integrity hash algorithm
+	// the server selected for the SMB 3.1.1 dialect (SHA-512).
+	PreauthIntegrityHashId uint16
+
+	// PreauthIntegrityHashValue is the running SMB 3.1.1 pre-authentication
+	// integrity hash over the NEGOTIATE and SESSION_SETUP exchange (MS-SMB2
+	// 3.1.4.2). It seeds the per-session hash used as the KDF context. It is nil
+	// for dialects below 3.1.1.
+	PreauthIntegrityHashValue []byte
 
 	// SessionTable holds authenticated sessions on this connection, keyed by the
 	// server-assigned 64-bit SessionId.
@@ -147,12 +170,38 @@ type Session struct {
 	SessionKey []byte
 
 	// SigningKey is the key used to sign/verify messages on this session. For the
-	// SMB 2.0.2 and 2.1 dialects it is the session key itself.
+	// SMB 2.0.2 and 2.1 dialects it is the session key itself; for the SMB 3.x
+	// dialects it is derived from the session key via the SP800-108 KDF.
 	SigningKey []byte
+
+	// EncryptionKey / DecryptionKey are the SMB 3.x keys used to encrypt outgoing
+	// messages and decrypt incoming ones respectively (MS-SMB2 3.1.4.2). They are
+	// nil for the 2.x dialects, which have no encryption.
+	EncryptionKey []byte
+	DecryptionKey []byte
+
+	// ApplicationKey is the SMB 3.x key handed to higher-layer applications (for
+	// example SMB2 RPC transport). It is nil for the 2.x dialects.
+	ApplicationKey []byte
+
+	// PreauthHash is the SMB 3.1.1 per-session pre-authentication integrity hash
+	// used as the KDF context for this session's keys. It is nil for other
+	// dialects.
+	PreauthHash []byte
 
 	// SigningActive indicates that requests on this session are signed and
 	// responses are verified.
 	SigningActive bool
+
+	// EncryptData indicates that messages on this session are wrapped in an SMB2
+	// TRANSFORM_HEADER and encrypted with the negotiated cipher. When set,
+	// per-message signing is superseded by the AEAD authentication tag.
+	EncryptData bool
+
+	// nonceCounter provides the monotonically increasing nonce for the SMB2
+	// TRANSFORM_HEADER of each encrypted message, ensuring a nonce is never
+	// reused within the session (MS-SMB2 3.2.4.1.8).
+	nonceCounter uint64
 
 	// Credentials are the credentials used to authenticate the session.
 	Credentials *credentials.Credentials

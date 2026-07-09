@@ -19,6 +19,10 @@ const (
 	SMB2_SHARE_TYPE_PRINT = 0x03
 )
 
+// SMB2_SHAREFLAG_ENCRYPT_DATA indicates the server requires messages on this
+// share to be encrypted (SMB 3.x; TREE_CONNECT Response ShareFlags field).
+const SMB2_SHAREFLAG_ENCRYPT_DATA = 0x00008000
+
 // TreeConnectResponse is the SMB2 TREE_CONNECT Response body, sent by the server
 // when a TREE_CONNECT request succeeds.
 //

@@ -111,6 +111,12 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		return fmt.Errorf("unexpected SESSION_SETUP status: %s", formatNTStatus(status))
 	}
 
+	// Fold the first SESSION_SETUP request/response into the SMB 3.1.1 pre-auth
+	// integrity hash (started from the connection hash after NEGOTIATE).
+	sessionHash := append([]byte(nil), c.Connection.PreauthIntegrityHashValue...)
+	sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+	sessionHash = preauthUpdate(sessionHash, c.lastRecvBytes)
+
 	sessionId := resp1.Header.SessionId
 	challengeResp, ok := resp1.Command.(*commands.SessionSetupResponse)
 	if !ok {
@@ -158,6 +164,26 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 	if status := statusFromResponse(resp2); status != 0x00000000 {
 		c.Session = nil
 		return fmt.Errorf("session setup failed: %s", formatNTStatus(status))
+	}
+
+	// SMB 3.x: fold the (unsigned) AUTHENTICATE request into the pre-auth hash —
+	// the final SUCCESS response is excluded — then derive the key hierarchy and
+	// verify the server's signature over that response.
+	if isSMB3Dialect(c.Connection.Dialect) {
+		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+		finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
+		session.PreauthHash = sessionHash
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash)
+
+		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, session.SigningKey, finalRespBytes) {
+			c.Session = nil
+			return fmt.Errorf("session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
+		}
+
+		if resp2Cmd, ok := resp2.Command.(*commands.SessionSetupResponse); ok &&
+			resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
+			session.EncryptData = true
+		}
 	}
 
 	// Session established: activate signing for all subsequent requests when the
