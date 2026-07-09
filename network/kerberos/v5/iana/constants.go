@@ -96,6 +96,7 @@ const (
 	PAPKASReq            = 16  // PA-PK-AS-REQ (PKINIT, MS-PKCA)
 	PAPKASRep            = 17  // PA-PK-AS-REP (PKINIT, MS-PKCA)
 	PAETypeInfo2         = 19  // PA-ETYPE-INFO2 (replaces PA-ETYPE-INFO)
+	PAForUser            = 129 // PA-FOR-USER (MS-SFU S4U2Self)
 	PASvrReferralInfo    = 20  // PA-SVR-REFERRAL-INFO (RFC 6806)
 	PAPACRequest         = 128 // KERB-PA-PAC-REQUEST (MS-KILE)
 	PAFXCookie           = 133 // PA-FX-COOKIE (RFC 6113 FAST)
