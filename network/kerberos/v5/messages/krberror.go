@@ -50,6 +50,10 @@ type KRBError struct {
 	SUSec int
 	// ErrorCode identifies the specific error.
 	ErrorCode int
+	// CRealm is the client's realm as echoed by the KDC (optional). For a
+	// KDC_ERR_WRONG_REALM error this carries the realm the client should retry
+	// against (RFC 4120 Section 3.3.3.1, RFC 6806).
+	CRealm string
 	// Realm is the server's realm.
 	Realm string
 	// SName is the server's principal name.
@@ -73,6 +77,7 @@ func (e *KRBError) Marshal() ([]byte, error) {
 		STime:     e.STime,
 		SUSec:     e.SUSec,
 		ErrorCode: e.ErrorCode,
+		CRealm:    e.CRealm,
 		Realm:     e.Realm,
 		SName:     e.SName,
 		EText:     e.EText,
@@ -103,6 +108,7 @@ func (e *KRBError) Unmarshal(data []byte) (int, error) {
 	e.STime = inner.STime
 	e.SUSec = inner.SUSec
 	e.ErrorCode = inner.ErrorCode
+	e.CRealm = inner.CRealm
 	e.Realm = inner.Realm
 	e.SName = inner.SName
 	e.EText = inner.EText
