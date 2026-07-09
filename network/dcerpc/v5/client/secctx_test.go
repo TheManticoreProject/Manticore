@@ -26,7 +26,7 @@ type fakeSecCtx struct {
 	unprotectCalled bool
 }
 
-func (f *fakeSecCtx) AuthValueLen(bool) int { return f.tokenLen }
+func (f *fakeSecCtx) AuthValueLen(bool, int) int { return f.tokenLen }
 
 func (f *fakeSecCtx) ProtectRequest(signedRegion, stub []byte, seal bool) ([]byte, []byte, error) {
 	f.gotSignedRegion = append([]byte(nil), signedRegion...)

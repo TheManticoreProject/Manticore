@@ -118,7 +118,9 @@ func (c *Client) protectsRequests() bool {
 // sec_trailer, and the auth_value token. The token size is provider-specific (NTLM: 16;
 // Netlogon: larger), so it is taken from the active security context at its sealing level.
 func (c *Client) authVerifierOverhead() int {
-	return 3 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy)
+	// A negative stub length requests the largest token the provider can emit, so
+	// the reservation is safe for any fragment stub size.
+	return 3 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy, -1)
 }
 
 // negotiateToken builds the auth_value carried in the bind's auth verifier. For a single-leg
@@ -288,7 +290,6 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	}
 
 	seal := c.authLevel == pdu.AuthLevelPktPrivacy
-	tokenLen := c.sec.AuthValueLen(seal)
 
 	allocHint := req.AllocHint
 	if allocHint == 0 {
@@ -304,6 +305,10 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	pad := (4 - (len(req.Stub) % 4)) % 4
 	stubPad := make([]byte, len(req.Stub)+pad)
 	copy(stubPad, req.Stub)
+
+	// The auth_value length can depend on the padded stub length (the AES Kerberos
+	// Wrap token grows with the stub's block padding), so it is computed here.
+	tokenLen := c.sec.AuthValueLen(seal, len(stubPad))
 
 	st := pdu.SecTrailer{
 		AuthType:      c.authType,
@@ -371,8 +376,14 @@ func (c *Client) unprotectResponseStub(frag []byte) ([]byte, error) {
 	}
 	seal := c.authLevel == pdu.AuthLevelPktPrivacy
 	authLen := int(hdr.AuthLength)
-	if want := c.sec.AuthValueLen(seal); authLen != want {
-		return nil, fmt.Errorf("unexpected auth_length %d, want %d", authLen, want)
+	// A signing token is a fixed size, so verify the auth_length up front. Sealed
+	// (PKT_PRIVACY) Kerberos Wrap tokens vary in length with the sender's block
+	// padding (the AES CFX EC filler), so their length is validated by the
+	// provider's Unseal rather than compared to a fixed expectation here.
+	if !seal {
+		if want := c.sec.AuthValueLen(seal, 0); authLen != want {
+			return nil, fmt.Errorf("unexpected auth_length %d, want %d", authLen, want)
+		}
 	}
 	fragLen := int(hdr.FragLength)
 	if fragLen > len(frag) {

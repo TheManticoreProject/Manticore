@@ -27,14 +27,15 @@ import (
 //   - PKT / PKT_INTEGRITY protect each PDU with a GSS MIC. Windows requires these
 //     to be negotiated through SPNEGO (auth_type 0x09, RPC_C_AUTHN_GSS_NEGOTIATE)
 //     with GSS_C_DCE_STYLE: a three-leg handshake (bind AP-REQ, bind_ack AP-REP,
-//     alter_context with the initiator's own AP-REP) establishes the context, and
-//     an RC4-HMAC service ticket is requested (the RFC 4757 per-message tokens
-//     Windows expects here).
-//   - PKT_PRIVACY (sealing) uses the same SPNEGO/DCE-style handshake and RC4-HMAC
-//     service ticket, and additionally seals the stub with an RFC 4757 GSS Wrap
-//     token (tok_id 02 01): the stub is encrypted in place while the PDU header
-//     and sec_trailer stay sign-only, and the Wrap token travels in the
-//     auth_value.
+//     alter_context with the initiator's own AP-REP) establishes the context. The
+//     MIC token type follows the negotiated session key: an RFC 4121 CFX MIC
+//     (tok_id 04 04) for an AES ticket, or the RFC 4757 MIC (tok_id 01 01) for an
+//     RC4 ticket.
+//   - PKT_PRIVACY (sealing) uses the same SPNEGO/DCE-style handshake and, matching
+//     the MIC path, seals the stub with the enctype-appropriate GSS Wrap token: an
+//     RFC 4121 CFX Wrap (tok_id 05 04) for AES or the RFC 4757 Wrap (tok_id 02 01)
+//     for RC4. The stub is encrypted in place while the PDU header and sec_trailer
+//     stay sign-only, and the Wrap token travels in the auth_value.
 //
 // Call before Bind.
 func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, spn string) error {
@@ -59,12 +60,12 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 			return fmt.Errorf("dcerpc auth: kerberos GetTGT: %w", err)
 		}
 	}
-	if perMessage {
-		// Windows RPC's DCE-style per-message protection interoperates with RC4 on
-		// this class of server; request an RC4 service ticket.
-		kc.PreferRC4ServiceTicket()
-	}
-	ticket, ticketRaw, key, err := kc.GetTGS(spn, true)
+	// The per-message token type follows the negotiated service-ticket session
+	// key: an AES ticket yields RFC 4121 CFX tokens, an RC4 ticket the RFC 4757
+	// tokens. No enctype is forced here — the client's TGS-REQ prefers AES, so an
+	// AES-capable target produces AES per-message protection, and a target that
+	// can only issue an RC4 session key transparently falls back to RC4 tokens.
+	_, ticketRaw, key, keyEType, err := kc.GetTGS(spn, true)
 	if err != nil {
 		return fmt.Errorf("dcerpc auth: kerberos GetTGS %q: %w", spn, err)
 	}
@@ -78,7 +79,7 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 	initOpts := gssapi.InitOptions{
 		TicketRaw:    ticketRaw,
 		SessionKey:   key,
-		SessionEType: ticket.EncPart.EType,
+		SessionEType: keyEType,
 		ClientName:   messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{kc.Username()}},
 		ClientRealm:  kc.Realm(),
 		Flags:        flags,
@@ -91,12 +92,12 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 		// Connect level asserts an initiator subkey (as generic Windows GSS clients
 		// do). The DCE-style per-message path omits it so the acceptor chooses the
 		// subkey, matching the Windows RPC client.
-		subKey := make([]byte, kerbcrypto.KeyLen(ticket.EncPart.EType))
+		subKey := make([]byte, kerbcrypto.KeyLen(keyEType))
 		if _, err := rand.Read(subKey); err != nil {
 			return err
 		}
 		initOpts.SubKey = subKey
-		initOpts.SubKeyEType = ticket.EncPart.EType
+		initOpts.SubKeyEType = keyEType
 	}
 	apReq, ctx, err := gssapi.InitSecContext(initOpts)
 	if err != nil {
@@ -133,8 +134,9 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 
 // kerberosSecurityContext adapts a GSS-API SecContext to the RPC SecurityContext
 // interface. The per-PDU verifier is a GSS token over the request/response stub:
-// a MIC (integrity only, stub in the clear) for PKT/PKT_INTEGRITY, or an RC4-HMAC
-// Wrap token (RFC 4757 §7.4) that seals the stub for PKT_PRIVACY. It also
+// a MIC (integrity only, stub in the clear) for PKT/PKT_INTEGRITY, or a Wrap token
+// that seals the stub for PKT_PRIVACY. The token family (RFC 4121 CFX for AES,
+// RFC 4757 for RC4) follows the negotiated session/subkey enctype. It also
 // implements bindCompleter to complete the mutual-auth handshake.
 type kerberosSecurityContext struct {
 	ctx *gssapi.SecContext
@@ -197,11 +199,12 @@ func (k *kerberosSecurityContext) CompleteBind(bindAckAuthValue []byte) ([]byte,
 }
 
 // AuthValueLen is the GSS token length carried in the auth_value: for sealing
-// (PKT_PRIVACY) the RC4-HMAC Wrap token, otherwise the MIC token. Both are fixed
-// for a given context (the RC4 tokens have no etype-dependent variation here).
-func (k *kerberosSecurityContext) AuthValueLen(seal bool) int {
+// (PKT_PRIVACY) the Wrap token, otherwise the MIC token. The length depends on
+// the negotiated enctype (CFX header plus the etype checksum for AES, or the
+// fixed RFC 4757 layout for RC4).
+func (k *kerberosSecurityContext) AuthValueLen(seal bool, stubLen int) int {
 	if seal {
-		return k.ctx.WrapTokenLen()
+		return k.ctx.WrapTokenLen(stubLen)
 	}
 	return k.ctx.MICTokenLen()
 }
@@ -209,8 +212,8 @@ func (k *kerberosSecurityContext) AuthValueLen(seal bool) int {
 // ProtectRequest protects the request stub. For PKT_PRIVACY it seals the stub
 // with a GSS Wrap token and returns the encrypted stub plus the Wrap token; for
 // PKT/PKT_INTEGRITY it signs the stub with a GSS MIC token and returns the stub
-// unchanged. Per MS-RPCE the RC4 tokens cover only the stub (pduData), not the
-// PDU header or sec_trailer, so signedRegion is unused.
+// unchanged. Per MS-RPCE the Kerberos per-message tokens cover only the stub
+// (pduData), not the PDU header or sec_trailer, so signedRegion is unused.
 func (k *kerberosSecurityContext) ProtectRequest(signedRegion, stub []byte, seal bool) ([]byte, []byte, error) {
 	if seal {
 		sealed, token, err := k.ctx.Seal(stub)

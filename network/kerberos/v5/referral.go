@@ -61,7 +61,7 @@ func (c *KerberosClient) resolveKDCForRealm(realm string) (string, error) {
 // re-issues the TGS-REQ — repeating until the service ticket is obtained. A
 // KDC_ERR_WRONG_REALM error is handled by retrying with the corrected target
 // realm the KDC named. Cycles and over-long chains are rejected.
-func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includePAC bool) (messages.Ticket, []byte, []byte, error) {
+func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includePAC bool) (messages.Ticket, []byte, []byte, int, error) {
 	// The credential presented at the current hop. It starts as the home TGT and
 	// becomes each successive referral TGT.
 	tgt := c.tgtTicket
@@ -74,7 +74,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	// endpoints are the failover-ordered KDCs serving bodyRealm.
 	endpoints, err := c.endpointsForRealm(bodyRealm)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: resolve KDC for realm %q: %w", bodyRealm, err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: resolve KDC for realm %q: %w", bodyRealm, err)
 	}
 
 	// Realms whose KDC we have already presented a TGT to, to detect referral
@@ -91,7 +91,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	for hop := 0; hop < maxReferralHops; hop++ {
 		rep, encRep, krbErr, err := c.tgsExchange(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
 		if err != nil {
-			return messages.Ticket{}, nil, nil, err
+			return messages.Ticket{}, nil, nil, 0, err
 		}
 		if krbErr != nil {
 			// KDC_ERR_WRONG_REALM: the KDC tells the client the realm the
@@ -112,22 +112,22 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 				skewRetried = true
 				continue
 			}
-			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS error %d: %s", krbErr.ErrorCode, krbErr.EText)
+			return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: TGS error %d: %s", krbErr.ErrorCode, krbErr.EText)
 		}
 
 		nextRealm, isReferral := referralTargetRealm(rep, sname)
 		if !isReferral {
 			// The requested service ticket was issued — done.
-			return rep.Ticket, rep.TicketRaw, encRep.Key.KeyValue, nil
+			return rep.Ticket, rep.TicketRaw, encRep.Key.KeyValue, encRep.Key.KeyType, nil
 		}
 
 		nextRealm = strings.ToUpper(nextRealm)
 		if visited[nextRealm] {
-			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: cross-realm referral cycle detected at realm %q", nextRealm)
+			return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: cross-realm referral cycle detected at realm %q", nextRealm)
 		}
 		nextEndpoints, err := c.endpointsForRealm(nextRealm)
 		if err != nil {
-			return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: resolve KDC for referral realm %q: %w", nextRealm, err)
+			return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: resolve KDC for referral realm %q: %w", nextRealm, err)
 		}
 
 		// Advance to the next realm, presenting the referral TGT there.
@@ -140,7 +140,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 		sessionEType = encRep.Key.KeyType
 	}
 
-	return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: too many cross-realm referrals (>%d) chasing %s", maxReferralHops, strings.Join(sname.NameString, "/"))
+	return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: too many cross-realm referrals (>%d) chasing %s", maxReferralHops, strings.Join(sname.NameString, "/"))
 }
 
 // tgsExchange performs a single TGS-REQ/REP round-trip against the given KDC

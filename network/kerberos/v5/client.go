@@ -25,7 +25,7 @@ import (
 //	c := kerberos.NewClient("john", "CORP.LOCAL", "10.0.0.1")
 //	c.WithPassword("secret")
 //	if err := c.GetTGT(); err != nil { ... }
-//	ticket, ticketRaw, sessionKey, err := c.GetTGS("cifs/dc01.corp.local", true)
+//	ticket, ticketRaw, sessionKey, sessionEType, err := c.GetTGS("cifs/dc01.corp.local", true)
 type KerberosClient struct {
 	username string
 	realm    string
@@ -251,21 +251,26 @@ func pacRequestPA() messages.PAData {
 //
 // Returns the parsed service Ticket, the raw APPLICATION[1] ticket bytes as
 // received from the KDC (suitable for verbatim re-emission in a downstream
-// AP-REQ via messages.APReq{TicketRaw: ...}.Marshal), and the associated
-// session key bytes.
-func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, []byte, []byte, error) {
+// AP-REQ via messages.APReq{TicketRaw: ...}.Marshal), the associated session
+// key bytes, and the session key's encryption type. The session-key etype is
+// the KDC's choice and is not necessarily the ticket's own encryption type
+// (the server long-term key etype): a Windows KDC can, for example, wrap an
+// AES256 ticket around an RC4 session key. Callers keying the AP-REQ
+// authenticator or per-message GSS tokens must use this returned etype, not
+// Ticket.EncPart.EType.
+func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, []byte, []byte, int, error) {
 	// A preloaded (forged silver / captured) service ticket for this SPN is
 	// returned directly, with no TGT and no KDC round-trip.
 	if pt, ok := c.preloadedTGS[normalizeSPN(spn)]; ok {
-		return pt.ticket, pt.ticketRaw, pt.sessionKey, nil
+		return pt.ticket, pt.ticketRaw, pt.sessionKey, pt.sessionEType, nil
 	}
 	if !c.hasTGT {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}
 
 	sname, err := parseSPN(spn, c.realm)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse SPN %q: %w", spn, err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse SPN %q: %w", spn, err)
 	}
 
 	// Request the service ticket, chasing any cross-realm referrals returned by

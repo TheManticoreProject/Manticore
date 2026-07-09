@@ -198,6 +198,114 @@ func TestUnwrapIntegrityFromAcceptor(t *testing.T) {
 	}
 }
 
+// acceptorSealDCE simulates the acceptor emitting a DCE-style AES CFX Wrap token
+// (SentByAcceptor + Sealed, acceptor-seal usage) for the given data with the
+// requested EC filler, returning the in-place sealed stub and the auth_value
+// token — the shape Windows RPC returns at PKT_PRIVACY.
+func acceptorSealDCE(t *testing.T, key []byte, etype int, seq uint64, data []byte, ec int) (sealed, token []byte) {
+	t.Helper()
+	rrc := aesWrapBlock + micLen(etype)
+	hdr := wrapHeader(flagSentByAcceptor|flagSealed, seq)
+	binary.BigEndian.PutUint16(hdr[4:6], uint16(ec))
+	plain := make([]byte, 0, len(data)+ec+16)
+	plain = append(plain, data...)
+	plain = append(plain, make([]byte, ec)...)
+	plain = append(plain, hdr...)
+	cipher, err := kerbcrypto.Encrypt(etype, key, kgUsageAcceptorSeal, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary.BigEndian.PutUint16(hdr[6:8], uint16(rrc))
+	rotated := rotateRight(cipher, rrc+ec)
+	split := 16 + rrc + ec
+	return rotated[split:], append(append([]byte{}, hdr...), rotated[:split]...)
+}
+
+func TestSealDCEInitiatorStructure(t *testing.T) {
+	// Exercise several stub lengths, including one already block-aligned, to cover
+	// the EC filler arithmetic.
+	for _, n := range []int{0, 4, 16, 20, 33, 64} {
+		ctx := newTestContext(200)
+		ctx.acceptorSubkey = true // DCE-style: the base key is the acceptor subkey
+		data := bytes.Repeat([]byte{0x5a}, n)
+
+		sealed, tok, err := ctx.Seal(data)
+		if err != nil {
+			t.Fatalf("n=%d Seal: %v", n, err)
+		}
+		if tok[0] != 0x05 || tok[1] != 0x04 {
+			t.Errorf("n=%d Wrap TOK_ID = %02x %02x", n, tok[0], tok[1])
+		}
+		if tok[2]&flagSealed == 0 || tok[2]&flagAcceptorSubkey == 0 {
+			t.Errorf("n=%d flags = %02x, want Sealed+AcceptorSubkey", n, tok[2])
+		}
+		if tok[2]&flagSentByAcceptor != 0 {
+			t.Errorf("n=%d initiator token must not set SentByAcceptor", n)
+		}
+		// The stub is sealed in place: same length as the plaintext, and does not
+		// appear in the clear.
+		if len(sealed) != n {
+			t.Errorf("n=%d sealed length = %d, want %d", n, len(sealed), n)
+		}
+		if n > 0 && bytes.Contains(sealed, data) {
+			t.Errorf("n=%d sealed stub leaks plaintext", n)
+		}
+		// The auth_value length must match what WrapTokenLen advertises for this stub.
+		if want := ctx.WrapTokenLen(n); len(tok) != want {
+			t.Errorf("n=%d token length = %d, want %d", n, len(tok), want)
+		}
+	}
+}
+
+func TestSealUnsealDCERoundtrip(t *testing.T) {
+	// A pair of contexts sharing the acceptor subkey: the acceptor seals, the
+	// initiator context unseals. Includes ec=16 (a full filler block over
+	// already-aligned data) as Windows emits.
+	key := bytes.Repeat([]byte{0x42}, 32)
+	etype := iana.ETypeAES256CTSHMACSHA196
+	for _, tc := range []struct {
+		data []byte
+		ec   int
+	}{
+		{[]byte("short"), 11},
+		{bytes.Repeat([]byte{1}, 16), 16}, // aligned data, full-block filler
+		{bytes.Repeat([]byte{2}, 40), 8},
+		{[]byte("odd-length-confidential-stub!!"), 2},
+	} {
+		ctx := newTestContext(1)
+		ctx.SessionKey = key
+		ctx.acceptorSubkey = true
+		ctx.SubKey = key
+		ctx.SubKeyEType = etype
+
+		sealed, tok := acceptorSealDCE(t, key, etype, 9, tc.data, tc.ec)
+		if len(sealed) != len(tc.data) {
+			t.Errorf("sealed length = %d, want %d", len(sealed), len(tc.data))
+		}
+		got, err := ctx.Unseal(sealed, tok)
+		if err != nil {
+			t.Fatalf("Unseal (ec=%d): %v", tc.ec, err)
+		}
+		if !bytes.Equal(got, tc.data) {
+			t.Errorf("Unseal data = %q, want %q", got, tc.data)
+		}
+	}
+}
+
+func TestUnsealDCERejectsUnsealed(t *testing.T) {
+	ctx := newTestContext(1)
+	ctx.acceptorSubkey = true
+	// A MIC-style token (not a Wrap token) must be rejected by the sealing path.
+	if _, err := ctx.Unseal([]byte("x"), micHeader(flagSentByAcceptor, 1)); err == nil {
+		t.Error("Unseal accepted a non-Wrap token")
+	}
+	// A Wrap token from the initiator direction must be rejected.
+	badFlags := wrapHeader(flagSealed, 1)
+	if _, err := ctx.Unseal([]byte("x"), append(badFlags, make([]byte, 44)...)); err == nil {
+		t.Error("Unseal accepted an initiator-flagged Wrap token")
+	}
+}
+
 func TestUnwrapRotation(t *testing.T) {
 	ctx := newTestContext(1)
 	data := []byte("rotated-sealed-data-payload")

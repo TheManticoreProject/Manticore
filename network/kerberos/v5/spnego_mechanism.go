@@ -41,24 +41,24 @@ func (m *SPNEGOMechanism) InitToken() ([]byte, error) {
 			return nil, fmt.Errorf("kerberos spnego: GetTGT: %w", err)
 		}
 	}
-	ticket, ticketRaw, key, err := m.client.GetTGS(m.spn, true)
+	_, ticketRaw, key, keyEType, err := m.client.GetTGS(m.spn, true)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos spnego: GetTGS %q: %w", m.spn, err)
 	}
-	subKey := make([]byte, kerbcrypto.KeyLen(ticket.EncPart.EType))
+	subKey := make([]byte, kerbcrypto.KeyLen(keyEType))
 	if _, err := rand.Read(subKey); err != nil {
 		return nil, err
 	}
 	tok, ctx, err := gssapi.InitSecContext(gssapi.InitOptions{
 		TicketRaw:    ticketRaw,
 		SessionKey:   key,
-		SessionEType: ticket.EncPart.EType,
+		SessionEType: keyEType,
 		ClientName:   messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{m.client.Username()}},
 		ClientRealm:  m.client.Realm(),
 		Flags:        gssapi.GSSMutualFlag | gssapi.GSSSequenceFlag | gssapi.GSSConfFlag | gssapi.GSSIntegFlag,
 		Mutual:       true,
 		SubKey:       subKey,
-		SubKeyEType:  ticket.EncPart.EType,
+		SubKeyEType:  keyEType,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kerberos spnego: InitSecContext: %w", err)
