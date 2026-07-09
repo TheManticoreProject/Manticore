@@ -583,6 +583,8 @@ const (
 	kdcOptionCNameInAddlTkt = 14 // byte 1, 0x02 (MS-SFU S4U2Proxy)
 	kdcOptionRenewableOK    = 27 // byte 3, 0x10
 	kdcOptionEncTktInSKey   = 28 // byte 3, 0x08 (user-to-user)
+	kdcOptionRenew          = 30 // byte 3, 0x02 (RFC 4120 §3.3.3 renewal)
+	kdcOptionValidate       = 31 // byte 3, 0x01 (RFC 4120 §3.3.3 validation)
 )
 
 // encodeKDCOptions packs a list of bit positions into a 32-bit BitString
