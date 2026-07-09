@@ -135,7 +135,7 @@ func TestUnwrapSealFromAcceptor(t *testing.T) {
 	}
 }
 
-func TestWrapIntegrityOnlyRoundtrip(t *testing.T) {
+func TestWrapIntegrityOnlyStructure(t *testing.T) {
 	ctx := newTestContext(300)
 	data := []byte("signed-not-sealed")
 
@@ -150,17 +150,51 @@ func TestWrapIntegrityOnlyRoundtrip(t *testing.T) {
 	if !bytes.Contains(tok, data) {
 		t.Error("integrity-only Wrap should carry plaintext")
 	}
-
-	// Acceptor verifies: recompute over payload | header(EC/RRC zeroed).
-	ct, _ := kerbcrypto.ChecksumTypeForEType(ctx.SessionEType)
+	// RFC 4121 §4.2.3: EC must encode the checksum length (not 0) for a
+	// non-confidential Wrap token, and RRC is set to rotate it.
 	ml := micLen(ctx.SessionEType)
-	payload := tok[16 : len(tok)-ml]
-	want, _ := kerbcrypto.GetChecksum(ct, ctx.SessionKey, kgUsageInitiatorSeal, append(append([]byte{}, payload...), tok[:16]...))
-	if !bytes.Equal(tok[len(tok)-ml:], want) {
-		t.Error("integrity-only Wrap checksum does not verify")
+	if ec := int(binary.BigEndian.Uint16(tok[4:6])); ec != ml {
+		t.Errorf("EC = %d, want checksum length %d", ec, ml)
 	}
-	if !bytes.Equal(payload, data) {
-		t.Error("integrity-only Wrap payload mismatch")
+	if rrc := int(binary.BigEndian.Uint16(tok[6:8])); rrc != ml {
+		t.Errorf("RRC = %d, want %d", rrc, ml)
+	}
+}
+
+// acceptorWrapIntegrity simulates the acceptor emitting an integrity-only Wrap
+// token (SentByAcceptor, EC=RRC=checksum length, right-rotated) as AD does.
+func acceptorWrapIntegrity(t *testing.T, key []byte, etype int, seq uint64, data []byte) []byte {
+	t.Helper()
+	ct, _ := kerbcrypto.ChecksumTypeForEType(etype)
+	ml := micLen(etype)
+	hdr := wrapHeader(flagSentByAcceptor, seq) // EC=RRC=0 for checksum
+	sum, err := kerbcrypto.GetChecksum(ct, key, kgUsageAcceptorSeal, append(append([]byte{}, data...), hdr...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary.BigEndian.PutUint16(hdr[4:6], uint16(ml))
+	binary.BigEndian.PutUint16(hdr[6:8], uint16(ml))
+	body := make([]byte, 0, len(data)+ml)
+	body = append(append(body, data...), sum...)
+	// right-rotate by ml
+	rot := append(append([]byte{}, body[len(body)-ml:]...), body[:len(body)-ml]...)
+	return append(hdr, rot...)
+}
+
+func TestUnwrapIntegrityFromAcceptor(t *testing.T) {
+	ctx := newTestContext(1)
+	data := []byte("server-signed-layer-offer")
+	tok := acceptorWrapIntegrity(t, ctx.SessionKey, ctx.SessionEType, 3, data)
+
+	got, sealed, err := ctx.Unwrap(tok)
+	if err != nil {
+		t.Fatalf("Unwrap integrity: %v", err)
+	}
+	if sealed {
+		t.Error("token should be reported as not sealed")
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("Unwrap integrity data = %q, want %q", got, data)
 	}
 }
 
