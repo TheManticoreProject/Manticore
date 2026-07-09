@@ -83,27 +83,27 @@ func (g *nativeGSSAPIClient) InitSecContext(target string, token []byte) ([]byte
 // which this native mechanism does not need.
 func (g *nativeGSSAPIClient) InitSecContextWithOptions(target string, token []byte, _ []int) ([]byte, bool, error) {
 	if g.ctx == nil {
-		ticket, ticketRaw, key, err := g.kc.GetTGS(target, true)
+		_, ticketRaw, key, keyEType, err := g.kc.GetTGS(target, true)
 		if err != nil {
 			return nil, false, fmt.Errorf("ldap gssapi: GetTGS %q: %w", target, err)
 		}
 		// Assert an initiator subkey of the session-key etype, as Windows GSS
 		// clients do; AD's RFC 4121 (AES) acceptor expects one.
-		subKey := make([]byte, kerbcrypto.KeyLen(ticket.EncPart.EType))
+		subKey := make([]byte, kerbcrypto.KeyLen(keyEType))
 		if _, err := rand.Read(subKey); err != nil {
 			return nil, false, err
 		}
 		tok, ctx, err := gssapi.InitSecContext(gssapi.InitOptions{
 			TicketRaw:       ticketRaw,
 			SessionKey:      key,
-			SessionEType:    ticket.EncPart.EType,
+			SessionEType:    keyEType,
 			ClientName:      messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{g.user}},
 			ClientRealm:     g.realm,
 			Flags:           gssapi.GSSMutualFlag | gssapi.GSSSequenceFlag | gssapi.GSSConfFlag | gssapi.GSSIntegFlag,
 			ChannelBindings: g.channelBindings,
 			Mutual:          true,
 			SubKey:          subKey,
-			SubKeyEType:     ticket.EncPart.EType,
+			SubKeyEType:     keyEType,
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("ldap gssapi: InitSecContext: %w", err)

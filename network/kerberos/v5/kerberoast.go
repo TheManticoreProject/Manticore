@@ -25,7 +25,7 @@ type KerberoastResult struct {
 // To obtain an RC4 (NT-hash-crackable) ticket, ensure RC4 is offered; the KDC
 // returns the strongest etype the service account key supports.
 func (c *KerberosClient) Kerberoast(spn string) (*KerberoastResult, error) {
-	ticket, _, _, err := c.GetTGS(spn, false)
+	ticket, _, _, _, err := c.GetTGS(spn, false)
 	if err != nil {
 		return nil, err
 	}

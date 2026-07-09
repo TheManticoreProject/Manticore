@@ -14,9 +14,13 @@ import (
 // padding, header fields, sec_trailer), which is provider-independent ([MS-RPCE] 2.2.2.11).
 type SecurityContext interface {
 	// AuthValueLen returns the auth_value byte length this provider emits, given whether the
-	// request is sealed (PKT_PRIVACY) or only signed (PKT/PKT_INTEGRITY). It must be known
-	// before the PDU header is marshalled, since it feeds auth_length and frag_length.
-	AuthValueLen(seal bool) int
+	// request is sealed (PKT_PRIVACY) or only signed (PKT/PKT_INTEGRITY) and the length of the
+	// padded stub being protected. It must be known before the PDU header is marshalled, since
+	// it feeds auth_length and frag_length. Most providers emit a fixed-size token independent
+	// of the stub (NTLM, and the RC4 Kerberos tokens); the AES Kerberos Wrap token grows with
+	// the stub's block padding, so stubLen is consulted. A negative stubLen requests the
+	// largest possible length, for worst-case trailer sizing before the stub length is fixed.
+	AuthValueLen(seal bool, stubLen int) int
 
 	// ProtectRequest produces the on-wire stub and the auth_value for one outbound request
 	// fragment. signedRegion is the marshalled PDU from the header through the sec_trailer
@@ -49,8 +53,8 @@ type bindCompleter interface {
 // operate over signedRegion; only the stub is sealed for PKT_PRIVACY ([MS-RPCE] 3.3, NTLM2).
 type ntlmSecurityContext struct{ ctx *security.Context }
 
-// AuthValueLen is the fixed NTLM signature size regardless of seal level.
-func (n *ntlmSecurityContext) AuthValueLen(bool) int { return security.SignatureSize }
+// AuthValueLen is the fixed NTLM signature size regardless of seal level or stub length.
+func (n *ntlmSecurityContext) AuthValueLen(bool, int) int { return security.SignatureSize }
 
 // ProtectRequest signs signedRegion (and, when sealing, encrypts the stub) exactly as the
 // NTLM2 sender rules require.

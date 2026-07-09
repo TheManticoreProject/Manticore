@@ -143,35 +143,134 @@ func (ctx *SecContext) MICTokenLen() int {
 }
 
 // WrapTokenLen returns the auth_value length of a DCE-style Wrap token this
-// context emits when sealing. Only the RFC 4757 RC4-HMAC Wrap token is
-// supported (the per-message format Windows RPC uses for Kerberos PKT_PRIVACY);
-// it returns 0 for other enctypes, for which Seal reports an error.
-func (ctx *SecContext) WrapTokenLen() int {
-	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+// context emits when sealing a stub of dataLen bytes. For RC4-HMAC it is the
+// fixed RFC 4757 token (the sealed data is expanded in the stub, not the token,
+// so dataLen is irrelevant). For an AES CFX Wrap token (RFC 4121 §4.2), the
+// sealed data replaces the stub in place at the same length and the token
+// carries the 16-byte header, the encrypted copy of that header, the checksum,
+// the confounder and EC filler octets — so the length is
+// 48 + EC + checksum, where EC pads the plaintext to the cipher block size. A
+// negative dataLen requests the maximum possible length (largest EC), used to
+// size the auth trailer before the exact stub length is known.
+func (ctx *SecContext) WrapTokenLen(dataLen int) int {
+	_, etype := ctx.baseKey()
+	if etype == rc4HMACEType {
 		return rc4WrapTokenLen
 	}
-	return 0
+	return 48 + wrapAESExtraCount(dataLen) + micLen(etype)
 }
+
+// wrapAESExtraCount is the EC (extra-count) filler an AES CFX Wrap token adds to
+// pad the plaintext up to the 16-octet cipher block size (RFC 4121 §4.2.3). A
+// negative dataLen returns the maximum EC (a full-minus-one block short), used
+// when sizing the auth trailer before the stub length is fixed.
+func wrapAESExtraCount(dataLen int) int {
+	if dataLen < 0 {
+		return 12
+	}
+	return (aesWrapBlock - dataLen%aesWrapBlock) & (aesWrapBlock - 1)
+}
+
+// aesWrapBlock is the cipher block size the AES CFX Wrap token pads to.
+const aesWrapBlock = 16
 
 // Seal produces a DCE-style GSS Wrap token that seals data as the context
 // initiator, returning the encrypted stub (sealed in place) and the Wrap token
 // for the auth_value. It is used by DCE/RPC PKT_PRIVACY; the RPC header and
-// sec_trailer are not covered by the RC4 token. Only RC4-HMAC is implemented.
+// sec_trailer are not covered by the token. RC4-HMAC uses the RFC 4757 token,
+// every other enctype the RFC 4121 CFX Wrap token.
 func (ctx *SecContext) Seal(data []byte) (sealed, token []byte, err error) {
-	if _, etype := ctx.baseKey(); etype != rc4HMACEType {
-		return nil, nil, fmt.Errorf("gssapi: DCE-style sealing is only implemented for RC4-HMAC")
+	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+		return ctx.sealRC4(data, ctx.nextSendSeq())
 	}
-	return ctx.sealRC4(data, ctx.nextSendSeq())
+	return ctx.sealAES(data, ctx.nextSendSeq())
 }
 
 // Unseal decrypts and verifies a DCE-style GSS Wrap token received from the
-// acceptor, returning the recovered plaintext (including any GSS pad the caller
-// strips). Only RC4-HMAC is implemented.
+// acceptor, returning the recovered plaintext (including any RPC auth pad the
+// caller strips). RC4-HMAC uses the RFC 4757 token, every other enctype the RFC
+// 4121 CFX Wrap token.
 func (ctx *SecContext) Unseal(sealed, token []byte) ([]byte, error) {
-	if _, etype := ctx.baseKey(); etype != rc4HMACEType {
-		return nil, fmt.Errorf("gssapi: DCE-style unsealing is only implemented for RC4-HMAC")
+	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+		return ctx.unsealRC4(sealed, token)
 	}
-	return ctx.unsealRC4(sealed, token)
+	return ctx.unsealAES(sealed, token)
+}
+
+// sealAES produces an RFC 4121 §4.2.6.2 CFX Wrap token (tok_id 05 04) with
+// confidentiality, in the DCE style Windows RPC expects: the stub is encrypted
+// in place at its original length while the token (auth_value) carries the
+// cleartext 16-byte header followed by the rotated remainder of the ciphertext
+// (the encrypted header copy, the checksum and the confounder). EC pads the
+// plaintext to the cipher block size and RRC = confounder+checksum length, so
+// that after the right-rotation the stub-sized run of ciphertext lands in place.
+func (ctx *SecContext) sealAES(data []byte, seq uint64) (sealed, token []byte, err error) {
+	key, etype := ctx.baseKey()
+	ec := wrapAESExtraCount(len(data))
+	rrc := aesWrapBlock + micLen(etype) // confounder + checksum length
+
+	// The header used inside the encrypted plaintext carries EC with RRC=0
+	// (RFC 4121 §4.2.4: the checksum/encryption is computed with RRC zeroed).
+	hdr := wrapHeader(ctx.initiatorFlags(true), seq)
+	binary.BigEndian.PutUint16(hdr[4:6], uint16(ec))
+
+	plain := make([]byte, 0, len(data)+ec+16)
+	plain = append(plain, data...)
+	plain = append(plain, make([]byte, ec)...)
+	plain = append(plain, hdr...)
+	cipher, err := kerbcrypto.Encrypt(etype, key, kgUsageInitiatorSeal, plain)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The transmitted header carries the real RRC; rotate the ciphertext right by
+	// RRC+EC so the leading stub-length run can be sent in place.
+	binary.BigEndian.PutUint16(hdr[6:8], uint16(rrc))
+	rotated := rotateRight(cipher, rrc+ec)
+	split := 16 + rrc + ec
+	if split > len(rotated) {
+		return nil, nil, fmt.Errorf("gssapi: AES Wrap ciphertext too short")
+	}
+	sealed = rotated[split:]
+	token = append(append([]byte{}, hdr...), rotated[:split]...)
+	return sealed, token, nil
+}
+
+// unsealAES decrypts and verifies an RFC 4121 CFX Wrap token received from the
+// acceptor. sealed is the in-place encrypted stub; token is the auth_value (the
+// cleartext header plus the rotated ciphertext remainder). The header's EC/RRC
+// reassemble and unrotate the full ciphertext, which is decrypted with the
+// acceptor-seal usage; the trailing header copy and EC filler are stripped.
+func (ctx *SecContext) unsealAES(sealed, token []byte) ([]byte, error) {
+	if len(token) < 16 {
+		return nil, fmt.Errorf("gssapi: AES Wrap token too short")
+	}
+	if token[0] != tokIDWrap[0] || token[1] != tokIDWrap[1] {
+		return nil, fmt.Errorf("gssapi: not a Wrap token (tok_id %02x %02x)", token[0], token[1])
+	}
+	if token[2]&flagSentByAcceptor == 0 {
+		return nil, fmt.Errorf("gssapi: Wrap token not marked as sent by acceptor")
+	}
+	if token[2]&flagSealed == 0 {
+		return nil, fmt.Errorf("gssapi: Wrap token is not sealed")
+	}
+	ec := int(binary.BigEndian.Uint16(token[4:6]))
+	rrc := int(binary.BigEndian.Uint16(token[6:8]))
+	key, etype := ctx.baseKey()
+
+	// Rejoin the rotated ciphertext (token bytes after the 16-byte header, then
+	// the in-place sealed stub) and undo the right-rotation.
+	rotated := append(append([]byte{}, token[16:]...), sealed...)
+	cipher := rotateLeft(rotated, rrc+ec)
+	plain, err := kerbcrypto.Decrypt(etype, key, kgUsageAcceptorSeal, cipher)
+	if err != nil {
+		return nil, fmt.Errorf("gssapi: decrypt AES Wrap token: %w", err)
+	}
+	// plain = data | filler(ec) | header(16).
+	if len(plain) < 16+ec {
+		return nil, fmt.Errorf("gssapi: AES Wrap plaintext too short")
+	}
+	return plain[:len(plain)-16-ec], nil
 }
 
 // MakeMIC produces a MIC token over data as the context initiator. For RC4-HMAC

@@ -31,8 +31,9 @@ func NewNetlogonSecurityContext(sc *SecureChannel) *NetlogonSecurityContext {
 }
 
 // AuthValueLen is the token length: AES (NL_AUTH_SHA2_SIGNATURE) 56 sealing / 48 signing;
-// legacy (NL_AUTH_SIGNATURE) 32 sealing / 24 signing.
-func (n *NetlogonSecurityContext) AuthValueLen(seal bool) int {
+// legacy (NL_AUTH_SIGNATURE) 32 sealing / 24 signing. The Netlogon token is a fixed size, so
+// the stub length is not consulted.
+func (n *NetlogonSecurityContext) AuthValueLen(seal bool, _ int) int {
 	if n.aes {
 		if seal {
 			return 56
