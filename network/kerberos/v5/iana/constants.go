@@ -81,6 +81,7 @@ const (
 	KeyUsageKRBPrivEncPart         = 13 // KRB-PRIV enc-part
 	KeyUsageKRBCredEncPart         = 14 // KRB-CRED enc-part
 	KeyUsageKRBSafeCksum           = 15 // KRB-SAFE cksum
+	KeyUsageKerbNonKerbCksumSalt   = 17 // KERB_NON_KERB_CKSUM_SALT (MS-PAC signatures)
 	KeyUsageADKDCIssuedCksum       = 19 // AD-KDC-ISSUED checksum
 )
 
