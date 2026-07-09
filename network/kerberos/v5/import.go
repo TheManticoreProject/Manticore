@@ -170,6 +170,77 @@ func LoadServiceTicketFromCCacheBytes(data []byte, spn string) (*ServiceTicket, 
 	return serviceTicketFromCCache(cc, spn)
 }
 
+// LoadServiceTicket wires a service ticket (a forged silver ticket, or one
+// recovered from a .kirbi/ccache) into the client so a subsequent GetTGS for its
+// SPN returns it verbatim with no TGT and no KDC round-trip. Combined with the
+// SPNEGO mechanism this is silver-ticket pass-the-ticket against SMB/RPC/LDAP.
+func (c *KerberosClient) LoadServiceTicket(st *ServiceTicket) error {
+	if st == nil {
+		return fmt.Errorf("kerberos: nil service ticket")
+	}
+	if len(st.SessionKey) == 0 {
+		return fmt.Errorf("kerberos: service ticket has no session key")
+	}
+	if len(st.SName.NameString) < 2 {
+		return fmt.Errorf("kerberos: service ticket has no service principal name")
+	}
+	if c.preloadedTGS == nil {
+		c.preloadedTGS = make(map[string]preloadedServiceTicket)
+	}
+	// Adopt the ticket's client identity when the client has none, so the AP-REQ
+	// authenticator's cname/crealm match the ticket (else the service rejects with
+	// KRB_AP_ERR_BADMATCH). A client created with only a KDC host thus becomes
+	// usable straight after import.
+	if c.username == "" && len(st.Client.NameString) > 0 {
+		c.username = st.Client.NameString[0]
+	}
+	if c.realm == "" && st.CRealm != "" {
+		c.realm = strings.ToUpper(st.CRealm)
+	}
+	spn := st.SName.NameString[0] + "/" + st.SName.NameString[1]
+	c.preloadedTGS[normalizeSPN(spn)] = preloadedServiceTicket{
+		ticket:       st.Ticket,
+		ticketRaw:    st.TicketRaw,
+		sessionKey:   st.SessionKey,
+		sessionEType: st.SessionEType,
+	}
+	return nil
+}
+
+// LoadForgedServiceTicket wires a forged (silver) ticket into the client for
+// pass-the-ticket, the forging-side counterpart of LoadServiceTicket.
+func (c *KerberosClient) LoadForgedServiceTicket(ft *ForgedTicket) error {
+	if ft == nil {
+		return fmt.Errorf("kerberos: nil forged ticket")
+	}
+	return c.LoadServiceTicket(&ServiceTicket{
+		Ticket:       ft.Ticket,
+		TicketRaw:    ft.TicketRaw,
+		SessionKey:   ft.SessionKey,
+		SessionEType: ft.SessionEType,
+		Client:       ft.CredInfo.PName,
+		CRealm:       ft.CredInfo.PRealm,
+		SName:        ft.CredInfo.SName,
+		SRealm:       ft.CredInfo.SRealm,
+	})
+}
+
+// hasPreloadedServiceTicket reports whether a service ticket has been preloaded
+// for the given SPN.
+func (c *KerberosClient) hasPreloadedServiceTicket(spn string) bool {
+	_, ok := c.preloadedTGS[normalizeSPN(spn)]
+	return ok
+}
+
+// normalizeSPN reduces an SPN to a lowercase "service/host" key (dropping any
+// @REALM suffix) for preloaded-ticket lookup.
+func normalizeSPN(spn string) string {
+	if at := strings.IndexByte(spn, '@'); at >= 0 {
+		spn = spn[:at]
+	}
+	return strings.ToLower(spn)
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 // applyTGT parses the raw ticket and populates the TGT state used by GetTGS and

@@ -34,7 +34,9 @@ func NewSPNEGOMechanism(client *KerberosClient, spn string) *SPNEGOMechanism {
 // authentication is requested and an initiator subkey is asserted (as Windows
 // GSS clients do).
 func (m *SPNEGOMechanism) InitToken() ([]byte, error) {
-	if !m.client.hasTGT {
+	// A preloaded (forged silver / captured) service ticket for the SPN needs no
+	// TGT; otherwise acquire one if we do not already hold it.
+	if !m.client.hasTGT && !m.client.hasPreloadedServiceTicket(m.spn) {
 		if err := m.client.GetTGT(); err != nil {
 			return nil, fmt.Errorf("kerberos spnego: GetTGT: %w", err)
 		}
