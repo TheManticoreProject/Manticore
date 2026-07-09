@@ -30,8 +30,11 @@ import (
 //     alter_context with the initiator's own AP-REP) establishes the context, and
 //     an RC4-HMAC service ticket is requested (the RFC 4757 per-message tokens
 //     Windows expects here).
-//   - PKT_PRIVACY (sealing) additionally needs a GSS Wrap-IOV encrypt and is not
-//     yet supported.
+//   - PKT_PRIVACY (sealing) uses the same SPNEGO/DCE-style handshake and RC4-HMAC
+//     service ticket, and additionally seals the stub with an RFC 4757 GSS Wrap
+//     token (tok_id 02 01): the stub is encrypted in place while the PDU header
+//     and sec_trailer stay sign-only, and the Wrap token travels in the
+//     auth_value.
 //
 // Call before Bind.
 func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, spn string) error {
@@ -45,9 +48,7 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 		authLevel = pdu.AuthLevelPkt
 	}
 	switch authLevel {
-	case pdu.AuthLevelConnect, pdu.AuthLevelPkt, pdu.AuthLevelPktIntegrity:
-	case pdu.AuthLevelPktPrivacy:
-		return fmt.Errorf("dcerpc auth: kerberos PKT_PRIVACY (sealing) is not yet supported; use PKT_INTEGRITY")
+	case pdu.AuthLevelConnect, pdu.AuthLevelPkt, pdu.AuthLevelPktIntegrity, pdu.AuthLevelPktPrivacy:
 	default:
 		return fmt.Errorf("dcerpc auth: unsupported auth_level %d", authLevel)
 	}
@@ -131,9 +132,10 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 }
 
 // kerberosSecurityContext adapts a GSS-API SecContext to the RPC SecurityContext
-// interface. The per-PDU verifier is a GSS MIC token (RFC 4121 §4.2.6.1) over the
-// request/response stub; the stub itself travels in the clear (integrity only).
-// It also implements bindCompleter to complete the mutual-auth handshake.
+// interface. The per-PDU verifier is a GSS token over the request/response stub:
+// a MIC (integrity only, stub in the clear) for PKT/PKT_INTEGRITY, or an RC4-HMAC
+// Wrap token (RFC 4757 §7.4) that seals the stub for PKT_PRIVACY. It also
+// implements bindCompleter to complete the mutual-auth handshake.
 type kerberosSecurityContext struct {
 	ctx *gssapi.SecContext
 	// spnego is set for the per-message SPNEGO/DCE-style path: the acceptor's
@@ -194,18 +196,28 @@ func (k *kerberosSecurityContext) CompleteBind(bindAckAuthValue []byte) ([]byte,
 	return asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: legSeq})
 }
 
-// AuthValueLen is the GSS MIC token length: a 16-byte token header plus the
-// etype's checksum. It is independent of the seal flag (sealing is unsupported).
-func (k *kerberosSecurityContext) AuthValueLen(bool) int {
+// AuthValueLen is the GSS token length carried in the auth_value: for sealing
+// (PKT_PRIVACY) the RC4-HMAC Wrap token, otherwise the MIC token. Both are fixed
+// for a given context (the RC4 tokens have no etype-dependent variation here).
+func (k *kerberosSecurityContext) AuthValueLen(seal bool) int {
+	if seal {
+		return k.ctx.WrapTokenLen()
+	}
 	return k.ctx.MICTokenLen()
 }
 
-// ProtectRequest signs the request stub with a GSS MIC token and returns it as
-// the auth_value. Per MS-RPCE the MIC covers only the stub (pduData), not the
-// PDU header or sec_trailer, when PFC_SUPPORT_HEADER_SIGN is not negotiated.
+// ProtectRequest protects the request stub. For PKT_PRIVACY it seals the stub
+// with a GSS Wrap token and returns the encrypted stub plus the Wrap token; for
+// PKT/PKT_INTEGRITY it signs the stub with a GSS MIC token and returns the stub
+// unchanged. Per MS-RPCE the RC4 tokens cover only the stub (pduData), not the
+// PDU header or sec_trailer, so signedRegion is unused.
 func (k *kerberosSecurityContext) ProtectRequest(signedRegion, stub []byte, seal bool) ([]byte, []byte, error) {
 	if seal {
-		return nil, nil, fmt.Errorf("dcerpc auth: kerberos sealing is not supported")
+		sealed, token, err := k.ctx.Seal(stub)
+		if err != nil {
+			return nil, nil, err
+		}
+		return sealed, token, nil
 	}
 	mic, err := k.ctx.MakeMIC(stub)
 	if err != nil {
@@ -214,11 +226,12 @@ func (k *kerberosSecurityContext) ProtectRequest(signedRegion, stub []byte, seal
 	return stub, mic, nil
 }
 
-// UnprotectResponse verifies the server's GSS MIC over the response stub and
-// returns the stub unchanged (integrity only).
+// UnprotectResponse recovers the response stub. For PKT_PRIVACY it decrypts and
+// verifies the GSS Wrap token, returning the plaintext stub; otherwise it
+// verifies the GSS MIC over the (cleartext) stub and returns it unchanged.
 func (k *kerberosSecurityContext) UnprotectResponse(signedRegion, stub, authValue []byte, seal bool) ([]byte, error) {
 	if seal {
-		return nil, fmt.Errorf("dcerpc auth: kerberos sealing is not supported")
+		return k.ctx.Unseal(stub, authValue)
 	}
 	if err := k.ctx.VerifyMIC(stub, authValue); err != nil {
 		return nil, err

@@ -142,6 +142,38 @@ func (ctx *SecContext) MICTokenLen() int {
 	return 16 + micLen(etype)
 }
 
+// WrapTokenLen returns the auth_value length of a DCE-style Wrap token this
+// context emits when sealing. Only the RFC 4757 RC4-HMAC Wrap token is
+// supported (the per-message format Windows RPC uses for Kerberos PKT_PRIVACY);
+// it returns 0 for other enctypes, for which Seal reports an error.
+func (ctx *SecContext) WrapTokenLen() int {
+	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+		return rc4WrapTokenLen
+	}
+	return 0
+}
+
+// Seal produces a DCE-style GSS Wrap token that seals data as the context
+// initiator, returning the encrypted stub (sealed in place) and the Wrap token
+// for the auth_value. It is used by DCE/RPC PKT_PRIVACY; the RPC header and
+// sec_trailer are not covered by the RC4 token. Only RC4-HMAC is implemented.
+func (ctx *SecContext) Seal(data []byte) (sealed, token []byte, err error) {
+	if _, etype := ctx.baseKey(); etype != rc4HMACEType {
+		return nil, nil, fmt.Errorf("gssapi: DCE-style sealing is only implemented for RC4-HMAC")
+	}
+	return ctx.sealRC4(data, ctx.nextSendSeq())
+}
+
+// Unseal decrypts and verifies a DCE-style GSS Wrap token received from the
+// acceptor, returning the recovered plaintext (including any GSS pad the caller
+// strips). Only RC4-HMAC is implemented.
+func (ctx *SecContext) Unseal(sealed, token []byte) ([]byte, error) {
+	if _, etype := ctx.baseKey(); etype != rc4HMACEType {
+		return nil, fmt.Errorf("gssapi: DCE-style unsealing is only implemented for RC4-HMAC")
+	}
+	return ctx.unsealRC4(sealed, token)
+}
+
 // MakeMIC produces a MIC token over data as the context initiator. For RC4-HMAC
 // it is the RFC 4757 §7.3 token; otherwise the RFC 4121 §4.2.6.1 CFX token
 // (checksum(data | header) keyed with the initiator-sign usage).
