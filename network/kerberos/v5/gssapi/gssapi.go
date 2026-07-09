@@ -68,6 +68,22 @@ func GSSChecksumValue(flags uint32, channelBindings []byte) []byte {
 	return out
 }
 
+// GSSChannelBindings marshals a gss_channel_bindings_struct (RFC 2744 §3.11) the
+// way MIT/Heimdal krb5 do when feeding it to the RFC 4121 §4.1.1 authenticator
+// checksum: little-endian initiator/acceptor address-type and address-length
+// fields (all empty here, so four zero uint32s) followed by the application-data
+// length and bytes. The returned buffer is what GSSChecksumValue MD5-hashes into
+// the checksum Bnd field. appData carries the channel-binding token itself, e.g.
+// "tls-server-end-point:" || certificate-hash for LDAP/GSSAPI over TLS.
+func GSSChannelBindings(appData []byte) []byte {
+	out := make([]byte, 16, 20+len(appData)) // initiator/acceptor addrtype+length = 0
+	l := make([]byte, 4)
+	binary.LittleEndian.PutUint32(l, uint32(len(appData)))
+	out = append(out, l...)
+	out = append(out, appData...)
+	return out
+}
+
 // WrapToken wraps a Kerberos message in the GSS-API InitialContextToken framing
 // (RFC 1964 §1.1): [APPLICATION 0] { kerberos5-OID, TOK_ID | krbMessage }.
 func WrapToken(tokID [2]byte, krbMessage []byte) ([]byte, error) {
