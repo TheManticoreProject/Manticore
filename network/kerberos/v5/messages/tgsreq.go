@@ -18,11 +18,13 @@ type tgsReqInner struct {
 }
 
 // tgsReqMarshal is the inner SEQUENCE for marshaling — uses GeneralString types.
+// ReqBody is a pre-encoded [4] EXPLICIT { KDC-REQ-BODY } RawValue so that
+// additional-tickets can be spliced correctly (see encodeKDCReqBodyForTGS).
 type tgsReqMarshal struct {
-	PVNO    int               `asn1:"explicit,tag:1"`
-	MsgType int               `asn1:"explicit,tag:2"`
-	PAData  []PAData          `asn1:"explicit,tag:3,optional"`
-	ReqBody kdcReqBodyMarshal `asn1:"explicit,tag:4"`
+	PVNO    int           `asn1:"explicit,tag:1"`
+	MsgType int           `asn1:"explicit,tag:2"`
+	PAData  []PAData      `asn1:"explicit,tag:3,optional"`
+	ReqBody asn1.RawValue // pre-encoded [4] EXPLICIT { KDC-REQ-BODY }
 }
 
 // TGSReq is a Kerberos TGS-REQ (Ticket Granting Service Request) message,
@@ -42,11 +44,15 @@ type TGSReq struct {
 
 // Marshal encodes the TGS-REQ as an ASN.1 APPLICATION[12] wrapped SEQUENCE.
 func (r *TGSReq) Marshal() ([]byte, error) {
+	bodyTLV, err := encodeKDCReqBodyForTGS(r.ReqBody)
+	if err != nil {
+		return nil, err
+	}
 	inner := tgsReqMarshal{
 		PVNO:    KerberosV5,
 		MsgType: MsgTypeTGSReq,
 		PAData:  r.PAData,
-		ReqBody: marshalKDCReqBody(r.ReqBody),
+		ReqBody: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 4, IsCompound: true, Bytes: bodyTLV},
 	}
 	seq_bytes, err := asn1.Marshal(inner)
 	if err != nil {

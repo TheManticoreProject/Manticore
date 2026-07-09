@@ -492,11 +492,12 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 // Bit positions for KDCOptions (RFC 4120 Section 5.4.1, RFC 6806 for canonicalize).
 // Bit 0 is the MSB; bit N sits in byte N/8 at position 7-(N%8).
 const (
-	kdcOptionForwardable  = 1  // byte 0, 0x40
-	kdcOptionProxiable    = 3  // byte 0, 0x10
-	kdcOptionRenewable    = 8  // byte 1, 0x80
-	kdcOptionCanonicalize = 15 // byte 1, 0x01 (RFC 6806)
-	kdcOptionRenewableOK  = 27 // byte 3, 0x10
+	kdcOptionForwardable    = 1  // byte 0, 0x40
+	kdcOptionProxiable      = 3  // byte 0, 0x10
+	kdcOptionRenewable      = 8  // byte 1, 0x80
+	kdcOptionCanonicalize   = 15 // byte 1, 0x01 (RFC 6806)
+	kdcOptionCNameInAddlTkt = 14 // byte 1, 0x02 (MS-SFU S4U2Proxy)
+	kdcOptionRenewableOK    = 27 // byte 3, 0x10
 )
 
 // encodeKDCOptions packs a list of bit positions into a 32-bit BitString
