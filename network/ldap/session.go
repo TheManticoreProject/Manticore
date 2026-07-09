@@ -2,8 +2,11 @@ package ldap
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net"
 
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/gssapi"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 
 	"github.com/go-ldap/ldap/v3"
@@ -47,6 +50,14 @@ type Session struct {
 	// LDAPS connections. It defaults to true (verification disabled) to preserve
 	// the historical behavior; use SetTLSSkipVerify to enable verification.
 	tlsSkipVerify bool
+	// gssapiLayer is the SASL GSSAPI security layer to negotiate for Kerberos
+	// binds (RFC 4752 §3.1). It defaults to no security layer (auth only); use
+	// SetGSSAPISigning / SetGSSAPISealing to request integrity or confidentiality.
+	gssapiLayer byte
+	// gssClient retains the GSSAPI client for the lifetime of the session so the
+	// negotiated per-message security context survives past the bind and is torn
+	// down on Close.
+	gssClient *nativeGSSAPIClient
 }
 
 // NewSession creates a new LDAP session with the provided configuration and credentials.
@@ -91,8 +102,25 @@ func NewSession(host string, port int, credentials *credentials.Credentials, use
 	s.usekerberos = usekerberos
 	// Preserve the historical default of not verifying the server certificate.
 	s.tlsSkipVerify = true
+	// Preserve the historical default of an auth-only GSSAPI bind (no ongoing
+	// sign/seal); callers opt into a security layer explicitly.
+	s.gssapiLayer = saslLayerNone
 
 	return s, nil
+}
+
+// SetGSSAPISigning requests the RFC 4752 integrity (signing) security layer for
+// Kerberos binds: after the bind, every LDAP PDU is GSS-signed and its integrity
+// verified on receipt. It must be called before Connect.
+func (s *Session) SetGSSAPISigning() {
+	s.gssapiLayer = saslLayerIntegrity
+}
+
+// SetGSSAPISealing requests the RFC 4752 confidentiality (sealing) security layer
+// for Kerberos binds: after the bind, every LDAP PDU is GSS-encrypted (which also
+// implies integrity). It must be called before Connect.
+func (s *Session) SetGSSAPISealing() {
+	s.gssapiLayer = saslLayerConfidentiality
 }
 
 // SetTLSSkipVerify controls whether the server certificate is verified when
@@ -130,44 +158,56 @@ func (s *Session) SetTLSSkipVerify(skip bool) {
 //		logger.Warn(fmt.Sprintf("Error connecting to LDAP server: %s", err))
 //	}
 func (s *Session) Connect() (bool, error) {
-	// Set up LDAP connection
-	var ldapConnection *ldap.Conn
 	var err error
 
-	// Connect to remote server
+	// Dial the transport ourselves and interpose a SASL wrapper connection so a
+	// negotiated GSSAPI security layer (sign/seal) can be applied to every LDAP
+	// PDU after the bind. The server certificate is captured for LDAPS so a
+	// tls-server-end-point channel-binding token can be sent during the bind.
+	var rawConn net.Conn
+	var serverCert *x509.Certificate
 	if s.useldaps {
-		// LDAPS connection
-		ldapConnection, err = ldap.DialURL(
-			fmt.Sprintf("ldaps://%s:%d", s.host, s.port),
-			ldap.DialWithTLSConfig(
-				&tls.Config{
-					InsecureSkipVerify: s.tlsSkipVerify,
-				},
-			),
+		tlsConn, derr := tls.DialWithDialer(
+			&net.Dialer{Timeout: ldap.DefaultTimeout},
+			"tcp",
+			fmt.Sprintf("%s:%d", s.host, s.port),
+			&tls.Config{InsecureSkipVerify: s.tlsSkipVerify},
 		)
-		if err != nil {
-			return false, fmt.Errorf("error connecting to LDAPS server: %s", err)
+		if derr != nil {
+			return false, fmt.Errorf("error connecting to LDAPS server: %s", derr)
 		}
+		if certs := tlsConn.ConnectionState().PeerCertificates; len(certs) > 0 {
+			serverCert = certs[0]
+		}
+		rawConn = tlsConn
 	} else {
-		// Regular LDAP connection
-		ldapConnection, err = ldap.DialURL(
-			fmt.Sprintf("ldap://%s:%d", s.host, s.port),
-		)
+		rawConn, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", s.host, s.port), ldap.DefaultTimeout)
 		if err != nil {
 			return false, fmt.Errorf("error connecting to LDAP server: %s", err)
 		}
 	}
+
+	sc := newSASLConn(rawConn)
+	ldapConnection := ldap.NewConn(sc, s.useldaps)
+	ldapConnection.Start()
 
 	// Use Kerberos
 	if s.usekerberos {
 		// Native (stdlib-only) GSSAPI SASL bind; the DC is both the LDAP server
 		// and the KDC. Realm is the credentials' domain (upper-cased by the client).
 		servicePrincipalName := fmt.Sprintf("ldap/%s", s.host)
-		gssClient, err := newNativeGSSAPIClient(s.host, s.credentials.GetDomain(), s.credentials)
-		if err != nil {
-			return false, fmt.Errorf("error initializing Kerberos: %w", err)
+		gssClient, gerr := newNativeGSSAPIClient(s.host, s.credentials.GetDomain(), s.credentials)
+		if gerr != nil {
+			ldapConnection.Close()
+			return false, fmt.Errorf("error initializing Kerberos: %w", gerr)
 		}
-		defer gssClient.DeleteSecContext()
+		gssClient.desiredLayer = s.gssapiLayer
+		// Over LDAPS, bind the GSSAPI context to the TLS channel (RFC 5929
+		// tls-server-end-point), which AD requires when channel binding is enforced.
+		if serverCert != nil {
+			gssClient.channelBindings = gssapi.GSSChannelBindings(tlsServerEndPointCBT(serverCert))
+		}
+		s.gssClient = gssClient
 
 		err = ldapConnection.GSSAPIBindRequest(
 			gssClient,
@@ -177,7 +217,15 @@ func (s *Session) Connect() (bool, error) {
 			},
 		)
 		if err != nil {
+			ldapConnection.Close()
 			return false, fmt.Errorf("error binding with Kerberos: %w", err)
+		}
+
+		// Install the negotiated security layer on the connection so subsequent
+		// PDUs are signed and/or sealed. A no-security-layer bind leaves the
+		// connection as a transparent pass-through.
+		if cipher := gssClient.securityLayer(); cipher != nil {
+			sc.activate(cipher)
 		}
 	} else {
 		// Use NTLM authentification or null auth
@@ -252,5 +300,9 @@ func (s *Session) ReConnect() (bool, error) {
 func (s *Session) Close() {
 	if s.connection != nil {
 		s.connection.Close()
+	}
+	if s.gssClient != nil {
+		s.gssClient.DeleteSecContext()
+		s.gssClient = nil
 	}
 }

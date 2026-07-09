@@ -42,6 +42,33 @@ func TestGSSChecksumValue(t *testing.T) {
 	}
 }
 
+func TestGSSChannelBindings(t *testing.T) {
+	app := []byte("tls-server-end-point:hashbytes")
+	cb := GSSChannelBindings(app)
+
+	// 16 bytes of zeroed initiator/acceptor addrtype+length, then the LE
+	// application-data length, then the application data itself.
+	if len(cb) != 20+len(app) {
+		t.Fatalf("length = %d, want %d", len(cb), 20+len(app))
+	}
+	for i, b := range cb[:16] {
+		if b != 0 {
+			t.Errorf("byte %d of address block should be zero, got 0x%02x", i, b)
+		}
+	}
+	if got := binary.LittleEndian.Uint32(cb[16:20]); got != uint32(len(app)) {
+		t.Errorf("application-data length = %d, want %d", got, len(app))
+	}
+	if !bytes.Equal(cb[20:], app) {
+		t.Errorf("application data = %q, want %q", cb[20:], app)
+	}
+
+	// Empty bindings still carry the 16-byte address block and a zero length.
+	if got := GSSChannelBindings(nil); len(got) != 20 {
+		t.Errorf("empty bindings length = %d, want 20", len(got))
+	}
+}
+
 func TestWrapUnwrapToken(t *testing.T) {
 	msg := []byte("fake-krb-ap-req")
 	tok, err := WrapToken(TokIDAPReq, msg)
