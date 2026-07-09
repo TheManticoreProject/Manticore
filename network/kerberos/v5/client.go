@@ -49,6 +49,15 @@ type KerberosClient struct {
 	// is asked for one of these SPNs it returns the preloaded ticket instead of
 	// contacting the KDC — enabling silver-ticket use with no TGT.
 	preloadedTGS map[string]preloadedServiceTicket
+
+	// realmKDCs maps an (uppercased) realm to the KDC host to contact when the
+	// cross-realm referral chase reaches that realm. Populated via WithRealmKDC.
+	realmKDCs map[string]string
+
+	// kdcResolver, if set, resolves an (uppercased) realm to a KDC host for the
+	// referral chase. It overrides the default DNS-SRV based resolution and is
+	// consulted after realmKDCs and the client's own home realm.
+	kdcResolver func(realm string) (string, error)
 }
 
 // preloadedServiceTicket is a service ticket the client will hand back from
@@ -201,81 +210,9 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse SPN %q: %w", spn, err)
 	}
 
-	// Build AP-REQ wrapping the TGT.
-	ap_req_bytes, err := c.buildAPReq()
-	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
-	// Build TGS-REQ.
-	nonce := randomNonce()
-	// PA-PAC-REQUEST: SEQUENCE { [0] BOOLEAN } — TRUE=0xff, FALSE=0x00
-	pacBool := byte(0xff)
-	if !includePAC {
-		pacBool = 0x00
-	}
-	tgs_req := &messages.TGSReq{
-		PVNO:    messages.KerberosV5,
-		MsgType: messages.MsgTypeTGSReq,
-		PAData: []messages.PAData{
-			{PADataType: messages.PATGSReq, PADataValue: ap_req_bytes},
-			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, pacBool}},
-		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForTGSReq(),
-			Realm:      c.realm,
-			SName:      sname,
-			Till:       time.Now().UTC().Add(24 * time.Hour),
-			Nonce:      nonce,
-			EType:      c.serviceTicketETypes(),
-		},
-	}
-
-	tgs_req_bytes, err := tgs_req.Marshal()
-	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal TGS-REQ: %w", err)
-	}
-	resp, err := kdcSend(c.kdcHost, defaultKDCPort, tgs_req_bytes)
-	if err != nil {
-		return messages.Ticket{}, nil, nil, err
-	}
-
-	// Check for KRBError.
-	var krb_err messages.KRBError
-	if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS error %d: %s", krb_err.ErrorCode, krb_err.EText)
-	}
-
-	// Parse TGS-REP.
-	var tgs_rep messages.TGSRep
-	if _, err := tgs_rep.Unmarshal(resp); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse TGS-REP: %w", err)
-	}
-
-	// Decrypt enc-part with the TGT session key.
-	enc_plain, err := kerbcrypto.Decrypt(
-		c.sessionEType,
-		c.sessionKey,
-		kerbcrypto.KeyUsageTGSRepEncSessionKey,
-		tgs_rep.EncPart.Cipher,
-	)
-	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: decrypt TGS-REP enc-part: %w", err)
-	}
-
-	var enc_tgs_rep messages.EncTGSRepPart
-	if _, err := enc_tgs_rep.Unmarshal(enc_plain); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse EncTGSRepPart: %w", err)
-	}
-
-	// RFC 4120 §3.3.3: the nonce in the reply must match the nonce in the
-	// request. Rejecting a mismatch defends against replays of captured
-	// TGS-REPs that happen to decrypt under the current TGT session key.
-	if enc_tgs_rep.Nonce != nonce {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: TGS-REP nonce mismatch: got %d, want %d", enc_tgs_rep.Nonce, nonce)
-	}
-
-	return tgs_rep.Ticket, tgs_rep.TicketRaw, enc_tgs_rep.Key.KeyValue, nil
+	// Request the service ticket, chasing any cross-realm referrals returned by
+	// the KDC (see chaseServiceTicket / referral.go).
+	return c.chaseServiceTicket(sname, includePAC)
 }
 
 // Destroy zeroes out key material held by the client.
@@ -489,8 +426,19 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 	return nil
 }
 
-// buildAPReq constructs an AP-REQ wrapping the TGT for use in TGS-REQ PA-DATA.
+// buildAPReq constructs an AP-REQ wrapping the client's current TGT for use in
+// TGS-REQ PA-DATA.
 func (c *KerberosClient) buildAPReq() ([]byte, error) {
+	return c.buildAPReqWith(c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType)
+}
+
+// buildAPReqWith constructs an AP-REQ wrapping the given ticket-granting ticket
+// and session key. Cross-realm referral chasing presents a different (referral)
+// TGT at each hop, so the ticket/key are passed explicitly rather than always
+// taken from the client's home TGT. The authenticator's client name and realm
+// always identify the original client (they must match the crealm embedded in
+// the ticket, which stays the home realm across cross-realm referrals).
+func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
 	now := time.Now().UTC()
 	cusec := now.Nanosecond() / 1000
 
@@ -513,7 +461,7 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal Authenticator: %w", err)
 	}
-	enc_auth, err := kerbcrypto.Encrypt(c.sessionEType, c.sessionKey, kerbcrypto.KeyUsageTGSReqPAAPReqAuthen, auth_bytes)
+	enc_auth, err := kerbcrypto.Encrypt(sessionEType, sessionKey, kerbcrypto.KeyUsageTGSReqPAAPReqAuthen, auth_bytes)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt Authenticator: %w", err)
 	}
@@ -522,10 +470,10 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 		PVNO:      messages.KerberosV5,
 		MsgType:   messages.MsgTypeAPReq,
 		APOptions: asn1.BitString{Bytes: []byte{0x00, 0x00, 0x00, 0x00}, BitLength: 32},
-		Ticket:    c.tgtTicket,
-		TicketRaw: c.tgtTicketRaw,
+		Ticket:    tgt,
+		TicketRaw: tgtRaw,
 		Authenticator: messages.EncryptedData{
-			EType:  c.sessionEType,
+			EType:  sessionEType,
 			Cipher: enc_auth,
 		},
 	}

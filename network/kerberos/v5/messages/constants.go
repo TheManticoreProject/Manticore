@@ -28,14 +28,17 @@ const (
 	ETypeAES128CTSHMACSHA196 = iana.ETypeAES128CTSHMACSHA196
 	ETypeAES256CTSHMACSHA196 = iana.ETypeAES256CTSHMACSHA196
 
-	PATGSReq       = iana.PATGSReq
-	PAEncTimestamp = iana.PAEncTimestamp
-	PAETypeInfo2   = iana.PAETypeInfo2
-	PAPACRequest   = iana.PAPACRequest
+	PATGSReq          = iana.PATGSReq
+	PAEncTimestamp    = iana.PAEncTimestamp
+	PAETypeInfo2      = iana.PAETypeInfo2
+	PAPACRequest      = iana.PAPACRequest
+	PASvrReferralInfo = iana.PASvrReferralInfo
 
 	ErrNone              = iana.ErrNone
 	ErrCPrincipalUnknown = iana.ErrCPrincipalUnknown
+	ErrSPrincipalUnknown = iana.ErrSPrincipalUnknown
 	ErrPreauthRequired   = iana.ErrPreauthRequired
+	ErrWrongRealm        = iana.ErrWrongRealm
 
 	APOptionUseSessionKey = iana.APOptionUseSessionKey
 	APOptionMutualAuth    = iana.APOptionMutualAuth
