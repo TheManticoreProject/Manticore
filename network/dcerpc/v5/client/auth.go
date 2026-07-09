@@ -337,6 +337,19 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 		return nil, fmt.Errorf("auth token length %d does not match reserved length %d", len(authValue), tokenLen)
 	}
 
+	// A sealing provider may expand the stub (the Kerberos RC4 GSS Wrap seals the
+	// stub in an 8-octet block, so the on-wire stub can be longer than the padded
+	// plaintext). The fragment length must reflect the actual on-wire stub;
+	// re-marshal the header with the corrected frag_length. The RC4 token does not
+	// cover the PDU header, so adjusting it after signing is safe.
+	if len(onWireStub) != len(stubPad) {
+		fragLen = pdu.HeaderSize + len(bodyHdr) + len(onWireStub) + pdu.SecTrailerSize + tokenLen
+		req.Header.FragLength = uint16(fragLen)
+		if hdrBytes, err = req.Header.Marshal(); err != nil {
+			return nil, err
+		}
+	}
+
 	out := make([]byte, 0, fragLen)
 	out = append(out, hdrBytes...)
 	out = append(out, bodyHdr...)
