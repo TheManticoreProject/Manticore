@@ -20,9 +20,9 @@ type asReqInner struct {
 
 // asReqMarshal is the inner SEQUENCE for marshaling — uses GeneralString types.
 type asReqMarshal struct {
-	PVNO    int              `asn1:"explicit,tag:1"`
-	MsgType int              `asn1:"explicit,tag:2"`
-	PAData  []PAData         `asn1:"explicit,tag:3,optional"`
+	PVNO    int               `asn1:"explicit,tag:1"`
+	MsgType int               `asn1:"explicit,tag:2"`
+	PAData  []PAData          `asn1:"explicit,tag:3,optional"`
 	ReqBody kdcReqBodyMarshal `asn1:"explicit,tag:4"`
 }
 
