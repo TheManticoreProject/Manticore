@@ -70,35 +70,67 @@ type krbFastReqMarshal struct {
 // kdcReqBodyParse is a KDC-REQ-BODY unmarshal view. It exists because the
 // canonical KDCReqBody carries AdditTickets/AdditTicketsRaw with asn1:"-", which
 // Go's encoding/asn1 does not honor on decode (it would try to parse them as
-// SEQUENCE fields and fail); this view lists only the DER-present fields 0..10.
+// SEQUENCE fields and fail).
+//
+// The trailing optional fields enc-authorization-data [10] and additional-tickets
+// [11] are decoded as asn1.RawValue rather than their concrete types: Go's
+// encoding/asn1 raises "sequence truncated" when the final field of a SEQUENCE is
+// an absent optional *value* struct (only pointers/slices/RawValue are skipped
+// cleanly at end-of-sequence), and the [11] tickets are APPLICATION[1] TLVs the
+// generic decoder cannot reconstruct. toKDCReqBody converts both.
 type kdcReqBodyParse struct {
-	KDCOptions  asn1.BitString `asn1:"explicit,tag:0"`
-	CName       PrincipalName  `asn1:"explicit,tag:1,optional"`
-	Realm       string         `asn1:"explicit,tag:2,generalstring"`
-	SName       PrincipalName  `asn1:"explicit,tag:3,optional"`
-	From        time.Time      `asn1:"explicit,tag:4,optional,generalized"`
-	Till        time.Time      `asn1:"explicit,tag:5,generalized"`
-	RTime       time.Time      `asn1:"explicit,tag:6,optional,generalized"`
-	Nonce       int            `asn1:"explicit,tag:7"`
-	EType       []int          `asn1:"explicit,tag:8"`
-	Addresses   []HostAddress  `asn1:"explicit,tag:9,optional"`
-	EncAuthData EncryptedData  `asn1:"explicit,tag:10,optional"`
+	KDCOptions   asn1.BitString `asn1:"explicit,tag:0"`
+	CName        PrincipalName  `asn1:"explicit,tag:1,optional"`
+	Realm        string         `asn1:"explicit,tag:2,generalstring"`
+	SName        PrincipalName  `asn1:"explicit,tag:3,optional"`
+	From         time.Time      `asn1:"explicit,tag:4,optional,generalized"`
+	Till         time.Time      `asn1:"explicit,tag:5,generalized"`
+	RTime        time.Time      `asn1:"explicit,tag:6,optional,generalized"`
+	Nonce        int            `asn1:"explicit,tag:7"`
+	EType        []int          `asn1:"explicit,tag:8"`
+	Addresses    []HostAddress  `asn1:"explicit,tag:9,optional"`
+	EncAuthData  asn1.RawValue  `asn1:"explicit,tag:10,optional"`
+	AdditTickets asn1.RawValue  `asn1:"explicit,tag:11,optional"`
 }
 
 func (p kdcReqBodyParse) toKDCReqBody() KDCReqBody {
-	return KDCReqBody{
-		KDCOptions:  p.KDCOptions,
-		CName:       p.CName,
-		Realm:       p.Realm,
-		SName:       p.SName,
-		From:        p.From,
-		Till:        p.Till,
-		RTime:       p.RTime,
-		Nonce:       p.Nonce,
-		EType:       p.EType,
-		Addresses:   p.Addresses,
-		EncAuthData: p.EncAuthData,
+	b := KDCReqBody{
+		KDCOptions: p.KDCOptions,
+		CName:      p.CName,
+		Realm:      p.Realm,
+		SName:      p.SName,
+		From:       p.From,
+		Till:       p.Till,
+		RTime:      p.RTime,
+		Nonce:      p.Nonce,
+		EType:      p.EType,
+		Addresses:  p.Addresses,
 	}
+	// enc-authorization-data [10]: RawValue.Bytes is the inner EncryptedData TLV.
+	if len(p.EncAuthData.Bytes) > 0 {
+		var ed EncryptedData
+		if _, err := asn1.Unmarshal(p.EncAuthData.Bytes, &ed); err == nil {
+			b.EncAuthData = ed
+		}
+	}
+	// additional-tickets [11]: RawValue.Bytes is the SEQUENCE OF Ticket TLV; each
+	// element is an APPLICATION[1] ticket recovered verbatim into AdditTicketsRaw.
+	if len(p.AdditTickets.Bytes) > 0 {
+		var seq asn1.RawValue
+		if _, err := asn1.Unmarshal(p.AdditTickets.Bytes, &seq); err == nil {
+			rest := seq.Bytes
+			for len(rest) > 0 {
+				var tkt asn1.RawValue
+				r, err := asn1.Unmarshal(rest, &tkt)
+				if err != nil {
+					break
+				}
+				b.AdditTicketsRaw = append(b.AdditTicketsRaw, tkt.FullBytes)
+				rest = r
+			}
+		}
+	}
+	return b
 }
 
 // krbFastReqInner is the unmarshal form of KrbFastReq.

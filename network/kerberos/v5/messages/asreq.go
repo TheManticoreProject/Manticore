@@ -14,8 +14,10 @@ type asReqInner struct {
 	MsgType int `asn1:"explicit,tag:2"`
 	// PAData contains optional pre-authentication data.
 	PAData []PAData `asn1:"explicit,tag:3,optional"`
-	// ReqBody is the KDC request body.
-	ReqBody KDCReqBody `asn1:"explicit,tag:4"`
+	// ReqBody is the KDC request body. It is decoded through kdcReqBodyParse
+	// (see fast.go) because the canonical KDCReqBody does not round-trip through
+	// Go's encoding/asn1 on decode.
+	ReqBody kdcReqBodyParse `asn1:"explicit,tag:4"`
 }
 
 // asReqMarshal is the inner SEQUENCE for marshaling — uses GeneralString types.
@@ -71,6 +73,6 @@ func (r *ASReq) Unmarshal(data []byte) (int, error) {
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType
 	r.PAData = inner.PAData
-	r.ReqBody = inner.ReqBody
+	r.ReqBody = inner.ReqBody.toKDCReqBody()
 	return consumed, nil
 }
