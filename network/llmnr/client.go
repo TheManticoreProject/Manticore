@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,26 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
 )
+
+// pendingQuery holds the state the read loop needs to validate and deliver a
+// response for a single outstanding query. Alongside the delivery channel it
+// records the question that was asked (name/type/class) so that an incoming
+// response can be checked against it: matching on the 16-bit transaction ID
+// alone is insufficient (the ID space is small and the query is multicast, so
+// responses are trivially forgeable and could cross-deliver a wrong answer to a
+// waiting query). See RFC 4795 §2.7.
+type pendingQuery struct {
+	// responseChan receives the validated response for this query.
+	responseChan chan *message.Message
+
+	// name, qtype and qclass are the question that was sent. A response is only
+	// delivered if its question section echoes this question. The class is
+	// stored with the QU (Unicast-Preferred) bit cleared so the comparison is
+	// robust: responders (notably Windows) do not necessarily echo that bit.
+	name   string
+	qtype  llmnr_type.Type
+	qclass class.Class
+}
 
 // Client represents an LLMNR client that can send queries and receive responses.
 //
@@ -55,6 +76,14 @@ type Client struct {
 	// the LLMNR IPv4 multicast group and is overridable so queries can be
 	// directed at a specific responder (e.g. for testing or unicast probing).
 	dest *net.UDPAddr
+
+	// localNets holds the IP networks configured on the host's interfaces at
+	// the time the client was created. The read loop uses them to decide
+	// whether a response's source address is a plausible LLMNR responder: LLMNR
+	// is a link-local protocol, so a legitimate response must come from an
+	// on-link (same-subnet) unicast address, a link-local address, or loopback
+	// (the last covers unit tests that use a 127.0.0.1 responder).
+	localNets []*net.IPNet
 }
 
 // NewClient creates a new LLMNR client with a UDP connection.
@@ -96,11 +125,31 @@ func NewClient() (*Client, error) {
 			IP:   net.ParseIP(constants.IPv4MulticastAddr),
 			Port: constants.ListenPort,
 		},
+		localNets: localUnicastNetworks(),
 	}
 
 	go c.readLoop()
 
 	return c, nil
+}
+
+// localUnicastNetworks returns the unicast IP networks configured on the host's
+// interfaces. It is best-effort: on error it returns nil, in which case the
+// on-link source check simply does not match and validation falls back to the
+// loopback and link-local checks.
+func localUnicastNetworks() []*net.IPNet {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+
+	nets := make([]*net.IPNet, 0, len(addrs))
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok {
+			nets = append(nets, ipNet)
+		}
+	}
+	return nets
 }
 
 // Close closes the client connection
@@ -120,9 +169,16 @@ func (c *Client) Query(ctx context.Context, name string, qtype llmnr_type.Type) 
 		return nil, fmt.Errorf("failed to add question: %w", err)
 	}
 
-	// Create response channel
+	// Create the response channel and record the outstanding query so the read
+	// loop can validate an incoming response against the exact question that was
+	// asked before delivering it (the transaction ID alone is not enough).
 	responseChan := make(chan *message.Message, 1)
-	c.Queries.Store(msg.Header.Identifier, responseChan)
+	c.Queries.Store(msg.Header.Identifier, &pendingQuery{
+		responseChan: responseChan,
+		name:         name,
+		qtype:        qtype,
+		qclass:       class.ClassIN.BaseClass(),
+	})
 	defer c.Queries.Delete(msg.Header.Identifier)
 
 	// Send query to the configured destination (the LLMNR multicast group by
@@ -154,8 +210,14 @@ func (c *Client) readLoop() {
 		case <-c.Closed:
 			return
 		default:
-			n, _, err := c.Conn.ReadFromUDP(buffer)
+			n, src, err := c.Conn.ReadFromUDP(buffer)
 			if err != nil {
+				continue
+			}
+
+			// Drop datagrams whose source address is not a plausible LLMNR
+			// responder before spending any effort parsing them.
+			if !c.isPlausibleResponder(src) {
 				continue
 			}
 
@@ -169,14 +231,77 @@ func (c *Client) readLoop() {
 				continue
 			}
 
-			// Find the matching query
-			if ch, ok := c.Queries.Load(msg.Header.Identifier); ok {
-				responseChan := ch.(chan *message.Message)
-				select {
-				case responseChan <- &msg:
-				default:
-				}
+			// Find the matching outstanding query by transaction ID, then
+			// confirm the response's question section echoes the question we
+			// asked before delivering it. This rejects responses that merely
+			// guessed (or collided on) the 16-bit ID.
+			ch, ok := c.Queries.Load(msg.Header.Identifier)
+			if !ok {
+				continue
+			}
+			pq := ch.(*pendingQuery)
+			if !pq.matchesQuestion(&msg) {
+				continue
+			}
+
+			select {
+			case pq.responseChan <- &msg:
+			default:
 			}
 		}
 	}
+}
+
+// isPlausibleResponder reports whether src is an acceptable source for an LLMNR
+// response. LLMNR is a link-local protocol, so a legitimate unicast response
+// must originate from an on-link (same-subnet) address, a link-local address,
+// or loopback (which covers the loopback responder used by the unit tests). A
+// multicast or unspecified source is never a valid responder.
+func (c *Client) isPlausibleResponder(src *net.UDPAddr) bool {
+	if src == nil || src.IP == nil {
+		return false
+	}
+	ip := src.IP
+
+	if ip.IsUnspecified() || ip.IsMulticast() {
+		return false
+	}
+
+	// Loopback covers the in-process test responder (127.0.0.1); link-local
+	// addresses (169.254.0.0/16, fe80::/10) are on the local link by definition.
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+
+	// Otherwise the source must be on-link, i.e. fall inside one of the
+	// networks configured on this host's interfaces (e.g. a responder on the
+	// same /24 as us). This accepts genuine LAN responders while rejecting
+	// off-link/routed sources.
+	for _, n := range c.localNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesQuestion reports whether the response resp answers the question this
+// query asked. The name is compared case-insensitively (DNS names are
+// case-insensitive) and the type must match exactly. The class is compared with
+// the QU (Unicast-Preferred) bit cleared, because responders do not necessarily
+// echo that bit. A response with no matching question is rejected.
+func (pq *pendingQuery) matchesQuestion(resp *message.Message) bool {
+	for _, q := range resp.Questions {
+		if !strings.EqualFold(string(q.Name), pq.name) {
+			continue
+		}
+		if q.Type != pq.qtype {
+			continue
+		}
+		if q.Class.BaseClass() != pq.qclass {
+			continue
+		}
+		return true
+	}
+	return false
 }
