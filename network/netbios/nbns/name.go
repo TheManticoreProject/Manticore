@@ -49,6 +49,13 @@ type ADDR_ENTRY struct {
 	Address uint32
 }
 
+// NB_FLAGS bits carried in the ADDR_ENTRY.Flags field of an NB resource record
+// (RFC 1002 4.2.1.3: G | ONT | RESERVED). The Group (G) bit is the most
+// significant bit of the 16-bit NB_FLAGS field, distinct from the header flags.
+const (
+	NBFlagGroup uint16 = 0x8000 // G: set for a group name, clear for a unique name
+)
+
 // Constants for name encoding
 const (
 	NetBIOSNameLength = 16 // NetBIOS names are exactly 16 bytes

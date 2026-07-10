@@ -28,11 +28,18 @@ func (h *PacketHandler) handleNameQuery(request *NBNSPacket, response *NBNSPacke
 
 		ttlSeconds := uint32(ttl.Seconds())
 
+		// The Group (G) bit lives in the resource record's NB_FLAGS, not in the
+		// header (RFC 1002 4.2.1.3).
+		var nbFlags uint16
+		if nameType == Group {
+			nbFlags |= NBFlagGroup
+		}
+
 		// Create resource record for each owner
 		for _, ip := range owners {
 			owner := ADDR_ENTRY{
 				Address: binary.BigEndian.Uint32(ip.To4()),
-				Flags:   0x0000,
+				Flags:   nbFlags,
 			}
 			rr := NBNSResourceRecord{
 				Name:     q.Name,
@@ -46,29 +53,27 @@ func (h *PacketHandler) handleNameQuery(request *NBNSPacket, response *NBNSPacke
 		}
 
 		response.Header.Answers = uint16(len(response.Answers))
-
-		// Set group bit if this is a group name
-		if nameType == Group {
-			response.Header.Flags |= 0x0080 // Group name bit
-		}
 	}
 }
 
 // handleRegistration processes a name registration request
 func (h *PacketHandler) handleRegistration(request *NBNSPacket, response *NBNSPacket) {
 	for _, rr := range request.Answers {
-		ip, err := ParseIPFromRData(rr.RData)
-		if err != nil {
+		var entry ADDR_ENTRY
+		if err := entry.Unmarshal(rr.RData); err != nil {
 			response.Header.Flags |= RcodeFormatError
 			return
 		}
+		ip := entry.IP()
 
+		// The unique/group distinction is carried by the Group (G) bit of the
+		// resource record's NB_FLAGS, not by the header (RFC 1002 4.2.1.3).
 		nameType := Unique
-		if request.Header.Flags&0x0080 != 0 {
+		if entry.Flags&NBFlagGroup != 0 {
 			nameType = Group
 		}
 
-		err = h.nbns.RegisterName(
+		err := h.nbns.RegisterName(
 			rr.Name.Name,
 			rr.Name.ScopeID,
 			nameType,
