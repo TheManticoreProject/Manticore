@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -377,6 +378,175 @@ func TestClientReadLoopFiltersUnknownID(t *testing.T) {
 	_, err = c.Query(context.Background(), "host.local", llmnr_type.TypeA)
 	if err == nil || err.Error() != "query timeout" {
 		t.Errorf("Query() error = %v, want %q (unknown ID must be dropped)", err, "query timeout")
+	}
+}
+
+// TestClientReadLoopFiltersMismatchedQuestion verifies that a response bearing a
+// matching transaction ID but a question section that does not correspond to the
+// outstanding query is rejected, so an attacker who guesses (or collides on) the
+// 16-bit ID cannot inject an answer for a name the client never asked about. The
+// responder echoes the query ID but answers a different owner name, so Query must
+// time out.
+func TestClientReadLoopFiltersMismatchedQuestion(t *testing.T) {
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		m := message.NewMessage()
+		if _, err := m.Unmarshal(query); err != nil {
+			return nil
+		}
+		// Same transaction ID, but answer a name the client did not query.
+		resp := message.NewMessage()
+		resp.Header.Identifier = m.Header.Identifier
+		resp.SetResponse()
+		if err := resp.AddAnswerClassINTypeA("attacker.local", "10.7.0.66"); err != nil {
+			return nil
+		}
+		encoded, err := resp.Marshal()
+		if err != nil {
+			return nil
+		}
+		return encoded
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+	c.Timeout = 200 * time.Millisecond
+
+	_, err = c.Query(context.Background(), "host.local", llmnr_type.TypeA)
+	if err == nil || err.Error() != "query timeout" {
+		t.Errorf("Query() error = %v, want %q (mismatched question must be rejected)", err, "query timeout")
+	}
+}
+
+// TestClientReadLoopFiltersMismatchedType verifies that a response whose question
+// echoes the queried name but with a different record type is rejected, so a Type
+// AAAA answer cannot satisfy a pending Type A query sharing the same ID.
+func TestClientReadLoopFiltersMismatchedType(t *testing.T) {
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		m := message.NewMessage()
+		if _, err := m.Unmarshal(query); err != nil {
+			return nil
+		}
+		// Same ID and name, but answer with a Type AAAA record instead of A.
+		resp := message.NewMessage()
+		resp.Header.Identifier = m.Header.Identifier
+		resp.SetResponse()
+		if err := resp.AddAnswerClassINTypeAAAA("host.local", "fe80::1"); err != nil {
+			return nil
+		}
+		encoded, err := resp.Marshal()
+		if err != nil {
+			return nil
+		}
+		return encoded
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+	c.Timeout = 200 * time.Millisecond
+
+	_, err = c.Query(context.Background(), "host.local", llmnr_type.TypeA)
+	if err == nil || err.Error() != "query timeout" {
+		t.Errorf("Query() error = %v, want %q (mismatched question type must be rejected)", err, "query timeout")
+	}
+}
+
+// TestClientReadLoopMatchesQuestionCaseInsensitively confirms a genuine response
+// is still delivered when the echoed question name differs only in letter case
+// from the query, since DNS names are case-insensitive. A responder that would
+// upper-case the name (as some implementations do) must not be rejected.
+func TestClientReadLoopMatchesQuestionCaseInsensitively(t *testing.T) {
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		m := message.NewMessage()
+		if _, err := m.Unmarshal(query); err != nil || len(m.Questions) == 0 {
+			return nil
+		}
+		// Answer using an upper-cased owner name to exercise case-insensitive
+		// matching against the lower-case query name.
+		resp := message.NewMessage()
+		resp.Header.Identifier = m.Header.Identifier
+		resp.SetResponse()
+		if err := resp.AddAnswerClassINTypeA(strings.ToUpper(string(m.Questions[0].Name)), "10.7.0.10"); err != nil {
+			return nil
+		}
+		encoded, err := resp.Marshal()
+		if err != nil {
+			return nil
+		}
+		return encoded
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	resp, err := c.Query(ctx, "host.local", llmnr_type.TypeA)
+	if err != nil {
+		t.Fatalf("Query() error = %v (case-insensitive question must match)", err)
+	}
+	if len(resp.Answers) != 1 {
+		t.Fatalf("Query() answers = %d, want 1", len(resp.Answers))
+	}
+	if got := net.IP(resp.Answers[0].RData).String(); got != "10.7.0.10" {
+		t.Errorf("Query() answer RDATA = %q, want %q", got, "10.7.0.10")
+	}
+}
+
+// TestClientIsPlausibleResponder exercises the source-address sanity check
+// directly: loopback and link-local sources are accepted, multicast/unspecified
+// sources are rejected, and an off-link routed source is rejected while an
+// on-link source (inside a configured interface network) is accepted.
+func TestClientIsPlausibleResponder(t *testing.T) {
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+
+	// Constrain localNets to a known network so the on-link case is deterministic.
+	_, onLink, err := net.ParseCIDR("10.7.0.0/24")
+	if err != nil {
+		t.Fatalf("ParseCIDR() error = %v", err)
+	}
+	c.localNets = []*net.IPNet{onLink}
+
+	cases := []struct {
+		name string
+		ip   net.IP
+		want bool
+	}{
+		{"loopback", net.IPv4(127, 0, 0, 1), true},
+		{"link-local", net.IPv4(169, 254, 1, 2), true},
+		{"on-link unicast", net.IPv4(10, 7, 0, 10), true},
+		{"off-link unicast", net.IPv4(8, 8, 8, 8), false},
+		{"multicast", net.ParseIP(constants.IPv4MulticastAddr), false},
+		{"unspecified", net.IPv4zero, false},
+		{"nil", nil, false},
+	}
+	for _, tc := range cases {
+		var src *net.UDPAddr
+		if tc.ip != nil {
+			src = &net.UDPAddr{IP: tc.ip, Port: constants.ListenPort}
+		}
+		if got := c.isPlausibleResponder(src); got != tc.want {
+			t.Errorf("isPlausibleResponder(%s) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
