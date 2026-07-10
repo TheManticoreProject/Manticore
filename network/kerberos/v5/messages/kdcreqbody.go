@@ -12,7 +12,12 @@ import (
 // Realm has no struct tag: Go ignores explicit,tag:N for asn1.RawValue fields, so
 // realmExplicit() pre-builds the [2] EXPLICIT { GeneralString } wrapper instead.
 type kdcReqBodyMarshal struct {
-	KDCOptions  asn1.BitString       `asn1:"explicit,tag:0"`
+	KDCOptions asn1.BitString `asn1:"explicit,tag:0"`
+	// CName is optional and left at its zero value for a TGS-REQ so the optional
+	// tag omits it entirely. cname is present in an AS-REQ (always non-empty
+	// there) but MUST be absent from a TGS-REQ: a Windows KDC rejects an
+	// S4U2Proxy request that carries an (even empty) cname alongside the
+	// cname-in-additional-ticket option with KDC_ERR_BADOPTION.
 	CName       PrincipalNameMarshal `asn1:"explicit,tag:1,optional"`
 	Realm       asn1.RawValue        // pre-encoded as [2] EXPLICIT { GeneralString } by realmExplicit
 	SName       PrincipalNameMarshal `asn1:"explicit,tag:3,optional"`
@@ -31,9 +36,17 @@ type kdcReqBodyMarshal struct {
 // marshalKDCReqBody converts a KDCReqBody to its GeneralString-encoded form
 // (fields 0-10; additional-tickets are handled separately).
 func marshalKDCReqBody(b KDCReqBody) kdcReqBodyMarshal {
+	// Only emit cname when it carries a name (AS-REQ). For a TGS-REQ leave it at
+	// the zero value so the optional tag omits it: MarshalPrincipalName would
+	// otherwise produce a non-nil (empty) NameString slice that the optional
+	// check does not treat as empty, emitting a spurious empty cname.
+	var cname PrincipalNameMarshal
+	if len(b.CName.NameString) > 0 {
+		cname = MarshalPrincipalName(b.CName)
+	}
 	return kdcReqBodyMarshal{
 		KDCOptions:  b.KDCOptions,
-		CName:       MarshalPrincipalName(b.CName),
+		CName:       cname,
 		Realm:       realmExplicit(2, b.Realm),
 		SName:       MarshalPrincipalName(b.SName),
 		From:        b.From,

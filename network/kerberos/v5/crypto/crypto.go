@@ -26,6 +26,7 @@ const (
 	KeyUsageTGSRepEncSubSessionKey = iana.KeyUsageTGSRepEncSubSessionKey
 	KeyUsageAPReqAuthen            = iana.KeyUsageAPReqAuthen
 	KeyUsageAPRepEncPart           = iana.KeyUsageAPRepEncPart
+	KeyUsageKRBCredEncPart         = iana.KeyUsageKRBCredEncPart
 )
 
 // Sentinel errors for cryptographic operations.
