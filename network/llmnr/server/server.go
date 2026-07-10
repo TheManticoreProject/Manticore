@@ -40,8 +40,22 @@ type Server struct {
 	// Conn is the connection of the server.
 	Conn *net.UDPConn
 
+	// Interface is the network interface on which the multicast group is joined.
+	// When nil the group is joined on the system-default multicast interface
+	// (preserving the previous behavior); setting it lets the server listen on a
+	// specific link, which matters on multi-homed hosts where the default
+	// multicast interface is not the one carrying the traffic of interest.
+	Interface *net.Interface
+
 	// CloseOnce is a sync.Once struct to ensure the server is closed only once.
 	CloseOnce sync.Once
+
+	// listeningMu guards listening, which records whether the multicast socket
+	// has been bound. It provides a synchronized way for another goroutine (e.g.
+	// a caller that started ListenAndServe in the background) to observe that the
+	// server has come up without racing on the Conn field.
+	listeningMu sync.RWMutex
+	listening   bool
 
 	// Closed is a channel that is closed when the server is shut down.
 	Closed chan struct{}
@@ -332,13 +346,27 @@ func (s *Server) ListenAndServe() error {
 		return fmt.Errorf("invalid network: %s", s.Network)
 	}
 
-	conn, err := net.ListenMulticastUDP(s.Network, nil, s.Address)
+	conn, err := net.ListenMulticastUDP(s.Network, s.Interface, s.Address)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 	s.Conn = conn
 
+	s.listeningMu.Lock()
+	s.listening = true
+	s.listeningMu.Unlock()
+
 	return s.Serve()
+}
+
+// Listening reports whether the server has bound its multicast socket and is
+// ready to receive queries. It is safe to call concurrently with
+// ListenAndServe, so a caller that starts the server in a background goroutine
+// can poll it to learn when the server is up without racing on the Conn field.
+func (s *Server) Listening() bool {
+	s.listeningMu.RLock()
+	defer s.listeningMu.RUnlock()
+	return s.listening
 }
 
 // Close gracefully shuts down the LLMNR server by closing the UDP connection and signaling the server to stop.
@@ -373,6 +401,9 @@ func (s *Server) ListenAndServe() error {
 func (s *Server) Close() error {
 	s.CloseOnce.Do(
 		func() {
+			s.listeningMu.Lock()
+			s.listening = false
+			s.listeningMu.Unlock()
 			close(s.Closed)
 			if s.Conn != nil {
 				s.Conn.Close()
