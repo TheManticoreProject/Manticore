@@ -161,42 +161,24 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 		},
 	}
 
-	// Process based on operation code
-	switch packet.Header.Flags & OpcodeMask {
-	case OpNameQuery:
-		switch {
-		case s.handlers.nodeStatusEnabled && s.handlers.isNodeStatusQuery(&packet):
-			// A NODE STATUS REQUEST shares the query opcode and is distinguished
-			// only by its NBSTAT question type; answer it from the name table.
-			s.handlers.handleNodeStatus(&packet, response)
-		case s.spoofHandler != nil:
-			// Poisoning mode: answer only the names the operator elected to
-			// spoof and stay silent otherwise, so legitimate resolution still
-			// works alongside the poisoner.
-			spoofed, ok := s.spoofHandler.HandleNameQuery(remoteAddr, &packet)
-			if !ok {
-				return
-			}
-			response = spoofed
-		default:
-			s.handlers.handleNameQueryWithRedirect(&packet, response)
+	// Poisoning mode intercepts NAME QUERYs (other than NODE STATUS requests,
+	// which keep their authoritative answer): the spoof handler answers only the
+	// names the operator elected to spoof and stays silent otherwise, so
+	// legitimate resolution still works alongside the poisoner. Every other
+	// opcode, and the non-spoofed paths, run through the shared dispatch so the
+	// opcode switch is not duplicated between the UDP and TCP responders.
+	if s.spoofHandler != nil &&
+		packet.Header.Flags&OpcodeMask == OpNameQuery &&
+		!(s.handlers.nodeStatusEnabled && s.handlers.isNodeStatusQuery(&packet)) {
+		spoofed, ok := s.spoofHandler.HandleNameQuery(remoteAddr, &packet)
+		if !ok {
+			return
 		}
-	case OpRegistration:
-		if s.handlers.challenger != nil {
-			// Defend owned names: emit an intermediate WACK to the requestor
-			// before running the challenge and returning the final response.
-			s.handlers.handleRegistrationWithChallenge(&packet, response, func(w *NBNSPacket) {
-				s.writeResponse(w, remoteAddr)
-			})
-		} else {
-			s.handlers.handleRegistration(&packet, response)
-		}
-	case OpRelease:
-		s.handlers.handleRelease(&packet, response)
-	case OpRefresh:
-		s.handlers.handleRefresh(&packet, response)
-	default:
-		response.Header.Flags |= RcodeNotImpl
+		response = spoofed
+	} else {
+		s.handlers.dispatch(&packet, response, func(w *NBNSPacket) {
+			s.writeResponse(w, remoteAddr)
+		})
 	}
 
 	// Send response

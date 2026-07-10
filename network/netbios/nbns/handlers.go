@@ -58,6 +58,40 @@ func (h *PacketHandler) SetChallenger(c *NameChallenger) { h.challenger = c }
 // consulted on the name-query path.
 func (h *PacketHandler) SetRedirectManager(r *RedirectManager) { h.redirect = r }
 
+// dispatch runs the NBNS opcode switch shared by the UDP and TCP responders,
+// filling response for the received packet based on its OPCODE (RFC 1002 4.2).
+// sendWACK, when non-nil, emits the intermediate WAIT FOR ACKNOWLEDGEMENT (WACK)
+// datagram ahead of a deferred registration's final response; the TCP path
+// passes nil because it returns a single framed response. The NAME QUERY
+// spoofing path is handled by the UDP responder before dispatch, as it may
+// intentionally leave a query unanswered.
+func (h *PacketHandler) dispatch(packet, response *NBNSPacket, sendWACK func(*NBNSPacket)) {
+	switch packet.Header.Flags & OpcodeMask {
+	case OpNameQuery:
+		if h.nodeStatusEnabled && h.isNodeStatusQuery(packet) {
+			// A NODE STATUS REQUEST shares the query opcode and is distinguished
+			// only by its NBSTAT question type; answer it from the name table.
+			h.handleNodeStatus(packet, response)
+		} else {
+			h.handleNameQueryWithRedirect(packet, response)
+		}
+	case OpRegistration:
+		if h.challenger != nil {
+			// Defend owned names: emit an intermediate WACK to the requestor
+			// (UDP only) before running the challenge and returning the response.
+			h.handleRegistrationWithChallenge(packet, response, sendWACK)
+		} else {
+			h.handleRegistration(packet, response)
+		}
+	case OpRelease:
+		h.handleRelease(packet, response)
+	case OpRefresh:
+		h.handleRefresh(packet, response)
+	default:
+		response.Header.Flags |= RcodeNotImpl
+	}
+}
+
 // isNodeStatusQuery reports whether request is a NODE STATUS REQUEST: an OPCODE
 // query (0x0000, the same opcode as a name query) whose first question asks for
 // the NBSTAT (0x0021) type (RFC 1002 4.2.17). Node status is distinguished from
