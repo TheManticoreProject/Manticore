@@ -1,6 +1,7 @@
 package keys
 
 import (
+	"crypto/rsa"
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
@@ -22,6 +23,30 @@ type BCRYPT_RSA_PUBLIC_KEY struct {
 
 	// Content is the content of the key.
 	Content blob.BCRYPT_RSA_PUBLIC_BLOB
+}
+
+// NewBCRYPT_RSA_PUBLIC_KEY builds a BCRYPT_RSA_PUBLIC_KEY ("RSA1" public blob)
+// from a crypto/rsa public key. It is the inverse of ExportPEM/ExportDER and
+// produces the CNG key-material bytes (via Marshal) embedded, for example, in a
+// KEYCREDENTIALLINK_BLOB. The modulus and public exponent are stored big-endian
+// with their minimal (leading-zero-free) length, matching the CbModulus /
+// CbPublicExp header fields.
+func NewBCRYPT_RSA_PUBLIC_KEY(pub *rsa.PublicKey) *BCRYPT_RSA_PUBLIC_KEY {
+	modulus := pub.N.Bytes()
+	exponent := big.NewInt(int64(pub.E)).Bytes()
+
+	return &BCRYPT_RSA_PUBLIC_KEY{
+		Magic: magic.BCRYPT_KEY_BLOB{Magic: magic.BCRYPT_RSAPUBLIC_MAGIC},
+		Header: headers.BCRYPT_RSA_KEY_BLOB{
+			BitLength:   uint32(pub.N.BitLen()),
+			CbPublicExp: uint32(len(exponent)),
+			CbModulus:   uint32(len(modulus)),
+		},
+		Content: blob.BCRYPT_RSA_PUBLIC_BLOB{
+			PublicExponent: exponent,
+			Modulus:        modulus,
+		},
+	}
 }
 
 // Unmarshal parses the provided byte slice into the BCRYPT_RSA_PUBLIC_KEY structure.
