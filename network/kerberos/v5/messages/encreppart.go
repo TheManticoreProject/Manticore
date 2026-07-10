@@ -29,6 +29,52 @@ type encRepPartInner struct {
 	SName         PrincipalName  `asn1:"explicit,tag:10"`
 }
 
+// encRepPartMarshal is the wire form of an EncKDCRepPart for marshaling. Unlike
+// encRepPartInner it encodes SRealm as a GeneralString and SName via
+// PrincipalNameMarshal, which Go's encoding/asn1 would otherwise emit as
+// PrintableString (RFC 4120 requires GeneralString). KeyExpiration [3] is not
+// exposed by the public structs and is always omitted.
+type encRepPartMarshal struct {
+	Key       EncryptionKey        `asn1:"explicit,tag:0"`
+	LastReq   []LastReq            `asn1:"explicit,tag:1"`
+	Nonce     int                  `asn1:"explicit,tag:2"`
+	Flags     asn1.BitString       `asn1:"explicit,tag:4"`
+	AuthTime  time.Time            `asn1:"explicit,tag:5,generalized"`
+	StartTime time.Time            `asn1:"explicit,tag:6,optional,generalized"`
+	EndTime   time.Time            `asn1:"explicit,tag:7,generalized"`
+	RenewTill time.Time            `asn1:"explicit,tag:8,optional,generalized"`
+	SRealm    asn1.RawValue        // pre-encoded [9] EXPLICIT { GeneralString }
+	SName     PrincipalNameMarshal `asn1:"explicit,tag:10"`
+}
+
+// marshalEncRepPart assembles an EncKDCRepPart and wraps it in the given
+// APPLICATION tag (25 for AS-REP, 26 for TGS-REP). Optional times are emitted
+// only when non-zero.
+func marshalEncRepPart(appTag int, key EncryptionKey, nonce int, flags asn1.BitString,
+	authTime, startTime, endTime, renewTill time.Time, srealm string, sname PrincipalName) ([]byte, error) {
+	inner := encRepPartMarshal{
+		Key:      key,
+		LastReq:  []LastReq{},
+		Nonce:    nonce,
+		Flags:    flags,
+		AuthTime: normalizeTime(authTime),
+		EndTime:  normalizeTime(endTime),
+		SRealm:   realmExplicit(9, srealm),
+		SName:    MarshalPrincipalName(sname),
+	}
+	if !startTime.IsZero() {
+		inner.StartTime = normalizeTime(startTime)
+	}
+	if !renewTill.IsZero() {
+		inner.RenewTill = normalizeTime(renewTill)
+	}
+	seq_bytes, err := asn1.Marshal(inner)
+	if err != nil {
+		return nil, err
+	}
+	return wrapApplication(appTag, seq_bytes)
+}
+
 // EncASRepPart is the decrypted enc-part of an AS-REP (APPLICATION 25),
 // as defined in RFC 4120 Section 5.4.2.
 // It contains the session key and ticket metadata.
@@ -51,6 +97,11 @@ type EncASRepPart struct {
 	SRealm string
 	// SName is the service principal name.
 	SName PrincipalName
+}
+
+// Marshal encodes the EncASRepPart as an ASN.1 APPLICATION[25] wrapped SEQUENCE.
+func (e *EncASRepPart) Marshal() ([]byte, error) {
+	return marshalEncRepPart(25, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName)
 }
 
 // Unmarshal decodes an EncASRepPart from an ASN.1 APPLICATION[25] wrapped SEQUENCE.
@@ -102,6 +153,11 @@ type EncTGSRepPart struct {
 	SRealm string
 	// SName is the service principal name.
 	SName PrincipalName
+}
+
+// Marshal encodes the EncTGSRepPart as an ASN.1 APPLICATION[26] wrapped SEQUENCE.
+func (e *EncTGSRepPart) Marshal() ([]byte, error) {
+	return marshalEncRepPart(26, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName)
 }
 
 // Unmarshal decodes an EncTGSRepPart from an ASN.1 APPLICATION[26] wrapped SEQUENCE.

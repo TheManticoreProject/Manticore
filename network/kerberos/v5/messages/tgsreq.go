@@ -13,8 +13,10 @@ type tgsReqInner struct {
 	MsgType int `asn1:"explicit,tag:2"`
 	// PAData contains pre-authentication data (must include PA-TGS-REQ with AP-REQ).
 	PAData []PAData `asn1:"explicit,tag:3,optional"`
-	// ReqBody is the KDC request body specifying the desired service ticket.
-	ReqBody KDCReqBody `asn1:"explicit,tag:4"`
+	// ReqBody is the KDC request body specifying the desired service ticket. It is
+	// decoded through kdcReqBodyParse (see fast.go) because the canonical
+	// KDCReqBody does not round-trip through Go's encoding/asn1 on decode.
+	ReqBody kdcReqBodyParse `asn1:"explicit,tag:4"`
 }
 
 // tgsReqMarshal is the inner SEQUENCE for marshaling — uses GeneralString types.
@@ -77,6 +79,6 @@ func (r *TGSReq) Unmarshal(data []byte) (int, error) {
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType
 	r.PAData = inner.PAData
-	r.ReqBody = inner.ReqBody
+	r.ReqBody = inner.ReqBody.toKDCReqBody()
 	return consumed, nil
 }

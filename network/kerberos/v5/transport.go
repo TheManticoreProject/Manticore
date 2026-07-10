@@ -198,37 +198,55 @@ func kdcSendTCP(kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(defaultTimeout))
 
-	len_buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(len_buf, uint32(len(msg)))
-	packet := make([]byte, 4+len(msg))
-	copy(packet[:4], len_buf)
-	copy(packet[4:], msg)
-
-	if _, err := conn.Write(packet); err != nil {
-		return nil, fmt.Errorf("kerberos: TCP send: %w", err)
+	if err := writeTCPFramed(conn, msg); err != nil {
+		return nil, err
 	}
+	return readTCPFramed(conn)
+}
 
+// maxTCPResponse caps the length a TCP length-prefix may declare, guarding
+// against a hostile or corrupt peer requesting a huge allocation.
+const maxTCPResponse = 16 * 1024 * 1024
+
+// writeTCPFramed writes msg with the RFC 4120 Section 7.2.2 framing: a 4-byte
+// big-endian length prefix followed by the message bytes. It is factored out of
+// kdcSendTCP so the framing can be unit-tested against an in-memory writer.
+func writeTCPFramed(w io.Writer, msg []byte) error {
+	packet := make([]byte, 4+len(msg))
+	binary.BigEndian.PutUint32(packet[:4], uint32(len(msg)))
+	copy(packet[4:], msg)
+	if _, err := w.Write(packet); err != nil {
+		return fmt.Errorf("kerberos: TCP send: %w", err)
+	}
+	return nil
+}
+
+// readTCPFramed reads one RFC 4120 Section 7.2.2 length-prefixed message: a
+// 4-byte big-endian length, then exactly that many bytes. A zero length and an
+// implausibly large length are both rejected. It is factored out of kdcSendTCP
+// so the de-framing can be unit-tested against an in-memory reader.
+func readTCPFramed(r io.Reader) ([]byte, error) {
 	resp_len_buf := make([]byte, 4)
-	if err := readFull(conn, resp_len_buf); err != nil {
+	if err := readFull(r, resp_len_buf); err != nil {
 		return nil, fmt.Errorf("kerberos: TCP read length: %w", err)
 	}
 	resp_len := binary.BigEndian.Uint32(resp_len_buf)
 	if resp_len == 0 {
 		return nil, fmt.Errorf("kerberos: KDC returned empty TCP response")
 	}
-	if resp_len > 16*1024*1024 {
+	if resp_len > maxTCPResponse {
 		return nil, fmt.Errorf("kerberos: KDC response too large: %d bytes", resp_len)
 	}
 
 	resp_buf := make([]byte, resp_len)
-	if err := readFull(conn, resp_buf); err != nil {
+	if err := readFull(r, resp_buf); err != nil {
 		return nil, fmt.Errorf("kerberos: TCP read body: %w", err)
 	}
 	return resp_buf, nil
 }
 
-// readFull reads exactly len(buf) bytes from conn.
-func readFull(conn net.Conn, buf []byte) error {
-	_, err := io.ReadFull(conn, buf)
+// readFull reads exactly len(buf) bytes from r.
+func readFull(r io.Reader, buf []byte) error {
+	_, err := io.ReadFull(r, buf)
 	return err
 }
