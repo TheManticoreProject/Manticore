@@ -206,7 +206,7 @@ func buildNodeStatusRequest(trnID uint16) []byte {
 // "nbtstat -A") against target: it unicasts a NODE STATUS REQUEST to
 // target:137/udp and parses the NODE STATUS RESPONSE into the remote node's
 // NetBIOS name table and adapter MAC address. target may be a bare host
-// ("10.0.0.1") or host:port; a missing port defaults to DefaultNBNSPort (137).
+// ("10.0.0.1") or host:port; a missing port defaults to DefaultNBNSUDPPort (137).
 //
 // The request is transmitted, then retransmitted up to the client's Retransmit
 // count if no matching response arrives within the per-transmission timeout
@@ -220,7 +220,7 @@ func (c *Client) NodeStatus(target string) (*NodeStatusResult, error) {
 	// Accept both a bare host and a host:port; default the port to 137 when the
 	// caller supplied only a host.
 	if _, _, err := net.SplitHostPort(target); err != nil {
-		target = net.JoinHostPort(target, fmt.Sprintf("%d", DefaultNBNSPort))
+		target = net.JoinHostPort(target, fmt.Sprintf("%d", DefaultNBNSUDPPort))
 	}
 	addr, err := net.ResolveUDPAddr("udp4", target)
 	if err != nil {

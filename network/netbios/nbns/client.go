@@ -12,7 +12,7 @@ import (
 const (
 	// LimitedBroadcastAddr is the IPv4 limited-broadcast address a B-node NAME
 	// QUERY REQUEST is sent to when no NBNS/WINS server is configured. Combined
-	// with DefaultNBNSPort it forms the default destination 255.255.255.255:137.
+	// with DefaultNBNSUDPPort it forms the default destination 255.255.255.255:137.
 	LimitedBroadcastAddr = "255.255.255.255"
 
 	// DefaultClientTimeout bounds how long the client waits for a response to a
@@ -53,7 +53,7 @@ const (
 type Client struct {
 	// Server is the NBNS/WINS server the query is sent to (P-node/H-node style
 	// unicast). It may be a bare host ("10.0.0.1") or host:port; a missing port
-	// defaults to DefaultNBNSPort (137). When Server is empty the client falls
+	// defaults to DefaultNBNSUDPPort (137). When Server is empty the client falls
 	// back to a B-node broadcast to LimitedBroadcastAddr:137.
 	Server string
 
@@ -171,14 +171,14 @@ func (c *Client) BuildNameQueryRequest(name string, suffix byte, scope string) (
 // targets the IPv4 limited-broadcast address on port 137.
 func (c *Client) destination() (*net.UDPAddr, bool, error) {
 	if c.isBroadcast() {
-		return &net.UDPAddr{IP: net.ParseIP(LimitedBroadcastAddr), Port: DefaultNBNSPort}, true, nil
+		return &net.UDPAddr{IP: net.ParseIP(LimitedBroadcastAddr), Port: DefaultNBNSUDPPort}, true, nil
 	}
 
 	// Accept both a bare host and a host:port; default the port to 137 when the
 	// caller supplied only a host.
 	server := c.Server
 	if _, _, err := net.SplitHostPort(server); err != nil {
-		server = net.JoinHostPort(server, fmt.Sprintf("%d", DefaultNBNSPort))
+		server = net.JoinHostPort(server, fmt.Sprintf("%d", DefaultNBNSUDPPort))
 	}
 
 	addr, err := net.ResolveUDPAddr("udp4", server)

@@ -219,31 +219,10 @@ func (s *TCPServer) handleMessage(data []byte) ([]byte, error) {
 		},
 	}
 
-	// Process based on operation code
-	switch packet.Header.Flags & OpcodeMask {
-	case OpNameQuery:
-		if s.handlers.nodeStatusEnabled && s.handlers.isNodeStatusQuery(&packet) {
-			// A NODE STATUS REQUEST shares the query opcode and is distinguished
-			// only by its NBSTAT question type; answer it from the name table.
-			s.handlers.handleNodeStatus(&packet, response)
-		} else {
-			s.handlers.handleNameQueryWithRedirect(&packet, response)
-		}
-	case OpRegistration:
-		if s.handlers.challenger != nil {
-			// The TCP path returns a single framed response, so no intermediate
-			// WACK is emitted (sendWACK is nil); the challenge still runs.
-			s.handlers.handleRegistrationWithChallenge(&packet, response, nil)
-		} else {
-			s.handlers.handleRegistration(&packet, response)
-		}
-	case OpRelease:
-		s.handlers.handleRelease(&packet, response)
-	case OpRefresh:
-		s.handlers.handleRefresh(&packet, response)
-	default:
-		response.Header.Flags |= RcodeNotImpl
-	}
+	// Process based on operation code. The TCP path returns a single framed
+	// response, so no intermediate WACK is emitted (sendWACK is nil); the
+	// challenge still runs. The opcode switch is shared with the UDP responder.
+	s.handlers.dispatch(&packet, response, nil)
 
 	return response.Marshal()
 }
