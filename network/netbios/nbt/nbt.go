@@ -70,13 +70,21 @@ func (n *NBTTransport) Send(data []byte) (int, error) {
 		return 0, fmt.Errorf("not connected")
 	}
 
+	// RFC 1002 4.3.1: the session header is TYPE(8) | FLAGS(8) | LENGTH(16).
+	// Bit 0 of the FLAGS byte (E) is the length-extension bit and acts as the
+	// high-order 17th bit of LENGTH, so the payload may range from 0 to 131071.
+	length := len(data)
+	if length > 0x1FFFF {
+		return 0, fmt.Errorf("NetBIOS session message too large: %d bytes (max %d)", length, 0x1FFFF)
+	}
+
 	// Create NetBIOS header
 	header := []byte{}
 	// Set message type to Session Message (0x00)
 	header = append(header, byte(netbios.SESSION_MESSAGE))
-	// Set length in big-endian format
-	length := len(data)
-	header = append(header, 0x00)
+	// Set the FLAGS byte: bit 0 carries the 17th (high-order) length bit
+	header = append(header, byte((length>>16)&0x01))
+	// Set the low 16 bits of the length in big-endian format
 	header = append(header, byte((length>>8)&0xFF))
 	header = append(header, byte(length&0xFF))
 
@@ -108,9 +116,11 @@ func (n *NBTTransport) Receive() ([]byte, error) {
 		return nil, fmt.Errorf("failed to read NetBIOS header: %v", err)
 	}
 
-	// Parse message type and length
+	// Parse message type and length. RFC 1002 4.3.1: bit 0 of the FLAGS byte
+	// (header[1]) is the length-extension bit, forming the 17th (high-order)
+	// bit of the LENGTH field carried in header[2..3].
 	messageType := header[0]
-	length := (int(header[2]) << 8) | int(header[3])
+	length := (int(header[1]&0x01) << 16) | (int(header[2]) << 8) | int(header[3])
 
 	// Verify message type is Session Message (0x00)
 	if messageType != 0x00 {
