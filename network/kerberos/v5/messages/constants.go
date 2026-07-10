@@ -37,6 +37,10 @@ const (
 	PAFXFast             = iana.PAFXFast
 	PAFXError            = iana.PAFXError
 	PAEncryptedChallenge = iana.PAEncryptedChallenge
+	PAPKASReq            = iana.PAPKASReq
+	PAPKASRep            = iana.PAPKASRep
+	PAPKASReqOld         = iana.PAPKASReqOld
+	PAPKASRepOld         = iana.PAPKASRepOld
 
 	ErrNone              = iana.ErrNone
 	ErrCPrincipalUnknown = iana.ErrCPrincipalUnknown

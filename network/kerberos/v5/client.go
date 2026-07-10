@@ -2,6 +2,7 @@ package kerberos
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/credentials"
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/pkinit"
 )
 
 // KerberosClient manages Kerberos authentication against an Active Directory KDC.
@@ -76,6 +78,15 @@ type KerberosClient struct {
 	// armoring) on the AS exchange. Configured via WithFASTArmor; consumed by
 	// GetTGT (see fast.go).
 	fast *fastArmor
+
+	// PKINIT (RFC 4556) certificate pre-authentication state, configured via
+	// WithPKINIT and consumed by GetTGT (see client_pkinit.go). pkinitReplyKey is
+	// the AS reply key derived from the DH exchange, retained for UnPAC-the-hash.
+	pkinitPriv       *rsa.PrivateKey
+	pkinitCert       []byte
+	pkinitGroups     []pkinit.DHGroup
+	pkinitReplyKey   []byte
+	pkinitReplyEType int
 }
 
 // preloadedServiceTicket is a service ticket the client will hand back from
@@ -194,6 +205,12 @@ func (c *KerberosClient) applyClockSkew(krbErr messages.KRBError) bool {
 // (realm+username). If the KDC returns PREAUTH_REQUIRED with different
 // etype/salt info, we retry once with the corrected values.
 func (c *KerberosClient) GetTGT() error {
+	// PKINIT (certificate / Shadow Credentials) pre-authentication takes its own
+	// path: a DH-based AS exchange with no long-term credential.
+	if c.pkinitConfigured() {
+		return c.getTGTPKINIT()
+	}
+
 	if c.cred == nil {
 		return fmt.Errorf("kerberos: no credentials configured: call WithPassword/WithNTHash/WithAESKey/WithCredential first")
 	}

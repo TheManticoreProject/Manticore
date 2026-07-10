@@ -27,6 +27,7 @@ const (
 	KeyUsageAPReqAuthen            = iana.KeyUsageAPReqAuthen
 	KeyUsageAPRepEncPart           = iana.KeyUsageAPRepEncPart
 	KeyUsageKRBCredEncPart         = iana.KeyUsageKRBCredEncPart
+	KeyUsageKerbNonKerbSalt        = iana.KeyUsageKerbNonKerbSalt
 )
 
 // Sentinel errors for cryptographic operations.
