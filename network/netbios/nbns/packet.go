@@ -28,9 +28,20 @@ const (
 // therefore encodes as a single 32-byte label followed by 0x00, matching
 // the historical single-label wire form.
 func marshalName(n *NetBIOSName) ([]byte, error) {
-	encoded, err := n.FirstLevelEncode()
-	if err != nil {
-		return nil, err
+	var encoded string
+	if strings.HasPrefix(n.Name, "*") {
+		// The reserved "*" wildcard name (RFC 1002 4.2.17) is NUL-padded rather
+		// than space-padded and begins with '*', which FirstLevelEncode rejects;
+		// encode it directly through the shared wildcard codec so a NODE STATUS
+		// RESPONSE can echo the wildcard question name it decoded from the
+		// request. The wildcard carries no scope.
+		encoded = encodedWildcardName()
+	} else {
+		var err error
+		encoded, err = n.FirstLevelEncode()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var buf []byte
@@ -158,6 +169,14 @@ const (
 
 	// RcodeMask isolates the RCODE field (low nibble) of the header flags.
 	RcodeMask uint16 = 0x000F
+
+	// OpcodeMask isolates the 4-bit OPCODE field of the header flags. In the
+	// RFC 1002 4.2.1.1 layout the flags word is R | OPCODE | NM_FLAGS | RCODE,
+	// so the OPCODE occupies bits 14..11 (0x7800), with the R (response) bit at
+	// 0x8000 sitting just above it. Masking with 0x7800 therefore yields the
+	// opcode of both a request (R=0) and a response (R=1); the Op* constants are
+	// already positioned within this field.
+	OpcodeMask uint16 = 0x7800
 
 	// Question Type
 	QuestionTypeNB     uint16 = 0x0020

@@ -116,7 +116,7 @@ func (c *NameChallenger) ChallengeOwnership(name string, owner net.IP) (bool, er
 // DefendName actively defends a name against challenges
 func (c *NameChallenger) DefendName(packet *NBNSPacket, response *NBNSPacket) {
 	// Only defend against queries
-	if packet.Header.Flags&0xF000 != OpNameQuery {
+	if packet.Header.Flags&OpcodeMask != OpNameQuery {
 		return
 	}
 

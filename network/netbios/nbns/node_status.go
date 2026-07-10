@@ -43,6 +43,14 @@ const unitIDLength = 6
 // size; a full 16-bit datagram buffer avoids truncating a busy host's reply.
 const nodeStatusReadBufferSize = 0xFFFF
 
+// nodeStatusStatisticsLength is the fixed on-the-wire size of the STATISTICS
+// block that trails the NODE_NAME array in an NBSTAT RESPONSE (RFC 1002
+// 4.2.18): the 6-byte UNIT_ID, a 1-byte JUMPERS and 1-byte TEST_RESULT, and a
+// run of 16-bit counters with two 32-bit send/receive counters, totalling 46
+// bytes. The counters carry no security-relevant data, so the responder emits
+// them as zero and only the UNIT_ID (adapter MAC) is populated.
+const nodeStatusStatisticsLength = 46
+
 // NodeName is one entry of a remote node's NetBIOS name table as returned in a
 // NODE STATUS RESPONSE: the (space-trimmed) 15-character base name, its 16th
 // service suffix byte, and the raw NAME_FLAGS word. The helper predicates below
@@ -334,4 +342,57 @@ func parseNodeStatusRData(rdata []byte) (*NodeStatusResult, error) {
 	}
 
 	return result, nil
+}
+
+// marshal encodes a NodeName as a single 18-byte NODE_NAME entry for the RDATA
+// of an NBSTAT RESPONSE (RFC 1002 4.2.18): the 16-byte NetBIOS name (the base
+// name space-padded to 15 characters followed by the 1-byte service suffix) and
+// the 2-byte big-endian NAME_FLAGS word. It is the inverse of the per-entry
+// decode in parseNodeStatusRData.
+func (n NodeName) marshal() []byte {
+	buf := make([]byte, nodeNameEntryLength)
+
+	// Bytes 0..14 are the base name, right-padded with spaces; byte 15 is the
+	// service suffix; a base name longer than 15 characters is truncated.
+	base := n.Name
+	if len(base) > NetBIOSNameLength-1 {
+		base = base[:NetBIOSNameLength-1]
+	}
+	copy(buf, base)
+	for i := len(base); i < NetBIOSNameLength-1; i++ {
+		buf[i] = ' '
+	}
+	buf[NetBIOSNameLength-1] = n.Suffix
+
+	binary.BigEndian.PutUint16(buf[NetBIOSNameLength:nodeNameEntryLength], n.Flags)
+	return buf
+}
+
+// buildNodeStatusRData assembles the RDATA of an NBSTAT RESPONSE record (RFC
+// 1002 4.2.18): a 1-byte NUM_NAMES count, that many 18-byte NODE_NAME entries,
+// then the fixed-length STATISTICS block whose leading 6-byte UNIT_ID carries
+// the adapter MAC (zero-filled when mac is nil or not 6 bytes) and whose
+// remaining counters are emitted as zero. The layout is the exact inverse of
+// parseNodeStatusRData, so this responder and the sibling NodeStatus client
+// agree on the wire format.
+func buildNodeStatusRData(names []NodeName, mac net.HardwareAddr) []byte {
+	// NUM_NAMES is a single unsigned byte, so at most 255 entries fit in one
+	// response; a larger table is truncated rather than misreported.
+	if len(names) > 0xFF {
+		names = names[:0xFF]
+	}
+
+	buf := make([]byte, 0, 1+len(names)*nodeNameEntryLength+nodeStatusStatisticsLength)
+	buf = append(buf, byte(len(names)))
+	for _, n := range names {
+		buf = append(buf, n.marshal()...)
+	}
+
+	stats := make([]byte, nodeStatusStatisticsLength)
+	if len(mac) == unitIDLength {
+		copy(stats[:unitIDLength], mac)
+	}
+	buf = append(buf, stats...)
+
+	return buf
 }

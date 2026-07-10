@@ -21,6 +21,13 @@ type NetBIOSNameServer struct {
 	cleanupInterval time.Duration
 	cleanupQuit     chan struct{}
 	cleanupDone     chan struct{}
+
+	// conflictDemandSender, when non-nil, transmits a NAME CONFLICT DEMAND (RFC
+	// 1002 4.2.15) to a conflicting name's owner as part of MarkNameConflict.
+	// It is left nil by default so a plain name server only flips local state,
+	// preserving the historical behaviour; a transport wires it in to actually
+	// put the demand on the wire.
+	conflictDemandSender func(packet *NBNSPacket, owner net.IP) error
 }
 
 // NewNetBIOSNameServer creates a new NetBIOS Name Server instance.
@@ -220,21 +227,100 @@ func (n *NetBIOSNameServer) RefreshName(name string, scopeID string, owner net.I
 	return nil
 }
 
-// MarkNameConflict marks a name as being in conflict
-func (n *NetBIOSNameServer) MarkNameConflict(name string, scopeID string) error {
+// SetConflictDemandSender installs the transport callback MarkNameConflict uses
+// to emit a NAME CONFLICT DEMAND to a conflicting name's owner. Passing nil (the
+// default) restores the local-only behaviour in which MarkNameConflict merely
+// flips the record's status.
+func (n *NetBIOSNameServer) SetConflictDemandSender(send func(packet *NBNSPacket, owner net.IP) error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.conflictDemandSender = send
+}
+
+// MarkNameConflict marks a name as being in conflict and, when a conflict-demand
+// sender has been installed, emits a NAME CONFLICT DEMAND (RFC 1002 4.2.15) to
+// every current owner of the name so the offending node learns its registration
+// is disputed. The demand is built once per owner from the record's scope-aware
+// name and the owner's address; a send failure is not fatal to marking the
+// conflict, matching the best-effort nature of a broadcast/unicast demand.
+func (n *NetBIOSNameServer) MarkNameConflict(name string, scopeID string) error {
+	n.mu.Lock()
 
 	name = normalizeName(name)
 	key := nameKey(name, scopeID)
 
 	record, exists := n.names[key]
 	if !exists {
+		n.mu.Unlock()
 		return fmt.Errorf("name not found: %s", name)
 	}
 
 	record.Status = Conflict
+
+	// Snapshot the sender and owners under the lock, then emit outside it so a
+	// blocking transport send cannot stall other name-table operations.
+	send := n.conflictDemandSender
+	var owners []net.IP
+	nbName := &NetBIOSName{Name: name, ScopeID: scopeID}
+	if send != nil {
+		owners = make([]net.IP, len(record.Owners))
+		copy(owners, record.Owners)
+	}
+	n.mu.Unlock()
+
+	for _, owner := range owners {
+		demand := buildNameConflictDemand(nbName, owner)
+		if demand == nil {
+			continue // owner has no IPv4 address to address the demand to
+		}
+		_ = send(demand, owner)
+	}
+
 	return nil
+}
+
+// NameTable returns a snapshot of the currently registered names as NODE_NAME
+// entries for a NODE STATUS RESPONSE (RFC 1002 4.2.18). Each entry carries the
+// record's base name and NAME_FLAGS derived from the record: the G bit reflects
+// a group name, ACT reflects an active registration and CNF a name in conflict.
+// The owner-node-type (ONT) bits are left at 0 (B node). The name table does not
+// track a separate service suffix, so the 16th name byte is emitted as a space
+// (0x20) unless a caller registered a full 16-byte name whose final byte is the
+// suffix; the marshaller (NodeName.marshal) supplies that padding.
+func (n *NetBIOSNameServer) NameTable() []NodeName {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	entries := make([]NodeName, 0, len(n.names))
+	for _, record := range n.names {
+		// Recover the 16-byte NetBIOS form so the trailing suffix byte, if the
+		// caller embedded one, becomes the NODE_NAME suffix; a shorter base name
+		// yields a space-padded suffix.
+		raw := make([]byte, NetBIOSNameLength)
+		copy(raw, record.Name)
+		for i := len(record.Name); i < NetBIOSNameLength; i++ {
+			raw[i] = ' '
+		}
+
+		var flags uint16
+		if record.Type == Group {
+			flags |= NameFlagGroup
+		}
+		switch record.Status {
+		case Active:
+			flags |= NameFlagActive
+		case Conflict:
+			flags |= NameFlagConflict
+		}
+
+		entries = append(entries, NodeName{
+			Name:   strings.TrimRight(string(raw[:NetBIOSNameLength-1]), " "),
+			Suffix: raw[NetBIOSNameLength-1],
+			Flags:  flags,
+		})
+	}
+
+	return entries
 }
 
 // CleanExpiredNames removes names that have exceeded their TTL
