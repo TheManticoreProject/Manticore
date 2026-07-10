@@ -1,6 +1,7 @@
 package nbns
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -173,5 +174,44 @@ func TestFirstLevelDecodeErrors(t *testing.T) {
 				t.Fatalf("FirstLevelDecode(%q) expected error, got nil", tc.encoded)
 			}
 		})
+	}
+}
+
+// TestEncodeSessionServiceName verifies the 34-byte second-level encoding used
+// by the NetBIOS session service, including the "*SMBSERVER" wildcard convention
+// and the workstation/server service suffixes.
+func TestEncodeSessionServiceName(t *testing.T) {
+	// "*SMBSERVER" with the server service suffix 0x20: 0x20 length prefix, the
+	// well-known 32-char first-level encoding, and a 0x00 terminator.
+	got, err := EncodeSessionServiceName("*SMBSERVER", 0x20)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName() error = %v", err)
+	}
+	want := append(append([]byte{0x20}, []byte("CKFDENECFDEFFCFGEFFCCACACACACACA")...), 0x00)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("encoded *SMBSERVER = % x, want % x", got, want)
+	}
+	if len(got) != 34 {
+		t.Fatalf("encoded length = %d, want 34", len(got))
+	}
+
+	// A workstation name (suffix 0x00) must place the suffix byte in the final
+	// (16th) name position, which decodes to a trailing 0x00.
+	wks, err := EncodeSessionServiceName("CLIENT", 0x00)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName() error = %v", err)
+	}
+	if wks[0] != 0x20 || wks[33] != 0x00 {
+		t.Fatalf("workstation framing = % x, want 0x20 ... 0x00", wks)
+	}
+	// The final encoded byte pair (positions 31-32) encodes the suffix 0x00 as
+	// two 'A' characters.
+	if wks[31] != 'A' || wks[32] != 'A' {
+		t.Fatalf("suffix encoding = %q%q, want AA", wks[31], wks[32])
+	}
+
+	// Names longer than 15 characters are rejected.
+	if _, err := EncodeSessionServiceName("THISNAMEISWAYTOOLONG", 0x00); err == nil {
+		t.Fatal("EncodeSessionServiceName() should reject names longer than 15 characters")
 	}
 }
