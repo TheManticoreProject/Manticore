@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -96,8 +97,8 @@ func TestNewClient(t *testing.T) {
 	if c.Conn == nil {
 		t.Error("NewClient() Conn is nil")
 	}
-	if c.Timeout != 2*time.Second {
-		t.Errorf("NewClient() Timeout = %v, want %v", c.Timeout, 2*time.Second)
+	if c.Timeout != constants.LLMNRTimeout {
+		t.Errorf("NewClient() Timeout = %v, want %v", c.Timeout, constants.LLMNRTimeout)
 	}
 	if c.Closed == nil {
 		t.Error("NewClient() Closed channel is nil")
@@ -570,6 +571,125 @@ func TestClientCloseIdempotent(t *testing.T) {
 	case <-c.Closed:
 	default:
 		t.Error("Closed channel is not closed after Close()")
+	}
+}
+
+// TestClientQueryRetransmits confirms that, per RFC 4795 §2.7, an unanswered
+// query is retransmitted more than once before the overall budget elapses. A
+// silent responder counts every datagram it receives; with short, overridden
+// jitter/retransmit values the client must send the query multiple times within
+// the timeout window. This exercises the retransmission schedule deterministically
+// and fast, by COUNTING the datagrams that reach the loopback responder.
+func TestClientQueryRetransmits(t *testing.T) {
+	var count int64
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		atomic.AddInt64(&count, 1)
+		return nil // never answer, so the client keeps retransmitting
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+
+	// Short, deterministic timing so the test is fast and not flaky: a tiny
+	// jitter, a 20ms retransmit interval, and a 130ms overall budget yield
+	// roughly seven transmissions (t≈0, 20, 40, 60, 80, 100, 120ms).
+	c.jitterInterval = 1 * time.Millisecond
+	c.retransmitInterval = 20 * time.Millisecond
+	c.Timeout = 130 * time.Millisecond
+
+	_, err = c.Query(context.Background(), "host.local", llmnr_type.TypeA)
+	if err == nil || err.Error() != "query timeout" {
+		t.Fatalf("Query() error = %v, want %q", err, "query timeout")
+	}
+
+	if got := atomic.LoadInt64(&count); got < 2 {
+		t.Errorf("responder received %d datagrams, want >1 (query must be retransmitted)", got)
+	}
+}
+
+// TestClientQueryJitterBound confirms the first transmission is delayed but still
+// occurs within the JitterInterval bound mandated by RFC 4795 §2.7 (a delay
+// randomly selected from [0, JitterInterval)). The responder records how long
+// after the Query call the first datagram arrives; with a large retransmit
+// interval only the initial send lands inside the observation window, so the
+// measured delay is the jitter delay itself and must not exceed JitterInterval.
+func TestClientQueryJitterBound(t *testing.T) {
+	firstRecv := make(chan time.Duration, 1)
+	var start atomic.Int64
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		if s := start.Load(); s != 0 {
+			select {
+			case firstRecv <- time.Duration(time.Now().UnixNano() - s):
+			default:
+			}
+		}
+		return nil // silent, so no response cuts the window short
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+
+	const jitter = 60 * time.Millisecond
+	c.jitterInterval = jitter
+	c.retransmitInterval = 1 * time.Second // keep the second send out of the window
+	c.Timeout = 500 * time.Millisecond
+
+	start.Store(time.Now().UnixNano())
+	go func() { _, _ = c.Query(context.Background(), "host.local", llmnr_type.TypeA) }()
+
+	select {
+	case d := <-firstRecv:
+		// Allow modest scheduling slack on top of the jitter bound.
+		if d > jitter+50*time.Millisecond {
+			t.Errorf("first transmission delayed %v, want <= %v (JitterInterval bound)", d, jitter)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first transmission never observed at responder")
+	}
+}
+
+// TestClientQueryContextDeadline confirms the caller's context deadline is honored
+// during the retransmission loop: with a silent responder and a long overall
+// timeout, a short context deadline must end the query promptly (returning the
+// context error) rather than waiting for Timeout.
+func TestClientQueryContextDeadline(t *testing.T) {
+	addr, cleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		return nil // silent responder
+	})
+	defer cleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+	c.jitterInterval = 1 * time.Millisecond
+	c.retransmitInterval = 20 * time.Millisecond
+	c.Timeout = 5 * time.Second // long, so the context deadline is what fires
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancel()
+
+	begin := time.Now()
+	_, err = c.Query(ctx, "host.local", llmnr_type.TypeA)
+	elapsed := time.Since(begin)
+
+	if err != context.DeadlineExceeded {
+		t.Errorf("Query() error = %v, want %v", err, context.DeadlineExceeded)
+	}
+	if elapsed > time.Second {
+		t.Errorf("Query() took %v, want it to return near the 60ms context deadline, not the 5s timeout", elapsed)
 	}
 }
 

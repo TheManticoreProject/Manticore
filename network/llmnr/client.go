@@ -3,6 +3,7 @@ package llmnr
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -84,6 +85,22 @@ type Client struct {
 	// on-link (same-subnet) unicast address, a link-local address, or loopback
 	// (the last covers unit tests that use a 127.0.0.1 responder).
 	localNets []*net.IPNet
+
+	// jitterInterval bounds the randomized delay applied before the first
+	// transmission of a query. RFC 4795 §2.7 requires the transmission of each
+	// LLMNR query to be delayed by a time randomly selected from the interval 0
+	// to JITTER_INTERVAL. It defaults to constants.JitterInterval and is
+	// overridable so unit tests can drive it with short, deterministic values.
+	jitterInterval time.Duration
+
+	// retransmitInterval is the period on which an unanswered query is
+	// retransmitted. RFC 4795 §2.7: "If an LLMNR query sent over UDP is not
+	// resolved within LLMNR_TIMEOUT, then a sender SHOULD repeat the
+	// transmission of the query in order to ensure that it was received by a
+	// host capable of responding to it." It therefore defaults to the
+	// LLMNR_TIMEOUT constant (constants.LLMNRTimeout) and is overridable for
+	// tests.
+	retransmitInterval time.Duration
 }
 
 // NewClient creates a new LLMNR client with a UDP connection.
@@ -118,14 +135,19 @@ func NewClient() (*Client, error) {
 	}
 
 	c := &Client{
-		Conn:    conn,
-		Timeout: 2 * time.Second,
+		Conn: conn,
+		// Overall budget for a query. Per RFC 4795 §7 the LLMNR timeout is a
+		// protocol constant rather than a user-tunable value, so it defaults to
+		// constants.LLMNRTimeout instead of an arbitrary hardcoded duration.
+		Timeout: constants.LLMNRTimeout,
 		Closed:  make(chan struct{}),
 		dest: &net.UDPAddr{
 			IP:   net.ParseIP(constants.IPv4MulticastAddr),
 			Port: constants.ListenPort,
 		},
-		localNets: localUnicastNetworks(),
+		localNets:          localUnicastNetworks(),
+		jitterInterval:     constants.JitterInterval,
+		retransmitInterval: constants.LLMNRTimeout,
 	}
 
 	go c.readLoop()
@@ -181,25 +203,91 @@ func (c *Client) Query(ctx context.Context, name string, qtype llmnr_type.Type) 
 	})
 	defer c.Queries.Delete(msg.Header.Identifier)
 
-	// Send query to the configured destination (the LLMNR multicast group by
-	// default, or an overridden responder address).
+	// Encode the query once; the same bytes are (re)transmitted to the
+	// configured destination (the LLMNR multicast group by default, or an
+	// overridden responder address).
 	encoded, err := msg.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode message: %w", err)
 	}
 
-	if _, err := c.Conn.WriteToUDP(encoded, c.dest); err != nil {
-		return nil, fmt.Errorf("failed to send query: %w", err)
+	// Overall budget for this query. The deadline is honored in addition to the
+	// caller's context, so whichever fires first ends the wait.
+	timeout := time.NewTimer(c.Timeout)
+	defer timeout.Stop()
+
+	// RFC 4795 §2.7: "the transmission of each LLMNR query and response SHOULD
+	// be delayed by a time randomly selected from the interval 0 to
+	// JITTER_INTERVAL." Apply that randomized delay before the first send.
+	if err := c.jitterDelay(ctx, timeout); err != nil {
+		return nil, err
 	}
 
-	// Wait for response or timeout
+	if err := c.transmit(encoded); err != nil {
+		return nil, err
+	}
+
+	// RFC 4795 §2.7: "If an LLMNR query sent over UDP is not resolved within
+	// LLMNR_TIMEOUT, then a sender SHOULD repeat the transmission of the query
+	// in order to ensure that it was received by a host capable of responding
+	// to it." Retransmit on the LLMNR_TIMEOUT schedule until a valid response
+	// arrives, the overall budget elapses, or the caller's context fires.
+	ticker := time.NewTicker(c.retransmitInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timeout.C:
+			return nil, fmt.Errorf("query timeout")
+		case resp := <-responseChan:
+			return resp, nil
+		case <-ticker.C:
+			if err := c.transmit(encoded); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+// transmit writes the encoded query to the configured destination.
+func (c *Client) transmit(encoded []byte) error {
+	if _, err := c.Conn.WriteToUDP(encoded, c.dest); err != nil {
+		return fmt.Errorf("failed to send query: %w", err)
+	}
+	return nil
+}
+
+// jitterDelay blocks for a random duration in the half-open interval
+// [0, jitterInterval) before returning, implementing the transmission jitter
+// mandated by RFC 4795 §2.7. It returns early (with the corresponding error) if
+// the caller's context is cancelled, the overall query budget elapses, or the
+// client is closed, so it never delays a send past a deadline the caller cares
+// about. A non-positive jitterInterval disables the delay entirely (used by
+// tests that want a deterministic, immediate first send).
+func (c *Client) jitterDelay(ctx context.Context, timeout *time.Timer) error {
+	if c.jitterInterval <= 0 {
+		return nil
+	}
+
+	d := time.Duration(rand.Int63n(int64(c.jitterInterval)))
+	if d == 0 {
+		return nil
+	}
+
+	t := time.NewTimer(d)
+	defer t.Stop()
+
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(c.Timeout):
-		return nil, fmt.Errorf("query timeout")
-	case resp := <-responseChan:
-		return resp, nil
+		return ctx.Err()
+	case <-timeout.C:
+		return fmt.Errorf("query timeout")
+	case <-c.Closed:
+		return fmt.Errorf("client closed")
+	case <-t.C:
+		return nil
 	}
 }
 
