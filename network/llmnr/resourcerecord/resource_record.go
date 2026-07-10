@@ -35,6 +35,16 @@ type ResourceRecord struct {
 
 	// The resource data, which contains the actual information associated with the domain name (e.g., an IP address).
 	RData []byte `json:"rdata"`
+
+	// message and rdataOffset retain the context needed to resolve 0xC0
+	// compression pointers embedded inside name-bearing RDATA (PTR/CNAME/NS/SRV).
+	// They are populated by UnmarshalFromMessage: message is the full LLMNR
+	// message buffer and rdataOffset is the absolute offset of RData within it.
+	// When a record is built by hand (rather than decoded from a message) these
+	// stay zero-valued and the typed accessors fall back to decoding names from
+	// RData alone, which resolves correctly only for uncompressed names.
+	message     []byte
+	rdataOffset int
 }
 
 // Marshal converts a ResourceRecord into a byte slice using the LLMNR protocol's wire format.
@@ -129,6 +139,12 @@ func (rr *ResourceRecord) UnmarshalFromMessage(message []byte, offset int) (int,
 	if offset+int(rr.RDLength) > len(message) {
 		return 0, fmt.Errorf("truncated rdata")
 	}
+
+	// Retain the message context so that name-bearing RDATA (PTR/CNAME/NS/SRV)
+	// can resolve compression pointers relative to the start of the message
+	// (RFC 1035 §4.1.4) via the typed accessors below.
+	rr.message = message
+	rr.rdataOffset = offset
 
 	rr.RData = make([]byte, rr.RDLength)
 	copy(rr.RData, message[offset:offset+int(rr.RDLength)])
