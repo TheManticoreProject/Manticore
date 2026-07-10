@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+
+	"github.com/TheManticoreProject/Manticore/network/llmnr/errors"
 )
 
 // Size of LLMNR message header in bytes
@@ -70,7 +72,7 @@ func (h *Header) Marshal() ([]byte, error) {
 // It returns an error if the input slice is not exactly 12 bytes.
 func (h *Header) Unmarshal(data []byte) (int, error) {
 	if len(data) != 12 {
-		return 0, fmt.Errorf("invalid length: got %d bytes, want 12 bytes", len(data))
+		return 0, fmt.Errorf("invalid length: got %d bytes, want 12 bytes: %w", len(data), errors.ErrInvalidHeader)
 	}
 
 	bytesRead := 0
@@ -79,7 +81,7 @@ func (h *Header) Unmarshal(data []byte) (int, error) {
 
 	bytesReadFlags, err := h.Flags.Unmarshal(data[bytesRead : bytesRead+2])
 	if err != nil {
-		return 0, fmt.Errorf("failed to unmarshal flags: %w", err)
+		return 0, fmt.Errorf("failed to unmarshal flags: %w: %w", err, errors.ErrInvalidHeader)
 	}
 	bytesRead += bytesReadFlags
 

@@ -99,7 +99,7 @@ func EncodeDomainName(name string) ([]byte, error) {
 // point it appears), and an error if decoding fails.
 func DecodeDomainName(data []byte, offset int) (string, int, error) {
 	if offset < 0 || offset >= len(data) {
-		return "", offset, fmt.Errorf("offset out of bounds")
+		return "", offset, fmt.Errorf("offset out of bounds: %w", errors.ErrInvalidDomainName)
 	}
 
 	originalOffset := offset
@@ -116,7 +116,7 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 
 	for {
 		if offset >= len(data) {
-			return "", originalOffset, fmt.Errorf("truncated name")
+			return "", originalOffset, fmt.Errorf("truncated name: %w", errors.ErrInvalidDomainName)
 		}
 
 		length := int(data[offset])
@@ -126,7 +126,7 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 		if length&constants.LabelPointer == constants.LabelPointer {
 			// Need one more byte for the pointer
 			if offset+1 >= len(data) {
-				return "", originalOffset, fmt.Errorf("truncated pointer")
+				return "", originalOffset, fmt.Errorf("truncated pointer: %w", errors.ErrInvalidDomainName)
 			}
 			ptr := int(binary.BigEndian.Uint16(data[offset:]) & 0x3FFF)
 			if !jumped {
@@ -138,10 +138,10 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 			// it must point strictly backwards. Forward and self references are
 			// rejected per RFC guidance and to guarantee decoding terminates.
 			if ptr >= offset {
-				return "", originalOffset, fmt.Errorf("invalid pointer: not a backward reference")
+				return "", originalOffset, fmt.Errorf("invalid pointer: not a backward reference: %w", errors.ErrInvalidDomainName)
 			}
 			if _, seen := visited[ptr]; seen {
-				return "", originalOffset, fmt.Errorf("invalid pointer: cycle detected")
+				return "", originalOffset, fmt.Errorf("invalid pointer: cycle detected: %w", errors.ErrInvalidDomainName)
 			}
 			visited[offset] = struct{}{}
 			// Follow the pointer
@@ -151,7 +151,7 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 		}
 
 		if _, seen := visited[offset]; seen {
-			return "", originalOffset, fmt.Errorf("invalid name: cycle detected")
+			return "", originalOffset, fmt.Errorf("invalid name: cycle detected: %w", errors.ErrInvalidDomainName)
 		}
 		visited[offset] = struct{}{}
 
@@ -166,7 +166,7 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 		// Regular label
 		offset++
 		if offset+length > len(data) {
-			return "", originalOffset, fmt.Errorf("truncated label")
+			return "", originalOffset, fmt.Errorf("truncated label: %w", errors.ErrInvalidDomainName)
 		}
 		label := string(data[offset : offset+length])
 		labels = append(labels, label)

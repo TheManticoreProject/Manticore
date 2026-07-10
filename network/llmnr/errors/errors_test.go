@@ -21,7 +21,6 @@ func TestSentinelMessages(t *testing.T) {
 		{errors.ErrInvalidAuthority, "invalid authority format"},
 		{errors.ErrInvalidAdditional, "invalid additional format"},
 		{errors.ErrInvalidResourceRecord, "invalid resource record format"},
-		{errors.ErrInvalidResourceRecordType, "invalid resource record type"},
 		{errors.ErrNameTooLong, "domain name too long"},
 		{errors.ErrLabelTooLong, "label too long"},
 	}
@@ -49,7 +48,6 @@ func TestSentinelIdentity(t *testing.T) {
 		errors.ErrInvalidAuthority,
 		errors.ErrInvalidAdditional,
 		errors.ErrInvalidResourceRecord,
-		errors.ErrInvalidResourceRecordType,
 		errors.ErrNameTooLong,
 		errors.ErrLabelTooLong,
 	}

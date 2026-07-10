@@ -26,7 +26,16 @@ import (
 //   - Debug: A boolean flag indicating whether debug mode is enabled.
 type Server struct {
 	// Handlers is a slice of Handler interfaces that process incoming LLMNR messages.
+	// It is guarded by handlersMu: RegisterHandler appends under the write lock
+	// while the per-packet dispatch path reads a snapshot under the read lock, so
+	// a handler may be registered concurrently with Serve without a data race.
 	Handlers []Handler
+
+	// handlersMu guards the Handlers slice. It is deliberately separate from
+	// listeningMu (which guards the listening/listeningTCP readiness flags) so the
+	// two unrelated concerns never contend, and it is never held while a handler
+	// runs: the read path copies the slice under the lock and iterates the copy.
+	handlersMu sync.RWMutex
 
 	// Known networks are "tcp", "tcp4" (IPv4-only), "tcp6" (IPv6-only),
 	// "udp", "udp4" (IPv4-only), "udp6" (IPv6-only), "ip", "ip4"
@@ -353,7 +362,7 @@ func (s *Server) SetDebug(debug bool) {
 //	    log.Fatalf("Server encountered an error: %v", err)
 //	}
 func (s *Server) ListenAndServe() error {
-	if len(s.Handlers) == 0 {
+	if len(s.snapshotHandlers()) == 0 {
 		return fmt.Errorf("no handlers registered")
 	}
 
@@ -533,10 +542,25 @@ func (s *Server) Serve() error {
 //
 // This function is typically called internally by the Server when a new LLMNR query is received.
 func (s *Server) processHandlers(server *Server, remoteAddr net.Addr, writer ResponseWriter, message *message.Message) {
-	for _, handler := range s.Handlers {
+	// Iterate a snapshot taken under the read lock rather than ranging over
+	// s.Handlers directly: this keeps RegisterHandler safe to call concurrently
+	// with dispatch, and avoids holding the lock while a handler runs.
+	for _, handler := range s.snapshotHandlers() {
 		continueProcessing := handler.Run(server, remoteAddr, writer, message)
 		if !continueProcessing {
 			break
 		}
 	}
+}
+
+// snapshotHandlers returns a copy of the registered handlers taken under the
+// read lock. Callers iterate the returned slice so that RegisterHandler can
+// append concurrently (under the write lock) without racing the dispatch path,
+// and so no lock is held while a handler runs.
+func (s *Server) snapshotHandlers() []Handler {
+	s.handlersMu.RLock()
+	defer s.handlersMu.RUnlock()
+	handlers := make([]Handler, len(s.Handlers))
+	copy(handlers, s.Handlers)
+	return handlers
 }

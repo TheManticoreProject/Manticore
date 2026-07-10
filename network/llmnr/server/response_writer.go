@@ -65,7 +65,15 @@ func (w *responseWriter) WriteMessage(msg *message.Message) error {
 		return fmt.Errorf("failed to encode message: %w", err)
 	}
 
-	_, err = w.Server.Conn.WriteToUDP(encoded, w.RemoteAddr.(*net.UDPAddr))
+	// The UDP responder can only reply over its net.UDPConn, so the remote
+	// address must be a *net.UDPAddr. Assert with the comma-ok form and return a
+	// descriptive error rather than risk a panic on an unexpected address type.
+	udpAddr, ok := w.RemoteAddr.(*net.UDPAddr)
+	if !ok {
+		return fmt.Errorf("cannot write UDP response: remote address is %T, want *net.UDPAddr", w.RemoteAddr)
+	}
+
+	_, err = w.Server.Conn.WriteToUDP(encoded, udpAddr)
 
 	return err
 }

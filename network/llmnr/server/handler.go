@@ -55,5 +55,7 @@ func (f HandlerFunc) Run(server *Server, remoteAddr net.Addr, writer ResponseWri
 // This function is typically called before starting the server to ensure that all necessary
 // handlers are in place to process incoming queries.
 func (s *Server) RegisterHandler(handler Handler) {
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
 	s.Handlers = append(s.Handlers, handler)
 }

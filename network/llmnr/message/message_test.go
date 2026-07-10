@@ -2,6 +2,7 @@ package message_test
 
 import (
 	"encoding/hex"
+	stderrors "errors"
 	"math/rand"
 	"net"
 	"testing"
@@ -441,5 +442,84 @@ func TestValidateChecksAuthorityAndAdditional(t *testing.T) {
 	msgAdd.Header.ARCount = 1
 	if err := msgAdd.Validate(); err != errors.ErrLabelTooLong {
 		t.Errorf("Validate() returned %v for invalid Additional name, want %v", err, errors.ErrLabelTooLong)
+	}
+}
+
+// TestUnmarshalWrapsSentinels verifies that Unmarshal wraps the errors package
+// sentinels with %w so callers can classify a malformed packet with errors.Is
+// rather than matching on error strings. Each case feeds a deliberately
+// malformed buffer and asserts the sentinel(s) it should surface.
+func TestUnmarshalWrapsSentinels(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+		want []error
+	}{
+		{
+			// Fewer than the 12 header bytes: the top-level message is invalid.
+			name: "short buffer",
+			data: []byte{0x00, 0x00, 0x00, 0x00, 0x00},
+			want: []error{errors.ErrInvalidMessage},
+		},
+		{
+			// QDCount=1 but the question name is not followed by type/class.
+			name: "truncated question",
+			data: []byte{
+				0x00, 0x00, // ID
+				0x00, 0x00, // Flags (query)
+				0x00, 0x01, // QDCount = 1
+				0x00, 0x00, // ANCount
+				0x00, 0x00, // NSCount
+				0x00, 0x00, // ARCount
+				0x01, 'a', 0x00, // name "a." then end of buffer
+			},
+			want: []error{errors.ErrInvalidQuestion},
+		},
+		{
+			// QDCount=1 with a forward compression pointer in the name, which is
+			// rejected as an invalid domain name (and bubbles up as an invalid
+			// question).
+			name: "invalid name pointer",
+			data: []byte{
+				0x00, 0x00, // ID
+				0x00, 0x00, // Flags (query)
+				0x00, 0x01, // QDCount = 1
+				0x00, 0x00, // ANCount
+				0x00, 0x00, // NSCount
+				0x00, 0x00, // ARCount
+				0xC0, 0xFF, // pointer to offset 255 (forward reference)
+			},
+			want: []error{errors.ErrInvalidDomainName, errors.ErrInvalidQuestion},
+		},
+		{
+			// ANCount=1 with a root-labelled answer whose fixed fields are cut off:
+			// the record is invalid, surfaced through the answer section.
+			name: "truncated answer",
+			data: []byte{
+				0x00, 0x00, // ID
+				0x00, 0x00, // Flags (query)
+				0x00, 0x00, // QDCount
+				0x00, 0x01, // ANCount = 1
+				0x00, 0x00, // NSCount
+				0x00, 0x00, // ARCount
+				0x00, // root name, then no type/class/ttl/rdlength
+			},
+			want: []error{errors.ErrInvalidAnswer, errors.ErrInvalidResourceRecord},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msg := message.Message{}
+			_, err := msg.Unmarshal(c.data)
+			if err == nil {
+				t.Fatalf("Unmarshal(%s) error = nil, want error", c.name)
+			}
+			for _, want := range c.want {
+				if !stderrors.Is(err, want) {
+					t.Errorf("Unmarshal(%s) error = %v, want errors.Is match for %v", c.name, err, want)
+				}
+			}
+		})
 	}
 }

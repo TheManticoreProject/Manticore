@@ -9,6 +9,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/llmnr/class"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/domain_name"
+	"github.com/TheManticoreProject/Manticore/network/llmnr/errors"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 )
 
@@ -119,12 +120,12 @@ func (rr *ResourceRecord) UnmarshalFromMessage(message []byte, offset int) (int,
 
 	bytesReadName, err := rr.Name.UnmarshalFromMessage(message, offset)
 	if err != nil {
-		return 0, fmt.Errorf("error unmarshalling name: %w", err)
+		return 0, fmt.Errorf("error unmarshalling name: %w: %w", err, errors.ErrInvalidResourceRecord)
 	}
 	offset += bytesReadName
 
 	if offset+10 > len(message) {
-		return 0, fmt.Errorf("truncated resource record")
+		return 0, fmt.Errorf("truncated resource record: %w", errors.ErrInvalidResourceRecord)
 	}
 
 	rr.Type = llmnr_type.Type(binary.BigEndian.Uint16(message[offset:]))
@@ -137,7 +138,7 @@ func (rr *ResourceRecord) UnmarshalFromMessage(message []byte, offset int) (int,
 	offset += 2
 
 	if offset+int(rr.RDLength) > len(message) {
-		return 0, fmt.Errorf("truncated rdata")
+		return 0, fmt.Errorf("truncated rdata: %w", errors.ErrInvalidResourceRecord)
 	}
 
 	// Retain the message context so that name-bearing RDATA (PTR/CNAME/NS/SRV)
