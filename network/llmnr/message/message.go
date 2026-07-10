@@ -448,7 +448,7 @@ func (m *Message) MarshalWithTruncation(maxSize int) ([]byte, bool, error) {
 //     decoding the question or answer sections.
 func (m *Message) Unmarshal(data []byte) (int, error) {
 	if len(data) < header.HeaderSize {
-		return 0, fmt.Errorf("message too short")
+		return 0, fmt.Errorf("message too short: %w", errors.ErrInvalidMessage)
 	}
 
 	// Unmarshal header. From here on we track an absolute offset into data so
@@ -478,7 +478,7 @@ func (m *Message) Unmarshal(data []byte) (int, error) {
 		rr := resourcerecord.ResourceRecord{}
 		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
-			return 0, fmt.Errorf("error unmarshalling answer: %w", err)
+			return 0, fmt.Errorf("error unmarshalling answer: %w: %w", err, errors.ErrInvalidAnswer)
 		}
 		offset += n
 		m.Answers = append(m.Answers, rr)
@@ -489,7 +489,7 @@ func (m *Message) Unmarshal(data []byte) (int, error) {
 		rr := resourcerecord.ResourceRecord{}
 		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
-			return 0, fmt.Errorf("error unmarshalling authority: %w", err)
+			return 0, fmt.Errorf("error unmarshalling authority: %w: %w", err, errors.ErrInvalidAuthority)
 		}
 		offset += n
 		m.Authority = append(m.Authority, rr)
@@ -500,7 +500,7 @@ func (m *Message) Unmarshal(data []byte) (int, error) {
 		rr := resourcerecord.ResourceRecord{}
 		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
-			return 0, fmt.Errorf("error unmarshalling additional: %w", err)
+			return 0, fmt.Errorf("error unmarshalling additional: %w: %w", err, errors.ErrInvalidAdditional)
 		}
 		offset += n
 		m.Additional = append(m.Additional, rr)

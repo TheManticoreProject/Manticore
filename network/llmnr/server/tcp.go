@@ -25,7 +25,7 @@ import (
 //   - An error if no handlers are registered or the TCP socket cannot be bound.
 //     A nil error is returned after a clean Close.
 func (s *Server) ListenAndServeTCP() error {
-	if len(s.Handlers) == 0 {
+	if len(s.snapshotHandlers()) == 0 {
 		return fmt.Errorf("no handlers registered")
 	}
 

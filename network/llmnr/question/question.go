@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/llmnr/class"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/domain_name"
+	"github.com/TheManticoreProject/Manticore/network/llmnr/errors"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 )
 
@@ -123,27 +124,27 @@ func (q *Question) UnmarshalFromMessage(message []byte, offset int) (int, error)
 	// Unmarshal domain name
 	bytesReadDomainName, err := q.Name.UnmarshalFromMessage(message, offset)
 	if err != nil {
-		return 0, fmt.Errorf("error unmarshalling domain name: %w", err)
+		return 0, fmt.Errorf("error unmarshalling domain name: %w: %w", err, errors.ErrInvalidQuestion)
 	}
 	offset += bytesReadDomainName
 
 	// Unmarshal type
 	if offset+2 > len(message) {
-		return 0, fmt.Errorf("truncated question, missing type")
+		return 0, fmt.Errorf("truncated question, missing type: %w", errors.ErrInvalidQuestion)
 	}
 	bytesReadType, err := q.Type.Unmarshal(message[offset : offset+2])
 	if err != nil {
-		return 0, fmt.Errorf("error unmarshalling type: %w", err)
+		return 0, fmt.Errorf("error unmarshalling type: %w: %w", err, errors.ErrInvalidQuestion)
 	}
 	offset += bytesReadType
 
 	// Unmarshal class
 	if offset+2 > len(message) {
-		return 0, fmt.Errorf("truncated question, missing class")
+		return 0, fmt.Errorf("truncated question, missing class: %w", errors.ErrInvalidQuestion)
 	}
 	bytesReadClass, err := q.Class.Unmarshal(message[offset : offset+2])
 	if err != nil {
-		return 0, fmt.Errorf("error unmarshalling class: %w", err)
+		return 0, fmt.Errorf("error unmarshalling class: %w: %w", err, errors.ErrInvalidQuestion)
 	}
 	offset += bytesReadClass
 
