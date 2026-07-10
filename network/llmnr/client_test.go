@@ -114,6 +114,210 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+// startResponder6 is the IPv6 analogue of startResponder: it binds a udp6
+// loopback socket (::1) acting as a fake LLMNR responder and replies to each
+// datagram with whatever respond returns. It exercises the client's IPv6 send
+// path without touching the real FF02::1:3 multicast group.
+func startResponder6(t *testing.T, respond func(query []byte, from *net.UDPAddr) []byte) (*net.UDPAddr, func()) {
+	t.Helper()
+
+	conn, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6loopback})
+	if err != nil {
+		t.Fatalf("failed to start IPv6 responder: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		buf := make([]byte, constants.MaxPacketSize)
+		for {
+			_ = conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+			n, addr, err := conn.ReadFromUDP(buf)
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if err != nil {
+				continue
+			}
+			if reply := respond(append([]byte(nil), buf[:n]...), addr); reply != nil {
+				_, _ = conn.WriteToUDP(reply, addr)
+			}
+		}
+	}()
+
+	return conn.LocalAddr().(*net.UDPAddr), func() {
+		close(done)
+		conn.Close()
+	}
+}
+
+// echoAnswerAAAA builds a well-formed LLMNR response echoing the query's
+// transaction ID and answering the first question with a Type AAAA record
+// pointing at ip. Returns nil if the query cannot be parsed or has no question.
+func echoAnswerAAAA(query []byte, ip string) []byte {
+	m := message.NewMessage()
+	if _, err := m.Unmarshal(query); err != nil {
+		return nil
+	}
+	if len(m.Questions) == 0 {
+		return nil
+	}
+
+	resp := message.NewMessage()
+	resp.Header.Identifier = m.Header.Identifier
+	resp.SetResponse()
+	if err := resp.AddAnswerClassINTypeAAAA(string(m.Questions[0].Name), ip); err != nil {
+		return nil
+	}
+
+	encoded, err := resp.Marshal()
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+// TestMulticastDestination checks the per-family default destination: IPv4 uses
+// the 224.0.0.252 group with no zone, while IPv6 uses the FF02::1:3 link-local
+// group with the interface name appended as the zone (scope), which is required
+// for a link-local multicast send. The zone must surface in the address's string
+// form as "%iface".
+func TestMulticastDestination(t *testing.T) {
+	v4 := multicastDestination("udp4", "")
+	if got := v4.IP.String(); got != constants.IPv4MulticastAddr {
+		t.Errorf("multicastDestination(udp4) IP = %q, want %q", got, constants.IPv4MulticastAddr)
+	}
+	if v4.Port != constants.ListenPort {
+		t.Errorf("multicastDestination(udp4) Port = %d, want %d", v4.Port, constants.ListenPort)
+	}
+	if v4.Zone != "" {
+		t.Errorf("multicastDestination(udp4) Zone = %q, want empty", v4.Zone)
+	}
+
+	v6 := multicastDestination("udp6", "eth0")
+	if !v6.IP.Equal(net.ParseIP(constants.IPv6MulticastAddr)) {
+		t.Errorf("multicastDestination(udp6) IP = %q, want %q", v6.IP, constants.IPv6MulticastAddr)
+	}
+	if v6.Port != constants.ListenPort {
+		t.Errorf("multicastDestination(udp6) Port = %d, want %d", v6.Port, constants.ListenPort)
+	}
+	if v6.Zone != "eth0" {
+		t.Errorf("multicastDestination(udp6) Zone = %q, want %q", v6.Zone, "eth0")
+	}
+	// The zone must appear in the wire/string form so the kernel scopes the send
+	// to the named link (e.g. "[ff02::1:3%eth0]:5355").
+	if got := v6.String(); !strings.Contains(got, "%eth0") {
+		t.Errorf("multicastDestination(udp6) String = %q, want it to contain %q", got, "%eth0")
+	}
+}
+
+// TestNewClientForInterfaceRejectsBadFamily confirms an unsupported address
+// family is rejected rather than silently binding the wrong socket.
+func TestNewClientForInterfaceRejectsBadFamily(t *testing.T) {
+	if _, err := NewClientForInterface("udp7", ""); err == nil {
+		t.Error("NewClientForInterface(udp7) error = nil, want an unsupported-family error")
+	}
+}
+
+// TestNewClientForInterfaceIPv6 constructs an IPv6 client bound to the loopback
+// interface (present on every host, so the test stays offline) and verifies it
+// targets the FF02::1:3 group on the RFC 4795 port with the interface set as the
+// destination zone. This also exercises selecting the outgoing multicast
+// interface, which must not fail construction.
+func TestNewClientForInterfaceIPv6(t *testing.T) {
+	c, err := NewClientForInterface("udp6", "lo")
+	if err != nil {
+		t.Fatalf("NewClientForInterface(udp6, lo) error = %v", err)
+	}
+	defer c.Close()
+
+	if c.Conn == nil {
+		t.Error("NewClientForInterface() Conn is nil")
+	}
+	if c.dest == nil {
+		t.Fatal("NewClientForInterface() dest is nil")
+	}
+	if !c.dest.IP.Equal(net.ParseIP(constants.IPv6MulticastAddr)) {
+		t.Errorf("NewClientForInterface() dest IP = %q, want %q", c.dest.IP, constants.IPv6MulticastAddr)
+	}
+	if c.dest.Port != constants.ListenPort {
+		t.Errorf("NewClientForInterface() dest Port = %d, want %d", c.dest.Port, constants.ListenPort)
+	}
+	if c.dest.Zone != "lo" {
+		t.Errorf("NewClientForInterface() dest Zone = %q, want %q", c.dest.Zone, "lo")
+	}
+}
+
+// TestNewClientForInterfaceUnknownInterface confirms that naming an interface
+// that does not exist fails construction (and does not leak the socket).
+func TestNewClientForInterfaceUnknownInterface(t *testing.T) {
+	if _, err := NewClientForInterface("udp6", "definitely-not-an-iface0"); err == nil {
+		t.Error("NewClientForInterface() error = nil, want an interface-lookup error")
+	}
+}
+
+// TestClientQueryDispatchIPv6 drives a full query through an IPv6 (udp6) client
+// against a ::1 loopback responder, proving the IPv6 send/receive path resolves
+// end to end. The responder answers with an AAAA record and the client's source
+// validation must accept the loopback responder.
+func TestClientQueryDispatchIPv6(t *testing.T) {
+	addr, cleanup := startResponder6(t, func(query []byte, _ *net.UDPAddr) []byte {
+		return echoAnswerAAAA(query, "fe80::1")
+	})
+	defer cleanup()
+
+	c, err := NewClientForInterface("udp6", "")
+	if err != nil {
+		t.Fatalf("NewClientForInterface(udp6) error = %v", err)
+	}
+	defer c.Close()
+	// Direct the query at the loopback responder instead of the FF02::1:3 group.
+	c.dest = addr
+	c.jitterInterval = 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	resp, err := c.Query(ctx, "host", llmnr_type.TypeAAAA)
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	if len(resp.Answers) != 1 {
+		t.Fatalf("Query() answers = %d, want 1", len(resp.Answers))
+	}
+	if got := net.IP(resp.Answers[0].RData).String(); got != "fe80::1" {
+		t.Errorf("Query() answer RDATA = %q, want %q", got, "fe80::1")
+	}
+}
+
+// TestResolveAAAAOverIPv6 exercises the resolver helper over an IPv6 client and
+// the ::1 loopback responder, confirming ResolveAAAA leaves over the udp6 socket
+// and decodes the AAAA answer.
+func TestResolveAAAAOverIPv6(t *testing.T) {
+	addr, cleanup := startResponder6(t, respondWithAnswers(nil, []string{"fe80::1234"}))
+	defer cleanup()
+
+	c, err := NewClientForInterface("udp6", "")
+	if err != nil {
+		t.Fatalf("NewClientForInterface(udp6) error = %v", err)
+	}
+	defer c.Close()
+	c.dest = addr
+	c.jitterInterval = 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ips, err := c.ResolveAAAA(ctx, "host")
+	if err != nil {
+		t.Fatalf("ResolveAAAA() error = %v", err)
+	}
+	if len(ips) != 1 || !containsIP(ips, "fe80::1234") {
+		t.Errorf("ResolveAAAA() = %v, want [fe80::1234]", ipsToStrings(ips))
+	}
+}
+
 // TestClientQueryDispatch drives a full query against a loopback responder and
 // checks that the matching response is dispatched back through Query, including
 // the answered owner name and A record.

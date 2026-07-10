@@ -129,9 +129,91 @@ type Client struct {
 //	}
 //	fmt.Printf("Received response: %v\n", resp)
 func NewClient() (*Client, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	return newClient("udp4", "")
+}
+
+// NewClientForInterface creates a new LLMNR client bound to a specific address
+// family and (optionally) a specific network interface.
+//
+// It is the entry point for querying over IPv6 multicast, which the default
+// IPv4-only NewClient cannot reach. family selects the socket family and
+// multicast group: "udp4" sends to the IPv4 group 224.0.0.252 (matching
+// NewClient) and "udp6" sends to the IPv6 link-local group FF02::1:3. ifaceName,
+// when non-empty, names the interface the queries are sent out of.
+//
+// An interface is effectively required for "udp6": FF02::1:3 is a link-local
+// (scope 2) multicast address, so the datagram must carry a zone identifying
+// the link it is sent on. On a multi-homed host the interface also overrides the
+// kernel's default multicast egress interface, which is otherwise not
+// necessarily the link carrying the LLMNR traffic of interest. For "udp4" the
+// interface is optional and, when supplied, selects the outgoing multicast
+// interface.
+//
+// The returned client exposes exactly the same Query and resolver API as
+// NewClient; a client created with family "udp6" resolves over IPv6 (e.g.
+// ResolveAAAA leaves over the IPv6 group), while responses are still validated
+// as coming from a plausible on-link/link-local/loopback source.
+//
+// Usage example:
+//
+//	client, err := NewClientForInterface("udp6", "eth0")
+//	if err != nil {
+//	    log.Fatalf("Failed to create client: %v", err)
+//	}
+//	defer client.Close()
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//
+//	ips, err := client.ResolveAAAA(ctx, "host")
+//	if err != nil {
+//	    log.Fatalf("Query failed: %v", err)
+//	}
+//	fmt.Printf("Resolved: %v\n", ips)
+func NewClientForInterface(family, ifaceName string) (*Client, error) {
+	return newClient(family, ifaceName)
+}
+
+// newClient is the shared constructor behind NewClient and
+// NewClientForInterface. It binds a UDP socket of the requested family, computes
+// the multicast destination (scoping the link-local IPv6 group with the
+// interface zone), selects the outgoing multicast interface when one was
+// requested, and starts the read loop.
+func newClient(family, ifaceName string) (*Client, error) {
+	switch family {
+	case "udp4", "udp6":
+	default:
+		return nil, fmt.Errorf("unsupported address family %q: want \"udp4\" or \"udp6\"", family)
+	}
+
+	conn, err := net.ListenUDP(family, &net.UDPAddr{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create UDP connection: %w", err)
+	}
+
+	// Resolve the requested interface (if any) so it can both scope the
+	// link-local multicast destination and be selected as the outgoing
+	// multicast interface below.
+	var iface *net.Interface
+	if ifaceName != "" {
+		iface, err = net.InterfaceByName(ifaceName)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("failed to look up interface %q: %w", ifaceName, err)
+		}
+	}
+
+	dest := multicastDestination(family, ifaceName)
+
+	// Pin the outgoing multicast interface when one was requested. The
+	// destination Zone already scopes a link-local IPv6 send, but selecting the
+	// interface explicitly is belt-and-braces for IPv6 and the only lever for
+	// IPv4 on a multi-homed host.
+	if iface != nil {
+		if err := setOutgoingMulticastInterface(conn, family, iface); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("failed to select multicast interface %q: %w", ifaceName, err)
+		}
 	}
 
 	c := &Client{
@@ -139,12 +221,9 @@ func NewClient() (*Client, error) {
 		// Overall budget for a query. Per RFC 4795 §7 the LLMNR timeout is a
 		// protocol constant rather than a user-tunable value, so it defaults to
 		// constants.LLMNRTimeout instead of an arbitrary hardcoded duration.
-		Timeout: constants.LLMNRTimeout,
-		Closed:  make(chan struct{}),
-		dest: &net.UDPAddr{
-			IP:   net.ParseIP(constants.IPv4MulticastAddr),
-			Port: constants.ListenPort,
-		},
+		Timeout:            constants.LLMNRTimeout,
+		Closed:             make(chan struct{}),
+		dest:               dest,
 		localNets:          localUnicastNetworks(),
 		jitterInterval:     constants.JitterInterval,
 		retransmitInterval: constants.LLMNRTimeout,
@@ -153,6 +232,26 @@ func NewClient() (*Client, error) {
 	go c.readLoop()
 
 	return c, nil
+}
+
+// multicastDestination returns the default LLMNR multicast destination for the
+// given address family. For "udp4" it is the IPv4 group 224.0.0.252; for "udp6"
+// it is the IPv6 link-local group FF02::1:3 with its Zone set to ifaceName.
+// FF02::1:3 has link-local (scope 2) reach, so a zone identifying the link is
+// required for the kernel to pick an outgoing interface for the send; leaving it
+// empty yields an unscoped address that a link-local multicast send cannot use.
+func multicastDestination(family, ifaceName string) *net.UDPAddr {
+	if family == "udp6" {
+		return &net.UDPAddr{
+			IP:   net.ParseIP(constants.IPv6MulticastAddr),
+			Port: constants.ListenPort,
+			Zone: ifaceName,
+		}
+	}
+	return &net.UDPAddr{
+		IP:   net.ParseIP(constants.IPv4MulticastAddr),
+		Port: constants.ListenPort,
+	}
 }
 
 // localUnicastNetworks returns the unicast IP networks configured on the host's
