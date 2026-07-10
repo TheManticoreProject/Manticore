@@ -69,8 +69,8 @@ func TestIPv4ServerStartAndStop(t *testing.T) {
 
 	time.Sleep(250 * time.Millisecond)
 
-	if server.Conn == nil {
-		t.Error("Expected server connection to be initialized, got nil")
+	if !server.Listening() {
+		t.Error("Expected server to be listening after startup, got not listening")
 	}
 
 	server.Close()
@@ -151,8 +151,8 @@ func TestIPv6ServerStartAndStop(t *testing.T) {
 
 	time.Sleep(250 * time.Millisecond)
 
-	if server.Conn == nil {
-		t.Error("Expected server connection to be initialized, got nil")
+	if !server.Listening() {
+		t.Error("Expected server to be listening after startup, got not listening")
 	}
 
 	server.Close()
