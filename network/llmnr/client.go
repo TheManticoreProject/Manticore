@@ -19,11 +19,14 @@ import (
 // It manages a UDP connection and uses a sync.Map to keep track of ongoing queries.
 //
 // Fields:
-// - conn: A pointer to the UDP connection used for sending and receiving LLMNR messages.
-// - timeout: The duration to wait for a response before timing out.
-// - queries: A sync.Map that maps query IDs to channels for receiving responses.
-// - closeOnce: Ensures the client is closed only once.
-// - closed: A channel that is closed when the client is closed.
+//   - conn: A pointer to the UDP connection used for sending and receiving LLMNR messages.
+//   - timeout: The duration to wait for a response before timing out.
+//   - queries: A sync.Map that maps query IDs to channels for receiving responses.
+//   - closeOnce: Ensures the client is closed only once.
+//   - closed: A channel that is closed when the client is closed.
+//   - dest: The destination address queries are sent to. It defaults to the LLMNR
+//     IPv4 multicast group (224.0.0.252:5355) so that normal usage is unchanged;
+//     it is overridable to allow queries to be directed at a specific responder.
 //
 // Usage example:
 //
@@ -47,6 +50,11 @@ type Client struct {
 	Queries   sync.Map
 	CloseOnce sync.Once
 	Closed    chan struct{}
+
+	// dest is the destination address queries are written to. It defaults to
+	// the LLMNR IPv4 multicast group and is overridable so queries can be
+	// directed at a specific responder (e.g. for testing or unicast probing).
+	dest *net.UDPAddr
 }
 
 // NewClient creates a new LLMNR client with a UDP connection.
@@ -84,6 +92,10 @@ func NewClient() (*Client, error) {
 		Conn:    conn,
 		Timeout: 2 * time.Second,
 		Closed:  make(chan struct{}),
+		dest: &net.UDPAddr{
+			IP:   net.ParseIP(constants.IPv4MulticastAddr),
+			Port: constants.ListenPort,
+		},
 	}
 
 	go c.readLoop()
@@ -113,18 +125,14 @@ func (c *Client) Query(ctx context.Context, name string, qtype llmnr_type.Type) 
 	c.Queries.Store(msg.Header.Identifier, responseChan)
 	defer c.Queries.Delete(msg.Header.Identifier)
 
-	// Send query
-	addr := &net.UDPAddr{
-		IP:   net.ParseIP(constants.IPv4MulticastAddr),
-		Port: constants.ListenPort,
-	}
-
+	// Send query to the configured destination (the LLMNR multicast group by
+	// default, or an overridden responder address).
 	encoded, err := msg.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode message: %w", err)
 	}
 
-	if _, err := c.Conn.WriteToUDP(encoded, addr); err != nil {
+	if _, err := c.Conn.WriteToUDP(encoded, c.dest); err != nil {
 		return nil, fmt.Errorf("failed to send query: %w", err)
 	}
 
