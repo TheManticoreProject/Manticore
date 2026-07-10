@@ -114,6 +114,42 @@ func (n *NetBIOSName) FirstLevelEncode() (string, error) {
 	return result, nil
 }
 
+// EncodeSessionServiceName encodes name (with the given one-byte service suffix)
+// into the 34-byte "second-level" form the NetBIOS session service carries in a
+// SESSION REQUEST (RFC 1002 4.3.2 / RFC 1001 14.1): a 0x20 length byte, the
+// 32-byte first-level encoding of the 16-byte name (up to 15 characters padded
+// with spaces plus the suffix byte in the final position), and a single 0x00
+// label terminator (no scope for the default). Unlike FirstLevelEncode it
+// permits a leading '*' wildcard (e.g. the "*SMBSERVER" convention), which the
+// session service requires and which Validate would otherwise reject.
+func EncodeSessionServiceName(name string, suffix byte) ([]byte, error) {
+	if len(name) > NetBIOSNameLength-1 {
+		return nil, fmt.Errorf("name too long: max %d bytes", NetBIOSNameLength-1)
+	}
+
+	// Build the 16-byte name: up to 15 characters padded with spaces, with the
+	// service suffix occupying the final byte.
+	name16 := make([]byte, NetBIOSNameLength)
+	copy(name16, name)
+	for i := len(name); i < NetBIOSNameLength-1; i++ {
+		name16[i] = ' '
+	}
+	name16[NetBIOSNameLength-1] = suffix
+
+	// Second-level encoding: the 0x20 length byte, the first-level encoding
+	// (each half-byte mapped to a printable character by adding 'A'), then the
+	// 0x00 label terminator.
+	encoded := make([]byte, 0, EncodedNameLength+2)
+	encoded = append(encoded, EncodedNameLength)
+	for i := 0; i < NetBIOSNameLength; i++ {
+		encoded = append(encoded, ((name16[i]>>4)&0x0F)+ASCII_A)
+		encoded = append(encoded, (name16[i]&0x0F)+ASCII_A)
+	}
+	encoded = append(encoded, 0x00)
+
+	return encoded, nil
+}
+
 // FirstLevelDecode decodes a first level encoded NetBIOS name
 func FirstLevelDecode(encoded string) (*NetBIOSName, error) {
 	parts := strings.SplitN(encoded, ".", 2)
