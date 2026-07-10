@@ -27,12 +27,16 @@ const (
 	RcodeActive      uint16 = 0x0006
 	RcodeConflict    uint16 = 0x0007
 
-	// Flags
-	FlagResponse      uint16 = 0x8000
-	FlagAuthoritative uint16 = 0x0400
-	FlagTruncated     uint16 = 0x0200
-	FlagRecursion     uint16 = 0x0100
-	FlagBroadcast     uint16 = 0x0010
+	// Header NM_FLAGS (RFC 1002 4.2.1.1: R | OPCODE | AA TC RD RA 0 0 B | RCODE)
+	FlagResponse           uint16 = 0x8000 // R:  response
+	FlagAuthoritative      uint16 = 0x0400 // AA: authoritative answer
+	FlagTruncated          uint16 = 0x0200 // TC: truncated
+	FlagRecursion          uint16 = 0x0100 // RD: recursion desired
+	FlagRecursionAvailable uint16 = 0x0080 // RA: recursion available
+	FlagBroadcast          uint16 = 0x0010 // B:  broadcast/multicast
+
+	// RcodeMask isolates the RCODE field (low nibble) of the header flags.
+	RcodeMask uint16 = 0x000F
 
 	// Question Type
 	QuestionTypeNB     uint16 = 0x0020

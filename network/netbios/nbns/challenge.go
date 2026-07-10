@@ -91,8 +91,10 @@ func (c *NameChallenger) ChallengeOwnership(name string, owner net.IP) (bool, er
 			continue
 		}
 
-		// Check if name is still owned
-		if response.Header.Flags&RcodeNameError != 0 {
+		// Check if name is still owned. RCODE is the low nibble of the header
+		// flags, so compare it rather than masking (a bitmask test would also
+		// match RCODE 1 and 2).
+		if response.Header.Flags&RcodeMask == RcodeNameError {
 			return false, nil
 		}
 
@@ -129,15 +131,19 @@ func (c *NameChallenger) DefendName(packet *NBNSPacket, response *NBNSPacket) {
 
 		// Create defense response
 		response.Header.Flags = FlagResponse | FlagAuthoritative
+
+		// The Group (G) bit lives in the resource record's NB_FLAGS, not in the
+		// header (RFC 1002 4.2.1.3).
+		var nbFlags uint16
 		if nameType == Group {
-			response.Header.Flags |= 0x0080 // Group name bit
+			nbFlags |= NBFlagGroup
 		}
 
 		// Add resource records for all owners
 		for _, ip := range owners {
 			owner := ADDR_ENTRY{
 				Address: binary.BigEndian.Uint32(ip.To4()),
-				Flags:   0x0000,
+				Flags:   nbFlags,
 			}
 			rr := NBNSResourceRecord{
 				Name:     q.Name,
