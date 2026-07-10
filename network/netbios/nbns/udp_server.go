@@ -43,6 +43,32 @@ func (s *UDPServer) SetSpoofHandler(h *SpoofHandler) {
 	s.spoofHandler = h
 }
 
+// EnableNodeStatus turns on the NODE STATUS responder so an NBSTAT (0x0021)
+// query is answered from the local name table (RFC 1002 4.2.18). mac is reported
+// as the STATISTICS UNIT_ID; a nil or non-6-byte mac reports a zeroed UNIT_ID.
+// Node status is off by default.
+func (s *UDPServer) EnableNodeStatus(mac net.HardwareAddr) {
+	s.handlers.EnableNodeStatus(mac)
+}
+
+// SetRedirectManager installs a redirect manager so a NAME QUERY for a
+// configured scope is answered with a REDIRECT NAME QUERY RESPONSE (RFC 1002
+// 4.2.14). Passing nil disables redirection. Off by default.
+func (s *UDPServer) SetRedirectManager(r *RedirectManager) {
+	s.handlers.SetRedirectManager(r)
+}
+
+// EnableNameDefense wires the name-defence path into the UDP server: a
+// NameChallenger so a conflicting registration of an owned name triggers an
+// END-NODE CHALLENGE (preceded by a WACK telling the requestor to wait), and a
+// conflict-demand sender so MarkNameConflict emits a NAME CONFLICT DEMAND to the
+// offending owner. Both are off until this is called, leaving default behaviour
+// unchanged.
+func (s *UDPServer) EnableNameDefense() {
+	s.handlers.SetChallenger(NewNameChallenger(s.nbns, s.handlers))
+	s.nbns.SetConflictDemandSender(sendConflictDemandUDP)
+}
+
 // NewUDPServer creates a new NBNS UDP server instance
 func NewUDPServer(addr string, nbns *NetBIOSNameServer) (*UDPServer, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
@@ -136,9 +162,14 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 	}
 
 	// Process based on operation code
-	switch packet.Header.Flags & 0xF000 {
+	switch packet.Header.Flags & OpcodeMask {
 	case OpNameQuery:
-		if s.spoofHandler != nil {
+		switch {
+		case s.handlers.nodeStatusEnabled && s.handlers.isNodeStatusQuery(&packet):
+			// A NODE STATUS REQUEST shares the query opcode and is distinguished
+			// only by its NBSTAT question type; answer it from the name table.
+			s.handlers.handleNodeStatus(&packet, response)
+		case s.spoofHandler != nil:
 			// Poisoning mode: answer only the names the operator elected to
 			// spoof and stay silent otherwise, so legitimate resolution still
 			// works alongside the poisoner.
@@ -147,11 +178,19 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 				return
 			}
 			response = spoofed
-		} else {
-			s.handlers.handleNameQuery(&packet, response)
+		default:
+			s.handlers.handleNameQueryWithRedirect(&packet, response)
 		}
 	case OpRegistration:
-		s.handlers.handleRegistration(&packet, response)
+		if s.handlers.challenger != nil {
+			// Defend owned names: emit an intermediate WACK to the requestor
+			// before running the challenge and returning the final response.
+			s.handlers.handleRegistrationWithChallenge(&packet, response, func(w *NBNSPacket) {
+				s.writeResponse(w, remoteAddr)
+			})
+		} else {
+			s.handlers.handleRegistration(&packet, response)
+		}
 	case OpRelease:
 		s.handlers.handleRelease(&packet, response)
 	case OpRefresh:
@@ -181,4 +220,40 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 	if _, err := s.conn.WriteToUDP(responseData, remoteAddr); err != nil {
 		log.Printf("Failed to send response: %v", err)
 	}
+}
+
+// writeResponse marshals and sends a single packet to remoteAddr on the server's
+// UDP socket. It is used to emit the intermediate WAIT FOR ACKNOWLEDGEMENT
+// (WACK) datagram ahead of a deferred registration's final response.
+func (s *UDPServer) writeResponse(packet *NBNSPacket, remoteAddr *net.UDPAddr) {
+	data, err := packet.Marshal()
+	if err != nil {
+		log.Printf("Failed to marshal response: %v", err)
+		return
+	}
+	if err := s.conn.SetWriteDeadline(time.Now().Add(UDPWriteTimeout)); err != nil {
+		log.Printf("Failed to set write deadline: %v", err)
+		return
+	}
+	if _, err := s.conn.WriteToUDP(data, remoteAddr); err != nil {
+		log.Printf("Failed to send response: %v", err)
+	}
+}
+
+// sendConflictDemandUDP unicasts a NAME CONFLICT DEMAND to the offending owner's
+// NBNS port (137/udp). It opens a short-lived socket per demand, matching the
+// fire-and-forget nature of the demand, and is the default conflict-demand
+// sender wired in by EnableNameDefense.
+func sendConflictDemandUDP(packet *NBNSPacket, owner net.IP) error {
+	data, err := packet.Marshal()
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: owner, Port: DefaultNBNSUDPPort})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Write(data)
+	return err
 }

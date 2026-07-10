@@ -52,7 +52,7 @@ func (r *RedirectManager) GetRedirect(scope string) (RedirectInfo, bool) {
 // HandleRedirect modifies a response packet for redirection if needed
 func (r *RedirectManager) HandleRedirect(request *NBNSPacket, response *NBNSPacket) bool {
 	// Only redirect name queries
-	if request.Header.Flags&0xF000 != OpNameQuery {
+	if request.Header.Flags&OpcodeMask != OpNameQuery {
 		return false
 	}
 

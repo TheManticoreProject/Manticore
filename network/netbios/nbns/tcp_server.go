@@ -24,7 +24,7 @@ const (
 
 // TCPServer represents a NetBIOS Name Server TCP component
 type TCPServer struct {
-	nbns    *NetBIOSNameServer
+	nbns     *NetBIOSNameServer
 	listener net.Listener
 	addr     string
 	wg       sync.WaitGroup
@@ -36,11 +36,37 @@ type TCPServer struct {
 // NewTCPServer creates a new NBNS TCP server instance
 func NewTCPServer(addr string, nbns *NetBIOSNameServer) (*TCPServer, error) {
 	return &TCPServer{
-		nbns:    nbns,
+		nbns:     nbns,
 		addr:     addr,
 		quit:     make(chan struct{}),
 		handlers: NewPacketHandler(nbns),
 	}, nil
+}
+
+// EnableNodeStatus turns on the NODE STATUS responder so an NBSTAT (0x0021)
+// query is answered from the local name table (RFC 1002 4.2.18). mac is reported
+// as the STATISTICS UNIT_ID; a nil or non-6-byte mac reports a zeroed UNIT_ID.
+// Node status is off by default.
+func (s *TCPServer) EnableNodeStatus(mac net.HardwareAddr) {
+	s.handlers.EnableNodeStatus(mac)
+}
+
+// SetRedirectManager installs a redirect manager so a NAME QUERY for a
+// configured scope is answered with a REDIRECT NAME QUERY RESPONSE (RFC 1002
+// 4.2.14). Passing nil disables redirection. Off by default.
+func (s *TCPServer) SetRedirectManager(r *RedirectManager) {
+	s.handlers.SetRedirectManager(r)
+}
+
+// EnableNameDefense installs a NameChallenger so a conflicting registration of an
+// owned name triggers an END-NODE CHALLENGE before the registration is refused
+// or accepted (RFC 1002 4.2.10), and a conflict-demand sender so MarkNameConflict
+// emits a NAME CONFLICT DEMAND to the offending owner. The TCP message path
+// returns a single framed response, so no intermediate WACK is emitted here; the
+// challenge still runs. Off by default.
+func (s *TCPServer) EnableNameDefense() {
+	s.handlers.SetChallenger(NewNameChallenger(s.nbns, s.handlers))
+	s.nbns.SetConflictDemandSender(sendConflictDemandUDP)
 }
 
 // Start begins listening for TCP connections
@@ -194,11 +220,23 @@ func (s *TCPServer) handleMessage(data []byte) ([]byte, error) {
 	}
 
 	// Process based on operation code
-	switch packet.Header.Flags & 0xF000 {
+	switch packet.Header.Flags & OpcodeMask {
 	case OpNameQuery:
-		s.handlers.handleNameQuery(&packet, response)
+		if s.handlers.nodeStatusEnabled && s.handlers.isNodeStatusQuery(&packet) {
+			// A NODE STATUS REQUEST shares the query opcode and is distinguished
+			// only by its NBSTAT question type; answer it from the name table.
+			s.handlers.handleNodeStatus(&packet, response)
+		} else {
+			s.handlers.handleNameQueryWithRedirect(&packet, response)
+		}
 	case OpRegistration:
-		s.handlers.handleRegistration(&packet, response)
+		if s.handlers.challenger != nil {
+			// The TCP path returns a single framed response, so no intermediate
+			// WACK is emitted (sendWACK is nil); the challenge still runs.
+			s.handlers.handleRegistrationWithChallenge(&packet, response, nil)
+		} else {
+			s.handlers.handleRegistration(&packet, response)
+		}
 	case OpRelease:
 		s.handlers.handleRelease(&packet, response)
 	case OpRefresh:

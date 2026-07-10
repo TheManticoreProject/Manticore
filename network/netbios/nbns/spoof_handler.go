@@ -232,7 +232,7 @@ func (h *SpoofHandler) Matches(name string) bool {
 // 4.2.13 shows QDCOUNT=0, but echoing the question is widely accepted (including
 // by this package's own resolver) and keeps the exchange easy to correlate.
 func (h *SpoofHandler) BuildResponse(request *NBNSPacket) (*NBNSPacket, bool) {
-	if request.Header.Flags&0xF000 != OpNameQuery {
+	if request.Header.Flags&OpcodeMask != OpNameQuery {
 		return nil, false
 	}
 
