@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/network/llmnr/class"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/constants"
+	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/server"
 )
@@ -162,6 +164,100 @@ func TestIPv6ServerStartAndStop(t *testing.T) {
 		// Server closed successfully
 	case <-time.After(1 * time.Second):
 		t.Error("Expected server to close within 1 second, but it did not")
+	}
+}
+
+// TestServerTCPRoundTrip exercises the server's TCP responder end to end: it
+// starts ListenAndServeTCP on an ephemeral loopback port, dials it, sends a
+// length-prefixed query (RFC 1035 §4.2.2), and confirms the handler chain runs
+// and a correctly framed, well-formed response comes back.
+func TestServerTCPRoundTrip(t *testing.T) {
+	// Handler that answers every A query for the queried name with 10.7.0.10.
+	answerHandler := func(_ *server.Server, _ net.Addr, w server.ResponseWriter, msg *message.Message) bool {
+		if len(msg.Questions) == 0 {
+			return true
+		}
+		resp := message.NewMessage()
+		resp.Header.Identifier = msg.Header.Identifier
+		resp.SetResponse()
+		if err := resp.AddAnswerClassINTypeA(string(msg.Questions[0].Name), "10.7.0.10"); err != nil {
+			return true
+		}
+		_ = w.WriteMessage(resp)
+		return false
+	}
+
+	srv, err := server.NewIPv4ServerWithHandlers([]server.Handler{server.HandlerFunc(answerHandler)})
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
+	// Bind an ephemeral loopback port so the test needs no privileges and cannot
+	// collide with a real responder on 5355.
+	srv.TCPListenAddr = "127.0.0.1:0"
+
+	go func() {
+		if err := srv.ListenAndServeTCP(); err != nil {
+			t.Errorf("ListenAndServeTCP() error = %v", err)
+		}
+	}()
+	defer srv.Close()
+
+	// Wait for the TCP responder to come up using the synchronized accessor.
+	deadline := time.Now().Add(2 * time.Second)
+	for !srv.ListeningTCP() {
+		if time.Now().After(deadline) {
+			t.Fatal("TCP responder did not come up within 2s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	addr := srv.TCPAddr()
+	if addr == nil {
+		t.Fatal("TCPAddr() = nil after the responder came up")
+	}
+
+	conn, err := net.DialTimeout("tcp", addr.String(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("DialTimeout() error = %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+	// Build and send a length-prefixed query for "host.local".
+	query := message.NewMessage()
+	query.SetQuery()
+	if err := query.AddQuestion("host.local", llmnr_type.TypeA, class.ClassIN); err != nil {
+		t.Fatalf("AddQuestion() error = %v", err)
+	}
+	encoded, err := query.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := message.WriteTCPMessage(conn, encoded); err != nil {
+		t.Fatalf("WriteTCPMessage() error = %v", err)
+	}
+
+	// Read and decode the length-prefixed response.
+	payload, err := message.ReadTCPMessage(conn)
+	if err != nil {
+		t.Fatalf("ReadTCPMessage() error = %v", err)
+	}
+	resp := &message.Message{}
+	if _, err := resp.Unmarshal(payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !resp.IsResponse() {
+		t.Error("TCP response does not have the QR (response) bit set")
+	}
+	if resp.Header.Identifier != query.Header.Identifier {
+		t.Errorf("TCP response ID = %d, want %d", resp.Header.Identifier, query.Header.Identifier)
+	}
+	if len(resp.Answers) != 1 {
+		t.Fatalf("TCP response answers = %d, want 1", len(resp.Answers))
+	}
+	if got := net.IP(resp.Answers[0].RData).String(); got != "10.7.0.10" {
+		t.Errorf("TCP response answer RDATA = %q, want %q", got, "10.7.0.10")
 	}
 }
 
