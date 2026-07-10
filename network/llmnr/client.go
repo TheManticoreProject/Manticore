@@ -23,8 +23,11 @@ import (
 // responses are trivially forgeable and could cross-deliver a wrong answer to a
 // waiting query). See RFC 4795 §2.7.
 type pendingQuery struct {
-	// responseChan receives the validated response for this query.
-	responseChan chan *message.Message
+	// responseChan receives the validated response for this query, together with
+	// the source address it arrived from. The source is needed so that, when a
+	// UDP response has its TC (truncation) bit set, the query can be retried over
+	// TCP to that responder's unicast address (RFC 4795 §2.4).
+	responseChan chan *udpResponse
 
 	// name, qtype and qclass are the question that was sent. A response is only
 	// delivered if its question section echoes this question. The class is
@@ -33,6 +36,14 @@ type pendingQuery struct {
 	name   string
 	qtype  llmnr_type.Type
 	qclass class.Class
+}
+
+// udpResponse pairs a validated UDP response with the address it was received
+// from. The read loop populates it; Query consumes it, using the source address
+// to target the TCP retry when the response is truncated.
+type udpResponse struct {
+	msg  *message.Message
+	from *net.UDPAddr
 }
 
 // Client represents an LLMNR client that can send queries and receive responses.
@@ -92,6 +103,12 @@ type Client struct {
 	// to JITTER_INTERVAL. It defaults to constants.JitterInterval and is
 	// overridable so unit tests can drive it with short, deterministic values.
 	jitterInterval time.Duration
+
+	// tcpPort is the TCP port a truncated response is retried on. RFC 4795 §2.4
+	// fixes the LLMNR TCP port at 5355, so it defaults to constants.ListenPort;
+	// it is overridable so unit tests can point the retry at a loopback TCP
+	// responder bound to an ephemeral port.
+	tcpPort int
 
 	// retransmitInterval is the period on which an unanswered query is
 	// retransmitted. RFC 4795 §2.7: "If an LLMNR query sent over UDP is not
@@ -227,6 +244,7 @@ func newClient(family, ifaceName string) (*Client, error) {
 		localNets:          localUnicastNetworks(),
 		jitterInterval:     constants.JitterInterval,
 		retransmitInterval: constants.LLMNRTimeout,
+		tcpPort:            constants.ListenPort,
 	}
 
 	go c.readLoop()
@@ -293,13 +311,14 @@ func (c *Client) Query(ctx context.Context, name string, qtype llmnr_type.Type) 
 	// Create the response channel and record the outstanding query so the read
 	// loop can validate an incoming response against the exact question that was
 	// asked before delivering it (the transaction ID alone is not enough).
-	responseChan := make(chan *message.Message, 1)
-	c.Queries.Store(msg.Header.Identifier, &pendingQuery{
+	responseChan := make(chan *udpResponse, 1)
+	pq := &pendingQuery{
 		responseChan: responseChan,
 		name:         name,
 		qtype:        qtype,
 		qclass:       class.ClassIN.BaseClass(),
-	})
+	}
+	c.Queries.Store(msg.Header.Identifier, pq)
 	defer c.Queries.Delete(msg.Header.Identifier)
 
 	// Encode the query once; the same bytes are (re)transmitted to the
@@ -341,7 +360,20 @@ func (c *Client) Query(ctx context.Context, name string, qtype llmnr_type.Type) 
 		case <-timeout.C:
 			return nil, fmt.Errorf("query timeout")
 		case resp := <-responseChan:
-			return resp, nil
+			// RFC 4795 §2.4: "If the 'TC' bit is set in an LLMNR response, then
+			// the sender SHOULD resend the LLMNR query over TCP using the unicast
+			// address of the responder as the destination address." Retry over
+			// TCP and, on success, deliver the complete answer in place of the
+			// truncated one (discarding the truncated UDP response). If the TCP
+			// retry fails, fall back to returning the truncated response rather
+			// than failing the query outright, so the records that did fit are
+			// still available to the caller.
+			if resp.msg.Header.Flags.IsTruncation() {
+				if full, err := c.queryTCP(ctx, resp.from, encoded, msg.Header.Identifier, pq); err == nil {
+					return full, nil
+				}
+			}
+			return resp.msg, nil
 		case <-ticker.C:
 			if err := c.transmit(encoded); err != nil {
 				return nil, err
@@ -356,6 +388,78 @@ func (c *Client) transmit(encoded []byte) error {
 		return fmt.Errorf("failed to send query: %w", err)
 	}
 	return nil
+}
+
+// queryTCP re-issues a query over TCP after a truncated UDP response, per RFC
+// 4795 §2.4. It dials the responder's unicast address (from) on the LLMNR TCP
+// port, writes the same encoded query framed with the DNS-over-TCP two-byte
+// length prefix (RFC 1035 §4.2.2), reads the length-prefixed full response, and
+// validates it exactly as the UDP read loop does before returning it: it must be
+// a response, echo the query's transaction ID, and answer the question that was
+// asked. The caller's context and the client timeout bound the dial and the I/O.
+//
+// Parameters:
+//   - ctx: the caller's context; its deadline (if any) bounds the TCP exchange.
+//   - from: the unicast source address of the truncated UDP response.
+//   - encoded: the exact query bytes that were sent over UDP.
+//   - identifier: the query's transaction ID, used to reject a mismatched reply.
+//   - pq: the pending query, used to confirm the response echoes the question.
+//
+// Returns the validated full response, or an error if the dial, framing, read,
+// decode, or validation fails.
+func (c *Client) queryTCP(ctx context.Context, from *net.UDPAddr, encoded []byte, identifier uint16, pq *pendingQuery) (*message.Message, error) {
+	if from == nil || from.IP == nil {
+		return nil, fmt.Errorf("no responder address for TCP retry")
+	}
+
+	port := c.tcpPort
+	if port == 0 {
+		port = constants.ListenPort
+	}
+	raddr := &net.TCPAddr{IP: from.IP, Port: port, Zone: from.Zone}
+
+	dialer := net.Dialer{Timeout: c.Timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", raddr.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial responder over TCP: %w", err)
+	}
+	defer conn.Close()
+
+	// Bound the TCP exchange by the context deadline when present, otherwise by
+	// the client timeout, so a stalled responder cannot hang the query.
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	} else {
+		_ = conn.SetDeadline(time.Now().Add(c.Timeout))
+	}
+
+	if err := message.WriteTCPMessage(conn, encoded); err != nil {
+		return nil, fmt.Errorf("failed to send TCP query: %w", err)
+	}
+
+	payload, err := message.ReadTCPMessage(conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read TCP response: %w", err)
+	}
+
+	resp := &message.Message{}
+	if _, err := resp.Unmarshal(payload); err != nil {
+		return nil, fmt.Errorf("failed to decode TCP response: %w", err)
+	}
+
+	// Apply the same validation as the UDP path: the reply must be a response,
+	// carry the transaction ID we asked with, and echo our question.
+	if !resp.IsResponse() {
+		return nil, fmt.Errorf("TCP reply is not a response")
+	}
+	if resp.Header.Identifier != identifier {
+		return nil, fmt.Errorf("TCP response transaction ID mismatch")
+	}
+	if !pq.matchesQuestion(resp) {
+		return nil, fmt.Errorf("TCP response does not answer the query")
+	}
+
+	return resp, nil
 }
 
 // jitterDelay blocks for a random duration in the half-open interval
@@ -431,8 +535,14 @@ func (c *Client) readLoop() {
 				continue
 			}
 
+			// Copy the source address: ReadFromUDP hands back an address whose
+			// backing storage it may reuse on the next read, and Query keeps the
+			// address around to target a TCP retry when the response is truncated.
+			from := &net.UDPAddr{IP: append(net.IP(nil), src.IP...), Port: src.Port, Zone: src.Zone}
+
+			delivered := msg
 			select {
-			case pq.responseChan <- &msg:
+			case pq.responseChan <- &udpResponse{msg: &delivered, from: from}:
 			default:
 			}
 		}

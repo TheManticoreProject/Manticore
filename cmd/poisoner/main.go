@@ -162,6 +162,9 @@ func main() {
 	var wg sync.WaitGroup
 	runLLMNR(&wg, "udp4", iface, handler, debug)
 	runLLMNR(&wg, "udp6", iface, handler, debug)
+	// Also accept the TCP fallback a querying host uses when its UDP response was
+	// truncated (RFC 4795 §2.4), so large spoofed answers remain recoverable.
+	runLLMNRTCP(&wg, iface, handler, debug)
 	wg.Wait()
 }
 
@@ -192,6 +195,28 @@ func runLLMNR(wg *sync.WaitGroup, network string, iface *net.Interface, handler 
 		defer wg.Done()
 		if err := srv.ListenAndServe(); err != nil {
 			logger.Warnf("%s LLMNR responder stopped: %s", network, err.Error())
+		}
+	}()
+}
+
+// runLLMNRTCP starts the LLMNR TCP responder (RFC 4795 §2.4) with the poisoning
+// handler registered, in its own goroutine tracked by wg. A bind failure is
+// logged rather than fatal so the UDP responders keep working when TCP cannot be
+// bound (e.g. the port is already in use).
+func runLLMNRTCP(wg *sync.WaitGroup, iface *net.Interface, handler server.Handler, debug bool) {
+	srv, err := server.NewIPv4ServerWithHandlers([]server.Handler{handler})
+	if err != nil {
+		logger.Warnf("Failed to create LLMNR TCP responder: %s", err.Error())
+		return
+	}
+	srv.Interface = iface
+	srv.SetDebug(debug)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := srv.ListenAndServeTCP(); err != nil {
+			logger.Warnf("LLMNR TCP responder stopped: %s", err.Error())
 		}
 	}()
 }

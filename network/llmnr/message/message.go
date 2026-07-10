@@ -366,6 +366,75 @@ func (m *Message) Marshal() ([]byte, error) {
 	return marshalledData, nil
 }
 
+// MarshalWithTruncation serializes the message for a datagram transport that
+// cannot carry more than maxSize bytes (for LLMNR over UDP, maxSize is
+// constants.MaxPacketSize). It first encodes the message in full; if the
+// encoding already fits within maxSize it is returned unchanged with truncated
+// == false.
+//
+// Otherwise the message is truncated to fit: the TC (truncation) bit is set in
+// the header and trailing resource records are dropped until the encoding fits,
+// removing additional records first, then authority records, then answers, per
+// the truncation semantics of RFC 1035 §4.1.1. If only the header and questions
+// remain and the encoding still exceeds maxSize, that minimal message is
+// returned with the TC bit set rather than an error. Setting the TC bit on an
+// oversized UDP response is what signals the querying host to retry over TCP
+// (RFC 4795 §2.4).
+//
+// The receiver is not modified: truncation is applied to a copy, so a caller can
+// still send the full message over TCP after learning it did not fit over UDP.
+//
+// Returns:
+//   - The (possibly truncated) encoded message.
+//   - Whether truncation was applied (the TC bit was set and records were dropped).
+//   - An error if encoding fails.
+func (m *Message) MarshalWithTruncation(maxSize int) ([]byte, bool, error) {
+	encoded, err := m.Marshal()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(encoded) <= maxSize {
+		return encoded, false, nil
+	}
+
+	// The full message does not fit: build a truncated copy so the receiver's
+	// message (which the caller may still want to send over TCP) is untouched.
+	// Only the header and the record slices are copied; the slice elements
+	// themselves are not mutated.
+	trunc := *m
+	trunc.Header.Flags |= header.FlagTC
+	trunc.Answers = append([]resourcerecord.ResourceRecord(nil), m.Answers...)
+	trunc.Authority = append([]resourcerecord.ResourceRecord(nil), m.Authority...)
+	trunc.Additional = append([]resourcerecord.ResourceRecord(nil), m.Additional...)
+
+	for {
+		encoded, err = trunc.Marshal()
+		if err != nil {
+			return nil, false, err
+		}
+		if len(encoded) <= maxSize {
+			break
+		}
+
+		// Drop the last record from the least significant section that still has
+		// one, then re-encode. When no records remain, return the minimal
+		// header+questions message with TC set: the querying host will fall back
+		// to TCP to obtain the complete answer.
+		switch {
+		case len(trunc.Additional) > 0:
+			trunc.Additional = trunc.Additional[:len(trunc.Additional)-1]
+		case len(trunc.Authority) > 0:
+			trunc.Authority = trunc.Authority[:len(trunc.Authority)-1]
+		case len(trunc.Answers) > 0:
+			trunc.Answers = trunc.Answers[:len(trunc.Answers)-1]
+		default:
+			return encoded, true, nil
+		}
+	}
+
+	return encoded, true, nil
+}
+
 // Unmarshal decodes a byte slice into the Message receiver. It expects the byte slice to be in the wire format
 // as specified by the LLMNR protocol. The function first checks if the provided data is at least as long as the
 // LLMNR header. It then proceeds to decode the header fields, followed by the question and answer sections.

@@ -14,7 +14,172 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/llmnr/constants"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
+	"github.com/TheManticoreProject/Manticore/network/llmnr/message/header"
 )
+
+// startTCPResponder binds a loopback TCP socket that acts as a fake LLMNR TCP
+// responder. For each accepted connection it reads one DNS-over-TCP framed query
+// (RFC 1035 §4.2.2), passes the query bytes to respond, and writes whatever
+// respond returns (if non-nil) back framed with the two-byte length prefix. It
+// returns the listener's TCP port (to be injected as the client's tcpPort) and a
+// cleanup function that stops the accept loop and closes the socket.
+func startTCPResponder(t *testing.T, respond func(query []byte) []byte) (int, func()) {
+	t.Helper()
+
+	ln, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("failed to start TCP responder: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if err != nil {
+				continue
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				query, err := message.ReadTCPMessage(c)
+				if err != nil {
+					return
+				}
+				if reply := respond(query); reply != nil {
+					_ = message.WriteTCPMessage(c, reply)
+				}
+			}(conn)
+		}
+	}()
+
+	return ln.Addr().(*net.TCPAddr).Port, func() {
+		close(done)
+		ln.Close()
+	}
+}
+
+// truncatedAnswer builds a well-formed LLMNR response that echoes the query's
+// transaction ID and question but carries the TC (truncation) bit set and no
+// answer records, simulating a responder whose full answer did not fit in a UDP
+// datagram. Returns nil if the query cannot be parsed or has no question.
+func truncatedAnswer(query []byte) []byte {
+	m := message.NewMessage()
+	if _, err := m.Unmarshal(query); err != nil || len(m.Questions) == 0 {
+		return nil
+	}
+
+	resp := message.NewMessage()
+	resp.Header.Identifier = m.Header.Identifier
+	resp.SetResponse()
+	resp.Header.Flags |= header.FlagTC
+	// Echo the question so the client's read loop accepts the response as
+	// matching the outstanding query before acting on the TC bit.
+	if err := resp.AddQuestion(string(m.Questions[0].Name), m.Questions[0].Type, m.Questions[0].Class); err != nil {
+		return nil
+	}
+
+	encoded, err := resp.Marshal()
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+// TestClientTCPFallbackOnTruncation drives the RFC 4795 §2.4 TCP fallback end to
+// end over loopback: a fake UDP responder answers with the TC bit set and no
+// records, and a fake TCP responder serves the complete answer. The client must
+// notice the TC bit, retry the same query over TCP to the responder's address,
+// and deliver the full untruncated answer in place of the truncated UDP one.
+func TestClientTCPFallbackOnTruncation(t *testing.T) {
+	// The TCP responder serves the complete answer (owner name + A record).
+	tcpPort, tcpCleanup := startTCPResponder(t, func(query []byte) []byte {
+		return echoAnswer(query, "10.7.0.10")
+	})
+	defer tcpCleanup()
+
+	// The UDP responder answers with the TC bit set, triggering the TCP retry.
+	udpAddr, udpCleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		return truncatedAnswer(query)
+	})
+	defer udpCleanup()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = udpAddr
+	c.jitterInterval = 0
+	// Point the TCP retry at the loopback TCP responder's ephemeral port instead
+	// of the fixed RFC port 5355.
+	c.tcpPort = tcpPort
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	resp, err := c.Query(ctx, "host.local", llmnr_type.TypeA)
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	// The delivered response must be the full TCP answer, not the truncated UDP
+	// one: it carries an answer record and does not have the TC bit set.
+	if resp.Header.Flags.IsTruncation() {
+		t.Error("Query() returned the truncated UDP response, want the full TCP answer")
+	}
+	if len(resp.Answers) != 1 {
+		t.Fatalf("Query() answers = %d, want 1 (from the TCP responder)", len(resp.Answers))
+	}
+	if resp.Answers[0].Name != "host.local" {
+		t.Errorf("Query() answer name = %q, want %q", resp.Answers[0].Name, "host.local")
+	}
+	if got := net.IP(resp.Answers[0].RData).String(); got != "10.7.0.10" {
+		t.Errorf("Query() answer RDATA = %q, want %q", got, "10.7.0.10")
+	}
+}
+
+// TestClientTCPFallbackFailureReturnsTruncated confirms that when the TC bit is
+// set but the TCP retry cannot be completed (nothing is listening on the TCP
+// port), Query degrades gracefully by returning the truncated UDP response
+// rather than failing outright.
+func TestClientTCPFallbackFailureReturnsTruncated(t *testing.T) {
+	udpAddr, udpCleanup := startResponder(t, func(query []byte, _ *net.UDPAddr) []byte {
+		return truncatedAnswer(query)
+	})
+	defer udpCleanup()
+
+	// Reserve a TCP port and immediately release it so the dial is refused.
+	ln, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("failed to reserve TCP port: %v", err)
+	}
+	deadPort := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer c.Close()
+	c.dest = udpAddr
+	c.jitterInterval = 0
+	c.tcpPort = deadPort
+	c.Timeout = 500 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	resp, err := c.Query(ctx, "host.local", llmnr_type.TypeA)
+	if err != nil {
+		t.Fatalf("Query() error = %v, want the truncated response returned on TCP failure", err)
+	}
+	if !resp.Header.Flags.IsTruncation() {
+		t.Error("Query() response missing TC bit, want the truncated UDP response on TCP failure")
+	}
+}
 
 // startResponder binds a loopback UDP socket that acts as a fake LLMNR responder
 // and invokes respond for each datagram it receives. Whatever respond returns (if

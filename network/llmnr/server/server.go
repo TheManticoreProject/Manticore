@@ -40,6 +40,18 @@ type Server struct {
 	// Conn is the connection of the server.
 	Conn *net.UDPConn
 
+	// TCPListenAddr is the address the optional TCP responder binds to when
+	// ListenAndServeTCP is used. RFC 4795 §2.4 requires a responder to listen on
+	// TCP port 5355 on the unicast address(es) it answers from, so this defaults
+	// to ":5355" (all interfaces) when left empty. It is overridable so a caller
+	// can pin the responder to a specific unicast address, and so tests can bind
+	// an ephemeral loopback port.
+	TCPListenAddr string
+
+	// tcpListener is the accepting socket of the optional TCP responder. It is
+	// nil until ListenAndServeTCP binds it, and is closed by Close.
+	tcpListener net.Listener
+
 	// Interface is the network interface on which the multicast group is joined.
 	// When nil the group is joined on the system-default multicast interface
 	// (preserving the previous behavior); setting it lets the server listen on a
@@ -56,6 +68,12 @@ type Server struct {
 	// server has come up without racing on the Conn field.
 	listeningMu sync.RWMutex
 	listening   bool
+
+	// listeningTCP records whether the optional TCP responder socket has been
+	// bound. It is guarded by listeningMu (like listening) so a caller that
+	// started ListenAndServeTCP in the background can observe readiness without a
+	// data race.
+	listeningTCP bool
 
 	// Closed is a channel that is closed when the server is shut down.
 	Closed chan struct{}
@@ -403,10 +421,14 @@ func (s *Server) Close() error {
 		func() {
 			s.listeningMu.Lock()
 			s.listening = false
+			s.listeningTCP = false
 			s.listeningMu.Unlock()
 			close(s.Closed)
 			if s.Conn != nil {
 				s.Conn.Close()
+			}
+			if s.tcpListener != nil {
+				s.tcpListener.Close()
 			}
 		},
 	)
