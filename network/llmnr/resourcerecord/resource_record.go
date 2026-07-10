@@ -88,36 +88,53 @@ func (rr *ResourceRecord) Marshal() ([]byte, error) {
 //   - An integer representing the new offset position after decoding.
 //   - An error if the decoding fails at any point, such as if the data is too short or if there is an error decoding the domain name.
 func (rr *ResourceRecord) Unmarshal(data []byte) (int, error) {
-	bytesRead := 0
+	return rr.UnmarshalFromMessage(data, 0)
+}
 
-	bytesReadName, err := rr.Name.Unmarshal(data[bytesRead:])
+// UnmarshalFromMessage decodes a ResourceRecord located at offset inside the
+// full message buffer. It is used instead of Unmarshal when the record's name
+// may contain 0xC0 compression pointers (responders routinely compress the
+// answer NAME to point back at the question), so those pointers resolve against
+// the start of the message (RFC 1035 §4.1.4) rather than against a sub-slice.
+//
+// Parameters:
+// - message: The full LLMNR message in wire format.
+// - offset: The absolute offset of the resource record inside message.
+//
+// Returns:
+//   - The number of bytes consumed from message at offset.
+//   - An error if the decoding fails at any point.
+func (rr *ResourceRecord) UnmarshalFromMessage(message []byte, offset int) (int, error) {
+	start := offset
+
+	bytesReadName, err := rr.Name.UnmarshalFromMessage(message, offset)
 	if err != nil {
 		return 0, fmt.Errorf("error unmarshalling name: %w", err)
 	}
-	bytesRead += bytesReadName
+	offset += bytesReadName
 
-	if bytesRead+10 > len(data) {
+	if offset+10 > len(message) {
 		return 0, fmt.Errorf("truncated resource record")
 	}
 
-	rr.Type = llmnr_type.Type(binary.BigEndian.Uint16(data[bytesRead:]))
-	bytesRead += 2
-	rr.Class = class.Class(binary.BigEndian.Uint16(data[bytesRead:]))
-	bytesRead += 2
-	rr.TTL = binary.BigEndian.Uint32(data[bytesRead:])
-	bytesRead += 4
-	rr.RDLength = binary.BigEndian.Uint16(data[bytesRead:])
-	bytesRead += 2
+	rr.Type = llmnr_type.Type(binary.BigEndian.Uint16(message[offset:]))
+	offset += 2
+	rr.Class = class.Class(binary.BigEndian.Uint16(message[offset:]))
+	offset += 2
+	rr.TTL = binary.BigEndian.Uint32(message[offset:])
+	offset += 4
+	rr.RDLength = binary.BigEndian.Uint16(message[offset:])
+	offset += 2
 
-	if bytesRead+int(rr.RDLength) > len(data) {
+	if offset+int(rr.RDLength) > len(message) {
 		return 0, fmt.Errorf("truncated rdata")
 	}
 
 	rr.RData = make([]byte, rr.RDLength)
-	copy(rr.RData, data[bytesRead:bytesRead+int(rr.RDLength)])
-	bytesRead += int(rr.RDLength)
+	copy(rr.RData, message[offset:offset+int(rr.RDLength)])
+	offset += int(rr.RDLength)
 
-	return bytesRead, nil
+	return offset - start, nil
 }
 
 // IPToRData converts an IP address string to its corresponding RData byte slice representation.

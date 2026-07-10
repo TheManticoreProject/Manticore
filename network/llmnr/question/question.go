@@ -102,36 +102,52 @@ func (q *Question) Marshal() ([]byte, error) {
 //	    // handle error
 //	}
 func (q *Question) Unmarshal(data []byte) (int, error) {
-	bytesRead := 0
+	return q.UnmarshalFromMessage(data, 0)
+}
+
+// UnmarshalFromMessage decodes a Question located at offset inside the full
+// message buffer. It is used instead of Unmarshal when the question's name may
+// contain 0xC0 compression pointers, so those pointers resolve against the
+// start of the message (RFC 1035 §4.1.4) rather than against a sub-slice.
+//
+// Parameters:
+// - message: The full LLMNR message in wire format.
+// - offset: The absolute offset of the question inside message.
+//
+// Returns:
+//   - The number of bytes consumed from message at offset.
+//   - An error if the decoding fails at any point.
+func (q *Question) UnmarshalFromMessage(message []byte, offset int) (int, error) {
+	start := offset
 
 	// Unmarshal domain name
-	bytesReadDomainName, err := q.Name.Unmarshal(data[bytesRead:])
+	bytesReadDomainName, err := q.Name.UnmarshalFromMessage(message, offset)
 	if err != nil {
 		return 0, fmt.Errorf("error unmarshalling domain name: %w", err)
 	}
-	bytesRead += bytesReadDomainName
+	offset += bytesReadDomainName
 
 	// Unmarshal type
-	if bytesRead+2 > len(data) {
+	if offset+2 > len(message) {
 		return 0, fmt.Errorf("truncated question, missing type")
 	}
-	bytesReadType, err := q.Type.Unmarshal(data[bytesRead : bytesRead+2])
+	bytesReadType, err := q.Type.Unmarshal(message[offset : offset+2])
 	if err != nil {
 		return 0, fmt.Errorf("error unmarshalling type: %w", err)
 	}
-	bytesRead += bytesReadType
+	offset += bytesReadType
 
 	// Unmarshal class
-	if bytesRead+2 > len(data) {
+	if offset+2 > len(message) {
 		return 0, fmt.Errorf("truncated question, missing class")
 	}
-	bytesReadClass, err := q.Class.Unmarshal(data[bytesRead : bytesRead+2])
+	bytesReadClass, err := q.Class.Unmarshal(message[offset : offset+2])
 	if err != nil {
 		return 0, fmt.Errorf("error unmarshalling class: %w", err)
 	}
-	bytesRead += bytesReadClass
+	offset += bytesReadClass
 
-	return bytesRead, nil
+	return offset - start, nil
 }
 
 // Describe prints a detailed description of the Question.
