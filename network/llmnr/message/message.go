@@ -382,59 +382,62 @@ func (m *Message) Unmarshal(data []byte) (int, error) {
 		return 0, fmt.Errorf("message too short")
 	}
 
-	// Unmarshal header
-	bytesRead := 0
-	bytesReadHeader, err := m.Header.Unmarshal(data[bytesRead : bytesRead+header.HeaderSize])
+	// Unmarshal header. From here on we track an absolute offset into data so
+	// that 0xC0 compression pointers, which are relative to the start of the
+	// message (RFC 1035 §4.1.4), resolve against the message origin rather than
+	// against a sub-slice.
+	offset := 0
+	bytesReadHeader, err := m.Header.Unmarshal(data[offset : offset+header.HeaderSize])
 	if err != nil {
 		return 0, fmt.Errorf("error unmarshalling header: %w", err)
 	}
-	bytesRead += bytesReadHeader
+	offset += bytesReadHeader
 
 	// Decode questions
 	for i := uint16(0); i < m.Header.QDCount; i++ {
 		q := question.Question{}
-		n, err := q.Unmarshal(data[bytesRead:])
+		n, err := q.UnmarshalFromMessage(data, offset)
 		if err != nil {
 			return 0, fmt.Errorf("error unmarshalling question: %w", err)
 		}
-		bytesRead += n
+		offset += n
 		m.Questions = append(m.Questions, q)
 	}
 
 	// Decode answers
 	for i := uint16(0); i < m.Header.ANCount; i++ {
 		rr := resourcerecord.ResourceRecord{}
-		n, err := rr.Unmarshal(data[bytesRead:])
+		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
 			return 0, fmt.Errorf("error unmarshalling answer: %w", err)
 		}
-		bytesRead += n
+		offset += n
 		m.Answers = append(m.Answers, rr)
 	}
 
 	// Decode authority
 	for i := uint16(0); i < m.Header.NSCount; i++ {
 		rr := resourcerecord.ResourceRecord{}
-		n, err := rr.Unmarshal(data[bytesRead:])
+		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
 			return 0, fmt.Errorf("error unmarshalling authority: %w", err)
 		}
-		bytesRead += n
+		offset += n
 		m.Authority = append(m.Authority, rr)
 	}
 
 	// Decode additional
 	for i := uint16(0); i < m.Header.ARCount; i++ {
 		rr := resourcerecord.ResourceRecord{}
-		n, err := rr.Unmarshal(data[bytesRead:])
+		n, err := rr.UnmarshalFromMessage(data, offset)
 		if err != nil {
 			return 0, fmt.Errorf("error unmarshalling additional: %w", err)
 		}
-		bytesRead += n
+		offset += n
 		m.Additional = append(m.Additional, rr)
 	}
 
-	return bytesRead, nil
+	return offset, nil
 }
 
 // IsQuery returns true if the message is a query.

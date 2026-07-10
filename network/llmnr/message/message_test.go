@@ -1,7 +1,9 @@
 package message_test
 
 import (
+	"encoding/hex"
 	"math/rand"
+	"net"
 	"testing"
 	"time"
 
@@ -245,6 +247,133 @@ func TestUnmarshalMultipleRecords(t *testing.T) {
 	}
 	if parsed.Answers[0].Name != "host.local" {
 		t.Errorf("answer name mismatch: got %q", parsed.Answers[0].Name)
+	}
+}
+
+// llmnrLiveResponseHex is a real LLMNR response captured from a Windows Server
+// 2016 host (owner name "TMP-W-2016") replying to a Type A query. This host
+// does not compress the answer NAME (it repeats the full name), so it exercises
+// the uncompressed path end-to-end against genuine traffic.
+//
+//	Header:   ID=0x37c8, Flags=0x8000 (QR), QD=1, AN=1
+//	Question: TMP-W-2016  A IN
+//	Answer:   TMP-W-2016  A IN  TTL=30  RDATA=10.7.0.10
+const llmnrLiveResponseHex = "37c8800000010001000000000a544d502d572d3230313600000100010a544d502d572d3230313600000100010000001e00040a07000a"
+
+// llmnrCompressedResponseHex is a hand-built LLMNR response modelled on the live
+// capture above, but with the answer NAME replaced by a 0xC0 compression pointer
+// (0xC00C) back to the question name at offset 12. It is the known-answer packet
+// for the compression path: the prior code, which fed a sub-slice into the name
+// decoder, resolves this pointer against the wrong origin and produces garbage.
+//
+//	Answer NAME = 0xC0 0x0C -> offset 12 (the question name "TMP-W-2016").
+const llmnrCompressedResponseHex = "37c8800000010001000000000a544d502d572d323031360000010001c00c000100010000001e00040a07000a"
+
+// TestUnmarshalLiveWindowsResponse decodes the real captured Windows LLMNR
+// response and confirms the full message (question + answer RR) is parsed
+// correctly, including the owner name and the A record.
+func TestUnmarshalLiveWindowsResponse(t *testing.T) {
+	data, err := hex.DecodeString(llmnrLiveResponseHex)
+	if err != nil {
+		t.Fatalf("failed to decode fixture: %v", err)
+	}
+
+	msg := message.NewMessage()
+	n, err := msg.Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("Unmarshal read %d bytes, want %d", n, len(data))
+	}
+
+	if !msg.IsResponse() {
+		t.Errorf("expected message to be a response")
+	}
+	if len(msg.Questions) != 1 || msg.Questions[0].Name != "TMP-W-2016" {
+		t.Fatalf("unexpected questions: %+v", msg.Questions)
+	}
+	if len(msg.Answers) != 1 {
+		t.Fatalf("expected 1 answer, got %d", len(msg.Answers))
+	}
+	if msg.Answers[0].Name != "TMP-W-2016" {
+		t.Errorf("answer name = %q; want %q", msg.Answers[0].Name, "TMP-W-2016")
+	}
+	if msg.Answers[0].Type != llmnr_type.TypeA {
+		t.Errorf("answer type = %v; want A", msg.Answers[0].Type)
+	}
+	if got := net.IP(msg.Answers[0].RData).String(); got != "10.7.0.10" {
+		t.Errorf("answer RDATA = %q; want %q", got, "10.7.0.10")
+	}
+}
+
+// TestUnmarshalCompressedAnswerName is the known-answer test for a message whose
+// answer NAME is a 0xC0 compression pointer back to the question name. It must
+// decode to the same owner name and A record as the uncompressed capture.
+func TestUnmarshalCompressedAnswerName(t *testing.T) {
+	data, err := hex.DecodeString(llmnrCompressedResponseHex)
+	if err != nil {
+		t.Fatalf("failed to decode fixture: %v", err)
+	}
+
+	msg := message.NewMessage()
+	n, err := msg.Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("Unmarshal read %d bytes, want %d", n, len(data))
+	}
+
+	if len(msg.Questions) != 1 || msg.Questions[0].Name != "TMP-W-2016" {
+		t.Fatalf("unexpected questions: %+v", msg.Questions)
+	}
+	if len(msg.Answers) != 1 {
+		t.Fatalf("expected 1 answer, got %d", len(msg.Answers))
+	}
+	// The compressed answer NAME must resolve to the question name.
+	if msg.Answers[0].Name != "TMP-W-2016" {
+		t.Errorf("compressed answer name = %q; want %q", msg.Answers[0].Name, "TMP-W-2016")
+	}
+	if msg.Answers[0].Type != llmnr_type.TypeA {
+		t.Errorf("answer type = %v; want A", msg.Answers[0].Type)
+	}
+	if got := net.IP(msg.Answers[0].RData).String(); got != "10.7.0.10" {
+		t.Errorf("answer RDATA = %q; want %q", got, "10.7.0.10")
+	}
+}
+
+// TestUnmarshalPointerLoopMessage ensures a message carrying a malformed
+// compression pointer loop is rejected with an error instead of hanging or
+// panicking.
+func TestUnmarshalPointerLoopMessage(t *testing.T) {
+	// Header (QD=1, AN=0) followed by a question whose name at offset 12 is a
+	// self-referential pointer (0xC0 0x0C -> offset 12), then type A / class IN.
+	data := []byte{
+		0x37, 0xc8, // ID
+		0x00, 0x00, // Flags
+		0x00, 0x01, // QDCount
+		0x00, 0x00, // ANCount
+		0x00, 0x00, // NSCount
+		0x00, 0x00, // ARCount
+		0xC0, 0x0C, // name: self pointer to offset 12
+		0x00, 0x01, // type A
+		0x00, 0x01, // class IN
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		msg := message.NewMessage()
+		if _, err := msg.Unmarshal(data); err == nil {
+			t.Errorf("expected error for pointer loop, got nil")
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Unmarshal did not terminate on pointer loop")
 	}
 }
 
