@@ -3,6 +3,7 @@ package gssapi
 import (
 	"crypto/hmac"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
@@ -64,6 +65,112 @@ func (ctx *SecContext) nextSendSeq() uint64 {
 // zero-based per-PDU counter for its GSS tokens rather than the AP-REQ
 // authenticator sequence.
 func (ctx *SecContext) ResetSendSeq(seq uint64) { ctx.sendSeq = seq }
+
+// Distinct receive-side rejection reasons for per-message tokens, analogous to
+// the GSS-API major-status codes of RFC 2743 §1.2.1.1. VerifyMIC / Unwrap /
+// Unseal return one of these (after the token's integrity and direction have
+// already been verified) so a caller can tell a genuine replay apart from a
+// mere ordering anomaly.
+var (
+	// ErrDuplicateToken reports a peer sequence number already seen inside the
+	// replay window: a replayed token (GSS_S_DUPLICATE_TOKEN).
+	ErrDuplicateToken = errors.New("gssapi: duplicate per-message token (replay)")
+	// ErrOldToken reports a peer sequence number that has fallen below the replay
+	// window, so its freshness can no longer be proven (GSS_S_OLD_TOKEN).
+	ErrOldToken = errors.New("gssapi: per-message token below replay window (too old)")
+	// ErrUnseqToken reports a fresh token that arrived out of order within the
+	// window (GSS_S_UNSEQ_TOKEN); only raised when sequence enforcement is on.
+	ErrUnseqToken = errors.New("gssapi: per-message token out of sequence")
+	// ErrGapToken reports a token that skipped ahead of the expected sequence
+	// number (GSS_S_GAP_TOKEN); only raised when sequence enforcement is on.
+	ErrGapToken = errors.New("gssapi: per-message token sequence gap")
+)
+
+// seqWindowWidth is the number of recently-seen sequence numbers the replay
+// window tracks, the 64-value bitmap RFC 2743 recommends.
+const seqWindowWidth = 64
+
+// seqMask reduces per-message sequence numbers to 32 bits so the window
+// arithmetic wraps the way RFC 4121 §4.2.6 permits: the sender increments its
+// counter per token and it eventually wraps. Windows/AD keep the RFC 4121 CFX
+// SND_SEQ in its low 32 bits and the RFC 4757 RC4 token carries a 32-bit
+// sequence number, so a 32-bit modulus matches every peer this layer talks to.
+const seqMask = 0xffffffff
+
+// seqWindow implements the RFC 2743 §1.2.1.1 receive-side replay / sequencing
+// check over the peer's per-message sequence numbers (RFC 4121 §4.2.6) as a
+// 64-wide sliding bitmap, following the MIT/Heimdal g_seqstate algorithm.
+//
+// replayDetect (GSS_C_REPLAY_FLAG) rejects a sequence number already seen inside
+// the window, or one that has dropped below it. sequence (GSS_C_SEQUENCE_FLAG)
+// additionally rejects tokens delivered out of order or skipping ahead. With
+// both cleared the window is a no-op. The window seeds itself from the first
+// authenticated token, so the peer's initial sequence number need not be known
+// in advance (context establishment does not exchange a per-message start).
+type seqWindow struct {
+	replayDetect bool
+	sequence     bool
+	seeded       bool
+	base         uint64 // first sequence number seen: the window origin (rel 0)
+	next         uint64 // next expected sequence number, relative to base
+	mask         uint64 // bitmap of the last seqWindowWidth sequence numbers seen
+}
+
+// check evaluates a received per-message sequence number against the sliding
+// window, advancing the window when the token is fresh. It returns nil when the
+// token is acceptable, or one of the Err*Token sentinels when it must be
+// rejected. It must be called only after the token's integrity and direction
+// have been verified, so the window is never advanced by a forged token.
+func (w *seqWindow) check(seq uint64) error {
+	if !w.replayDetect && !w.sequence {
+		return nil // no receive-side enforcement requested
+	}
+	seq &= seqMask
+	if !w.seeded {
+		// The first authenticated token defines the window origin (rel 0): accept
+		// it and expect its successor next.
+		w.seeded = true
+		w.base = seq
+		w.next = 1
+		w.mask = 1
+		return nil
+	}
+
+	rel := (seq - w.base) & seqMask
+	if rel >= w.next {
+		// At or ahead of the expected sequence number.
+		offset := rel - w.next
+		if offset+1 >= seqWindowWidth {
+			w.mask = 1 // the whole window is newer than everything remembered
+		} else {
+			w.mask = (w.mask << (offset + 1)) | 1
+		}
+		w.next = (rel + 1) & seqMask
+		if offset > 0 && w.sequence {
+			return ErrGapToken // skipped ahead of the expected number
+		}
+		return nil
+	}
+
+	// Behind the expected sequence number.
+	offset := w.next - rel
+	if offset > seqWindowWidth {
+		// Below the window: this token's freshness can no longer be proven.
+		if w.sequence {
+			return ErrUnseqToken
+		}
+		return ErrOldToken
+	}
+	bit := uint64(1) << (offset - 1)
+	if w.replayDetect && w.mask&bit != 0 {
+		return ErrDuplicateToken
+	}
+	w.mask |= bit
+	if w.sequence {
+		return ErrUnseqToken // fresh but out of order within the window
+	}
+	return nil
+}
 
 // micLen returns the checksum length appended to MIC / integrity-only Wrap
 // tokens for an etype.
@@ -270,6 +377,10 @@ func (ctx *SecContext) unsealAES(sealed, token []byte) ([]byte, error) {
 	if len(plain) < 16+ec {
 		return nil, fmt.Errorf("gssapi: AES Wrap plaintext too short")
 	}
+	// The token decrypted cleanly and is acceptor-directed; enforce replay/sequence.
+	if err := ctx.recvWindow.check(binary.BigEndian.Uint64(token[8:16])); err != nil {
+		return nil, err
+	}
 	return plain[:len(plain)-16-ec], nil
 }
 
@@ -321,7 +432,8 @@ func (ctx *SecContext) VerifyMIC(data, token []byte) error {
 	if !hmac.Equal(got, want) {
 		return fmt.Errorf("gssapi: MIC verification failed")
 	}
-	return nil
+	// The token is authentic and acceptor-directed; enforce replay/sequence.
+	return ctx.recvWindow.check(binary.BigEndian.Uint64(hdr[8:16]))
 }
 
 // Wrap produces a Wrap token over data as the context initiator (RFC 4121
@@ -390,6 +502,9 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 		if len(pt) < 16+ec {
 			return nil, false, fmt.Errorf("gssapi: Wrap plaintext too short")
 		}
+		if err := ctx.recvWindow.check(binary.BigEndian.Uint64(hdr[8:16])); err != nil {
+			return nil, false, err
+		}
 		return pt[:len(pt)-16-ec], true, nil
 	}
 
@@ -417,6 +532,9 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 	}
 	if !hmac.Equal(got, want) {
 		return nil, false, fmt.Errorf("gssapi: Wrap integrity check failed")
+	}
+	if err := ctx.recvWindow.check(binary.BigEndian.Uint64(hdr[8:16])); err != nil {
+		return nil, false, err
 	}
 	return payload, false, nil
 }

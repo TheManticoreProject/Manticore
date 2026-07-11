@@ -115,7 +115,8 @@ func (ctx *SecContext) verifyMICRC4(data, token []byte) error {
 	if seq[4] != 0xff {
 		return fmt.Errorf("gssapi: RC4 MIC not marked as sent by acceptor")
 	}
-	return nil
+	// The token is authentic and acceptor-directed; enforce replay/sequence.
+	return ctx.recvWindow.check(uint64(binary.BigEndian.Uint32(seq[:4])))
 }
 
 // rc4SgnCksum computes the RC4 MIC SGN_CKSUM: HMAC-MD5(Ksign, MD5(LE32(15) |
@@ -291,6 +292,10 @@ func (ctx *SecContext) unsealRC4(sealed, token []byte) ([]byte, error) {
 	want := rc4WrapSgnCksum(key, hdr8, confounder, payload)
 	if !hmac.Equal(cksum, want) {
 		return nil, fmt.Errorf("gssapi: RC4 Wrap verification failed")
+	}
+	// The token is authentic and acceptor-directed; enforce replay/sequence.
+	if err := ctx.recvWindow.check(seq); err != nil {
+		return nil, err
 	}
 	return payload, nil
 }
