@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"crypto/rc4"
 	"encoding/binary"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/aes/cts"
@@ -80,38 +81,77 @@ func TestHMACSHA1RFC2202(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// RFC 3962 Appendix B string-to-key known-answer tests (aes128-cts-hmac-sha1-96)
+// RFC 3962 Appendix B string-to-key known-answer tests (aes*-cts-hmac-sha1-96)
 //
-// The single iter=1 case is covered in crypto_test.go; this pins the remaining
-// Appendix B cases: higher iteration counts, a non-ASCII (UTF-8 g-clef, U+1D11E)
-// salt, and a non-ASCII passphrase. The 128-bit reference keys are the ones
-// published in RFC 3962.
+// These are the canonical published PBKDF2-HMAC-SHA1 + DK string-to-key vectors
+// for the AES-SHA1 enctypes, transcribed verbatim from RFC 3962 Appendix B. The
+// full set — every iteration count (1, 2, 5, 50, 1200), the binary salt
+// 0x1234567878563412, the block-size-boundary pass phrases (64 and 65 'X's), and
+// the non-ASCII UTF-8 g-clef (U+1D11E) pass phrase — is pinned for BOTH the
+// 128-bit and 256-bit key sizes. Because the shipped enctypes have no wire-
+// published full-message ciphertext vector, these primitive vectors are the
+// authoritative anchor for the PBKDF2, n-fold, and DK path underneath them.
 // ---------------------------------------------------------------------------
 
-func TestAES128StringToKeyRFC3962(t *testing.T) {
-	gclef := string([]byte{0xf0, 0x9d, 0x84, 0x9e}) // U+1D11E MUSICAL SYMBOL G CLEF
+func TestStringToKeyRFC3962AppendixB(t *testing.T) {
+	// g-clef pass phrase: U+1D11E MUSICAL SYMBOL G CLEF encoded as UTF-8.
+	gclef := string([]byte{0xf0, 0x9d, 0x84, 0x9e})
+	// RFC 3962 test case 4 uses a raw 8-byte binary salt, not an ASCII string.
+	binarySalt := string([]byte{0x12, 0x34, 0x56, 0x78, 0x78, 0x56, 0x34, 0x12})
+	x64 := strings.Repeat("X", 64) // pass phrase equal to the SHA-1 block size
+	x65 := strings.Repeat("X", 65) // pass phrase one byte over the block size
 
 	cases := []struct {
 		name     string
 		password string
 		salt     string
 		iter     int
-		want     string
+		want128  string
+		want256  string
 	}{
-		{"iter2", "password", "ATHENA.MIT.EDUraeburn", 2, "c6 51 bf 29 e2 30 0a c2 7f a4 69 d6 93 bd da 13"},
-		{"iter1200", "password", "ATHENA.MIT.EDUraeburn", 1200, "4c 01 cd 46 d6 32 d0 1e 6d be 23 0a 01 ed 64 2a"},
-		{"iter50-gclef-pass", gclef, "EXAMPLE.COMpianist", 50, "f1 49 c1 f2 e1 54 a7 34 52 d4 3e 7f e6 2a 56 e5"},
+		{"iter1", "password", "ATHENA.MIT.EDUraeburn", 1,
+			"42 26 3c 6e 89 f4 fc 28 b8 df 68 ee 09 79 9f 15",
+			"fe 69 7b 52 bc 0d 3c e1 44 32 ba 03 6a 92 e6 5b bb 52 28 09 90 a2 fa 27 88 39 98 d7 2a f3 01 61"},
+		{"iter2", "password", "ATHENA.MIT.EDUraeburn", 2,
+			"c6 51 bf 29 e2 30 0a c2 7f a4 69 d6 93 bd da 13",
+			"a2 e1 6d 16 b3 60 69 c1 35 d5 e9 d2 e2 5f 89 61 02 68 56 18 b9 59 14 b4 67 c6 76 22 22 58 24 ff"},
+		{"iter1200", "password", "ATHENA.MIT.EDUraeburn", 1200,
+			"4c 01 cd 46 d6 32 d0 1e 6d be 23 0a 01 ed 64 2a",
+			"55 a6 ac 74 0a d1 7b 48 46 94 10 51 e1 e8 b0 a7 54 8d 93 b0 ab 30 a8 bc 3f f1 62 80 38 2b 8c 2a"},
+		{"iter5-binary-salt", "password", binarySalt, 5,
+			"e9 b2 3d 52 27 37 47 dd 5c 35 cb 55 be 61 9d 8e",
+			"97 a4 e7 86 be 20 d8 1a 38 2d 5e bc 96 d5 90 9c ab cd ad c8 7c a4 8f 57 45 04 15 9f 16 c3 6e 31"},
+		{"iter1200-passphrase-eq-blocksize", x64, "pass phrase equals block size", 1200,
+			"59 d1 bb 78 9a 82 8b 1a a5 4e f9 c2 88 3f 69 ed",
+			"89 ad ee 36 08 db 8b c7 1f 1b fb fe 45 94 86 b0 56 18 b7 0c ba e2 20 92 53 4e 56 c5 53 ba 4b 34"},
+		{"iter1200-passphrase-gt-blocksize", x65, "pass phrase exceeds block size", 1200,
+			"cb 80 05 dc 5f 90 17 9a 7f 02 10 4c 00 18 75 1d",
+			"d7 8c 5c 9c b8 72 a8 c9 da d4 69 7f 0b b5 b2 d2 14 96 c8 2b eb 2c ae da 21 12 fc ee a0 57 40 1b"},
+		{"iter50-gclef", gclef, "EXAMPLE.COMpianist", 50,
+			"f1 49 c1 f2 e1 54 a7 34 52 d4 3e 7f e6 2a 56 e5",
+			"4b 6d 98 39 f8 44 06 df 1f 09 cc 16 6d b4 b8 3c 57 18 48 b7 84 a3 d6 bd c3 46 58 9a 3e 39 3f 9e"},
 	}
+
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			params := make([]byte, 4)
-			binary.BigEndian.PutUint32(params, uint32(c.iter))
+		params := make([]byte, 4)
+		binary.BigEndian.PutUint32(params, uint32(c.iter))
+
+		t.Run(c.name+"/aes128", func(t *testing.T) {
 			got, err := StringToKey(iana.ETypeAES128CTSHMACSHA196, c.password, c.salt, params)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := unhex(t, c.want); !bytes.Equal(got, want) {
-				t.Errorf("StringToKey = %X, want %X", got, want)
+			if want := unhex(t, c.want128); !bytes.Equal(got, want) {
+				t.Errorf("StringToKey aes128 = %X, want %X", got, want)
+			}
+		})
+		t.Run(c.name+"/aes256", func(t *testing.T) {
+			got, err := StringToKey(iana.ETypeAES256CTSHMACSHA196, c.password, c.salt, params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := unhex(t, c.want256); !bytes.Equal(got, want) {
+				t.Errorf("StringToKey aes256 = %X, want %X", got, want)
 			}
 		})
 	}
