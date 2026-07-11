@@ -306,6 +306,93 @@ func TestUnsealDCERejectsUnsealed(t *testing.T) {
 	}
 }
 
+// TestSealedWrapAuthenticatesTransmittedSeq is a regression test for the
+// per-message replay-window authentication fix. For a sealed CFX Wrap token the
+// receiver must drive the replay/sequence window from the sequence number in
+// the AUTHENTICATED header copy recovered from the ciphertext (RFC 4121
+// §4.2.6.2), not from the unauthenticated transmitted header. A legitimate
+// round-trip must still be accepted, but flipping the transmitted sequence bytes
+// must be rejected rather than silently accepted (which previously poisoned the
+// window with an attacker-chosen sequence number).
+func TestSealedWrapAuthenticatesTransmittedSeq(t *testing.T) {
+	key := bytes.Repeat([]byte{0x42}, 32)
+	etype := iana.ETypeAES256CTSHMACSHA196
+	const bogusSeq = uint64(0xdeadbeef)
+
+	// DCE Seal -> Unseal path (acceptor seals, initiator unseals).
+	t.Run("DCE", func(t *testing.T) {
+		acc := newTestContext(42)
+		acc.isAcceptor = true
+		acc.acceptorSubkey = true
+		acc.SessionKey, acc.SubKey, acc.SubKeyEType = key, key, etype
+		data := []byte("confidential-dce-stub")
+
+		sealedStub, tok, err := acc.Seal(data)
+		if err != nil {
+			t.Fatalf("Seal: %v", err)
+		}
+
+		// A fresh initiator context with the replay window enabled.
+		newInit := func() *SecContext {
+			c := newTestContext(1)
+			c.acceptorSubkey = true
+			c.SessionKey, c.SubKey, c.SubKeyEType = key, key, etype
+			c.recvWindow.replayDetect = true
+			return c
+		}
+
+		got, err := newInit().Unseal(sealedStub, tok)
+		if err != nil {
+			t.Fatalf("Unseal rejected a legitimate sealed token: %v", err)
+		}
+		if !bytes.Equal(got, data) {
+			t.Fatalf("Unseal data = %q, want %q", got, data)
+		}
+
+		// Flip the transmitted sequence number: the authenticated header copy
+		// still carries the real value, so the token must now be rejected.
+		bad := append([]byte{}, tok...)
+		binary.BigEndian.PutUint64(bad[8:16], bogusSeq)
+		if _, err := newInit().Unseal(sealedStub, bad); err == nil {
+			t.Error("Unseal accepted a token with a tampered transmitted sequence number")
+		}
+	})
+
+	// Wrap(seal=true) -> Unwrap path (acceptor wraps, initiator unwraps).
+	t.Run("Wrap", func(t *testing.T) {
+		acc := newTestContext(42)
+		acc.isAcceptor = true
+		acc.SessionKey, acc.SessionEType = key, etype
+		data := []byte("confidential-wrap-payload")
+
+		tok, err := acc.Wrap(data, true)
+		if err != nil {
+			t.Fatalf("Wrap: %v", err)
+		}
+
+		newInit := func() *SecContext {
+			c := newTestContext(1)
+			c.SessionKey, c.SessionEType = key, etype
+			c.recvWindow.replayDetect = true
+			return c
+		}
+
+		got, sealed, err := newInit().Unwrap(tok)
+		if err != nil || !sealed {
+			t.Fatalf("Unwrap rejected a legitimate sealed token: %v (sealed=%v)", err, sealed)
+		}
+		if !bytes.Equal(got, data) {
+			t.Fatalf("Unwrap data = %q, want %q", got, data)
+		}
+
+		bad := append([]byte{}, tok...)
+		binary.BigEndian.PutUint64(bad[8:16], bogusSeq)
+		if _, _, err := newInit().Unwrap(bad); err == nil {
+			t.Error("Unwrap accepted a sealed token with a tampered transmitted sequence number")
+		}
+	})
+}
+
 func TestUnwrapRotation(t *testing.T) {
 	ctx := newTestContext(1)
 	data := []byte("rotated-sealed-data-payload")

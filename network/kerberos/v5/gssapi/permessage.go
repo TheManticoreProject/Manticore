@@ -427,8 +427,22 @@ func (ctx *SecContext) unsealAES(sealed, token []byte) ([]byte, error) {
 	if len(plain) < 16+ec {
 		return nil, fmt.Errorf("gssapi: AES Wrap plaintext too short")
 	}
+	// RFC 4121 §4.2.6.2: the 16-octet header recovered from the decrypted
+	// plaintext is authenticated (it rides inside the ciphertext), whereas the
+	// transmitted token header travels in clear and is not under the checksum.
+	// Compare the two before trusting the token, and drive the replay/sequence
+	// window from the AUTHENTICATED sequence number rather than the transmitted
+	// one. The only field that legitimately differs is RRC: §4.2.4 zeroes it in
+	// the encrypted copy while the transmitted header carries the real
+	// right-rotation count, so normalise RRC (bytes [6:8]) before comparing.
+	recovered := plain[len(plain)-16:]
+	transmitted := append([]byte{}, token[:16]...)
+	transmitted[6], transmitted[7] = 0, 0
+	if !hmac.Equal(recovered, transmitted) {
+		return nil, fmt.Errorf("gssapi: Wrap token header mismatch")
+	}
 	// The token decrypted cleanly and is acceptor-directed; enforce replay/sequence.
-	if err := ctx.recvWindow.check(binary.BigEndian.Uint64(token[8:16])); err != nil {
+	if err := ctx.recvWindow.check(binary.BigEndian.Uint64(recovered[8:16])); err != nil {
 		return nil, err
 	}
 	return plain[:len(plain)-16-ec], nil
@@ -552,7 +566,18 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 		if len(pt) < 16+ec {
 			return nil, false, fmt.Errorf("gssapi: Wrap plaintext too short")
 		}
-		if err := ctx.recvWindow.check(binary.BigEndian.Uint64(hdr[8:16])); err != nil {
+		// Compare the authenticated header recovered from the plaintext against
+		// the transmitted header (RFC 4121 §4.2.6.2) and drive the replay/sequence
+		// window from the AUTHENTICATED sequence number, not the unauthenticated
+		// transmitted one. Only RRC legitimately differs (§4.2.4 zeroes it in the
+		// encrypted copy), so normalise RRC (bytes [6:8]) before comparing.
+		recovered := pt[len(pt)-16:]
+		transmitted := append([]byte{}, hdr...)
+		transmitted[6], transmitted[7] = 0, 0
+		if !hmac.Equal(recovered, transmitted) {
+			return nil, false, fmt.Errorf("gssapi: Wrap token header mismatch")
+		}
+		if err := ctx.recvWindow.check(binary.BigEndian.Uint64(recovered[8:16])); err != nil {
 			return nil, false, err
 		}
 		return pt[:len(pt)-16-ec], true, nil
