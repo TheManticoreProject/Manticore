@@ -89,7 +89,12 @@ type Reply struct {
 // 17), extracting the KDC's DH public value and server DH nonce from the
 // dhSignedData/KDCDHKeyInfo. It only supports the Diffie-Hellman (dhInfo)
 // variant.
-func ParseASRepPAData(paValue []byte) (*Reply, error) {
+//
+// opts controls verification of the KDC's CMS SignedData signature over the
+// KDCDHKeyInfo (RFC 4556 §3.2.4): when it supplies a trust anchor the signature
+// and certificate chain are verified and parsing fails closed on any mismatch;
+// a nil opts (or one with InsecureSkipSignatureCheck) skips that check.
+func ParseASRepPAData(paValue []byte, opts *VerifyOptions) (*Reply, error) {
 	// PA-PK-AS-REP ::= CHOICE { dhInfo [0] DHRepInfo, encKeyPack [1] ... }.
 	var outer asn1.RawValue
 	if _, err := asn1.Unmarshal(paValue, &outer); err != nil {
@@ -107,7 +112,7 @@ func ParseASRepPAData(paValue []byte) (*Reply, error) {
 		return nil, err
 	}
 
-	eContent, err := extractSignedDataEContent(dhSignedData)
+	eContent, err := verifySignedDataEContent(dhSignedData, opts)
 	if err != nil {
 		return nil, err
 	}

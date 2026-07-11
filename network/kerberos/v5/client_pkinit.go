@@ -2,6 +2,7 @@ package kerberos
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
 	"fmt"
 	"time"
 
@@ -33,6 +34,58 @@ func (c *KerberosClient) WithPKINIT(priv *rsa.PrivateKey, certDER []byte) *Kerbe
 func (c *KerberosClient) WithPKINITGroups(groups ...pkinit.DHGroup) *KerberosClient {
 	c.pkinitGroups = groups
 	return c
+}
+
+// WithPKINITKDCCert pins the KDC's PKINIT signing certificate as a trust anchor:
+// a subsequent GetTGT verifies the KDC's CMS SignedData signature on the AS-REP
+// and requires the signer certificate to be byte-identical to certDER (RFC 4556
+// §3.2.4). This covers a self-signed KDC certificate directly; to trust a CA
+// instead, use WithPKINITAnchors. By default (no anchor and no opt-out) the KDC
+// signature is not verified.
+func (c *KerberosClient) WithPKINITKDCCert(certDER []byte) *KerberosClient {
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		c.pkinitKDCCertErr = fmt.Errorf("kerberos: parse pinned KDC certificate: %w", err)
+		return c
+	}
+	c.pkinitAnchors = append(c.pkinitAnchors, cert)
+	return c
+}
+
+// WithPKINITAnchors adds trusted certificates (the issuing CA / root, or the
+// pinned KDC certificate itself) that the KDC's PKINIT signing certificate must
+// chain to. Supplying at least one anchor turns on verification of the KDC's CMS
+// SignedData signature on the AS-REP (RFC 4556 §3.2.4).
+func (c *KerberosClient) WithPKINITAnchors(anchors ...*x509.Certificate) *KerberosClient {
+	c.pkinitAnchors = append(c.pkinitAnchors, anchors...)
+	return c
+}
+
+// InsecureSkipPKINITKDCSignatureCheck disables verification of the KDC's CMS
+// SignedData signature on the AS-REP, for the anonymous / self-signed lab case
+// where no trust anchor can be pinned. It is insecure — it removes the RFC 4556
+// §3.2.4 protection against a substituted KDC DH public value — so call it only
+// knowingly.
+func (c *KerberosClient) InsecureSkipPKINITKDCSignatureCheck() *KerberosClient {
+	c.pkinitSkipKDCSigCheck = true
+	return c
+}
+
+// pkinitVerifyOptions builds the SignedData verification policy from the
+// configured anchors / opt-out. It returns nil when neither an anchor nor the
+// opt-out is configured, which leaves the KDC signature unverified (the legacy
+// default) while still gating the exchange on AS-REP decryption.
+func (c *KerberosClient) pkinitVerifyOptions() (*pkinit.VerifyOptions, error) {
+	if c.pkinitKDCCertErr != nil {
+		return nil, c.pkinitKDCCertErr
+	}
+	if len(c.pkinitAnchors) > 0 {
+		return &pkinit.VerifyOptions{Anchors: c.pkinitAnchors}, nil
+	}
+	if c.pkinitSkipKDCSigCheck {
+		return &pkinit.VerifyOptions{InsecureSkipSignatureCheck: true}, nil
+	}
+	return nil, nil
 }
 
 // PKINITReplyKey returns the AS reply key derived from the PKINIT Diffie-Hellman
@@ -154,7 +207,11 @@ func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, 
 		return fmt.Errorf("kerberos: PKINIT AS-REP has no PA-PK-AS-REP element")
 	}
 
-	reply, err := pkinit.ParseASRepPAData(paValue)
+	verifyOpts, err := c.pkinitVerifyOptions()
+	if err != nil {
+		return err
+	}
+	reply, err := pkinit.ParseASRepPAData(paValue, verifyOpts)
 	if err != nil {
 		return err
 	}

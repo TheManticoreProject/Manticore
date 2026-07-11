@@ -25,8 +25,14 @@ var (
 	oidMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	// oidSHA1 is the id-sha1 digest algorithm (RFC 3370).
 	oidSHA1 = asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
+	// oidSHA256 is the id-sha256 digest algorithm (RFC 5754 / NIST).
+	oidSHA256 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
 	// oidRSAEncryption is the rsaEncryption signature/key algorithm.
 	oidRSAEncryption = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	// oidSHA1WithRSA and oidSHA256WithRSA are the combined RSA signature
+	// algorithms a KDC may name in the SignerInfo signatureAlgorithm field.
+	oidSHA1WithRSA   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 5}
+	oidSHA256WithRSA = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
 )
 
 // pkAuthenticator is RFC 4556 PKAuthenticator.

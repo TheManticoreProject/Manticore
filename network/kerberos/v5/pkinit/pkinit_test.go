@@ -139,7 +139,7 @@ func TestFullExchangeRoundTrip(t *testing.T) {
 
 	replyPA := buildSyntheticASRep(t, kdcKP, serverNonce)
 
-	reply, err := ParseASRepPAData(replyPA)
+	reply, err := ParseASRepPAData(replyPA, nil)
 	if err != nil {
 		t.Fatalf("ParseASRepPAData: %v", err)
 	}
