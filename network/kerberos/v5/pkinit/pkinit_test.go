@@ -3,7 +3,10 @@ package pkinit
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/asn1"
+	"encoding/hex"
+	"hash"
 	"testing"
 	"time"
 )
@@ -62,6 +65,158 @@ func TestOctetString2KeyKATAndLength(t *testing.T) {
 	// A 16-byte request must be a strict prefix of the 32-byte one.
 	if !bytes.Equal(OctetString2Key(x, 16), got[:16]) {
 		t.Fatal("16-byte key is not a prefix of the 32-byte key")
+	}
+}
+
+// unhex parses a whitespace-separated hex string into bytes for the KAT vectors.
+func unhex(t *testing.T, s string) []byte {
+	t.Helper()
+	clean := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c != ' ' && c != '\n' && c != '\t' {
+			clean = append(clean, c)
+		}
+	}
+	b, err := hex.DecodeString(string(clean))
+	if err != nil {
+		t.Fatalf("bad hex vector: %v", err)
+	}
+	return b
+}
+
+// TestAgilityKDFRFC8636KAT reproduces the RFC 8636 §8 known-answer test vectors
+// for the algorithm-agility KDF, exercising the full OtherInfo construction plus
+// the SP800-56A concatenation KDF against the RFC's published wire outputs. The
+// common inputs (§8.1) are: Z = 256 zero octets, client "lha@SU.SE", server
+// "krbtgt/SU.SE@SU.SE" (both NT-PRINCIPAL, per the reference implementation),
+// as-REQ = 10 octets of 0xAA, pk-as-rep = 9 octets of 0xBB, reply-key enctype 18.
+func TestAgilityKDFRFC8636KAT(t *testing.T) {
+	z := make([]byte, 256) // §8.1: 256 zero octets
+	in := KDFInputs{
+		ClientRealm: "SU.SE",
+		ClientName:  PrincipalName{NameType: 1, NameString: []string{"lha"}},
+		ServerRealm: "SU.SE",
+		ServerName:  PrincipalName{NameType: 1, NameString: []string{"krbtgt", "SU.SE"}},
+		EType:       18,
+		ASReq:       bytes.Repeat([]byte{0xAA}, 10),
+		PKASRep:     bytes.Repeat([]byte{0xBB}, 9),
+	}
+
+	cases := []struct {
+		name    string
+		oid     asn1.ObjectIdentifier
+		newHash func() hash.Hash
+		keyLen  int
+		want    string
+	}{
+		{
+			name:    "sha1-enctype18", // RFC 8636 §8.2
+			oid:     oidPKINITKDFSHA1,
+			newHash: sha1.New,
+			keyLen:  32,
+			want:    "E6AB38C9 413E035B B079201E D0B6B73D 8D49A814 A737C04E E6649614 206F73AD",
+		},
+		{
+			name:    "sha256-enctype18", // RFC 8636 §8.3
+			oid:     oidPKINITKDFSHA256,
+			newHash: sha256.New,
+			keyLen:  32,
+			want:    "77EF4E48 C420AE3F EC75109D 7981697E ED5D295C 90C62564 F7BFD101 FA9BC1D5",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			otherInfo, err := buildKDFOtherInfo(tc.oid, in)
+			if err != nil {
+				t.Fatalf("buildKDFOtherInfo: %v", err)
+			}
+			got := AgilityKDF(tc.newHash, z, otherInfo, tc.keyLen)
+			want := unhex(t, tc.want)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("KDF output mismatch\n got: %X\nwant: %X\nOtherInfo: %X", got, want, otherInfo)
+			}
+			// The hash constructor must also be the one kdfHash selects for the OID.
+			sel, ok := kdfHash(tc.oid)
+			if !ok {
+				t.Fatalf("kdfHash(%v) not found", tc.oid)
+			}
+			if !bytes.Equal(AgilityKDF(sel, z, otherInfo, tc.keyLen), want) {
+				t.Fatal("kdfHash-selected hash produced a different key")
+			}
+		})
+	}
+}
+
+// TestAgilityKDFDiffersFromOctetString2Key confirms the RFC 8636 SHA-1 agility
+// KDF is a distinct construction from the legacy RFC 4556 SHA-1 octetstring2key:
+// the same inputs must not collide (different counter width and byte order, and
+// the OtherInfo mixed in).
+func TestAgilityKDFDiffersFromOctetString2Key(t *testing.T) {
+	z := bytes.Repeat([]byte{0x11}, 32)
+	otherInfo := []byte{0x30, 0x00}
+	agility := AgilityKDF(sha1.New, z, otherInfo, 16)
+	legacy := OctetString2Key(z, 16)
+	if bytes.Equal(agility, legacy) {
+		t.Fatal("agility SHA-1 KDF collided with octetstring2key")
+	}
+}
+
+// TestKDFSelectionFromReply checks that ParseASRepPAData records the KDC-selected
+// kdfID (sha256 / sha384) from the DHRepInfo.kdf field and leaves KDFID nil when
+// the field is absent (the legacy octetstring2key fallback trigger).
+func TestKDFSelectionFromReply(t *testing.T) {
+	group := MODPGroup2()
+	kdcKP, err := GenerateDHKeyPair(group)
+	if err != nil {
+		t.Fatalf("GenerateDHKeyPair: %v", err)
+	}
+	serverNonce := bytes.Repeat([]byte{0x5A}, DHNonceLen)
+
+	cases := []struct {
+		name string
+		kdf  asn1.ObjectIdentifier // nil => no kdf field
+		want asn1.ObjectIdentifier
+	}{
+		{"absent", nil, nil},
+		{"sha256", oidPKINITKDFSHA256, oidPKINITKDFSHA256},
+		{"sha384", oidPKINITKDFSHA384, oidPKINITKDFSHA384},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pa := buildSyntheticASRepWithKDF(t, kdcKP, serverNonce, tc.kdf)
+			reply, err := ParseASRepPAData(pa, nil)
+			if err != nil {
+				t.Fatalf("ParseASRepPAData: %v", err)
+			}
+			if tc.want == nil {
+				if len(reply.KDFID) != 0 {
+					t.Fatalf("KDFID = %v, want nil", reply.KDFID)
+				}
+				return
+			}
+			if !reply.KDFID.Equal(tc.want) {
+				t.Fatalf("KDFID = %v, want %v", reply.KDFID, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeriveReplyKeyAgilityRejectsUnknownKDF confirms an unsupported/empty kdfID
+// is refused rather than silently mis-derived.
+func TestDeriveReplyKeyAgilityRejectsUnknownKDF(t *testing.T) {
+	group := MODPGroup2()
+	kp, err := GenerateDHKeyPair(group)
+	if err != nil {
+		t.Fatalf("GenerateDHKeyPair: %v", err)
+	}
+	r := &Request{KeyPair: kp, ClientDHNonce: bytes.Repeat([]byte{0x1}, DHNonceLen)}
+	reply := &Reply{KDCPublicValue: kp.Y, KDFID: asn1.ObjectIdentifier{1, 2, 3, 4}}
+	if _, err := r.DeriveReplyKeyAgility(reply, 32, KDFInputs{}); err == nil {
+		t.Fatal("expected error for unsupported kdfID")
+	}
+	reply.KDFID = nil
+	if _, err := r.DeriveReplyKeyAgility(reply, 32, KDFInputs{}); err == nil {
+		t.Fatal("expected error for empty kdfID")
 	}
 }
 
@@ -172,6 +327,12 @@ func TestFullExchangeRoundTrip(t *testing.T) {
 // a Windows KDC emits: the dhInfo [0] tag replaces the DHRepInfo SEQUENCE, with
 // dhSignedData [0] IMPLICIT OCTET STRING and serverDHNonce [1] IMPLICIT.
 func buildSyntheticASRep(t *testing.T, kdcKP *DHKeyPair, serverNonce []byte) []byte {
+	return buildSyntheticASRepWithKDF(t, kdcKP, serverNonce, nil)
+}
+
+// buildSyntheticASRepWithKDF is buildSyntheticASRep with an optional RFC 8636
+// kdf [2] KDFAlgorithmId element appended to the DHRepInfo (nil kdfID omits it).
+func buildSyntheticASRepWithKDF(t *testing.T, kdcKP *DHKeyPair, serverNonce []byte, kdfID asn1.ObjectIdentifier) []byte {
 	t.Helper()
 	yBytes, err := asn1.Marshal(kdcKP.Y)
 	if err != nil {
@@ -204,6 +365,13 @@ func buildSyntheticASRep(t *testing.T, kdcKP *DHKeyPair, serverNonce []byte) []b
 	dhSigned := mustMarshal(t, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: false, Bytes: ciDER})
 	srvNonce := mustMarshal(t, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: false, Bytes: serverNonce})
 	dhRepContent := append(dhSigned, srvNonce...)
+
+	// kdf [2] EXPLICIT KDFAlgorithmId { kdf-id [0] OID }, when negotiated.
+	if len(kdfID) > 0 {
+		algDER := mustMarshal(t, kdfAlgorithmID{KDFID: kdfID})
+		kdfElem := mustMarshal(t, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 2, IsCompound: true, Bytes: algDER})
+		dhRepContent = append(dhRepContent, kdfElem...)
+	}
 
 	// dhInfo [0] wrapping the DHRepInfo fields directly.
 	return mustMarshal(t, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: dhRepContent})

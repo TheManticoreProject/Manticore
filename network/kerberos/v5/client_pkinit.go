@@ -137,6 +137,8 @@ func (c *KerberosClient) doPKINITASReq(group pkinit.DHGroup) error {
 			Till:  c.now().Add(24 * time.Hour),
 			Nonce: bodyNonce,
 			EType: []int{
+				messages.ETypeAES256CTSHMACSHA384,
+				messages.ETypeAES128CTSHMACSHA256,
 				messages.ETypeAES256CTSHMACSHA196,
 				messages.ETypeAES128CTSHMACSHA196,
 				messages.ETypeRC4HMAC,
@@ -182,14 +184,16 @@ func (c *KerberosClient) doPKINITASReq(group pkinit.DHGroup) error {
 			return fmt.Errorf("kerberos: PKINIT KDC error %d: %s", krbErr.ErrorCode, krbErr.EText)
 		}
 
-		return c.processPKINITASRep(resp, pkReq, bodyNonce)
+		return c.processPKINITASRep(resp, pkReq, bodyNonce, reqBytes)
 	}
 	return fmt.Errorf("kerberos: PKINIT: clock-skew retry exhausted")
 }
 
 // processPKINITASRep parses the PKINIT AS-REP, derives the DH reply key, decrypts
-// the enc-part and stores the resulting TGT on the client.
-func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, bodyNonce int) error {
+// the enc-part and stores the resulting TGT on the client. reqBytes is the DER of
+// the AS-REQ that was sent, bound into the RFC 8636 KDF OtherInfo when the KDC
+// selects an algorithm-agility KDF.
+func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, bodyNonce int, reqBytes []byte) error {
 	var asRep messages.ASRep
 	if _, err := asRep.Unmarshal(resp); err != nil {
 		return fmt.Errorf("kerberos: parse PKINIT AS-REP: %w", err)
@@ -222,11 +226,34 @@ func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, 
 		return fmt.Errorf("kerberos: PKINIT AS-REP unsupported reply-key etype %d", etype)
 	}
 
-	// RFC 4556 leaves the nonce mixing in octetstring2key ambiguous for a
-	// non-reused exchange; try each candidate reply key until one decrypts.
-	candidates, err := pkReq.ReplyKeyCandidates(reply, keyLen)
-	if err != nil {
-		return err
+	// Select the key-derivation function. When the KDC returned an RFC 8636
+	// kdfID it committed to an algorithm-agility KDF (required for AES-SHA2
+	// etypes 19/20 and used for 17/18/23 when negotiated); derive the single
+	// reply key from that KDF's OtherInfo. Otherwise (no kdfID, the default on
+	// KDCs that do not implement RFC 8636, e.g. current Windows) fall back to the
+	// RFC 4556 SHA-1 octetstring2key, whose nonce mixing is ambiguous for a
+	// non-reused exchange, so try each candidate until one decrypts.
+	var candidates [][]byte
+	if len(reply.KDFID) > 0 {
+		key, derr := pkReq.DeriveReplyKeyAgility(reply, keyLen, pkinit.KDFInputs{
+			ClientRealm: c.realm,
+			ClientName:  pkinit.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}},
+			ServerRealm: c.realm,
+			ServerName:  pkinit.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}},
+			EType:       etype,
+			ASReq:       reqBytes,
+			PKASRep:     paValue,
+		})
+		if derr != nil {
+			return derr
+		}
+		candidates = [][]byte{key}
+	} else {
+		var derr error
+		candidates, derr = pkReq.ReplyKeyCandidates(reply, keyLen)
+		if derr != nil {
+			return derr
+		}
 	}
 	var lastErr error
 	for _, key := range candidates {
