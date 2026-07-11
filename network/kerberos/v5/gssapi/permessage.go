@@ -43,8 +43,10 @@ func (ctx *SecContext) baseKey() ([]byte, int) {
 	return ctx.SessionKey, ctx.SessionEType
 }
 
-// initiatorFlags is the Flags byte for tokens this (initiator) context sends.
-func (ctx *SecContext) initiatorFlags(sealed bool) byte {
+// sendFlags is the Flags byte for tokens this context sends. It sets
+// SentByAcceptor when the context is the acceptor side, so per-message tokens
+// are tagged with the direction the peer expects (RFC 4121 §4.2.2).
+func (ctx *SecContext) sendFlags(sealed bool) byte {
 	var f byte
 	if ctx.acceptorSubkey {
 		f |= flagAcceptorSubkey
@@ -52,7 +54,55 @@ func (ctx *SecContext) initiatorFlags(sealed bool) byte {
 	if sealed {
 		f |= flagSealed
 	}
-	return f // SentByAcceptor stays 0 (we are the initiator)
+	if ctx.isAcceptor {
+		f |= flagSentByAcceptor
+	}
+	return f
+}
+
+// The four key usages of RFC 4121 §2 are direction-scoped: the initiator signs /
+// seals with the initiator usages and the acceptor with the acceptor usages, and
+// each side verifies its peer's tokens with the peer's usages. These helpers pick
+// the right usage for the context's own role so the same per-message code drives
+// both an initiator and an acceptor SecContext.
+func (ctx *SecContext) sendSignUsage() int {
+	if ctx.isAcceptor {
+		return kgUsageAcceptorSign
+	}
+	return kgUsageInitiatorSign
+}
+
+func (ctx *SecContext) sendSealUsage() int {
+	if ctx.isAcceptor {
+		return kgUsageAcceptorSeal
+	}
+	return kgUsageInitiatorSeal
+}
+
+func (ctx *SecContext) recvSignUsage() int {
+	if ctx.isAcceptor {
+		return kgUsageInitiatorSign
+	}
+	return kgUsageAcceptorSign
+}
+
+func (ctx *SecContext) recvSealUsage() int {
+	if ctx.isAcceptor {
+		return kgUsageInitiatorSeal
+	}
+	return kgUsageAcceptorSeal
+}
+
+// checkRecvDirection rejects a per-message token whose SentByAcceptor flag does
+// not match the peer's role: an initiator only accepts acceptor-sent tokens and
+// an acceptor only accepts initiator-sent ones. This prevents a context's own
+// tokens from being reflected back at it.
+func (ctx *SecContext) checkRecvDirection(flags byte) error {
+	sentByAcceptor := flags&flagSentByAcceptor != 0
+	if sentByAcceptor == ctx.isAcceptor {
+		return fmt.Errorf("gssapi: per-message token has the wrong direction (SentByAcceptor=%v)", sentByAcceptor)
+	}
+	return nil
 }
 
 func (ctx *SecContext) nextSendSeq() uint64 {
@@ -318,14 +368,14 @@ func (ctx *SecContext) sealAES(data []byte, seq uint64) (sealed, token []byte, e
 
 	// The header used inside the encrypted plaintext carries EC with RRC=0
 	// (RFC 4121 §4.2.4: the checksum/encryption is computed with RRC zeroed).
-	hdr := wrapHeader(ctx.initiatorFlags(true), seq)
+	hdr := wrapHeader(ctx.sendFlags(true), seq)
 	binary.BigEndian.PutUint16(hdr[4:6], uint16(ec))
 
 	plain := make([]byte, 0, len(data)+ec+16)
 	plain = append(plain, data...)
 	plain = append(plain, make([]byte, ec)...)
 	plain = append(plain, hdr...)
-	cipher, err := kerbcrypto.Encrypt(etype, key, kgUsageInitiatorSeal, plain)
+	cipher, err := kerbcrypto.Encrypt(etype, key, ctx.sendSealUsage(), plain)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -355,8 +405,8 @@ func (ctx *SecContext) unsealAES(sealed, token []byte) ([]byte, error) {
 	if token[0] != tokIDWrap[0] || token[1] != tokIDWrap[1] {
 		return nil, fmt.Errorf("gssapi: not a Wrap token (tok_id %02x %02x)", token[0], token[1])
 	}
-	if token[2]&flagSentByAcceptor == 0 {
-		return nil, fmt.Errorf("gssapi: Wrap token not marked as sent by acceptor")
+	if err := ctx.checkRecvDirection(token[2]); err != nil {
+		return nil, err
 	}
 	if token[2]&flagSealed == 0 {
 		return nil, fmt.Errorf("gssapi: Wrap token is not sealed")
@@ -369,7 +419,7 @@ func (ctx *SecContext) unsealAES(sealed, token []byte) ([]byte, error) {
 	// the in-place sealed stub) and undo the right-rotation.
 	rotated := append(append([]byte{}, token[16:]...), sealed...)
 	cipher := rotateLeft(rotated, rrc+ec)
-	plain, err := kerbcrypto.Decrypt(etype, key, kgUsageAcceptorSeal, cipher)
+	plain, err := kerbcrypto.Decrypt(etype, key, ctx.recvSealUsage(), cipher)
 	if err != nil {
 		return nil, fmt.Errorf("gssapi: decrypt AES Wrap token: %w", err)
 	}
@@ -396,8 +446,8 @@ func (ctx *SecContext) MakeMIC(data []byte) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("gssapi: no checksum for etype %d", etype)
 	}
-	hdr := micHeader(ctx.initiatorFlags(false), ctx.nextSendSeq())
-	sum, err := kerbcrypto.GetChecksum(ct, key, kgUsageInitiatorSign, append(append([]byte{}, data...), hdr...))
+	hdr := micHeader(ctx.sendFlags(false), ctx.nextSendSeq())
+	sum, err := kerbcrypto.GetChecksum(ct, key, ctx.sendSignUsage(), append(append([]byte{}, data...), hdr...))
 	if err != nil {
 		return nil, err
 	}
@@ -415,8 +465,8 @@ func (ctx *SecContext) VerifyMIC(data, token []byte) error {
 	if token[0] != tokIDMIC[0] || token[1] != tokIDMIC[1] {
 		return fmt.Errorf("gssapi: not a MIC token")
 	}
-	if token[2]&flagSentByAcceptor == 0 {
-		return fmt.Errorf("gssapi: MIC token not marked as sent by acceptor")
+	if err := ctx.checkRecvDirection(token[2]); err != nil {
+		return err
 	}
 	key, etype := ctx.baseKey()
 	ct, ok := kerbcrypto.ChecksumTypeForEType(etype)
@@ -425,7 +475,7 @@ func (ctx *SecContext) VerifyMIC(data, token []byte) error {
 	}
 	hdr := token[:16]
 	got := token[16:]
-	want, err := kerbcrypto.GetChecksum(ct, key, kgUsageAcceptorSign, append(append([]byte{}, data...), hdr...))
+	want, err := kerbcrypto.GetChecksum(ct, key, ctx.recvSignUsage(), append(append([]byte{}, data...), hdr...))
 	if err != nil {
 		return err
 	}
@@ -441,11 +491,11 @@ func (ctx *SecContext) VerifyMIC(data, token []byte) error {
 // otherwise integrity only. EC and RRC are 0 (no filler, no rotation).
 func (ctx *SecContext) Wrap(data []byte, seal bool) ([]byte, error) {
 	key, etype := ctx.baseKey()
-	hdr := wrapHeader(ctx.initiatorFlags(seal), ctx.nextSendSeq())
+	hdr := wrapHeader(ctx.sendFlags(seal), ctx.nextSendSeq())
 
 	if seal {
 		pt := append(append([]byte{}, data...), hdr...)
-		ct, err := kerbcrypto.Encrypt(etype, key, kgUsageInitiatorSeal, pt)
+		ct, err := kerbcrypto.Encrypt(etype, key, ctx.sendSealUsage(), pt)
 		if err != nil {
 			return nil, err
 		}
@@ -458,7 +508,7 @@ func (ctx *SecContext) Wrap(data []byte, seal bool) ([]byte, error) {
 	}
 	// RFC 4121 §4.2.4: the checksum is computed over data | header with EC and
 	// RRC zeroed. hdr already has EC=RRC=0 here.
-	sum, err := kerbcrypto.GetChecksum(ct, key, kgUsageInitiatorSeal, append(append([]byte{}, data...), hdr...))
+	sum, err := kerbcrypto.GetChecksum(ct, key, ctx.sendSealUsage(), append(append([]byte{}, data...), hdr...))
 	if err != nil {
 		return nil, err
 	}
@@ -482,8 +532,8 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 		return nil, false, fmt.Errorf("gssapi: not a Wrap token")
 	}
 	flags := token[2]
-	if flags&flagSentByAcceptor == 0 {
-		return nil, false, fmt.Errorf("gssapi: Wrap token not marked as sent by acceptor")
+	if err := ctx.checkRecvDirection(flags); err != nil {
+		return nil, false, err
 	}
 	sealed = flags&flagSealed != 0
 	ec := int(binary.BigEndian.Uint16(token[4:6]))
@@ -494,7 +544,7 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 	key, etype := ctx.baseKey()
 
 	if sealed {
-		pt, err := kerbcrypto.Decrypt(etype, key, kgUsageAcceptorSeal, body)
+		pt, err := kerbcrypto.Decrypt(etype, key, ctx.recvSealUsage(), body)
 		if err != nil {
 			return nil, false, fmt.Errorf("gssapi: decrypt Wrap token: %w", err)
 		}
@@ -526,7 +576,7 @@ func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error
 	// The checksum is over data | header with EC and RRC zeroed.
 	zhdr := append([]byte{}, hdr...)
 	zhdr[4], zhdr[5], zhdr[6], zhdr[7] = 0, 0, 0, 0
-	want, err := kerbcrypto.GetChecksum(ct, key, kgUsageAcceptorSeal, append(append([]byte{}, payload...), zhdr...))
+	want, err := kerbcrypto.GetChecksum(ct, key, ctx.recvSealUsage(), append(append([]byte{}, payload...), zhdr...))
 	if err != nil {
 		return nil, false, err
 	}

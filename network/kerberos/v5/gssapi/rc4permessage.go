@@ -71,12 +71,22 @@ func rc4MICSeqBytes(seq uint64, initiator bool) []byte {
 	return b
 }
 
+// recvDirByte is the SND_SEQ direction indicator the peer sets on tokens this
+// context receives (RFC 4757): 0xff when the peer is the acceptor (this context
+// is the initiator) and 0x00 when the peer is the initiator.
+func (ctx *SecContext) recvDirByte() byte {
+	if ctx.isAcceptor {
+		return 0x00
+	}
+	return 0xff
+}
+
 // makeMICRC4 produces an RC4-HMAC GSS MIC token over data with the given sequence
-// number, as the initiator (RFC 4757 §7.3).
+// number, in the direction of this context's role (RFC 4757 §7.3).
 func (ctx *SecContext) makeMICRC4(data []byte, seq uint64) []byte {
 	key, _ := ctx.baseKey()
 	hdr8 := []byte{0x01, 0x01, 0x11, 0x00, 0xff, 0xff, 0xff, 0xff}
-	seqBytes := rc4MICSeqBytes(seq, true)
+	seqBytes := rc4MICSeqBytes(seq, !ctx.isAcceptor)
 	cksum := rc4SgnCksum(key, hdr8, data)
 	encSeq := rc4Encrypt(rc4SeqKey(key, cksum), seqBytes)
 
@@ -112,8 +122,8 @@ func (ctx *SecContext) verifyMICRC4(data, token []byte) error {
 	}
 	// Decrypt SND_SEQ and confirm the acceptor direction indicator.
 	seq := rc4Encrypt(rc4SeqKey(key, got), encSeq)
-	if seq[4] != 0xff {
-		return fmt.Errorf("gssapi: RC4 MIC not marked as sent by acceptor")
+	if seq[4] != ctx.recvDirByte() {
+		return fmt.Errorf("gssapi: RC4 MIC has the wrong direction indicator")
 	}
 	// The token is authentic and acceptor-directed; enforce replay/sequence.
 	return ctx.recvWindow.check(uint64(binary.BigEndian.Uint32(seq[:4])))
@@ -236,7 +246,7 @@ func (ctx *SecContext) sealRC4WithConfounder(data []byte, seq uint64, confounder
 	payload = append(payload, pad...)
 
 	cksum := rc4WrapSgnCksum(key, hdr8, confounder, payload)
-	encSeq := rc4Encrypt(rc4SeqKey(key, cksum), rc4MICSeqBytes(seq, true))
+	encSeq := rc4Encrypt(rc4SeqKey(key, cksum), rc4MICSeqBytes(seq, !ctx.isAcceptor))
 
 	kcrypt := rc4WrapCryptKey(key, seq)
 	plain := make([]byte, 0, 8+len(payload))
@@ -276,8 +286,8 @@ func (ctx *SecContext) unsealRC4(sealed, token []byte) ([]byte, error) {
 	key, _ := ctx.baseKey()
 	// Recover SND_SEQ; the acceptor direction indicator must be 0xff.
 	seqBytes := rc4Encrypt(rc4SeqKey(key, cksum), encSeq)
-	if seqBytes[4] != 0xff {
-		return nil, fmt.Errorf("gssapi: RC4 Wrap not marked as sent by acceptor")
+	if seqBytes[4] != ctx.recvDirByte() {
+		return nil, fmt.Errorf("gssapi: RC4 Wrap has the wrong direction indicator")
 	}
 	seq := uint64(binary.BigEndian.Uint32(seqBytes[:4]))
 

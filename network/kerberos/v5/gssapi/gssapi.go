@@ -145,6 +145,23 @@ type SecContext struct {
 	// acceptorSeq is the sequence number the acceptor placed in its AP-REP. The
 	// DCE-style third-leg AP-REP must echo it (krb5_rd_rep_dce checks it).
 	acceptorSeq int
+	// isAcceptor records that this context is the acceptor (service) side rather
+	// than the initiator. It flips the per-message direction: the acceptor signs /
+	// seals with the acceptor key usages and sets the SentByAcceptor flag, and
+	// verifies the initiator's tokens with the initiator usages (RFC 4121 §2).
+	isAcceptor bool
+	// clientName / clientRealm identify the authenticated client, taken from the
+	// AP-REQ authenticator (and cross-checked against the ticket) on the acceptor
+	// side. AcceptSecContext populates them; ClientPrincipal exposes them.
+	clientName  messages.PrincipalName
+	clientRealm string
+	// authenticator is the decrypted AP-REQ authenticator the acceptor validated,
+	// retained so callers can inspect the 0x8003 checksum (e.g. ExtractDelegatedCred
+	// for an unconstrained-delegation KRB-CRED).
+	authenticator *messages.Authenticator
+	// pacBytes is the raw AD-WIN2K-PAC extracted from the decrypted ticket on the
+	// acceptor side, or nil when the ticket carried no PAC. PAC() parses it.
+	pacBytes []byte
 	// recvWindow enforces the receive-side replay / sequencing check on incoming
 	// per-message tokens (RFC 4121 §4.2.6 / RFC 2743 §1.2.1.1). It seeds itself
 	// from the first authenticated token; a zero-value SecContext (no flags set)
