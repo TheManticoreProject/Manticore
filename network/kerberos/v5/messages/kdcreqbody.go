@@ -44,19 +44,26 @@ func marshalKDCReqBody(b KDCReqBody) kdcReqBodyMarshal {
 	if len(b.CName.NameString) > 0 {
 		cname = MarshalPrincipalName(b.CName)
 	}
-	return kdcReqBodyMarshal{
+	m := kdcReqBodyMarshal{
 		KDCOptions:  b.KDCOptions,
 		CName:       cname,
 		Realm:       realmExplicit(2, b.Realm),
 		SName:       MarshalPrincipalName(b.SName),
-		From:        b.From,
-		Till:        b.Till,
-		RTime:       b.RTime,
+		Till:        normalizeTime(b.Till),
 		Nonce:       b.Nonce,
 		EType:       b.EType,
 		Addresses:   b.Addresses,
 		EncAuthData: b.EncAuthData,
 	}
+	// From and RTime are optional: only normalize (and thus emit) them when set,
+	// so a zero value stays the struct zero and the optional tag omits the field.
+	if !b.From.IsZero() {
+		m.From = normalizeTime(b.From)
+	}
+	if !b.RTime.IsZero() {
+		m.RTime = normalizeTime(b.RTime)
+	}
+	return m
 }
 
 // encodeKDCReqBodyForTGS marshals a KDC-REQ-BODY and, when the body carries

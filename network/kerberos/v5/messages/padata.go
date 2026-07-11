@@ -17,7 +17,11 @@ type PAEncTSEnc struct {
 
 // Marshal encodes PAEncTSEnc as a plain ASN.1 SEQUENCE (no APPLICATION wrapper).
 func (p *PAEncTSEnc) Marshal() ([]byte, error) {
-	return asn1.Marshal(*p)
+	// Normalize the timestamp to UTC in a local copy so the receiver's field is
+	// left untouched while the wire form still carries the mandatory "Z" zone.
+	m := *p
+	m.PATimestamp = normalizeTime(p.PATimestamp)
+	return asn1.Marshal(m)
 }
 
 // Unmarshal decodes PAEncTSEnc from a plain ASN.1 SEQUENCE.
