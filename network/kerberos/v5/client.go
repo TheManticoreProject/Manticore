@@ -3,6 +3,7 @@ package kerberos
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
@@ -95,6 +96,16 @@ type KerberosClient struct {
 	pkinitGroups     []pkinit.DHGroup
 	pkinitReplyKey   []byte
 	pkinitReplyEType int
+	// pkinitAnchors are the trust anchors the KDC's PKINIT signing certificate
+	// must chain to (or be pinned by); when set, the KDC's CMS SignedData
+	// signature on the AS-REP is verified (RFC 4556 §3.2.4). Configured via
+	// WithPKINITKDCCert / WithPKINITAnchors. pkinitSkipKDCSigCheck is the
+	// explicit insecure opt-out for the anonymous / self-signed lab case.
+	pkinitAnchors         []*x509.Certificate
+	pkinitSkipKDCSigCheck bool
+	// pkinitKDCCertErr defers a WithPKINITKDCCert parse failure to GetTGT so the
+	// builder-style option methods can keep their chainable signature.
+	pkinitKDCCertErr error
 }
 
 // preloadedServiceTicket is a service ticket the client will hand back from
