@@ -159,6 +159,13 @@ func (c *KerberosClient) tgsExchange(
 	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int,
 ) (*messages.TGSRep, *messages.EncTGSRepPart, *messages.KRBError, error) {
 
+	// When FAST (RFC 6113 Kerberos armoring) is enabled, armor the exchange with
+	// the TGT being presented at this hop (see fast_tgs.go). The armor is the TGT
+	// itself; no separate armor AP-REQ is used for the TGS case.
+	if c.fast != nil {
+		return c.tgsExchangeFAST(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
+	}
+
 	apReqBytes, err := c.buildAPReqWith(tgt, tgtRaw, sessionKey, sessionEType)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
