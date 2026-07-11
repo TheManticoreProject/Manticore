@@ -172,7 +172,7 @@ type reader struct {
 }
 
 func (r *reader) need(n int) error {
-	if r.pos+n > len(r.b) {
+	if n < 0 || r.pos+n > len(r.b) {
 		return fmt.Errorf("ccache: truncated: need %d bytes at offset %d of %d", n, r.pos, len(r.b))
 	}
 	return nil
