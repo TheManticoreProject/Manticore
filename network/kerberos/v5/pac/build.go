@@ -20,9 +20,10 @@ import (
 // ([MS-RPCE] 2.2.6): a top-level pointer to the structure is marshaled under NDR
 // (little-endian) and wrapped in a CommonTypeHeader + PrivateHeaderForConstructed
 // Type, padded to an 8-octet boundary. Only the logon-info and client-info
-// buffers are emitted; diamond/sapphire forging (which re-uses a legitimately
-// issued PAC and therefore needs full NDR decode of an existing buffer) is out of
-// scope here and tracked separately.
+// buffers are emitted here. Diamond/sapphire forging re-uses a legitimately
+// issued PAC and round-trips an existing buffer through
+// UnmarshalKerbValidationInfo → edit → MarshalKerbValidationInfo (see the parent
+// package's diamond_sapphire.go), then re-signs with PAC.Sign.
 
 // filetimeEpochDelta is the number of 100-nanosecond intervals between the
 // Windows FILETIME epoch (1601-01-01) and the Unix epoch (1970-01-01).
