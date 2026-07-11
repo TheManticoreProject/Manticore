@@ -2,6 +2,7 @@ package kerberos
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -95,6 +96,131 @@ func TestExportTGTCCache(t *testing.T) {
 	}
 	if !bytes.Equal(cr.Ticket, c.tgtTicketRaw) {
 		t.Errorf("ticket bytes not preserved")
+	}
+}
+
+// cachedServiceTicketClient returns a client with a single cifs/host service
+// ticket cached (as GetTGS would after a successful TGS-REP), so the
+// service-ticket export path can be exercised without a live KDC.
+func cachedServiceTicketClient(t *testing.T) (*KerberosClient, messages.EncTGSRepPart, []byte) {
+	t.Helper()
+	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
+	tkt := messages.Ticket{
+		TktVno:  messages.KerberosV5,
+		Realm:   "CORP.LOCAL",
+		SName:   sname,
+		EncPart: messages.EncryptedData{EType: messages.ETypeAES256CTSHMACSHA196, Cipher: bytes.Repeat([]byte{0xCD}, 32)},
+	}
+	raw, err := tkt.Marshal()
+	if err != nil {
+		t.Fatalf("Ticket.Marshal: %v", err)
+	}
+	enc := messages.EncTGSRepPart{
+		Key:       messages.EncryptionKey{KeyType: messages.ETypeAES256CTSHMACSHA196, KeyValue: bytes.Repeat([]byte{0x22}, 32)},
+		Flags:     messages.NewKerberosFlags(messages.TicketFlagForwardable, messages.TicketFlagRenewable),
+		AuthTime:  time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC),
+		StartTime: time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC),
+		EndTime:   time.Date(2026, 7, 9, 20, 0, 0, 0, time.UTC),
+		RenewTill: time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC),
+		SRealm:    "CORP.LOCAL",
+		SName:     sname,
+	}
+	c := NewClient("alice", "corp.local", "10.0.0.1").WithPassword("x")
+	c.cacheServiceTicket(raw, enc)
+	return c, enc, raw
+}
+
+func TestExportServiceTicketKirbi(t *testing.T) {
+	c, enc, raw := cachedServiceTicketClient(t)
+	blob, err := c.ExportServiceTicketKirbi("cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("ExportServiceTicketKirbi: %v", err)
+	}
+	st, err := LoadServiceTicketFromKirbiBytes(blob, "cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("LoadServiceTicketFromKirbiBytes: %v", err)
+	}
+	if !bytes.Equal(st.TicketRaw, raw) {
+		t.Errorf("service ticket raw bytes not preserved")
+	}
+	if !bytes.Equal(st.SessionKey, enc.Key.KeyValue) {
+		t.Errorf("session key mismatch")
+	}
+	if st.SessionEType != enc.Key.KeyType {
+		t.Errorf("session etype: got %d, want %d", st.SessionEType, enc.Key.KeyType)
+	}
+	if st.SName.NameString[0] != "cifs" || st.SRealm != "CORP.LOCAL" {
+		t.Errorf("sname/srealm wrong: %v %q", st.SName.NameString, st.SRealm)
+	}
+	if st.Client.NameString[0] != "alice" || st.CRealm != "CORP.LOCAL" {
+		t.Errorf("client principal wrong: %v %q", st.Client.NameString, st.CRealm)
+	}
+}
+
+func TestExportServiceTicketCCache(t *testing.T) {
+	c, enc, raw := cachedServiceTicketClient(t)
+	blob, err := c.ExportServiceTicketCCache("cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("ExportServiceTicketCCache: %v", err)
+	}
+	st, err := LoadServiceTicketFromCCacheBytes(blob, "cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("LoadServiceTicketFromCCacheBytes: %v", err)
+	}
+	if !bytes.Equal(st.TicketRaw, raw) {
+		t.Errorf("service ticket raw bytes not preserved")
+	}
+	if !bytes.Equal(st.SessionKey, enc.Key.KeyValue) {
+		t.Errorf("session key mismatch")
+	}
+	if st.SName.NameString[1] != "host.corp.local" || st.SRealm != "CORP.LOCAL" {
+		t.Errorf("sname/srealm wrong: %v %q", st.SName.NameString, st.SRealm)
+	}
+	// The ccache credential carries the times/flags; confirm they survive.
+	cc, err := ccache.Unmarshal(blob)
+	if err != nil {
+		t.Fatalf("ccache.Unmarshal: %v", err)
+	}
+	cr := cc.Credentials[0]
+	if uint32(enc.EndTime.Unix()) != cr.EndTime || uint32(enc.RenewTill.Unix()) != cr.RenewTill {
+		t.Errorf("times not preserved: end %d renew %d", cr.EndTime, cr.RenewTill)
+	}
+	if cr.TicketFlags != flagsToUint32(enc.Flags) {
+		t.Errorf("flags not preserved: %08x vs %08x", cr.TicketFlags, flagsToUint32(enc.Flags))
+	}
+}
+
+func TestExportServiceTicketToFile(t *testing.T) {
+	c, _, raw := cachedServiceTicketClient(t)
+	dir := t.TempDir()
+	kpath := filepath.Join(dir, "svc.kirbi")
+	cpath := filepath.Join(dir, "svc.ccache")
+	if err := c.ExportServiceTicketKirbiToFile("cifs/host.corp.local", kpath); err != nil {
+		t.Fatalf("ExportServiceTicketKirbiToFile: %v", err)
+	}
+	if err := c.ExportServiceTicketCCacheToFile("cifs/host.corp.local", cpath); err != nil {
+		t.Fatalf("ExportServiceTicketCCacheToFile: %v", err)
+	}
+	kst, err := LoadServiceTicketFromKirbiFile(kpath, "cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("LoadServiceTicketFromKirbiFile: %v", err)
+	}
+	cst, err := LoadServiceTicketFromCCacheFile(cpath, "cifs/host.corp.local")
+	if err != nil {
+		t.Fatalf("LoadServiceTicketFromCCacheFile: %v", err)
+	}
+	if !bytes.Equal(kst.TicketRaw, raw) || !bytes.Equal(cst.TicketRaw, raw) {
+		t.Errorf("ticket bytes not preserved through file round-trip")
+	}
+}
+
+func TestExportServiceTicketRequiresCached(t *testing.T) {
+	c := NewClient("alice", "corp.local", "10.0.0.1").WithPassword("x")
+	if _, err := c.ExportServiceTicketKirbi("cifs/host.corp.local"); err == nil {
+		t.Error("expected error exporting an uncached service ticket (kirbi)")
+	}
+	if _, err := c.ExportServiceTicketCCache("cifs/host.corp.local"); err == nil {
+		t.Error("expected error exporting an uncached service ticket (ccache)")
 	}
 }
 
