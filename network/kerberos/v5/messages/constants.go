@@ -59,6 +59,9 @@ const (
 	TicketFlagForwarded   = iana.TicketFlagForwarded
 	TicketFlagProxiable   = iana.TicketFlagProxiable
 	TicketFlagProxy       = iana.TicketFlagProxy
+	TicketFlagMayPostdate = iana.TicketFlagMayPostdate
+	TicketFlagPostdated   = iana.TicketFlagPostdated
+	TicketFlagInvalid     = iana.TicketFlagInvalid
 	TicketFlagPreAuthent  = iana.TicketFlagPreAuthent
 	TicketFlagInitial     = iana.TicketFlagInitial
 	TicketFlagRenewable   = iana.TicketFlagRenewable

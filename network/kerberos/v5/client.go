@@ -49,6 +49,13 @@ type KerberosClient struct {
 	// ticket's session-key etype). nil requests AES256, AES128, then RC4.
 	stETypes []int
 
+	// postdateFrom, when non-zero, requests a postdated TGT: GetTGT sends the
+	// AS-REQ with the allow-postdate and postdated KDC options and a from time
+	// set to this (future) start time (RFC 4120 §3.3). The KDC — if it permits
+	// postdating — returns an INVALID (and POSTDATED) TGT that a later Validate
+	// call activates. Configured via WithPostdate.
+	postdateFrom time.Time
+
 	// preloadedTGS holds service tickets supplied out-of-band (a forged silver
 	// ticket, or a captured service ticket) keyed by normalized SPN. When GetTGS
 	// is asked for one of these SPNs it returns the preloaded ticket instead of
@@ -365,27 +372,7 @@ func (c *KerberosClient) HasTGT() bool { return c.hasTGT }
 // EncASRepPart per RFC 4120 §3.1.3).
 func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, error) {
 	nonce := randomNonce()
-	req := &messages.ASReq{
-		PVNO:    messages.KerberosV5,
-		MsgType: messages.MsgTypeASReq,
-		PAData:  pa_data,
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForASReq(),
-			CName: messages.PrincipalName{
-				NameType:   messages.NameTypePrincipal,
-				NameString: []string{c.username},
-			},
-			Realm: c.realm,
-			SName: messages.PrincipalName{
-				NameType:   messages.NameTypeSRVInst,
-				NameString: []string{"krbtgt", c.realm},
-			},
-			Till:  c.now().Add(24 * time.Hour),
-			Nonce: nonce,
-			EType: c.cred.SupportedETypes(),
-		},
-	}
-
+	req := c.buildASReq(pa_data, nonce)
 	req_bytes, err := req.Marshal()
 	if err != nil {
 		return nil, 0, fmt.Errorf("kerberos: marshal AS-REQ: %w", err)
@@ -395,6 +382,46 @@ func (c *KerberosClient) sendASReq(pa_data []messages.PAData) ([]byte, int, erro
 		return nil, 0, err
 	}
 	return resp, nonce, nil
+}
+
+// buildASReq constructs the AS-REQ for the given PA-DATA and nonce. It is
+// factored out of sendASReq so the request shape — in particular the postdating
+// options and from time — can be verified without a live KDC (see
+// postdate_test.go).
+//
+// An ordinary request omits from (its zero value drops the optional tag) and
+// asks for a 24h endtime. A postdated request (WithPostdate) carries the future
+// start time in from and derives the endtime from it, alongside the
+// allow-postdate/postdated options set by asReqKDCOptions (RFC 4120 §3.3).
+func (c *KerberosClient) buildASReq(pa_data []messages.PAData, nonce int) *messages.ASReq {
+	var from time.Time
+	till := c.now().Add(24 * time.Hour)
+	if !c.postdateFrom.IsZero() {
+		from = c.postdateFrom
+		till = c.postdateFrom.Add(24 * time.Hour)
+	}
+
+	return &messages.ASReq{
+		PVNO:    messages.KerberosV5,
+		MsgType: messages.MsgTypeASReq,
+		PAData:  pa_data,
+		ReqBody: messages.KDCReqBody{
+			KDCOptions: c.asReqKDCOptions(),
+			CName: messages.PrincipalName{
+				NameType:   messages.NameTypePrincipal,
+				NameString: []string{c.username},
+			},
+			Realm: c.realm,
+			SName: messages.PrincipalName{
+				NameType:   messages.NameTypeSRVInst,
+				NameString: []string{"krbtgt", c.realm},
+			},
+			From:  from,
+			Till:  till,
+			Nonce: nonce,
+			EType: c.cred.SupportedETypes(),
+		},
+	}
 }
 
 // sendToRealm discovers the KDC endpoints serving realm (explicit config, custom
@@ -627,6 +654,8 @@ func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey 
 const (
 	kdcOptionForwardable    = iana.KDCOptionForwardable    // byte 0, 0x40
 	kdcOptionProxiable      = iana.KDCOptionProxiable      // byte 0, 0x10
+	kdcOptionAllowPostdate  = iana.KDCOptionAllowPostdate  // byte 0, 0x04 (RFC 4120 §3.3 postdating)
+	kdcOptionPostdated      = iana.KDCOptionPostdated      // byte 0, 0x02 (RFC 4120 §3.3 postdating)
 	kdcOptionRenewable      = iana.KDCOptionRenewable      // byte 1, 0x80
 	kdcOptionCanonicalize   = iana.KDCOptionCanonicalize   // byte 1, 0x01 (RFC 6806)
 	kdcOptionCNameInAddlTkt = iana.KDCOptionCNameInAddlTkt // byte 1, 0x02 (MS-SFU S4U2Proxy)
