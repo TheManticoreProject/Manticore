@@ -263,6 +263,140 @@ func (ctx *SecContext) sealRC4WithConfounder(data []byte, seq uint64, confounder
 	return enc[8:], token
 }
 
+// rc4WrapPadStandalone builds the RFC 1964 §1.2.2.3 self-describing pad the
+// standalone (non-DCE) RC4-HMAC GSS_Wrap token uses. The arcfour profile has a
+// cipher blocksize of 1 (RC4 is a stream cipher), so "pad to the next multiple
+// of the blocksize, appending between 1 and blocksize bytes" collapses to a
+// single octet of value 0x01, appended unconditionally. This is what Windows /
+// MIT emit and expect on the wire (verified live: an AD SASL security-layer
+// offer of n data octets arrives with exactly one 0x01 pad byte). Unlike the
+// DCE rc4WrapPad (which pads the sealed stub to 8 because RPC signals the true
+// length out of band), a standalone token has no external length, so the pad is
+// always present and self-describing for the receiver to strip.
+func rc4WrapPadStandalone() []byte {
+	return []byte{0x01}
+}
+
+// wrapRC4 produces a single contiguous RFC 4757 §7.4 GSS_Wrap token over data as
+// this context's role, with the given sequence number. Unlike sealRC4 (which
+// splits the sealed stub out for DCE in-place sealing), the whole token —
+// {GSS InitialContextToken framing | TOK_ID 02 01 | SGN_ALG | SEAL_ALG | Filler |
+// SND_SEQ | SGN_CKSUM | (optionally sealed) confounder | data | pad} — is
+// returned contiguously, as a peer's GSS_Unwrap expects. With seal=true the
+// confounder and data are RC4-encrypted (SEAL_ALG 10 00); with seal=false the
+// token provides integrity only (SEAL_ALG ff ff, "none") and the confounder and
+// data travel in clear.
+func (ctx *SecContext) wrapRC4(data []byte, seq uint64, seal bool) ([]byte, error) {
+	confounder := make([]byte, 8)
+	if _, err := rand.Read(confounder); err != nil {
+		return nil, err
+	}
+	inner := ctx.wrapRC4Inner(data, seq, confounder, seal)
+	// RFC 1964 §1.2 wraps every RC4/DES per-message token in the OID-prefixed
+	// GSS framing (the RFC 4121 CFX tokens dropped it). WrapToken encodes the DER
+	// length, so tokens longer than the fixed 45-byte DCE form frame correctly.
+	return WrapToken([2]byte{inner[0], inner[1]}, inner[2:])
+}
+
+// wrapRC4Inner builds the bare (un-framed) RFC 4757 §7.4 GSS_Wrap token with a
+// caller-supplied confounder: the 32-byte header followed by the confounder and
+// the padded data, sealed together when seal is set. It is the deterministic core
+// of wrapRC4 (which supplies a random confounder and adds the GSS framing) and is
+// driven directly by known-answer tests.
+func (ctx *SecContext) wrapRC4Inner(data []byte, seq uint64, confounder []byte, seal bool) []byte {
+	key, _ := ctx.baseKey()
+	// TOK_ID 02 01, SGN_ALG 11 00 (HMAC), SEAL_ALG 10 00 (RC4) or ff ff (none),
+	// Filler ff ff.
+	hdr8 := []byte{0x02, 0x01, 0x11, 0x00, 0x10, 0x00, 0xff, 0xff}
+	if !seal {
+		hdr8[4], hdr8[5] = 0xff, 0xff
+	}
+
+	pad := rc4WrapPadStandalone()
+	payload := make([]byte, 0, len(data)+len(pad))
+	payload = append(payload, data...)
+	payload = append(payload, pad...)
+
+	cksum := rc4WrapSgnCksum(key, hdr8, confounder, payload)
+	encSeq := rc4Encrypt(rc4SeqKey(key, cksum), rc4MICSeqBytes(seq, !ctx.isAcceptor))
+
+	region := make([]byte, 0, len(confounder)+len(payload))
+	region = append(region, confounder...)
+	region = append(region, payload...)
+	if seal {
+		region = rc4Encrypt(rc4WrapCryptKey(key, seq), region)
+	}
+
+	token := make([]byte, 0, 8+8+8+len(region))
+	token = append(token, hdr8...)
+	token = append(token, encSeq...)
+	token = append(token, cksum...)
+	token = append(token, region...)
+	return token
+}
+
+// unwrapRC4 parses and verifies a single contiguous RFC 4757 §7.4 GSS_Wrap token
+// received from the peer, returning the recovered plaintext and whether it was
+// sealed (confidential). It is the standalone counterpart of unsealRC4 (which
+// takes the sealed stub and the token separately for DCE): here the confounder
+// and data ride inside the one token and the self-describing pad is stripped.
+func (ctx *SecContext) unwrapRC4(token []byte) (data []byte, sealed bool, err error) {
+	// Strip the GSS InitialContextToken framing (RFC 1964 §1.2) if present,
+	// tolerating a multi-byte DER length; UnwrapToken also verifies the mech OID.
+	inner := token
+	if len(token) > 0 && token[0] == 0x60 {
+		tokID, rest, uerr := UnwrapToken(token)
+		if uerr != nil {
+			return nil, false, uerr
+		}
+		inner = append([]byte{tokID[0], tokID[1]}, rest...)
+	}
+	if len(inner) < 32 {
+		return nil, false, fmt.Errorf("gssapi: RC4 Wrap token too short")
+	}
+	if inner[0] != 0x02 || inner[1] != 0x01 {
+		return nil, false, fmt.Errorf("gssapi: not an RC4 Wrap token (TOK_ID %02x %02x)", inner[0], inner[1])
+	}
+	hdr8 := inner[:8]
+	encSeq := inner[8:16]
+	cksum := inner[16:24]
+	region := inner[24:]
+	// SEAL_ALG ff ff means "none" (integrity only); anything else is confidential.
+	sealed = !(hdr8[4] == 0xff && hdr8[5] == 0xff)
+
+	key, _ := ctx.baseKey()
+	// Recover SND_SEQ and confirm the peer's direction indicator.
+	seqBytes := rc4Encrypt(rc4SeqKey(key, cksum), encSeq)
+	if seqBytes[4] != ctx.recvDirByte() {
+		return nil, false, fmt.Errorf("gssapi: RC4 Wrap has the wrong direction indicator")
+	}
+	seq := uint64(binary.BigEndian.Uint32(seqBytes[:4]))
+
+	if sealed {
+		region = rc4Encrypt(rc4WrapCryptKey(key, seq), region)
+	}
+	confounder := region[:8]
+	payload := region[8:]
+
+	want := rc4WrapSgnCksum(key, hdr8, confounder, payload)
+	if !hmac.Equal(cksum, want) {
+		return nil, false, fmt.Errorf("gssapi: RC4 Wrap verification failed")
+	}
+	// Strip the self-describing RFC 1964 pad (1..8 octets, each the pad length).
+	if len(payload) == 0 {
+		return nil, false, fmt.Errorf("gssapi: RC4 Wrap payload missing pad")
+	}
+	pad := int(payload[len(payload)-1])
+	if pad < 1 || pad > 8 || pad > len(payload) {
+		return nil, false, fmt.Errorf("gssapi: RC4 Wrap invalid pad length %d", pad)
+	}
+	// The token is authentic and correctly directed; enforce replay/sequence.
+	if err := ctx.recvWindow.check(seq); err != nil {
+		return nil, false, err
+	}
+	return payload[:len(payload)-pad], sealed, nil
+}
+
 // unsealRC4 decrypts and verifies an RC4-HMAC GSS Wrap token received from the
 // acceptor. sealed is the on-wire (encrypted) stub; token is the auth_value. It
 // returns the recovered plaintext (data plus any GSS pad, which the caller

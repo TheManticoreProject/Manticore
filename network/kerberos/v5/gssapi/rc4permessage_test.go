@@ -1,6 +1,7 @@
 package gssapi
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 )
@@ -132,6 +133,130 @@ func (ctx *SecContext) sealRC4Acceptor(data []byte, seq uint64) (sealed, token [
 	token = append(token, cksum...)
 	token = append(token, enc[:8]...)
 	return enc[8:], token
+}
+
+// TestRC4WrapDispatchesRC4Token confirms the generic Wrap/Unwrap API emits and
+// parses the RFC 4757 §7.4 RC4-HMAC token (TOK_ID 02 01) — not the RFC 4121 CFX
+// token (05 04) — for an RC4-HMAC context, and that a sealed token round-trips
+// its plaintext through a peer (acceptor) context. This is the regression guard
+// for the missing RC4 dispatch in Wrap/Unwrap.
+func TestRC4WrapDispatchesRC4Token(t *testing.T) {
+	key, _ := hex.DecodeString("0123456789abcdef0123456789abcdef")
+	data := []byte("confidential payload over rc4-hmac gssapi") // 41 bytes -> pad-to-8
+
+	init := &SecContext{SessionKey: key, SessionEType: rc4HMACEType}
+	peer := &SecContext{SessionKey: key, SessionEType: rc4HMACEType, isAcceptor: true}
+
+	tok, err := init.Wrap(data, true)
+	if err != nil {
+		t.Fatalf("Wrap(seal): %v", err)
+	}
+	// The token is GSS-framed (RFC 1964); the RC4 TOK_ID follows the OID header.
+	if tok[0] != 0x60 {
+		t.Fatalf("RC4 Wrap token missing GSS framing (first byte %02x)", tok[0])
+	}
+	tokID, rest, err := UnwrapToken(tok)
+	if err != nil {
+		t.Fatalf("UnwrapToken: %v", err)
+	}
+	if tokID != [2]byte{0x02, 0x01} {
+		t.Errorf("RC4 Wrap TOK_ID = %02x %02x, want 02 01", tokID[0], tokID[1])
+	}
+	if tokID == [2]byte{0x05, 0x04} {
+		t.Error("RC4 context must not emit a CFX (05 04) Wrap token")
+	}
+	// SEAL_ALG (rest[2:4], i.e. inner bytes 4..5) must be RC4 (10 00) when sealed.
+	if rest[2] != 0x10 || rest[3] != 0x00 {
+		t.Errorf("sealed RC4 Wrap SEAL_ALG = %02x %02x, want 10 00", rest[2], rest[3])
+	}
+	if bytes.Contains(tok, data) {
+		t.Error("sealed RC4 Wrap token leaks plaintext")
+	}
+
+	got, sealed, err := peer.Unwrap(tok)
+	if err != nil {
+		t.Fatalf("Unwrap(seal): %v", err)
+	}
+	if !sealed {
+		t.Error("Unwrap reported a sealed RC4 token as not sealed")
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("sealed round-trip plaintext = %q, want %q", got, data)
+	}
+}
+
+// TestRC4WrapIntegrityOnlyRoundTrip confirms the integrity-only (seal=false)
+// generic Wrap on an RC4-HMAC context emits an RFC 4757 token with SEAL_ALG
+// "none" (ff ff) carrying the data in clear, and that a peer context recovers it.
+func TestRC4WrapIntegrityOnlyRoundTrip(t *testing.T) {
+	key, _ := hex.DecodeString("fedcba9876543210fedcba9876543210")
+	data := []byte("integrity-only rc4 gssapi buffer!!") // exercises the pad-to-8
+
+	init := &SecContext{SessionKey: key, SessionEType: rc4HMACEType}
+	peer := &SecContext{SessionKey: key, SessionEType: rc4HMACEType, isAcceptor: true}
+
+	tok, err := init.Wrap(data, false)
+	if err != nil {
+		t.Fatalf("Wrap(integrity): %v", err)
+	}
+	tokID, rest, err := UnwrapToken(tok)
+	if err != nil {
+		t.Fatalf("UnwrapToken: %v", err)
+	}
+	if tokID != [2]byte{0x02, 0x01} {
+		t.Errorf("RC4 Wrap TOK_ID = %02x %02x, want 02 01", tokID[0], tokID[1])
+	}
+	// SEAL_ALG must be "none" (ff ff) and the data must travel in clear.
+	if rest[2] != 0xff || rest[3] != 0xff {
+		t.Errorf("integrity-only SEAL_ALG = %02x %02x, want ff ff", rest[2], rest[3])
+	}
+	if !bytes.Contains(tok, data) {
+		t.Error("integrity-only RC4 Wrap token must carry data in clear")
+	}
+
+	got, sealed, err := peer.Unwrap(tok)
+	if err != nil {
+		t.Fatalf("Unwrap(integrity): %v", err)
+	}
+	if sealed {
+		t.Error("integrity-only token reported as sealed")
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("integrity round-trip plaintext = %q, want %q", got, data)
+	}
+
+	// Tampering with the payload must fail the integrity check.
+	bad := append([]byte{}, tok...)
+	bad[len(bad)-1] ^= 0xff
+	if _, _, err := peer.Unwrap(bad); err == nil {
+		t.Error("expected integrity failure on tampered RC4 Wrap token")
+	}
+}
+
+// TestRC4WrapAlignedPadding checks a Wrap round-trip for 8-aligned data. The
+// arcfour profile has a cipher blocksize of 1, so the RFC 1964 self-describing
+// pad is a single 0x01 octet regardless of length and the receiver can always
+// strip it with no external length signal.
+func TestRC4WrapAlignedPadding(t *testing.T) {
+	key, _ := hex.DecodeString("00112233445566778899aabbccddeeff")
+	data := []byte("sixteen bytes!!!") // exactly 16 bytes (8-aligned)
+
+	init := &SecContext{SessionKey: key, SessionEType: rc4HMACEType}
+	peer := &SecContext{SessionKey: key, SessionEType: rc4HMACEType, isAcceptor: true}
+
+	for _, seal := range []bool{true, false} {
+		tok, err := init.Wrap(data, seal)
+		if err != nil {
+			t.Fatalf("Wrap(seal=%v): %v", seal, err)
+		}
+		got, _, err := peer.Unwrap(tok)
+		if err != nil {
+			t.Fatalf("Unwrap(seal=%v): %v", seal, err)
+		}
+		if !bytes.Equal(got, data) {
+			t.Errorf("seal=%v round-trip = %q, want %q", seal, got, data)
+		}
+	}
 }
 
 // makeMICRC4Acceptor builds an acceptor-direction RC4 MIC (test helper for

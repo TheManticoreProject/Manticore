@@ -500,11 +500,16 @@ func (ctx *SecContext) VerifyMIC(data, token []byte) error {
 	return ctx.recvWindow.check(binary.BigEndian.Uint64(hdr[8:16]))
 }
 
-// Wrap produces a Wrap token over data as the context initiator (RFC 4121
-// §4.2.6.2). With seal=true the token provides confidentiality+integrity;
-// otherwise integrity only. EC and RRC are 0 (no filler, no rotation).
+// Wrap produces a Wrap token over data as the context initiator. For RC4-HMAC it
+// is the contiguous RFC 4757 §7.4 token (tok_id 02 01); otherwise the RFC 4121
+// §4.2.6.2 CFX token (tok_id 05 04). With seal=true the token provides
+// confidentiality+integrity; otherwise integrity only. For the CFX path EC and
+// RRC are 0 (no filler, no rotation).
 func (ctx *SecContext) Wrap(data []byte, seal bool) ([]byte, error) {
 	key, etype := ctx.baseKey()
+	if etype == rc4HMACEType {
+		return ctx.wrapRC4(data, ctx.nextSendSeq(), seal)
+	}
 	hdr := wrapHeader(ctx.sendFlags(seal), ctx.nextSendSeq())
 
 	if seal {
@@ -537,8 +542,12 @@ func (ctx *SecContext) Wrap(data []byte, seal bool) ([]byte, error) {
 }
 
 // Unwrap decodes a Wrap token received from the acceptor, returning the
-// plaintext data and whether it was sealed (confidential).
+// plaintext data and whether it was sealed (confidential). For RC4-HMAC it parses
+// the RFC 4757 §7.4 token (tok_id 02 01), otherwise the RFC 4121 CFX token.
 func (ctx *SecContext) Unwrap(token []byte) (data []byte, sealed bool, err error) {
+	if _, etype := ctx.baseKey(); etype == rc4HMACEType {
+		return ctx.unwrapRC4(token)
+	}
 	if len(token) < 16 {
 		return nil, false, fmt.Errorf("gssapi: Wrap token too short")
 	}
