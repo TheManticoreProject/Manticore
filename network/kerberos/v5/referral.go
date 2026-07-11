@@ -117,7 +117,9 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 
 		nextRealm, isReferral := referralTargetRealm(rep, sname)
 		if !isReferral {
-			// The requested service ticket was issued — done.
+			// The requested service ticket was issued — cache it (for export) and
+			// return it.
+			c.cacheServiceTicket(rep.TicketRaw, *encRep)
 			return rep.Ticket, rep.TicketRaw, encRep.Key.KeyValue, encRep.Key.KeyType, nil
 		}
 

@@ -53,6 +53,13 @@ type KerberosClient struct {
 	// contacting the KDC — enabling silver-ticket use with no TGT.
 	preloadedTGS map[string]preloadedServiceTicket
 
+	// serviceTickets caches service tickets the client has obtained (via GetTGS)
+	// or been given (LoadServiceTicket), keyed by normalized SPN, together with
+	// the enc-part metadata (session key, flags, times, sname/srealm) needed to
+	// re-serialize them. It is the source ExportServiceTicketKirbi/CCache read
+	// from — the harvest→save half of pass-the-ticket (see export.go).
+	serviceTickets map[string]cachedServiceTicket
+
 	// realmKDCs maps an (uppercased) realm to the KDC host to contact when the
 	// cross-realm referral chase reaches that realm. Populated via WithRealmKDC.
 	realmKDCs map[string]string
@@ -96,6 +103,14 @@ type preloadedServiceTicket struct {
 	ticketRaw    []byte
 	sessionKey   []byte
 	sessionEType int
+}
+
+// cachedServiceTicket is a service ticket retained for export: the raw
+// APPLICATION[1] ticket bytes plus the KrbCredInfo (session key, flags, times,
+// sname/srealm) describing it, ready to feed the .kirbi / ccache marshalers.
+type cachedServiceTicket struct {
+	ticketRaw []byte
+	credInfo  messages.KrbCredInfo
 }
 
 // PreferRC4ServiceTicket makes GetTGS request an RC4-HMAC service ticket (RC4

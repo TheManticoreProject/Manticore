@@ -204,6 +204,14 @@ func (c *KerberosClient) LoadServiceTicket(st *ServiceTicket) error {
 		sessionKey:   st.SessionKey,
 		sessionEType: st.SessionEType,
 	}
+	// Also retain it for export (harvest→save): a captured/forged ticket wired in
+	// here can be written back out via ExportServiceTicketKirbi/CCache. The
+	// ServiceTicket carries no flags/times, so those stay zero.
+	c.cacheServiceTicket(st.TicketRaw, messages.EncTGSRepPart{
+		Key:    messages.EncryptionKey{KeyType: st.SessionEType, KeyValue: st.SessionKey},
+		SRealm: st.SRealm,
+		SName:  st.SName,
+	})
 	return nil
 }
 
