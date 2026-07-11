@@ -88,7 +88,7 @@ func (a *Authenticator) Marshal() ([]byte, error) {
 		CRealm:    realmExplicit(1, a.CRealm),
 		CName:     MarshalPrincipalName(a.CName),
 		CUSec:     a.CUSec,
-		CTime:     a.CTime,
+		CTime:     normalizeTime(a.CTime),
 		SeqNumber: a.SeqNumber,
 	}
 	if a.Cksum != nil {
