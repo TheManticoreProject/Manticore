@@ -81,6 +81,93 @@ func synthPKINITReplyPA(t *testing.T, kdcY *big.Int, serverNonce []byte) []byte 
 	return derRaw(t, asn1.ClassContextSpecific, 0, true, append(dhSigned, srvNonce...))
 }
 
+// synthPKINITReplyPAWithKDF is synthPKINITReplyPA plus an RFC 8636 kdf [2]
+// KDFAlgorithmId { kdf-id [0] OID } appended to the DHRepInfo, so the reply
+// negotiates an algorithm-agility KDF.
+func synthPKINITReplyPAWithKDF(t *testing.T, kdcY *big.Int, serverNonce []byte, kdfID asn1.ObjectIdentifier) []byte {
+	t.Helper()
+	base := synthPKINITReplyPA(t, kdcY, serverNonce)
+	// Unwrap the dhInfo [0] to recover the DHRepInfo content, append the kdf
+	// element, and rewrap.
+	var dhInfo asn1.RawValue
+	if _, err := asn1.Unmarshal(base, &dhInfo); err != nil {
+		t.Fatalf("unwrap dhInfo: %v", err)
+	}
+	kdfIDSeq := derMarshal(t, struct {
+		KDFID asn1.ObjectIdentifier `asn1:"explicit,tag:0"`
+	}{KDFID: kdfID})
+	kdfElem := derRaw(t, asn1.ClassContextSpecific, 2, true, kdfIDSeq)
+	return derRaw(t, asn1.ClassContextSpecific, 0, true, append(dhInfo.Bytes, kdfElem...))
+}
+
+// TestProcessPKINITASRepAgilityKDF drives AS-REP processing when the KDC
+// negotiates an RFC 8636 SHA-256 agility KDF and issues an AES128-SHA256
+// (etype 19) reply key. The reply key is derived via the agility KDF on both
+// sides through the exported DeriveReplyKeyAgility path, proving processPKINITASRep
+// selects the agility KDF (not the legacy octetstring2key) from the kdfID and
+// decrypts the enc-part with the AES-SHA2 reply key.
+func TestProcessPKINITASRepAgilityKDF(t *testing.T) {
+	group := pkinit.MODPGroup2()
+	priv, certDER, err := pkinit.GenerateSelfSignedCert(2048, "unit-test")
+	if err != nil {
+		t.Fatalf("GenerateSelfSignedCert: %v", err)
+	}
+	reqBytes := []byte("synthetic-as-req-DER")
+	_, pkReq, err := pkinit.BuildASReqPAData([]byte("req-body"), priv, certDER, group, 0x11223344, time.Now())
+	if err != nil {
+		t.Fatalf("BuildASReqPAData: %v", err)
+	}
+
+	kdcKP, err := pkinit.GenerateDHKeyPair(group)
+	if err != nil {
+		t.Fatalf("KDC GenerateDHKeyPair: %v", err)
+	}
+	serverNonce := bytes.Repeat([]byte{0x5A}, pkinit.DHNonceLen)
+	paValue := synthPKINITReplyPAWithKDF(t, kdcKP.Y, serverNonce, asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 6, 2})
+
+	c := NewClient("alice", "corp.local", "")
+
+	const etype = messages.ETypeAES128CTSHMACSHA256 // 19, AES-SHA2
+	keyLen := kerbcrypto.KeyLen(etype)
+
+	// KDC-side derivation of the reply key via the same agility KDF and identical
+	// OtherInfo the client will rebuild inside processPKINITASRep.
+	reply, err := pkinit.ParseASRepPAData(paValue, nil)
+	if err != nil {
+		t.Fatalf("ParseASRepPAData: %v", err)
+	}
+	if len(reply.KDFID) == 0 {
+		t.Fatal("reply did not carry a negotiated kdfID")
+	}
+	replyKey, err := pkReq.DeriveReplyKeyAgility(reply, keyLen, pkinit.KDFInputs{
+		ClientRealm: c.realm,
+		ClientName:  pkinit.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}},
+		ServerRealm: c.realm,
+		ServerName:  pkinit.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}},
+		EType:       etype,
+		ASReq:       reqBytes,
+		PKASRep:     paValue,
+	})
+	if err != nil {
+		t.Fatalf("KDC DeriveReplyKeyAgility: %v", err)
+	}
+
+	const nonce = 0x11223344
+	sessionKey := bytes.Repeat([]byte{0x42}, 16)
+	wire := buildPKINITASRep(t, etype, replyKey, nonce, sessionKey, paValue)
+
+	if err := c.processPKINITASRep(wire, pkReq, nonce, reqBytes); err != nil {
+		t.Fatalf("processPKINITASRep (agility KDF): %v", err)
+	}
+	if !c.hasTGT {
+		t.Fatal("hasTGT not set after a successful agility-KDF PKINIT AS-REP")
+	}
+	key, gotEType := c.PKINITReplyKey()
+	if !bytes.Equal(key, replyKey) || gotEType != etype {
+		t.Errorf("PKINITReplyKey = (%x, %d), want (%x, %d)", key, gotEType, replyKey, etype)
+	}
+}
+
 // buildPKINITASRep assembles an AS-REP whose enc-part (EncASRepPart with the given
 // nonce and session key) is encrypted under replyKey/replyEType, carrying the
 // supplied PA-PK-AS-REP so processPKINITASRep can derive the reply key and decrypt.
@@ -169,7 +256,7 @@ func TestProcessPKINITASRepSuccess(t *testing.T) {
 	sessionKey := bytes.Repeat([]byte{0x42}, 32)
 	wire := buildPKINITASRep(t, messages.ETypeAES256CTSHMACSHA196, replyKey, nonce, sessionKey, paValue)
 
-	if err := c.processPKINITASRep(wire, pkReq, nonce); err != nil {
+	if err := c.processPKINITASRep(wire, pkReq, nonce, []byte("req-body")); err != nil {
 		t.Fatalf("processPKINITASRep: %v", err)
 	}
 	if !c.hasTGT {
@@ -199,7 +286,7 @@ func TestProcessPKINITASRepRejectsBadEType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := c.processPKINITASRep(bad, pkReq, 1); err == nil {
+	if err := c.processPKINITASRep(bad, pkReq, 1, []byte("req-body")); err == nil {
 		t.Fatal("expected an error for an unsupported reply-key etype")
 	}
 	if c.hasTGT {
@@ -213,7 +300,7 @@ func TestProcessPKINITASRepRejectsBadEType(t *testing.T) {
 func TestProcessPKINITASRepNonceMismatch(t *testing.T) {
 	c, pkReq, paValue, replyKey := pkinitExchange(t)
 	wire := buildPKINITASRep(t, messages.ETypeAES256CTSHMACSHA196, replyKey, 999, bytes.Repeat([]byte{0x42}, 32), paValue)
-	if err := c.processPKINITASRep(wire, pkReq, 12345); err == nil {
+	if err := c.processPKINITASRep(wire, pkReq, 12345, []byte("req-body")); err == nil {
 		t.Fatal("expected a nonce-mismatch rejection")
 	}
 	if c.hasTGT {
@@ -236,7 +323,7 @@ func TestProcessPKINITASRepNoPAData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := c.processPKINITASRep(stripped, pkReq, 1); err == nil {
+	if err := c.processPKINITASRep(stripped, pkReq, 1, []byte("req-body")); err == nil {
 		t.Fatal("expected an error when the AS-REP has no PA-PK-AS-REP element")
 	}
 }

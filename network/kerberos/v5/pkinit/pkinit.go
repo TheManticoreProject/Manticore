@@ -58,6 +58,7 @@ func BuildASReqPAData(reqBodyDER []byte, priv *rsa.PrivateKey, certDER []byte, g
 		},
 		ClientPublicValue: cpv,
 		ClientDHNonce:     dhNonce,
+		SupportedKDFs:     supportedKDFList(),
 	}
 	apDER, err := asn1.Marshal(ap)
 	if err != nil {
@@ -83,6 +84,11 @@ type Reply struct {
 	KDCPublicValue *big.Int
 	// ServerDHNonce is the KDC's DH nonce (may be empty).
 	ServerDHNonce []byte
+	// KDFID is the RFC 8636 algorithm-agility KDF the KDC selected (the kdf-id
+	// OID from DHRepInfo.kdf), or nil when the KDC returned no kdf field. A nil
+	// KDFID means the legacy RFC 4556 SHA-1 OctetString2Key applies (the default
+	// on KDCs that do not implement RFC 8636, e.g. current Windows).
+	KDFID asn1.ObjectIdentifier
 }
 
 // ParseASRepPAData parses the PA-PK-AS-REP pre-authentication value (padata type
@@ -107,7 +113,7 @@ func ParseASRepPAData(paValue []byte, opts *VerifyOptions) (*Reply, error) {
 		return nil, fmt.Errorf("pkinit: PA-PK-AS-REP is not the dhInfo variant (tag %d); encKeyPack is unsupported", outer.Tag)
 	}
 
-	dhSignedData, serverDHNonce, err := parseDHRepInfo(outer.Bytes)
+	dhSignedData, serverDHNonce, kdfID, err := parseDHRepInfo(outer.Bytes)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +130,7 @@ func ParseASRepPAData(paValue []byte, opts *VerifyOptions) (*Reply, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Reply{KDCPublicValue: y, ServerDHNonce: serverDHNonce}, nil
+	return &Reply{KDCPublicValue: y, ServerDHNonce: serverDHNonce, KDFID: kdfID}, nil
 }
 
 // parseDHRepInfo walks the DHRepInfo content (the bytes inside the dhInfo [0]
@@ -132,7 +138,7 @@ func ParseASRepPAData(paValue []byte, opts *VerifyOptions) (*Reply, error) {
 // serverDHNonce. The [0] wrapper may be either an explicit wrapper around a
 // DHRepInfo SEQUENCE or the SEQUENCE itself with its tag replaced; both are
 // handled.
-func parseDHRepInfo(dhInfoBytes []byte) (dhSignedData, serverDHNonce []byte, err error) {
+func parseDHRepInfo(dhInfoBytes []byte) (dhSignedData, serverDHNonce []byte, kdfID asn1.ObjectIdentifier, err error) {
 	content := dhInfoBytes
 	// If the content is a single SEQUENCE, the [0] tag was an explicit wrapper;
 	// descend into the SEQUENCE.
@@ -146,7 +152,7 @@ func parseDHRepInfo(dhInfoBytes []byte) (dhSignedData, serverDHNonce []byte, err
 		var field asn1.RawValue
 		rest, e := asn1.Unmarshal(content, &field)
 		if e != nil {
-			return nil, nil, fmt.Errorf("pkinit: walk DHRepInfo: %w", e)
+			return nil, nil, nil, fmt.Errorf("pkinit: walk DHRepInfo: %w", e)
 		}
 		content = rest
 		if field.Class != asn1.ClassContextSpecific {
@@ -157,12 +163,17 @@ func parseDHRepInfo(dhInfoBytes []byte) (dhSignedData, serverDHNonce []byte, err
 			dhSignedData = field.Bytes
 		case 1: // serverDHNonce [1] DHNonce (OCTET STRING), implicit or explicit
 			serverDHNonce = unwrapOctetString(field)
+		case 2: // kdf [2] KDFAlgorithmId (RFC 8636), EXPLICIT SEQUENCE
+			var alg kdfAlgorithmID
+			if _, e := asn1.Unmarshal(field.Bytes, &alg); e == nil && len(alg.KDFID) > 0 {
+				kdfID = alg.KDFID
+			}
 		}
 	}
 	if len(dhSignedData) == 0 {
-		return nil, nil, fmt.Errorf("pkinit: PA-PK-AS-REP has no dhSignedData")
+		return nil, nil, nil, fmt.Errorf("pkinit: PA-PK-AS-REP has no dhSignedData")
 	}
-	return dhSignedData, serverDHNonce, nil
+	return dhSignedData, serverDHNonce, kdfID, nil
 }
 
 // unwrapOctetString returns the octet-string value of a context-tagged field,
@@ -210,4 +221,91 @@ func (r *Request) ReplyKeyCandidates(reply *Reply, keyLen int) ([][]byte, error)
 		OctetString2Key(withNonces, keyLen),
 		OctetString2Key(sharedOnly, keyLen),
 	}, nil
+}
+
+// KDFInputs carries the RFC 8636 §3 OtherInfo inputs the caller threads into the
+// algorithm-agility KDF: the party identities (client and TGS, mirroring the
+// AS-REQ cname/sname), the reply-key enctype, and the request/reply DER blobs
+// bound into suppPubInfo. The DH shared secret (Z) is taken from the Request's
+// key pair and is not part of this struct.
+type KDFInputs struct {
+	// ClientRealm / ClientName identify the client (partyUInfo).
+	ClientRealm string
+	ClientName  PrincipalName
+	// ServerRealm / ServerName identify the ticket-granting server (partyVInfo).
+	ServerRealm string
+	ServerName  PrincipalName
+	// EType is the AS reply-key enctype (suppPubInfo.enctype).
+	EType int
+	// ASReq is the DER of the AS-REQ (no TCP length prefix); suppPubInfo.as-REQ.
+	ASReq []byte
+	// PKASRep is the DER of the PA-PK-AS-REP value from the reply;
+	// suppPubInfo.pk-as-rep.
+	PKASRep []byte
+}
+
+// buildKDFOtherInfo builds the DER of the SP800-56A OtherInfo structure
+// (RFC 8636 §3) for the KDF named by kdfID, from the party info and suppPubInfo
+// inputs. It is the OtherInfo fed to AgilityKDF alongside the DH shared secret.
+func buildKDFOtherInfo(kdfID asn1.ObjectIdentifier, in KDFInputs) ([]byte, error) {
+	partyU, err := buildKRB5PrincipalName(in.ClientRealm, in.ClientName)
+	if err != nil {
+		return nil, fmt.Errorf("pkinit: build KDF partyUInfo: %w", err)
+	}
+	partyV, err := buildKRB5PrincipalName(in.ServerRealm, in.ServerName)
+	if err != nil {
+		return nil, fmt.Errorf("pkinit: build KDF partyVInfo: %w", err)
+	}
+	suppPub, err := asn1.Marshal(pkinitSuppPubInfo{
+		EType:   in.EType,
+		ASReq:   in.ASReq,
+		PKASRep: in.PKASRep,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pkinit: build KDF suppPubInfo: %w", err)
+	}
+	oi := kdfOtherInfo{
+		AlgorithmID: kdfAlgorithmIdentifier{Algorithm: kdfID},
+		PartyUInfo:  partyU,
+		PartyVInfo:  partyV,
+		SuppPubInfo: suppPub,
+	}
+	der, err := asn1.Marshal(oi)
+	if err != nil {
+		return nil, fmt.Errorf("pkinit: marshal KDF OtherInfo: %w", err)
+	}
+	return der, nil
+}
+
+// DeriveReplyKeyAgility derives the AS reply key via the RFC 8636 algorithm-
+// agility KDF the KDC selected (reply.KDFID), keyed by the DH shared secret and
+// the OtherInfo built from in. keyLen is the reply-key enctype's key length in
+// bytes. It returns an error if reply.KDFID is empty or names a KDF this client
+// does not implement (callers use DeriveReplyKey / ReplyKeyCandidates for the
+// legacy no-kdfID case).
+func (r *Request) DeriveReplyKeyAgility(reply *Reply, keyLen int, in KDFInputs) ([]byte, error) {
+	newHash, ok := kdfHash(reply.KDFID)
+	if !ok {
+		return nil, fmt.Errorf("pkinit: unsupported PKINIT KDF %v", reply.KDFID)
+	}
+	shared, err := r.KeyPair.SharedSecret(reply.KDCPublicValue)
+	if err != nil {
+		return nil, err
+	}
+	otherInfo, err := buildKDFOtherInfo(reply.KDFID, in)
+	if err != nil {
+		return nil, err
+	}
+	return AgilityKDF(newHash, shared, otherInfo, keyLen), nil
+}
+
+// supportedKDFList returns the AuthPack.supportedKDFs value: the client's
+// advertised RFC 8636 KDF identifiers (supportedKDFOIDs) wrapped as
+// KDFAlgorithmId elements.
+func supportedKDFList() []kdfAlgorithmID {
+	list := make([]kdfAlgorithmID, len(supportedKDFOIDs))
+	for i, oid := range supportedKDFOIDs {
+		list[i] = kdfAlgorithmID{KDFID: oid}
+	}
+	return list
 }
