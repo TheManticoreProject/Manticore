@@ -12,6 +12,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/credentials"
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/pkinit"
 )
@@ -605,18 +606,23 @@ func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey 
 	return ap_req.Marshal()
 }
 
-// Bit positions for KDCOptions (RFC 4120 Section 5.4.1, RFC 6806 for canonicalize).
-// Bit 0 is the MSB; bit N sits in byte N/8 at position 7-(N%8).
+// Package-local aliases of the KDCOptions bit positions defined in the iana
+// package (RFC 4120 §5.4.1, RFC 6806 for canonicalize, MS-SFU for
+// cname-in-additional-ticket). The iana registry is the single source of truth
+// for these bit values; the aliases let the option-encoding helpers and their
+// byte-pinning tests refer to the flags tersely without re-declaring — and so
+// silently drifting from — the values. Bit 0 is the MSB; bit N sits in byte
+// N/8 at position 7-(N%8).
 const (
-	kdcOptionForwardable    = 1  // byte 0, 0x40
-	kdcOptionProxiable      = 3  // byte 0, 0x10
-	kdcOptionRenewable      = 8  // byte 1, 0x80
-	kdcOptionCanonicalize   = 15 // byte 1, 0x01 (RFC 6806)
-	kdcOptionCNameInAddlTkt = 14 // byte 1, 0x02 (MS-SFU S4U2Proxy)
-	kdcOptionRenewableOK    = 27 // byte 3, 0x10
-	kdcOptionEncTktInSKey   = 28 // byte 3, 0x08 (user-to-user)
-	kdcOptionRenew          = 30 // byte 3, 0x02 (RFC 4120 §3.3.3 renewal)
-	kdcOptionValidate       = 31 // byte 3, 0x01 (RFC 4120 §3.3.3 validation)
+	kdcOptionForwardable    = iana.KDCOptionForwardable    // byte 0, 0x40
+	kdcOptionProxiable      = iana.KDCOptionProxiable      // byte 0, 0x10
+	kdcOptionRenewable      = iana.KDCOptionRenewable      // byte 1, 0x80
+	kdcOptionCanonicalize   = iana.KDCOptionCanonicalize   // byte 1, 0x01 (RFC 6806)
+	kdcOptionCNameInAddlTkt = iana.KDCOptionCNameInAddlTkt // byte 1, 0x02 (MS-SFU S4U2Proxy)
+	kdcOptionRenewableOK    = iana.KDCOptionRenewableOK    // byte 3, 0x10
+	kdcOptionEncTktInSKey   = iana.KDCOptionEncTktInSKey   // byte 3, 0x08 (user-to-user)
+	kdcOptionRenew          = iana.KDCOptionRenew          // byte 3, 0x02 (RFC 4120 §3.3.3 renewal)
+	kdcOptionValidate       = iana.KDCOptionValidate       // byte 3, 0x01 (RFC 4120 §3.3.3 validation)
 )
 
 // encodeKDCOptions packs a list of bit positions into a 32-bit BitString

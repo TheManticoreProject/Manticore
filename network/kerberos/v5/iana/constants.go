@@ -183,6 +183,7 @@ const (
 	KDCOptionAllowPostdate     = 5  // allow-postdate
 	KDCOptionPostdated         = 6  // postdated
 	KDCOptionRenewable         = 8  // renewable
+	KDCOptionCNameInAddlTkt    = 14 // cname-in-additional-ticket (MS-SFU S4U2Proxy; RFC 4120 leaves bit 14 unused)
 	KDCOptionCanonicalize      = 15 // canonicalize (RFC 6806)
 	KDCOptionDisableTransitChk = 26 // disable-transited-check
 	KDCOptionRenewableOK       = 27 // renewable-ok
