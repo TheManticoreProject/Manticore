@@ -371,6 +371,40 @@ func TestLiveKerberos_FAST(t *testing.T) {
 	t.Logf("[ok] FAST-armored TGT acquired for %s", c.Username())
 }
 
+// TestLiveKerberos_FAST_GetTGS exercises RFC 6113 FAST armoring on the TGS
+// exchange: a FAST-enabled client acquires its TGT over an armored AS-REQ, then
+// requests a service ticket for KRB5_TEST_SPN over an armored TGS-REQ (the TGT is
+// its own armor; the armor key is derived from the subkey in the PA-TGS-REQ
+// authenticator). Skipped unless KRB5_TEST_FAST and KRB5_TEST_SPN are set.
+func TestLiveKerberos_FAST_GetTGS(t *testing.T) {
+	e := requireKrbEnv(t)
+	if os.Getenv("KRB5_TEST_FAST") == "" {
+		t.Skip("set KRB5_TEST_FAST=1 to run the FAST-armored TGS-REQ test (requires KDC armoring support)")
+	}
+	if e.SPN == "" {
+		t.Skip("set KRB5_TEST_SPN to a service principal name to run the FAST GetTGS test")
+	}
+
+	armor := e.newClient()
+	if err := armor.GetTGT(); err != nil {
+		t.Fatalf("armor GetTGT: %v", err)
+	}
+	c := e.newClient().WithFASTArmorFromClient(armor)
+	if err := c.GetTGT(); err != nil {
+		t.Fatalf("GetTGT(FAST): %v", err)
+	}
+
+	ticket, ticketRaw, key, keyEType, err := c.GetTGS(e.SPN, true)
+	if err != nil {
+		t.Fatalf("FAST GetTGS(%q): %v", e.SPN, err)
+	}
+	if len(ticketRaw) == 0 || len(key) == 0 {
+		t.Fatalf("FAST GetTGS(%q) returned empty ticket/key", e.SPN)
+	}
+	t.Logf("[ok] FAST-armored service ticket for %s (sname=%v, session etype=%d)",
+		e.SPN, ticket.SName.NameString, keyEType)
+}
+
 // TestLiveKerberos_Renew acquires a renewable TGT and renews it.
 func TestLiveKerberos_Renew(t *testing.T) {
 	e := requireKrbEnv(t)
