@@ -106,6 +106,34 @@ func TestCCacheRejectsWrongVersion(t *testing.T) {
 	}
 }
 
+// TestCCacheRejectsHugeLength ensures a hostile variable-length field with a
+// declared length that overflows the remaining buffer is rejected with a clean
+// error instead of panicking in make([]byte, n). The 0x80000000 length also
+// covers the negative-int path of need(): on a 32-bit build int(n) is negative,
+// which the n < 0 guard rejects (mirroring the keytab reader); on a 64-bit build
+// it is a large positive value caught by the pos+n > len(b) bounds check.
+func TestCCacheRejectsHugeLength(t *testing.T) {
+	// version 4 (05 04), empty header (00 00), then a principal whose realm
+	// data field claims a length of 0x80000000 bytes.
+	crafted := []byte{
+		0x05, 0x04, // version 4
+		0x00, 0x00, // header length 0
+		0x00, 0x00, 0x00, 0x01, // principal name-type
+		0x00, 0x00, 0x00, 0x00, // component count 0
+		0x80, 0x00, 0x00, 0x00, // realm length 0x80000000 (hostile)
+	}
+	if _, err := Unmarshal(crafted); err == nil {
+		t.Fatal("expected error for oversized length field, got nil")
+	}
+
+	// A plainly-too-large length that exceeds the buffer on any platform must
+	// likewise return an error rather than reading out of bounds.
+	crafted[12], crafted[13], crafted[14], crafted[15] = 0x00, 0x00, 0xFF, 0xFF
+	if _, err := Unmarshal(crafted); err == nil {
+		t.Fatal("expected error for length exceeding buffer, got nil")
+	}
+}
+
 func TestCCacheEmptyHeaderNoDelta(t *testing.T) {
 	cc := &CCache{DefaultPrincipal: Principal{NameType: 1, Realm: "R", Components: []string{"u"}}}
 	b, err := cc.Marshal()
