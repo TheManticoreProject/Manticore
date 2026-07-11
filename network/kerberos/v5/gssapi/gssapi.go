@@ -145,6 +145,11 @@ type SecContext struct {
 	// acceptorSeq is the sequence number the acceptor placed in its AP-REP. The
 	// DCE-style third-leg AP-REP must echo it (krb5_rd_rep_dce checks it).
 	acceptorSeq int
+	// recvWindow enforces the receive-side replay / sequencing check on incoming
+	// per-message tokens (RFC 4121 §4.2.6 / RFC 2743 §1.2.1.1). It seeds itself
+	// from the first authenticated token; a zero-value SecContext (no flags set)
+	// leaves it disabled.
+	recvWindow seqWindow
 }
 
 // InitOptions configures InitSecContext.
@@ -172,6 +177,18 @@ type InitOptions struct {
 	// random value. DCE/RPC requires it (the acceptor's per-message receive
 	// sequence is seeded from it, and the per-PDU counter starts at 0).
 	ZeroSeqNumber bool
+	// DisableReplayDetection turns off receive-side replay rejection of incoming
+	// per-message tokens. Replay detection is ON by default: a sliding 64-token
+	// window (RFC 2743 §1.2.1.1 / RFC 4121 §4.2.6) rejects duplicated and
+	// below-window tokens with ErrDuplicateToken / ErrOldToken.
+	DisableReplayDetection bool
+	// EnforceSequence additionally rejects per-message tokens delivered out of
+	// order or skipping ahead (ErrUnseqToken / ErrGapToken). It is OFF by default:
+	// the DCE/RPC three-leg and other AD peers do not guarantee that per-message
+	// tokens arrive in strict GSS sequence, so strict enforcement would break
+	// interoperability, whereas replay detection alone still delivers the
+	// anti-replay guarantee these consumers rely on.
+	EnforceSequence bool
 }
 
 // InitSecContext builds the initiator's KRB_AP_REQ GSS token from a service
@@ -260,6 +277,12 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 		ctime:        now.Truncate(time.Second),
 		cusec:        cusec,
 		sendSeq:      uint64(seqNum),
+		// Receive-side enforcement: replay detection on unless disabled, strict
+		// sequencing only when explicitly requested (see InitOptions).
+		recvWindow: seqWindow{
+			replayDetect: !opts.DisableReplayDetection,
+			sequence:     opts.EnforceSequence,
+		},
 	}
 	return token, ctx, nil
 }
