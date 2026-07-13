@@ -4,7 +4,13 @@ package kerberos
 // obtained for a target SPN. The service ticket's enc-part is encrypted with the
 // service account's long-term key, so it can be cracked offline to recover that
 // account's password. Format it for a cracker with
-// attacks.FormatTGSHash(spn, result.Realm, spn, result.EType, result.Cipher).
+// attacks.FormatTGSHash(account, result.Realm, result.SPN, result.EType, result.Cipher),
+// where account is the service account's sAMAccountName. The account is the
+// AES string-to-key salt input (UPPER(realm)+account), so passing the SPN there
+// produces the wrong salt and an uncrackable AES hash; it is not carried on the
+// result and must be resolved separately (e.g. the account owning the SPN in the
+// directory). For RC4 (etype 23) the account field is not used in the salt, so any
+// placeholder cracks, but supplying the real sAMAccountName keeps both etypes correct.
 type KerberoastResult struct {
 	// SPN is the service principal name that was roasted.
 	SPN string
