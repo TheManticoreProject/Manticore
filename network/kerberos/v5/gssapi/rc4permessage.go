@@ -43,18 +43,6 @@ func le32(v uint32) []byte {
 	return b
 }
 
-// rc4MICPad returns the RC4 MIC pad: the data is padded to a 4-byte boundary with
-// the pad length byte (RFC 4757 / MIT behaviour). The pad is folded into the
-// checksum only; it is not transmitted.
-func rc4MICPad(n int) []byte {
-	pad := (4 - (n % 4)) & 3
-	out := make([]byte, pad)
-	for i := range out {
-		out[i] = byte(pad)
-	}
-	return out
-}
-
 // rc4MICSeqBytes builds the 8-byte SND_SEQ field before encryption: the 32-bit
 // sequence number (big-endian) followed by the 4-byte direction indicator (0x00
 // for initiator-sent tokens, 0xff for acceptor-sent tokens).
@@ -130,15 +118,16 @@ func (ctx *SecContext) verifyMICRC4(data, token []byte) error {
 }
 
 // rc4SgnCksum computes the RC4 MIC SGN_CKSUM: HMAC-MD5(Ksign, MD5(LE32(15) |
-// tokenHeader[:8] | data | pad)), truncated to 8 bytes. Ksign is HMAC-MD5(key,
-// "signaturekey\0"). The literal 15 is the MIC "sign" key-usage seed.
+// tokenHeader[:8] | data)), truncated to 8 bytes. Ksign is HMAC-MD5(key,
+// "signaturekey\0"). The literal 15 is the MIC "sign" key-usage seed. Per RFC
+// 4757 §7.2 the checksum is computed over the data as-is: unlike the Wrap token,
+// the MIC token does not pad the signed data.
 func rc4SgnCksum(key, hdr8, data []byte) []byte {
 	ksign := hmacMD5(key, []byte("signaturekey\x00"))
-	buf := make([]byte, 0, 4+8+len(data)+3)
+	buf := make([]byte, 0, 4+8+len(data))
 	buf = append(buf, le32(15)...)
 	buf = append(buf, hdr8...)
 	buf = append(buf, data...)
-	buf = append(buf, rc4MICPad(len(data))...)
 	return hmacMD5(ksign, md5sum(buf))[:8]
 }
 

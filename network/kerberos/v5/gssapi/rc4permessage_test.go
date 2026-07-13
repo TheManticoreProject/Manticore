@@ -30,6 +30,46 @@ func TestMakeMICRC4KnownAnswer(t *testing.T) {
 	}
 }
 
+// TestRC4MICUnpaddedKnownAnswer pins the RFC 4757 §7.2 RC4-HMAC GSS MIC
+// SGN_CKSUM over messages whose length is NOT a multiple of four. §7.2 signs the
+// data as-is: unlike the Wrap token, the MIC token does not pad the signed data.
+// Each SGN_CKSUM below is the trailing 8 octets of the MIC token — the value of
+// HMAC-MD5(Ksign, MD5(LE32(15) | hdr8 | data))[:8] computed per RFC 4757 §7.2
+// for the fixed RC4 session key. A checksum that folded a 4-byte pad into the
+// MD5 buffer would miss every one of these vectors, so this is the regression
+// guard against re-introducing the pad on the MIC path.
+func TestRC4MICUnpaddedKnownAnswer(t *testing.T) {
+	key, _ := hex.DecodeString("1e9581d2fc64114fbbb0f7ac4502cf2a")
+	ctx := &SecContext{SessionKey: key, SessionEType: rc4HMACEType}
+
+	cases := []struct {
+		data    string
+		sgnCkum string // the trailing 8-octet SGN_CKSUM
+	}{
+		{"A", "fb9d3561dda207b2"},       // len 1, len%4 == 1
+		{"BB", "eb0be530c54313a8"},      // len 2, len%4 == 2
+		{"CCC", "565867a1e3d3b4d4"},     // len 3, len%4 == 3
+		{"DDDDD", "fd2850c069c86363"},   // len 5, len%4 == 1
+		{"EEEEEE", "5c15be411d0ef3f8"},  // len 6, len%4 == 2
+		{"GGGGGGG", "12bbf34046e7e340"}, // len 7, len%4 == 3
+	}
+
+	for _, c := range cases {
+		mic, err := ctx.MakeMIC([]byte(c.data))
+		if err != nil {
+			t.Fatalf("MakeMIC(%q): %v", c.data, err)
+		}
+		if len(mic) != rc4MICTokenLen {
+			t.Fatalf("MIC(%q) length = %d, want %d", c.data, len(mic), rc4MICTokenLen)
+		}
+		got := mic[len(mic)-8:] // SGN_CKSUM is the final 8 octets
+		want, _ := hex.DecodeString(c.sgnCkum)
+		if !bytes.Equal(got, want) {
+			t.Errorf("MIC SGN_CKSUM(%q) = %x, want %x", c.data, got, want)
+		}
+	}
+}
+
 // TestRC4MICRoundTrip confirms an acceptor-direction token verifies, and that a
 // tampered message fails verification.
 func TestRC4MICRoundTrip(t *testing.T) {
