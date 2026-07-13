@@ -3,11 +3,13 @@ package llmnr
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -385,15 +387,57 @@ func TestNewClientForInterfaceRejectsBadFamily(t *testing.T) {
 	}
 }
 
-// TestNewClientForInterfaceIPv6 constructs an IPv6 client bound to the loopback
-// interface (present on every host, so the test stays offline) and verifies it
-// targets the FF02::1:3 group on the RFC 4795 port with the interface set as the
-// destination zone. This also exercises selecting the outgoing multicast
-// interface, which must not fail construction.
-func TestNewClientForInterfaceIPv6(t *testing.T) {
-	c, err := NewClientForInterface("udp6", "lo")
+// loopbackInterface returns the name of an up loopback interface, or skips the
+// test when the host has none. The name is discovered rather than hardcoded
+// because it is not portable: it is "lo" on Linux but a longer pseudo-interface
+// name on Windows. The MULTICAST flag is deliberately not required — the Linux
+// loopback accepts IPV6_MULTICAST_IF without advertising it — so the actual
+// multicast capability is probed by attempting construction below.
+func loopbackInterface(t *testing.T) string {
+	t.Helper()
+	ifaces, err := net.Interfaces()
 	if err != nil {
-		t.Fatalf("NewClientForInterface(udp6, lo) error = %v", err)
+		t.Skipf("cannot enumerate interfaces: %v", err)
+	}
+	const want = net.FlagLoopback | net.FlagUp
+	for _, iface := range ifaces {
+		if iface.Flags&want == want {
+			return iface.Name
+		}
+	}
+	t.Skip("no up loopback interface on this host")
+	return ""
+}
+
+// isUnsupportedNetworkError reports whether err indicates the environment cannot
+// perform the requested IPv6 multicast socket operation (as opposed to a defect
+// in the code under test). CI runners under architecture emulation, and some
+// container/loopback configurations, reject the IPV6_MULTICAST_IF socket option
+// with ENOPROTOOPT ("protocol not available") even though a multicast-capable
+// loopback is advertised; such environments have nothing meaningful to assert.
+func isUnsupportedNetworkError(err error) bool {
+	return errors.Is(err, syscall.ENOPROTOOPT) ||
+		errors.Is(err, syscall.EAFNOSUPPORT) ||
+		errors.Is(err, syscall.EOPNOTSUPP) ||
+		errors.Is(err, syscall.EADDRNOTAVAIL)
+}
+
+// TestNewClientForInterfaceIPv6 constructs an IPv6 client bound to a loopback
+// interface and verifies it targets the FF02::1:3 group on the RFC 4795 port
+// with the interface set as the destination zone. This also exercises selecting
+// the outgoing multicast interface. The test skips (rather than fails) on hosts
+// with no multicast-capable loopback or that cannot set up IPv6 multicast on it,
+// so it stays a genuine-regression guard on capable hosts without flaking on
+// emulated CI runners or non-Linux loopback naming.
+func TestNewClientForInterfaceIPv6(t *testing.T) {
+	ifaceName := loopbackInterface(t)
+
+	c, err := NewClientForInterface("udp6", ifaceName)
+	if err != nil {
+		if isUnsupportedNetworkError(err) {
+			t.Skipf("environment cannot set up IPv6 multicast on %q: %v", ifaceName, err)
+		}
+		t.Fatalf("NewClientForInterface(udp6, %q) error = %v", ifaceName, err)
 	}
 	defer c.Close()
 
@@ -409,8 +453,8 @@ func TestNewClientForInterfaceIPv6(t *testing.T) {
 	if c.dest.Port != constants.ListenPort {
 		t.Errorf("NewClientForInterface() dest Port = %d, want %d", c.dest.Port, constants.ListenPort)
 	}
-	if c.dest.Zone != "lo" {
-		t.Errorf("NewClientForInterface() dest Zone = %q, want %q", c.dest.Zone, "lo")
+	if c.dest.Zone != ifaceName {
+		t.Errorf("NewClientForInterface() dest Zone = %q, want %q", c.dest.Zone, ifaceName)
 	}
 }
 
