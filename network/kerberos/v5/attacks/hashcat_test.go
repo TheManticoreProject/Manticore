@@ -50,6 +50,27 @@ func TestFormatASREPHashRC4(t *testing.T) {
 	}
 }
 
+// TestFormatASREPHashRejectsAES verifies that FormatASREPHash refuses every AES
+// enctype: hashcat has no AS-REP mode for AES (mode 18200 is RC4/etype-23 only),
+// so an "$krb5asrep$17/18/19/20$" string would be uncrackable. AES AS-REP hashes
+// must go through FormatASREPHashJohn instead.
+func TestFormatASREPHashRejectsAES(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		etype int
+	}{
+		{"aes128-sha1", iana.ETypeAES128CTSHMACSHA196},
+		{"aes256-sha1", iana.ETypeAES256CTSHMACSHA196},
+		{"aes256-sha2", iana.ETypeAES256CTSHMACSHA384},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := FormatASREPHash("user", "domain.com", tc.etype, make([]byte, 64)); err == nil {
+				t.Errorf("expected error for AES etype %d, got nil", tc.etype)
+			}
+		})
+	}
+}
+
 func lastTwoFields(s string) (secondLast, last string) {
 	f := strings.Split(s, "$")
 	return f[len(f)-2], f[len(f)-1]
