@@ -14,7 +14,7 @@
 ## Features
 
 - [x] **Cross-Platform Support**: Works on Windows, Linux, and macOS — no Windows API dependency.
-- [x] **Authentication**: NTLM (v1/v2), SPNEGO/GSSAPI, and LDAP bind, with partial Kerberos v5 (AS-REP roasting).
+- [x] **Authentication**: NTLM (v1/v2), SPNEGO/GSSAPI, LDAP bind, and a native Kerberos v5 stack — AS/TGS exchanges, PKINIT, FAST, S4U (S4U2self/S4U2proxy), U2U, AS-REP roasting and Kerberoasting, golden/silver/diamond/sapphire ticket forging, UnPAC-the-hash, and keytab/ccache/kirbi credential I/O.
 - [x] **Network Protocols**: SMB 1.0 (CIFS) and SMB 2.0, a full DCE/RPC stack (NDR, EPM, `ncacn_ip_tcp`/`ncacn_np`/`ncacn_http` transports) exposing LSARPC, SAMR, SRVSVC, SVCCTL, DRSUAPI and WINREG, plus LDAP, LLMNR and NetBIOS name services.
 - [x] **Cryptography**: [aescts](crypto/aescts/), [cmac](crypto/cmac/), [dcc](crypto/dcc/), [dcc2](crypto/dcc2/), [gppp](crypto/gppp/), [lm](crypto/lm/), [md4](crypto/md4/), [nfold](crypto/nfold/), [nt](crypto/nt/), [ntlmv1](crypto/ntlmv1/), [ntlmv2](crypto/ntlmv2/), [pkcs7](crypto/pkcs7/), [rc4](crypto/rc4/), [spnego](crypto/spnego/), [uuid](crypto/uuid/)
 - [x] **Windows Internals**: Offline NTDS.dit secret extraction (ESE/JET parser + PEK decryption), REGF registry hive read/write, Active Directory replication metadata (`DS_REPL_*`), KeyCredentialLink, and CNG (bcrypt) key blobs.
@@ -57,7 +57,17 @@ Legend: :white_check_mark: implemented &nbsp;·&nbsp; :construction: partial / i
       - EPM (endpoint mapper) :construction:
       - DSAOP (MS-DSSP) :x:
   - LDAP :construction:
-  - Kerberos v5 :construction:
+  - Kerberos v5 :white_check_mark:
+    - AS-REQ / TGS-REQ client (TGT, service tickets, referrals, renew, postdate) :white_check_mark:
+    - PKINIT (RFC 4556) :white_check_mark:
+    - FAST / armoring (RFC 6113), incl. FAST-TGS :white_check_mark:
+    - S4U2self / S4U2proxy (MS-SFU) :white_check_mark:
+    - User-to-user (U2U) :white_check_mark:
+    - AS-REP roasting & Kerberoasting (hashcat / john output) :white_check_mark:
+    - Golden / silver / diamond / sapphire ticket forging :white_check_mark:
+    - UnPAC-the-hash & PAC build / parse :white_check_mark:
+    - keytab / ccache / kirbi credential I/O :white_check_mark:
+    - GSSAPI acceptor, per-message tokens & delegation :white_check_mark:
   - GSSAPI / SPNEGO (NTLM) :white_check_mark:
   - LLMNR :white_check_mark:
   - NetBIOS
@@ -77,7 +87,7 @@ Legend: :white_check_mark: implemented &nbsp;·&nbsp; :construction: partial / i
   - PKCS#7 padding :white_check_mark:
   - GPPP (Group Policy Preferences) :white_check_mark:
   - UUID (v1–v8) :white_check_mark:
-  - Kerberos crypto (full suite) :construction:
+  - Kerberos crypto (AES-CTS-HMAC-SHA1 RFC 3962, AES-CTS-HMAC-SHA2 RFC 8009, RC4-HMAC RFC 4757) :white_check_mark:
 - **Windows**
   - Registry
     - REGF hive parsing (read) :white_check_mark:
