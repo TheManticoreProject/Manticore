@@ -104,4 +104,5 @@ Legend: :white_check_mark: implemented &nbsp;·&nbsp; :construction: partial / i
 Pull requests are welcome. Feel free to open an issue if you want to add other features.
 
 ## Credits
-  - [Remi GASCOU (Podalirius)](https://github.com/p0dalirius) for the creation of the [Manticore](https://github.com/TheManticoreProject/Manticore) project.
+  - Remi GASCOU (Podalirius) ([@p0dalirius](https://github.com/p0dalirius)) for the creation of the [Manticore](https://github.com/TheManticoreProject/Manticore) project.
+  - [SecureAuthCorp](https://github.com/SecureAuthCorp) and [@Fortra](https://github.com/fortra/) for creating and maintaining [Impacket](https://github.com/fortra/impacket).
