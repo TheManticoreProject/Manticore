@@ -30,84 +30,29 @@ go get github.com/TheManticoreProject/Manticore@latest
 
 ## Roadmap
 
-Legend: :white_check_mark: implemented &nbsp;·&nbsp; :construction: partial / in progress &nbsp;·&nbsp; :x: not yet implemented
+Each module is colored by advancement state — 🟢 implemented & tested · 🟠 partial / in progress · 🔴 not yet implemented — where a **parent inherits the worst color of its submodules**. The graph below mirrors the package tree on disk; this shows the top level only.
 
-- **Network**
-  - SMB
-    - SMB 1.0 (CIFS) :white_check_mark:
-    - SMB 2.0 :construction:
-    - SMB 2.1 :x:
-    - SMB 3.0 :x:
-    - SMB 3.0.2 :x:
-    - SMB 3.1.1 :x:
-  - DCE/RPC
-    - Core (PDU, NDR encoding/decoding, EPM) :white_check_mark:
-    - Transports
-      - `ncacn_ip_tcp` :white_check_mark:
-      - `ncacn_np` (named pipes) :white_check_mark:
-      - `ncacn_http` :white_check_mark:
-    - Interfaces
-      - LSARPC (MS-LSAD / MS-LSAT) :white_check_mark:
-      - SAMR (MS-SAMR) :white_check_mark:
-      - SRVSVC (MS-SRVS) :white_check_mark:
-      - SVCCTL (MS-SCMR) :white_check_mark:
-      - DRSUAPI (MS-DRSR) :white_check_mark:
-      - WINREG (MS-RRP) :construction:
-      - EFSRPC (MS-EFSR) :construction:
-      - EPM (endpoint mapper) :construction:
-      - DSAOP (MS-DSSP) :x:
-  - LDAP :construction:
-  - Kerberos v5 :white_check_mark:
-    - AS-REQ / TGS-REQ client (TGT, service tickets, referrals, renew, postdate) :white_check_mark:
-    - PKINIT (RFC 4556) :white_check_mark:
-    - FAST / armoring (RFC 6113), incl. FAST-TGS :white_check_mark:
-    - S4U2self / S4U2proxy (MS-SFU) :white_check_mark:
-    - User-to-user (U2U) :white_check_mark:
-    - AS-REP roasting & Kerberoasting (hashcat / john output) :white_check_mark:
-    - Golden / silver / diamond / sapphire ticket forging :white_check_mark:
-    - UnPAC-the-hash & PAC build / parse :white_check_mark:
-    - keytab / ccache / kirbi credential I/O :white_check_mark:
-    - GSSAPI acceptor, per-message tokens & delegation :white_check_mark:
-  - GSSAPI / SPNEGO (NTLM) :white_check_mark:
-  - LLMNR :white_check_mark:
-  - NetBIOS
-    - NBNS (name service) :white_check_mark:
-    - NBT (NetBIOS over TCP) :construction:
-    - NBF (NetBIOS frames) :x:
-  - DNS :x:
-  - Raw TCP / IP :x:
-- **Cryptography**
-  - MD4 / NT / LM hashes :white_check_mark:
-  - DCC / DCC2 :white_check_mark:
-  - NTLMv1 / NTLMv2 :white_check_mark:
-  - RC4 :white_check_mark:
-  - AES-CTS (RFC 3962) :white_check_mark:
-  - CMAC :white_check_mark:
-  - N-Fold (RFC 3961) :white_check_mark:
-  - PKCS#7 padding :white_check_mark:
-  - GPPP (Group Policy Preferences) :white_check_mark:
-  - UUID (v1–v8) :white_check_mark:
-  - Kerberos crypto (AES-CTS-HMAC-SHA1 RFC 3962, AES-CTS-HMAC-SHA2 RFC 8009, RC4-HMAC RFC 4757) :white_check_mark:
-- **Windows**
-  - Registry
-    - REGF hive parsing (read) :white_check_mark:
-    - REGF hive writing :white_check_mark:
-    - `.reg` file encode/decode :white_check_mark:
-  - Database
-    - ESE / JET Blue reader :white_check_mark:
-    - NTDS.dit offline parsing + secret decryption :white_check_mark:
-  - Active Directory
-    - Replication metadata (`DS_REPL_*`) :white_check_mark:
-    - KeyCredentialLink :white_check_mark:
-    - Service Principal Names (SPN) :white_check_mark:
-  - Security descriptors (via winacl) :white_check_mark:
-  - CNG bcrypt key blobs (RSA / ECC / DSA) :white_check_mark:
-  - MS-DTYP data types :construction:
-  - Filesystem info classes (FSCC) :construction:
-- **Encoding**
-  - ASCII :white_check_mark:
-  - UTF-16LE :white_check_mark:
-  - EBCDIC (cp037, cp500) :white_check_mark:
+```mermaid
+graph LR
+  root["Manticore 🔴"]:::c0
+  n_crypto["crypto 🟠"]:::c1
+  n_encoding["encoding 🟠"]:::c1
+  n_logger["logger 🟢"]:::c2
+  n_network["network 🔴"]:::c0
+  n_utils["utils 🟢"]:::c2
+  n_windows["windows 🟠"]:::c1
+  root --> n_crypto
+  root --> n_encoding
+  root --> n_logger
+  root --> n_network
+  root --> n_utils
+  root --> n_windows
+  classDef c2 fill:#1f8b4c,stroke:#155d33,color:#fff;
+  classDef c1 fill:#d9822b,stroke:#a35d17,color:#fff;
+  classDef c0 fill:#c0392b,stroke:#7d2419,color:#fff;
+```
+
+See **[docs/roadmap.md](docs/roadmap.md)** for the full module-by-module graph covering every package on the filesystem, and [`docs/gen_roadmap_graph.py`](docs/gen_roadmap_graph.py) which regenerates it.
 
 ## Contributing
 
