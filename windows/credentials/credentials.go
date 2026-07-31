@@ -1,7 +1,10 @@
 package credentials
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -13,6 +16,15 @@ type Credentials struct {
 
 	LMHash string
 	NTHash string
+
+	// AESKey is a hex-encoded Kerberos AES key, 32 hex characters for
+	// aes128-cts-hmac-sha1-96 or 64 for aes256-cts-hmac-sha1-96. Set it with
+	// SetAESKey, which validates the encoding and length.
+	AESKey string
+
+	// Keytab is the path to a Kerberos keytab file holding the principal's keys.
+	// Set it with SetKeytab.
+	Keytab string
 }
 
 // NewCredentials creates a new Credentials object.
@@ -79,6 +91,72 @@ func (c *Credentials) CanPassTheHash() bool {
 	return c.NTHash != "" && c.Username != ""
 }
 
+// CanUseAESKey returns true if the credentials hold a Kerberos AES key usable for
+// authentication.
+func (c *Credentials) CanUseAESKey() bool {
+	return c.AESKey != "" && c.Username != ""
+}
+
+// CanUseKeytab returns true if the credentials hold a Kerberos keytab usable for
+// authentication.
+func (c *Credentials) CanUseKeytab() bool {
+	return c.Keytab != "" && c.Username != ""
+}
+
+// Setters
+
+// SetAESKey sets the hex-encoded Kerberos AES key, after checking that it decodes
+// and is a valid AES key length. Validating here means a malformed key is reported
+// when the credentials are built, rather than as a KDC failure later.
+//
+// Parameters:
+//
+//	hexKey (string): The hex-encoded AES key, 32 or 64 hex characters.
+//
+// Returns:
+//
+//	An error if the key is not valid hex or is not 16 or 32 bytes, nil otherwise.
+func (c *Credentials) SetAESKey(hexKey string) error {
+	trimmed := strings.TrimSpace(hexKey)
+
+	raw, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid hex AES key: %w", err)
+	}
+
+	if len(raw) != 16 && len(raw) != 32 {
+		return fmt.Errorf("AES key must be 16 or 32 bytes (32 or 64 hex characters), got %d", len(raw))
+	}
+
+	c.AESKey = trimmed
+
+	return nil
+}
+
+// SetKeytab sets the path to a Kerberos keytab file, after checking that the file
+// exists and is readable.
+//
+// Parameters:
+//
+//	path (string): The path to the keytab file.
+//
+// Returns:
+//
+//	An error if the file cannot be opened, nil otherwise.
+func (c *Credentials) SetKeytab(path string) error {
+	trimmed := strings.TrimSpace(path)
+
+	handle, err := os.Open(trimmed)
+	if err != nil {
+		return fmt.Errorf("cannot read keytab: %w", err)
+	}
+	defer handle.Close()
+
+	c.Keytab = trimmed
+
+	return nil
+}
+
 // Getters
 
 func (c *Credentials) GetLMHash() string {
@@ -99,4 +177,12 @@ func (c *Credentials) GetUsername() string {
 
 func (c *Credentials) GetPassword() string {
 	return c.Password
+}
+
+func (c *Credentials) GetAESKey() string {
+	return c.AESKey
+}
+
+func (c *Credentials) GetKeytab() string {
+	return c.Keytab
 }

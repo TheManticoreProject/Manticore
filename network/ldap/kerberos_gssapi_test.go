@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/binary"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
 // serverOffer builds an RFC 4752 §3.1 server security-layer offer: the supported
@@ -131,5 +135,65 @@ func TestCertificateHashAlgorithmSelection(t *testing.T) {
 		if got := len(certificateHash(cert)); got != c.length {
 			t.Errorf("%v: hash length = %d, want %d", c.alg, got, c.length)
 		}
+	}
+}
+
+// The secret-selection tests below reach newNativeGSSAPIClient without a KDC. Each
+// case is arranged so the chosen branch fails inside its own With* call, which
+// happens before GetTGT is reached, so the returned error identifies which secret
+// was picked. That makes the precedence order observable without a live KDC.
+
+func TestNewNativeGSSAPIClientRequiresASecret(t *testing.T) {
+	creds, err := credentials.NewCredentials("MANTICORE.LOCAL", "user", "", "")
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+
+	_, err = newNativeGSSAPIClient("dc.manticore.local", "MANTICORE.LOCAL", creds)
+	if err == nil {
+		t.Fatal("newNativeGSSAPIClient() with no secret error = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), "no usable secret") {
+		t.Errorf("error = %q, want it to mention %q", err, "no usable secret")
+	}
+}
+
+func TestNewNativeGSSAPIClientPrefersKeytabOverEverything(t *testing.T) {
+	creds, err := credentials.NewCredentials("MANTICORE.LOCAL", "user", "password", strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+	// Assigned directly rather than through SetKeytab, which would reject a path
+	// that does not exist. A keytab that fails to load still proves it was chosen.
+	creds.Keytab = filepath.Join(t.TempDir(), "absent.keytab")
+	creds.AESKey = strings.Repeat("bb", 32)
+
+	_, err = newNativeGSSAPIClient("dc.manticore.local", "MANTICORE.LOCAL", creds)
+	if err == nil {
+		t.Fatal("newNativeGSSAPIClient() error = nil, want the keytab load to fail")
+	}
+	if !strings.Contains(err.Error(), "keytab") {
+		t.Errorf("error = %q, want it to mention %q", err, "keytab")
+	}
+}
+
+func TestNewNativeGSSAPIClientPrefersAESKeyOverHashAndPassword(t *testing.T) {
+	creds, err := credentials.NewCredentials("MANTICORE.LOCAL", "user", "password", strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+	if !creds.CanPassTheHash() {
+		t.Fatal("CanPassTheHash() = false, the NT hash fixture is wrong")
+	}
+	// A malformed key assigned directly, so WithAESKey rejects it and the error
+	// shows the AES branch ran ahead of the NT hash and password branches.
+	creds.AESKey = "not-hex"
+
+	_, err = newNativeGSSAPIClient("dc.manticore.local", "MANTICORE.LOCAL", creds)
+	if err == nil {
+		t.Fatal("newNativeGSSAPIClient() error = nil, want the AES key to be rejected")
+	}
+	if !strings.Contains(err.Error(), "AES key") {
+		t.Errorf("error = %q, want it to mention %q", err, "AES key")
 	}
 }
