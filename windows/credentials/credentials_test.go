@@ -1,6 +1,9 @@
 package credentials_test
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
@@ -116,5 +119,101 @@ func TestParseLMNTHashes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSetAESKey(t *testing.T) {
+	// 32 hex characters is a 16-byte aes128 key, 64 a 32-byte aes256 key.
+	aes128 := strings.Repeat("ab", 16)
+	aes256 := strings.Repeat("cd", 32)
+
+	tests := []struct {
+		name    string
+		hexKey  string
+		wantErr bool
+		want    string
+	}{
+		{name: "aes128", hexKey: aes128, want: aes128},
+		{name: "aes256", hexKey: aes256, want: aes256},
+		{name: "surrounding whitespace is trimmed", hexKey: "  " + aes256 + "\n", want: aes256},
+		{name: "uppercase hex", hexKey: strings.ToUpper(aes256), want: strings.ToUpper(aes256)},
+		{name: "not hex", hexKey: strings.Repeat("zz", 32), wantErr: true},
+		{name: "odd length", hexKey: strings.Repeat("a", 63), wantErr: true},
+		{name: "too short", hexKey: strings.Repeat("ab", 8), wantErr: true},
+		{name: "too long", hexKey: strings.Repeat("ab", 48), wantErr: true},
+		{name: "empty", hexKey: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &credentials.Credentials{Username: "user"}
+			err := c.SetAESKey(tt.hexKey)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("SetAESKey(%q) error = nil, want an error", tt.hexKey)
+				}
+				if c.GetAESKey() != "" {
+					t.Errorf("AESKey = %q after a rejected key, want it left empty", c.GetAESKey())
+				}
+				if c.CanUseAESKey() {
+					t.Error("CanUseAESKey() = true after a rejected key")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("SetAESKey(%q) error = %v", tt.hexKey, err)
+			}
+			if got := c.GetAESKey(); got != tt.want {
+				t.Errorf("GetAESKey() = %q, want %q", got, tt.want)
+			}
+			if !c.CanUseAESKey() {
+				t.Error("CanUseAESKey() = false, want true")
+			}
+		})
+	}
+}
+
+func TestCanUseAESKeyRequiresUsername(t *testing.T) {
+	c := &credentials.Credentials{}
+	if err := c.SetAESKey(strings.Repeat("ab", 32)); err != nil {
+		t.Fatalf("SetAESKey() error = %v", err)
+	}
+	if c.CanUseAESKey() {
+		t.Error("CanUseAESKey() = true with no username, want false")
+	}
+}
+
+func TestSetKeytab(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "user.keytab")
+	if err := os.WriteFile(path, []byte("not a real keytab"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	c := &credentials.Credentials{Username: "user"}
+	if err := c.SetKeytab(path); err != nil {
+		t.Fatalf("SetKeytab(%q) error = %v", path, err)
+	}
+	if got := c.GetKeytab(); got != path {
+		t.Errorf("GetKeytab() = %q, want %q", got, path)
+	}
+	if !c.CanUseKeytab() {
+		t.Error("CanUseKeytab() = false, want true")
+	}
+}
+
+func TestSetKeytabRejectsMissingFile(t *testing.T) {
+	c := &credentials.Credentials{Username: "user"}
+	missing := filepath.Join(t.TempDir(), "absent.keytab")
+
+	if err := c.SetKeytab(missing); err == nil {
+		t.Fatal("SetKeytab() with a missing file error = nil, want an error")
+	}
+	if c.GetKeytab() != "" {
+		t.Errorf("Keytab = %q after a rejected path, want it left empty", c.GetKeytab())
+	}
+	if c.CanUseKeytab() {
+		t.Error("CanUseKeytab() = true after a rejected path")
 	}
 }

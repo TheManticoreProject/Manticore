@@ -58,13 +58,29 @@ type nativeGSSAPIClient struct {
 func newNativeGSSAPIClient(kdc, realm string, creds *credentials.Credentials) (*nativeGSSAPIClient, error) {
 	user := creds.GetUsername()
 	kc := kerberos.NewClient(user, realm, kdc)
-	if creds.CanPassTheHash() {
+
+	// Ordered strongest first: a keytab can carry AES keys for several etypes, an
+	// AES key beats the RC4 key an NT hash provides, and a password is the weakest
+	// because it still has to be string-to-key'd into one.
+	switch {
+	case creds.CanUseKeytab():
+		if err := kc.WithKeytabFile(creds.GetKeytab()); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: keytab: %w", err)
+		}
+	case creds.CanUseAESKey():
+		if err := kc.WithAESKey(creds.GetAESKey()); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: AES key: %w", err)
+		}
+	case creds.CanPassTheHash():
 		if err := kc.WithNTHash(creds.GetNTHash()); err != nil {
 			return nil, fmt.Errorf("ldap gssapi: NT hash: %w", err)
 		}
-	} else {
+	case creds.GetPassword() != "":
 		kc.WithPassword(creds.GetPassword())
+	default:
+		return nil, fmt.Errorf("ldap gssapi: no usable secret: set a password, NT hash, AES key or keytab")
 	}
+
 	if err := kc.GetTGT(); err != nil {
 		return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
 	}
