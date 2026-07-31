@@ -18,6 +18,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt/keys/magic"
 )
 
+const (
+	// privateKeyFileMode is the mode of a file holding private key material. Only
+	// the owner may read or write it.
+	privateKeyFileMode = 0o600
+
+	// privateKeyDirMode is the mode of a directory created to hold private key
+	// material. Only the owner may traverse or list it.
+	privateKeyDirMode = 0o700
+)
+
 // X509Certificate represents an X.509 certificate along with its associated RSA private key and public key material.
 //
 // Fields:
@@ -203,6 +213,11 @@ func (x *X509Certificate) ExportRSAPublicKeyBCrypt() (*keys.BCRYPT_RSA_PUBLIC_KE
 
 // ExportRSAPrivateKeyPEM exports the private key to a PEM file.
 //
+// The file is created with mode 0600 and a directory created to hold it with mode
+// 0700, so that the private key is only readable by its owner. An existing file at
+// pathToFile is narrowed to 0600 as well, since os.OpenFile leaves the mode of an
+// already existing file untouched.
+//
 // Parameters:
 // - pathToFile: A string representing the path to the file where the private key will be exported.
 //
@@ -212,17 +227,21 @@ func (x *X509Certificate) ExportRSAPrivateKeyPEM(pathToFile string) error {
 	if len(pathToFile) != 0 {
 		dir := filepath.Dir(pathToFile)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			if err := os.MkdirAll(dir, privateKeyDirMode); err != nil {
 				return err
 			}
 		}
 	}
 
-	keyOut, err := os.Create(pathToFile)
+	keyOut, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, privateKeyFileMode)
 	if err != nil {
 		return err
 	}
 	defer keyOut.Close()
+
+	if err := keyOut.Chmod(privateKeyFileMode); err != nil {
+		return err
+	}
 
 	privateKey, err := x.GetRSAPrivateKey()
 	if err != nil {
