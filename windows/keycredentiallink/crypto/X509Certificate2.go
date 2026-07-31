@@ -16,6 +16,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt/keys/blob"
 	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt/keys/headers"
 	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt/keys/magic"
+
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 const (
@@ -117,7 +119,55 @@ func NewX509Certificate(subject string, keySize int, notBefore, notAfter time.Ti
 
 // Export ====================================================================================
 
+// ExportCertificatePEM exports the certificate to a PEM file.
+//
+// This is the counterpart of ExportRSAPrivateKeyPEM: together the two files are
+// what PKINIT implementations expect when they take a certificate and its private
+// key as separate PEM inputs. The directory is created with privateKeyDirMode
+// because it is the same directory the private key is written to.
+//
+// Parameters:
+// - pathToFile: A string representing the path to the file where the certificate will be exported.
+//
+// Returns:
+// - An error if the export fails, otherwise nil.
+func (x *X509Certificate) ExportCertificatePEM(pathToFile string) error {
+	certificate, err := x.GetCertificate()
+	if err != nil {
+		return fmt.Errorf("error getting certificate from crypto.X509Certificate: %s", err)
+	}
+
+	if len(pathToFile) != 0 {
+		dir := filepath.Dir(pathToFile)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, privateKeyDirMode); err != nil {
+				return err
+			}
+		}
+	}
+
+	certOut, err := os.Create(pathToFile)
+	if err != nil {
+		return err
+	}
+	defer certOut.Close()
+
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ExportPFX exports the certificate and private key to a PFX file with the specified password.
+//
+// The PFX is encoded with the modern algorithm set (AES-256-CBC and SHA-256 for
+// both encryption and the integrity MAC), which is what current OpenSSL, .NET and
+// Python implementations read. The legacy RC2 and DES encodings are deliberately
+// not used, as modern OpenSSL rejects them by default.
+//
+// The PFX embeds the private key, so the file is written with privateKeyFileMode
+// and a directory created to hold it with privateKeyDirMode.
 //
 // Parameters:
 // - pathToFile: A string representing the path to the file where the PFX will be exported.
@@ -126,7 +176,47 @@ func NewX509Certificate(subject string, keySize int, notBefore, notAfter time.Ti
 // Returns:
 // - An error if the export fails, otherwise nil.
 func (x *X509Certificate) ExportPFX(pathToFile, password string) error {
-	return fmt.Errorf("ExportPFX not implemented")
+	privateKey, err := x.GetRSAPrivateKey()
+	if err != nil {
+		return fmt.Errorf("error getting RSA private key from crypto.X509Certificate: %s", err)
+	}
+
+	certificate, err := x.GetCertificate()
+	if err != nil {
+		return fmt.Errorf("error getting certificate from crypto.X509Certificate: %s", err)
+	}
+
+	pfxData, err := pkcs12.Modern.Encode(privateKey, certificate, nil, password)
+	if err != nil {
+		return fmt.Errorf("error encoding PFX: %s", err)
+	}
+
+	if len(pathToFile) != 0 {
+		dir := filepath.Dir(pathToFile)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, privateKeyDirMode); err != nil {
+				return err
+			}
+		}
+	}
+
+	pfxOut, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, privateKeyFileMode)
+	if err != nil {
+		return err
+	}
+	defer pfxOut.Close()
+
+	// O_CREATE leaves the mode of an already existing file untouched, so narrow it
+	// explicitly before the key material is written.
+	if err := pfxOut.Chmod(privateKeyFileMode); err != nil {
+		return err
+	}
+
+	if _, err := pfxOut.Write(pfxData); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ExportRSAPublicKeyPEM exports the public key to a PEM file.

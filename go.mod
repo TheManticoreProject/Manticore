@@ -16,4 +16,5 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
+	software.sslmate.com/src/go-pkcs12 v0.7.3 // indirect
 )
