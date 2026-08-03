@@ -54,6 +54,13 @@ type Session struct {
 	// binds (RFC 4752 §3.1). It defaults to no security layer (auth only); use
 	// SetGSSAPISigning / SetGSSAPISealing to request integrity or confidentiality.
 	gssapiLayer byte
+	// spnHostname overrides the hostname used to build the ldap/<host> service
+	// principal name for the Kerberos bind. It is empty by default, in which case
+	// the SPN is built from host. Set it (via SetKerberosSPNHostname) when host is
+	// an IP address: Active Directory registers the SPN under the DC's FQDN, so a
+	// Kerberos bind by IP needs the FQDN here while the TCP connection and the KDC
+	// exchanges still use host.
+	spnHostname string
 	// gssClient retains the GSSAPI client for the lifetime of the session so the
 	// negotiated per-message security context survives past the bind and is torn
 	// down on Close.
@@ -137,6 +144,31 @@ func (s *Session) SetTLSSkipVerify(skip bool) {
 	s.tlsSkipVerify = skip
 }
 
+// SetKerberosSPNHostname sets the hostname used to build the ldap/<host> service
+// principal name for a Kerberos bind, overriding the connection host.
+//
+// Use it when the session connects to a domain controller by IP address: Active
+// Directory registers the ldap SPN under the DC's FQDN, so a Kerberos bind by IP
+// fails with KDC_ERR_S_PRINCIPAL_UNKNOWN unless the SPN is built from the FQDN. The
+// TCP connection and the KDC exchanges continue to use the connection host, so the
+// IP is still what is dialled.
+//
+// Parameters:
+//
+//	hostname (string): The FQDN to use in the SPN, or empty to use the connection host.
+func (s *Session) SetKerberosSPNHostname(hostname string) {
+	s.spnHostname = hostname
+}
+
+// kerberosSPNHostname returns the hostname the ldap SPN is built from: the override
+// when one was set, otherwise the connection host.
+func (s *Session) kerberosSPNHostname() string {
+	if s.spnHostname != "" {
+		return s.spnHostname
+	}
+	return s.host
+}
+
 // Connect establishes a connection to the LDAP server. It supports both regular LDAP and LDAPS connections,
 // and can optionally use Kerberos for authentication.
 //
@@ -195,7 +227,8 @@ func (s *Session) Connect() (bool, error) {
 	if s.usekerberos {
 		// Native (stdlib-only) GSSAPI SASL bind; the DC is both the LDAP server
 		// and the KDC. Realm is the credentials' domain (upper-cased by the client).
-		servicePrincipalName := fmt.Sprintf("ldap/%s", s.host)
+		// The SPN is built from the DC's FQDN when host is an IP (see spnHostname).
+		servicePrincipalName := fmt.Sprintf("ldap/%s", s.kerberosSPNHostname())
 		gssClient, gerr := newNativeGSSAPIClient(s.host, s.credentials.GetDomain(), s.credentials)
 		if gerr != nil {
 			ldapConnection.Close()
