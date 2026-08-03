@@ -25,6 +25,14 @@ type Credentials struct {
 	// Keytab is the path to a Kerberos keytab file holding the principal's keys.
 	// Set it with SetKeytab.
 	Keytab string
+
+	// CCache is the path to a Kerberos credential cache (FILE format) holding a
+	// TGT to authenticate with (pass-the-ticket). Set it with SetCCache.
+	CCache string
+
+	// Kirbi is the path to a .kirbi (DER KRB-CRED) file holding a TGT to
+	// authenticate with (pass-the-ticket). Set it with SetKirbi.
+	Kirbi string
 }
 
 // NewCredentials creates a new Credentials object.
@@ -103,6 +111,19 @@ func (c *Credentials) CanUseKeytab() bool {
 	return c.Keytab != "" && c.Username != ""
 }
 
+// CanUseCCache returns true if the credentials point at a Kerberos credential
+// cache to authenticate from. Unlike the secret-based methods it does not require a
+// username: the principal is carried by the ticket in the cache.
+func (c *Credentials) CanUseCCache() bool {
+	return c.CCache != ""
+}
+
+// CanUseKirbi returns true if the credentials point at a .kirbi ticket to
+// authenticate from. Like CanUseCCache it does not require a username.
+func (c *Credentials) CanUseKirbi() bool {
+	return c.Kirbi != ""
+}
+
 // Setters
 
 // SetAESKey sets the hex-encoded Kerberos AES key, after checking that it decodes
@@ -157,6 +178,54 @@ func (c *Credentials) SetKeytab(path string) error {
 	return nil
 }
 
+// SetCCache sets the path to a Kerberos credential cache, after checking that the
+// file exists and is readable.
+//
+// Parameters:
+//
+//	path (string): The path to the ccache file.
+//
+// Returns:
+//
+//	An error if the file cannot be opened, nil otherwise.
+func (c *Credentials) SetCCache(path string) error {
+	trimmed := strings.TrimSpace(path)
+
+	handle, err := os.Open(trimmed)
+	if err != nil {
+		return fmt.Errorf("cannot read ccache: %w", err)
+	}
+	defer handle.Close()
+
+	c.CCache = trimmed
+
+	return nil
+}
+
+// SetKirbi sets the path to a .kirbi ticket file, after checking that the file
+// exists and is readable.
+//
+// Parameters:
+//
+//	path (string): The path to the .kirbi file.
+//
+// Returns:
+//
+//	An error if the file cannot be opened, nil otherwise.
+func (c *Credentials) SetKirbi(path string) error {
+	trimmed := strings.TrimSpace(path)
+
+	handle, err := os.Open(trimmed)
+	if err != nil {
+		return fmt.Errorf("cannot read kirbi: %w", err)
+	}
+	defer handle.Close()
+
+	c.Kirbi = trimmed
+
+	return nil
+}
+
 // Getters
 
 func (c *Credentials) GetLMHash() string {
@@ -185,4 +254,12 @@ func (c *Credentials) GetAESKey() string {
 
 func (c *Credentials) GetKeytab() string {
 	return c.Keytab
+}
+
+func (c *Credentials) GetCCache() string {
+	return c.CCache
+}
+
+func (c *Credentials) GetKirbi() string {
+	return c.Kirbi
 }
