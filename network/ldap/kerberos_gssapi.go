@@ -103,6 +103,14 @@ func newNativeGSSAPIClient(kdc, realm string, creds *credentials.Credentials) (*
 		return nil, fmt.Errorf("ldap gssapi: no usable secret: set a password, NT hash, AES key, keytab, ccache or kirbi")
 	}
 
+	// Adopt the client name and realm the client ended up with. For pass-the-ticket
+	// the principal is carried by the loaded ticket, not passed in, so the incoming
+	// user (and possibly realm) is empty; using the ticket's values keeps the AP-REQ
+	// authenticator consistent with the ticket. For the secret paths these are the
+	// values already supplied, so this is a no-op.
+	user = kc.Username()
+	realm = kc.Realm()
+
 	return &nativeGSSAPIClient{kc: kc, realm: strings.ToUpper(realm), user: user, desiredLayer: saslLayerNone}, nil
 }
 
