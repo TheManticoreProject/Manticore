@@ -67,18 +67,32 @@ func forgeTGTFiles(t *testing.T) (ccachePath, kirbiPath string) {
 func TestNewNativeGSSAPIClientLoadsTicket(t *testing.T) {
 	ccachePath, kirbiPath := forgeTGTFiles(t)
 
+	// The forged TGT is for Administrator@CORP.LOCAL; the bridge must adopt that
+	// principal from the ticket even though no username is passed in, so the AP-REQ
+	// authenticator matches the ticket.
+	check := func(t *testing.T, gss *nativeGSSAPIClient) {
+		t.Helper()
+		if gss == nil {
+			t.Fatal("newNativeGSSAPIClient returned nil client")
+		}
+		if gss.user != "Administrator" {
+			t.Errorf("adopted user = %q, want %q", gss.user, "Administrator")
+		}
+		if gss.realm != "CORP.LOCAL" {
+			t.Errorf("adopted realm = %q, want %q", gss.realm, "CORP.LOCAL")
+		}
+	}
+
 	t.Run("ccache", func(t *testing.T) {
 		creds := &credentials.Credentials{}
 		if err := creds.SetCCache(ccachePath); err != nil {
 			t.Fatalf("SetCCache: %v", err)
 		}
-		gss, err := newNativeGSSAPIClient("10.0.0.1", "CORP.LOCAL", creds)
+		gss, err := newNativeGSSAPIClient("10.0.0.1", "", creds)
 		if err != nil {
 			t.Fatalf("newNativeGSSAPIClient with ccache: %v", err)
 		}
-		if gss == nil {
-			t.Fatal("newNativeGSSAPIClient returned nil client")
-		}
+		check(t, gss)
 	})
 
 	t.Run("kirbi", func(t *testing.T) {
@@ -86,13 +100,11 @@ func TestNewNativeGSSAPIClientLoadsTicket(t *testing.T) {
 		if err := creds.SetKirbi(kirbiPath); err != nil {
 			t.Fatalf("SetKirbi: %v", err)
 		}
-		gss, err := newNativeGSSAPIClient("10.0.0.1", "CORP.LOCAL", creds)
+		gss, err := newNativeGSSAPIClient("10.0.0.1", "", creds)
 		if err != nil {
 			t.Fatalf("newNativeGSSAPIClient with kirbi: %v", err)
 		}
-		if gss == nil {
-			t.Fatal("newNativeGSSAPIClient returned nil client")
-		}
+		check(t, gss)
 	})
 }
 
