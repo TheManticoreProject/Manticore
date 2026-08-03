@@ -196,6 +196,11 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 		return bytesRead, err
 	}
 
+	// The version governs how the entries below are interpreted (identifier form,
+	// timestamp encoding), so it has to be carried over from the parsed blob before
+	// the entries are processed, not left at its zero value.
+	kc.Version = blob.Version
+
 	for _, entry := range blob.Entries {
 		// Process the entry data based on its type.
 		switch entry.Identifier {
