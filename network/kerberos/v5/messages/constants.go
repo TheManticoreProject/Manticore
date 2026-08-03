@@ -47,6 +47,7 @@ const (
 	ErrNone              = iana.ErrNone
 	ErrCPrincipalUnknown = iana.ErrCPrincipalUnknown
 	ErrSPrincipalUnknown = iana.ErrSPrincipalUnknown
+	ErrPreauthFailed     = iana.ErrPreauthFailed
 	ErrPreauthRequired   = iana.ErrPreauthRequired
 	ErrSkew              = iana.ErrSkew
 	ErrResponseTooBig    = iana.ErrResponseTooBig

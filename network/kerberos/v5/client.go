@@ -271,9 +271,15 @@ func (c *KerberosClient) GetTGT() error {
 		var krb_err messages.KRBError
 		if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
 			switch krb_err.ErrorCode {
-			case messages.ErrPreauthRequired:
-				// The KDC wants a different etype/salt; retry with the corrected
-				// values (that path applies its own skew retry).
+			case messages.ErrPreauthRequired, messages.ErrPreauthFailed:
+				// PREAUTH_REQUIRED means the KDC wants pre-auth with the etype/salt
+				// from its ETYPE-INFO2. PREAUTH_FAILED means our optimistic guess was
+				// wrong; the same ETYPE-INFO2 is carried in that error too, and it
+				// names the salt the account actually uses. Accounts whose salt is not
+				// realm+username (renamed domains, pre-created accounts) fail the
+				// optimistic attempt and only succeed via this correction. Retry once
+				// with the KDC-provided values (that path applies its own skew retry
+				// and does not loop on a repeated failure).
 				etype, salt, s2k_params := c.pickETypeFromError(krb_err)
 				return c.doASReqWithPreauth(etype, salt, s2k_params)
 			case messages.ErrSkew:
