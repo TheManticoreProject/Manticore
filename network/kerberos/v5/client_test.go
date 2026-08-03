@@ -215,3 +215,39 @@ func TestParseSPN(t *testing.T) {
 		}
 	}
 }
+
+// TestPreauthFailedCarriesCorrectedSalt covers the KDC_ERR_PREAUTH_FAILED (24)
+// case: when an account's Kerberos salt is not realm+username (a renamed domain or
+// a pre-created account), the optimistic pre-auth is rejected with error 24, and
+// that error carries the salt the account actually uses. GetTGT retries error 24
+// like error 25, so the salt used for the retry must come from the error's
+// ETYPE-INFO2, not from the default realm+username guess.
+func TestPreauthFailedCarriesCorrectedSalt(t *testing.T) {
+	if messages.ErrPreauthFailed != 24 {
+		t.Fatalf("ErrPreauthFailed = %d, want 24", messages.ErrPreauthFailed)
+	}
+
+	c := NewClient("Administrator", "TMP-W-2025.local", "10.0.0.1").WithPassword("Passw0rd!")
+
+	// The account was created under an original machine name, so AD salts with that
+	// name and not with the DNS realm.
+	const kdcSalt = "WIN-UK5B7SSQIUDAdministrator"
+	if c.cred.DefaultSalt() == kdcSalt {
+		t.Fatal("test precondition: KDC salt must differ from the default realm+username salt")
+	}
+
+	info := messages.ETypeInfo2{{EType: messages.ETypeAES256CTSHMACSHA196, Salt: kdcSalt}}
+	infoDER, err := info.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	krbErr := messages.KRBError{ErrorCode: messages.ErrPreauthFailed, EData: infoDER}
+
+	etype, salt, _ := c.pickETypeFromError(krbErr)
+	if etype != messages.ETypeAES256CTSHMACSHA196 {
+		t.Errorf("etype = %d, want AES256", etype)
+	}
+	if salt != kdcSalt {
+		t.Errorf("salt = %q, want the KDC-advertised %q", salt, kdcSalt)
+	}
+}
