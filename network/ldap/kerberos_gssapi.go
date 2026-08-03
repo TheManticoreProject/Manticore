@@ -59,31 +59,50 @@ func newNativeGSSAPIClient(kdc, realm string, creds *credentials.Credentials) (*
 	user := creds.GetUsername()
 	kc := kerberos.NewClient(user, realm, kdc)
 
-	// Ordered strongest first: a keytab can carry AES keys for several etypes, an
-	// AES key beats the RC4 key an NT hash provides, and a password is the weakest
-	// because it still has to be string-to-key'd into one.
+	// A ccache or .kirbi already carries a TGT (pass-the-ticket): load it and skip
+	// the AS exchange. Otherwise derive a TGT from a secret, ordered strongest
+	// first: a keytab can carry AES keys for several etypes, an AES key beats the
+	// RC4 key an NT hash provides, and a password is the weakest because it still
+	// has to be string-to-key'd into one.
 	switch {
+	case creds.CanUseCCache():
+		if err := kc.LoadTGTFromCCacheFile(creds.GetCCache()); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: ccache: %w", err)
+		}
+	case creds.CanUseKirbi():
+		if err := kc.LoadTGTFromKirbiFile(creds.GetKirbi()); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: kirbi: %w", err)
+		}
 	case creds.CanUseKeytab():
 		if err := kc.WithKeytabFile(creds.GetKeytab()); err != nil {
 			return nil, fmt.Errorf("ldap gssapi: keytab: %w", err)
+		}
+		if err := kc.GetTGT(); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
 		}
 	case creds.CanUseAESKey():
 		if err := kc.WithAESKey(creds.GetAESKey()); err != nil {
 			return nil, fmt.Errorf("ldap gssapi: AES key: %w", err)
 		}
+		if err := kc.GetTGT(); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
+		}
 	case creds.CanPassTheHash():
 		if err := kc.WithNTHash(creds.GetNTHash()); err != nil {
 			return nil, fmt.Errorf("ldap gssapi: NT hash: %w", err)
 		}
+		if err := kc.GetTGT(); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
+		}
 	case creds.GetPassword() != "":
 		kc.WithPassword(creds.GetPassword())
+		if err := kc.GetTGT(); err != nil {
+			return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
+		}
 	default:
-		return nil, fmt.Errorf("ldap gssapi: no usable secret: set a password, NT hash, AES key or keytab")
+		return nil, fmt.Errorf("ldap gssapi: no usable secret: set a password, NT hash, AES key, keytab, ccache or kirbi")
 	}
 
-	if err := kc.GetTGT(); err != nil {
-		return nil, fmt.Errorf("ldap gssapi: GetTGT: %w", err)
-	}
 	return &nativeGSSAPIClient{kc: kc, realm: strings.ToUpper(realm), user: user, desiredLayer: saslLayerNone}, nil
 }
 

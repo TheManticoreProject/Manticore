@@ -217,3 +217,68 @@ func TestSetKeytabRejectsMissingFile(t *testing.T) {
 		t.Error("CanUseKeytab() = true after a rejected path")
 	}
 }
+
+func TestSetCCache(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "krb5cc")
+	if err := os.WriteFile(path, []byte("ticket cache bytes"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	// The principal comes from the ticket, so no username is required.
+	c := &credentials.Credentials{}
+	if c.CanUseCCache() {
+		t.Error("CanUseCCache() = true before a ccache is set")
+	}
+	if err := c.SetCCache(path); err != nil {
+		t.Fatalf("SetCCache(%q) error = %v", path, err)
+	}
+	if got := c.GetCCache(); got != path {
+		t.Errorf("GetCCache() = %q, want %q", got, path)
+	}
+	if !c.CanUseCCache() {
+		t.Error("CanUseCCache() = false after a readable ccache is set")
+	}
+}
+
+func TestSetCCacheRejectsMissingFile(t *testing.T) {
+	c := &credentials.Credentials{}
+	if err := c.SetCCache(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Fatal("SetCCache() with a missing file error = nil, want an error")
+	}
+	if c.GetCCache() != "" {
+		t.Errorf("CCache = %q after a rejected path, want it left empty", c.GetCCache())
+	}
+	if c.CanUseCCache() {
+		t.Error("CanUseCCache() = true after a rejected path")
+	}
+}
+
+func TestSetKirbi(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tgt.kirbi")
+	if err := os.WriteFile(path, []byte("kirbi bytes"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	c := &credentials.Credentials{}
+	if err := c.SetKirbi(path); err != nil {
+		t.Fatalf("SetKirbi(%q) error = %v", path, err)
+	}
+	if got := c.GetKirbi(); got != path {
+		t.Errorf("GetKirbi() = %q, want %q", got, path)
+	}
+	if !c.CanUseKirbi() {
+		t.Error("CanUseKirbi() = false after a readable kirbi is set")
+	}
+}
+
+func TestSetKirbiRejectsMissingFile(t *testing.T) {
+	c := &credentials.Credentials{}
+	if err := c.SetKirbi(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Fatal("SetKirbi() with a missing file error = nil, want an error")
+	}
+	if c.CanUseKirbi() {
+		t.Error("CanUseKirbi() = true after a rejected path")
+	}
+}
