@@ -254,6 +254,20 @@ func (ldapSession *Session) OverwriteAttributeValue(distinguishedName string, at
 //     for specific attributes.
 //   - Ensure that the LDAP connection is properly established before calling this function.
 func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
+	return ldapSession.connection.Modify(buildModifyRequest(modifyRequest))
+}
+
+// buildModifyRequest translates a Manticore ModifyRequest into the go-ldap
+// ModifyRequest that is sent on the wire.
+//
+// It is kept separate from Modify so the per-attribute operation selection can be
+// exercised without a live LDAP connection. Each Action's operation is chosen by
+// which value list it carries. A Replace is emitted whenever ReplaceValues is
+// non-nil, including an explicit empty slice: per LDAP semantics a replace with no
+// values clears the attribute, so an empty ReplaceValues must still produce a
+// Replace change rather than being dropped. An unset (nil) ReplaceValues carries no
+// operation.
+func buildModifyRequest(modifyRequest *ModifyRequest) *goldapv3.ModifyRequest {
 	// Create a new modify request
 	m := goldapv3.NewModifyRequest(modifyRequest.DistinguishedName, modifyRequest.Controls)
 
@@ -279,7 +293,7 @@ func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
 			// operation cannot be used to delete an attribute value that does not already exist in the entry.
 			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Delete(attribute.Attribute, attribute.DelValues)
-		} else if len(attribute.ReplaceValues) > 0 {
+		} else if attribute.ReplaceValues != nil {
 			// Replace the content of the attribute with the new values
 			// If the modification type is "replace" and there is an attribute description without any values,
 			// then all values for the specified attribute will be removed from the entry. If the specified attribute
@@ -301,7 +315,7 @@ func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
 		}
 	}
 
-	return ldapSession.connection.Modify(m)
+	return m
 }
 
 // AddStringToAttributeList adds a string to an attribute list
