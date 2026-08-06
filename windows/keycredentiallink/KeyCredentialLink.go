@@ -20,7 +20,9 @@ import (
 //
 // Fields:
 // - Version: A KeyCredentialLinkVersion object representing the version of the key credential.
-// - Identifier: A string representing the unique identifier of the key credential.
+// - Identifier: A string representing the unique identifier (KeyID) of the key
+// credential. When empty, it is derived from the key material as MS-ADTS 2.2.20
+// requires; supply one only to reproduce a specific credential.
 // - KeyHash: A byte slice containing the hash of the key material.
 // - KeyMaterial: A KeyMaterial object representing the key material of the key credential.
 // - Usage: A KeyUsage object representing the usage of the key credential.
@@ -130,9 +132,38 @@ func NewKeyCredentialLink(
 
 	kc.Source.Value = source.KeySource_AD
 
+	// MS-ADTS 2.2.20 defines the KeyID entry as the SHA-256 of the KeyMaterial
+	// entry's value, and the KDC matches a key presented during PKINIT against it.
+	// A caller that does not supply one gets it derived rather than left empty, so
+	// the rule lives with the structure instead of with every caller.
+	if len(kc.Identifier) == 0 {
+		kc.Identifier = kc.ComputeKeyIdentifier()
+	}
+
 	kc.KeyHash = kc.ComputeKeyHash()
 
 	return kc
+}
+
+// ComputeKeyIdentifier returns the KeyID for this credential's key material.
+//
+// The KeyID is the SHA-256 of the marshalled key material, encoded as the credential's
+// version requires: hexadecimal for versions 0 and 1, base64 for version 2.
+//
+// Returns:
+//
+// - The KeyID, or an empty string when there is no key material or it cannot be marshalled.
+func (kc *KeyCredentialLink) ComputeKeyIdentifier() string {
+	if kc.KeyMaterial == nil {
+		return ""
+	}
+
+	rawKeyMaterial, err := kc.KeyMaterial.Marshal()
+	if err != nil {
+		return ""
+	}
+
+	return utils.ComputeKeyIdentifier(rawKeyMaterial, kc.Version)
 }
 
 // ParseDNWithBinary parses the provided DNWithBinary object into the KeyCredentialLink structure.
