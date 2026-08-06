@@ -254,7 +254,27 @@ func (ldapSession *Session) OverwriteAttributeValue(distinguishedName string, at
 //     for specific attributes.
 //   - Ensure that the LDAP connection is properly established before calling this function.
 func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
-	return ldapSession.connection.Modify(buildModifyRequest(modifyRequest))
+	m := buildModifyRequest(modifyRequest)
+
+	// An Action only selects an operation when one of its value lists asks for one, so
+	// a request can arrive here with nothing to do at all: no attributes, or attributes
+	// whose value lists are all unset. The usual cause is a nil ReplaceValues where an
+	// empty one was meant, since only the latter clears an attribute.
+	//
+	// Such a request cannot have any effect, and sending it spends a round trip to be
+	// told so in terms that describe neither the cause nor the fix: Active Directory
+	// answers "Unwilling To Perform ... Error in attribute conversion operation", which
+	// reads like a value encoding problem. Refuse it here, and say what is missing.
+	if len(m.Changes) == 0 {
+		return fmt.Errorf(
+			"modify request for '%s' carries no changes: none of its %d action(s) selected an operation "+
+				"(AddValues, DelValues and IncrementValues need at least one value; ReplaceValues has to be "+
+				"non-nil, and an empty one clears the attribute)",
+			modifyRequest.DistinguishedName, len(modifyRequest.Attributes),
+		)
+	}
+
+	return ldapSession.connection.Modify(m)
 }
 
 // buildModifyRequest translates a Manticore ModifyRequest into the go-ldap
