@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"strings"
 	"testing"
 
 	goldapv3 "github.com/go-ldap/ldap/v3"
@@ -87,5 +88,67 @@ func TestBuildModifyRequestOperationSelection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A request that selects no operation at all cannot change anything, and sending it
+// spends a round trip to come back as a generic "Unwilling To Perform" that describes
+// neither the cause nor the fix. Modify has to refuse it before the wire.
+//
+// The guard returns before the connection is used, so a zero-valued Session is enough
+// here: reaching the connection on any of these inputs would panic instead.
+func TestModifyRejectsRequestWithNoChanges(t *testing.T) {
+	cases := []struct {
+		name       string
+		attributes []*Action
+	}{
+		{name: "nil attributes", attributes: nil},
+		{name: "empty attributes", attributes: []*Action{}},
+		{name: "action with every value list unset", attributes: []*Action{{Attribute: "description"}}},
+		{name: "empty AddValues", attributes: []*Action{{Attribute: "description", AddValues: []string{}}}},
+		{name: "empty DelValues", attributes: []*Action{{Attribute: "description", DelValues: []string{}}}},
+		{name: "empty IncrementValues", attributes: []*Action{{Attribute: "description", IncrementValues: []string{}}}},
+		{name: "several unset actions", attributes: []*Action{{Attribute: "description"}, {Attribute: "displayName"}}},
+	}
+
+	session := &Session{}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := session.Modify(&ModifyRequest{
+				DistinguishedName: "cn=obj,dc=example,dc=com",
+				Attributes:        tt.attributes,
+			})
+			if err == nil {
+				t.Fatal("error = nil, want a refusal")
+			}
+			if !strings.Contains(err.Error(), "no changes") {
+				t.Errorf("error = %q, want it to say the request carries no changes", err)
+			}
+			if !strings.Contains(err.Error(), "cn=obj,dc=example,dc=com") {
+				t.Errorf("error = %q, want it to name the target", err)
+			}
+		})
+	}
+}
+
+// The guard is about the request as a whole, not the individual actions: an action
+// that selects nothing alongside one that does must still reach the wire.
+func TestBuildModifyRequestKeepsRealChangeBesideNoOpAction(t *testing.T) {
+	mr := &ModifyRequest{
+		DistinguishedName: "cn=obj,dc=example,dc=com",
+		Attributes: []*Action{
+			{Attribute: "description", ReplaceValues: []string{"value"}},
+			{Attribute: "displayName"},
+		},
+	}
+
+	m := buildModifyRequest(mr)
+
+	if len(m.Changes) != 1 {
+		t.Fatalf("Changes = %d; want 1 (the real change survives, the no-op adds nothing)", len(m.Changes))
+	}
+	if m.Changes[0].Operation != goldapv3.ReplaceAttribute {
+		t.Errorf("Operation = %d; want ReplaceAttribute", m.Changes[0].Operation)
 	}
 }
