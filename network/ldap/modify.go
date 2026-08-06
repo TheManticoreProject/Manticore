@@ -258,8 +258,9 @@ func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
 
 	// An Action only selects an operation when one of its value lists asks for one, so
 	// a request can arrive here with nothing to do at all: no attributes, or attributes
-	// whose value lists are all unset. The usual cause is a nil ReplaceValues where an
-	// empty one was meant, since only the latter clears an attribute.
+	// whose value lists are all unset. The usual cause is a nil DelValues or
+	// ReplaceValues where an empty one was meant, since only the latter removes an
+	// attribute's values.
 	//
 	// Such a request cannot have any effect, and sending it spends a round trip to be
 	// told so in terms that describe neither the cause nor the fix: Active Directory
@@ -268,8 +269,8 @@ func (ldapSession *Session) Modify(modifyRequest *ModifyRequest) error {
 	if len(m.Changes) == 0 {
 		return fmt.Errorf(
 			"modify request for '%s' carries no changes: none of its %d action(s) selected an operation "+
-				"(AddValues, DelValues and IncrementValues need at least one value; ReplaceValues has to be "+
-				"non-nil, and an empty one clears the attribute)",
+				"(AddValues and IncrementValues need at least one value; DelValues and ReplaceValues have to "+
+				"be non-nil, and an empty one removes the attribute's values)",
 			modifyRequest.DistinguishedName, len(modifyRequest.Attributes),
 		)
 	}
@@ -302,8 +303,11 @@ func buildModifyRequest(modifyRequest *ModifyRequest) *goldapv3.ModifyRequest {
 			// add a value that already exists in the entry.
 			// Source: https://ldap.com/the-ldap-modify-operation/
 			m.Add(attribute.Attribute, attribute.AddValues)
-		} else if len(attribute.DelValues) > 0 {
+		} else if attribute.DelValues != nil {
 			// Delete the values from the attribute
+			// An empty (non-nil) DelValues is meaningful and must still emit a Delete: as
+			// described below, a delete carrying no values removes the whole attribute. A
+			// nil DelValues selects nothing.
 			// If the modification type is "delete" and there is an attribute description without any values,
 			// then all values for the specified attribute will be removed from the entry. Under normal circumstances,
 			// a modify operation cannot be used with the delete modification type to remove an attribute that does

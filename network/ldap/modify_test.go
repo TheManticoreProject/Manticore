@@ -106,7 +106,7 @@ func TestModifyRejectsRequestWithNoChanges(t *testing.T) {
 		{name: "empty attributes", attributes: []*Action{}},
 		{name: "action with every value list unset", attributes: []*Action{{Attribute: "description"}}},
 		{name: "empty AddValues", attributes: []*Action{{Attribute: "description", AddValues: []string{}}}},
-		{name: "empty DelValues", attributes: []*Action{{Attribute: "description", DelValues: []string{}}}},
+		{name: "nil DelValues", attributes: []*Action{{Attribute: "description", DelValues: nil}}},
 		{name: "empty IncrementValues", attributes: []*Action{{Attribute: "description", IncrementValues: []string{}}}},
 		{name: "several unset actions", attributes: []*Action{{Attribute: "description"}, {Attribute: "displayName"}}},
 	}
@@ -150,5 +150,68 @@ func TestBuildModifyRequestKeepsRealChangeBesideNoOpAction(t *testing.T) {
 	}
 	if m.Changes[0].Operation != goldapv3.ReplaceAttribute {
 		t.Errorf("Operation = %d; want ReplaceAttribute", m.Changes[0].Operation)
+	}
+}
+
+// TestBuildModifyRequestEmptyDeleteRemovesAttribute is the regression test for an
+// empty (non-nil) DelValues: a delete carrying no values removes the whole attribute,
+// so it must still emit a Delete change. Previously the value-count guard dropped it,
+// leaving the request with nothing to do.
+func TestBuildModifyRequestEmptyDeleteRemovesAttribute(t *testing.T) {
+	mr := &ModifyRequest{
+		DistinguishedName: "cn=obj,dc=example,dc=com",
+		Attributes:        []*Action{{Attribute: "description", DelValues: []string{}}},
+	}
+
+	m := buildModifyRequest(mr)
+
+	if len(m.Changes) != 1 {
+		t.Fatalf("Changes = %d; want 1 (an empty delete removes the attribute)", len(m.Changes))
+	}
+	if m.Changes[0].Operation != goldapv3.DeleteAttribute {
+		t.Errorf("Operation = %d; want DeleteAttribute", m.Changes[0].Operation)
+	}
+	if got := m.Changes[0].Modification.Type; got != "description" {
+		t.Errorf("attribute = %q; want \"description\"", got)
+	}
+	if got := len(m.Changes[0].Modification.Vals); got != 0 {
+		t.Errorf("values = %d; want 0", got)
+	}
+}
+
+// The counterpart: an unset DelValues asks for nothing and must stay a no-op, so the
+// nil/empty distinction means the same thing for Delete as it does for Replace.
+func TestBuildModifyRequestNilDeleteIsNoOp(t *testing.T) {
+	mr := &ModifyRequest{
+		DistinguishedName: "cn=obj,dc=example,dc=com",
+		Attributes:        []*Action{{Attribute: "description", DelValues: nil}},
+	}
+
+	m := buildModifyRequest(mr)
+
+	if len(m.Changes) != 0 {
+		t.Fatalf("Changes = %d; want 0 (an unset DelValues must not emit an operation)", len(m.Changes))
+	}
+}
+
+// An add carrying no values is invalid per RFC 4511, so unlike Delete and Replace the
+// Add branch stays value-counted. Increment likewise needs exactly one value.
+func TestBuildModifyRequestEmptyAddAndIncrementStayNoOps(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		action *Action
+	}{
+		{name: "empty AddValues", action: &Action{Attribute: "description", AddValues: []string{}}},
+		{name: "empty IncrementValues", action: &Action{Attribute: "description", IncrementValues: []string{}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := buildModifyRequest(&ModifyRequest{
+				DistinguishedName: "cn=obj,dc=example,dc=com",
+				Attributes:        []*Action{tt.action},
+			})
+			if len(m.Changes) != 0 {
+				t.Fatalf("Changes = %d; want 0", len(m.Changes))
+			}
+		})
 	}
 }
