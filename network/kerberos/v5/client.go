@@ -348,13 +348,50 @@ func (c *KerberosClient) GetTGS(spn string, includePAC bool) (messages.Ticket, [
 
 // Destroy zeroes out key material held by the client.
 func (c *KerberosClient) Destroy() {
-	for i := range c.sessionKey {
-		c.sessionKey[i] = 0
+	zero := func(key []byte) {
+		for i := range key {
+			key[i] = 0
+		}
 	}
+
+	zero(c.sessionKey)
+	zero(c.tgtEnc.Key.KeyValue)
 	c.sessionKey = nil
+	c.sessionEType = 0
+	c.tgtTicket = messages.Ticket{}
+	c.tgtTicketRaw = nil
+	c.tgtEnc = messages.EncASRepPart{}
+
+	zero(c.pkinitReplyKey)
+	c.pkinitReplyKey = nil
+	c.pkinitReplyEType = 0
+	c.pkinitPriv = nil
+	c.pkinitCert = nil
+	c.pkinitGroups = nil
+	c.pkinitAnchors = nil
+	c.pkinitSkipKDCSigCheck = false
+	c.pkinitKDCCertErr = nil
+
+	if c.fast != nil {
+		zero(c.fast.sessionKey)
+	}
+	c.fast = nil
+
+	for name, ticket := range c.preloadedTGS {
+		zero(ticket.sessionKey)
+		delete(c.preloadedTGS, name)
+	}
+	c.preloadedTGS = nil
+	for name, ticket := range c.serviceTickets {
+		zero(ticket.credInfo.Key.KeyValue)
+		delete(c.serviceTickets, name)
+	}
+	c.serviceTickets = nil
+
 	if c.cred != nil {
 		c.cred.Destroy()
 	}
+	c.cred = nil
 	c.hasTGT = false
 }
 
