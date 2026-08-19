@@ -75,6 +75,9 @@ func (r *TGSReq) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("tgsreq inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("tgsreq", inner.PVNO, inner.MsgType, MsgTypeTGSReq); err != nil {
+		return 0, err
+	}
 
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType

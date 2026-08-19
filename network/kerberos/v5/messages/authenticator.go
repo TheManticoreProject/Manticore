@@ -117,6 +117,9 @@ func (a *Authenticator) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("authenticator inner unmarshal: %w", err)
 	}
+	if err := validateKerberosVersion("authenticator", inner.AVno); err != nil {
+		return 0, err
+	}
 
 	a.AVno = inner.AVno
 	a.CRealm = inner.CRealm

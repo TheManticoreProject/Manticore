@@ -2,8 +2,26 @@ package messages
 
 import (
 	"encoding/asn1"
+	"fmt"
 	"time"
 )
+
+func validateKerberosVersion(message string, version int) error {
+	if version != KerberosV5 {
+		return fmt.Errorf("%s: invalid protocol version %d (want %d)", message, version, KerberosV5)
+	}
+	return nil
+}
+
+func validateMessageHeader(message string, version, msgType, wantMsgType int) error {
+	if err := validateKerberosVersion(message, version); err != nil {
+		return err
+	}
+	if msgType != wantMsgType {
+		return fmt.Errorf("%s: invalid message type %d (want %d)", message, msgType, wantMsgType)
+	}
+	return nil
+}
 
 // NewKerberosFlags builds a KerberosFlags/KDCOptions/APOptions/TicketFlags
 // BIT STRING from the given set bit positions. Per RFC 4120 Section 5.2.8 a

@@ -102,6 +102,9 @@ func (e *KRBError) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("krberror inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("krberror", inner.PVNO, inner.MsgType, MsgTypeError); err != nil {
+		return 0, err
+	}
 
 	e.PVNO = inner.PVNO
 	e.MsgType = inner.MsgType

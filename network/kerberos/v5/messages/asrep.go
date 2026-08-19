@@ -92,6 +92,9 @@ func (r *ASRep) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("asrep inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("asrep", inner.PVNO, inner.MsgType, MsgTypeASRep); err != nil {
+		return 0, err
+	}
 
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType

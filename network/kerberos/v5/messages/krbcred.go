@@ -326,6 +326,9 @@ func (c *KRBCred) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("krbcred inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("krbcred", inner.PVNO, inner.MsgType, MsgTypeKRBCred); err != nil {
+		return 0, err
+	}
 	c.PVNO = inner.PVNO
 	c.MsgType = inner.MsgType
 	c.EncPart = inner.EncPart
