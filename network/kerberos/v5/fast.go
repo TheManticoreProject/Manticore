@@ -52,7 +52,7 @@ func (c *KerberosClient) WithFASTArmor(cname, realm string, ticket messages.Tick
 		realm:        realm,
 		ticket:       ticket,
 		ticketRaw:    ticketRaw,
-		sessionKey:   sessionKey,
+		sessionKey:   append([]byte(nil), sessionKey...),
 		sessionEType: sessionEType,
 	}
 	return c

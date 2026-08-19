@@ -92,8 +92,9 @@ func (c *KerberosClient) cacheServiceTicket(ticketRaw []byte, enc messages.EncTG
 		c.serviceTickets = make(map[string]cachedServiceTicket)
 	}
 	spn := strings.Join(enc.SName.NameString, "/")
+	enc.Key.KeyValue = append([]byte(nil), enc.Key.KeyValue...)
 	c.serviceTickets[normalizeSPN(spn)] = cachedServiceTicket{
-		ticketRaw: ticketRaw,
+		ticketRaw: append([]byte(nil), ticketRaw...),
 		credInfo: messages.KrbCredInfo{
 			Key:       enc.Key,
 			PRealm:    c.realm,

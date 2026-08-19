@@ -187,6 +187,7 @@ func (c *KerberosClient) LoadServiceTicket(st *ServiceTicket) error {
 	if c.preloadedTGS == nil {
 		c.preloadedTGS = make(map[string]preloadedServiceTicket)
 	}
+	sessionKey := append([]byte(nil), st.SessionKey...)
 	// Adopt the ticket's client identity when the client has none, so the AP-REQ
 	// authenticator's cname/crealm match the ticket (else the service rejects with
 	// KRB_AP_ERR_BADMATCH). A client created with only a KDC host thus becomes
@@ -201,14 +202,14 @@ func (c *KerberosClient) LoadServiceTicket(st *ServiceTicket) error {
 	c.preloadedTGS[normalizeSPN(spn)] = preloadedServiceTicket{
 		ticket:       st.Ticket,
 		ticketRaw:    st.TicketRaw,
-		sessionKey:   st.SessionKey,
+		sessionKey:   sessionKey,
 		sessionEType: st.SessionEType,
 	}
 	// Also retain it for export (harvest→save): a captured/forged ticket wired in
 	// here can be written back out via ExportServiceTicketKirbi/CCache. The
 	// ServiceTicket carries no flags/times, so those stay zero.
 	c.cacheServiceTicket(st.TicketRaw, messages.EncTGSRepPart{
-		Key:    messages.EncryptionKey{KeyType: st.SessionEType, KeyValue: st.SessionKey},
+		Key:    messages.EncryptionKey{KeyType: st.SessionEType, KeyValue: sessionKey},
 		SRealm: st.SRealm,
 		SName:  st.SName,
 	})
@@ -272,9 +273,11 @@ func (c *KerberosClient) applyTGT(ticketRaw []byte, info messages.KrbCredInfo) e
 		c.username = info.PName.NameString[0]
 	}
 
+	sessionKey := append([]byte(nil), info.Key.KeyValue...)
+	info.Key.KeyValue = sessionKey
 	c.tgtTicket = tkt
-	c.tgtTicketRaw = ticketRaw
-	c.sessionKey = info.Key.KeyValue
+	c.tgtTicketRaw = append([]byte(nil), ticketRaw...)
+	c.sessionKey = sessionKey
 	c.sessionEType = info.Key.KeyType
 	// Reconstruct the AS-REP enc-part so re-export (tgtCredInfo) and downstream
 	// consumers see the same times/flags/service name the ticket was issued with.
