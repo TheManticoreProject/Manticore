@@ -11,8 +11,8 @@ import (
 // AccountSecrets holds the credential material decrypted from one replicated object.
 // NTHash/LMHash are the current 16-byte hashes (valid only when HasNT/HasLM is set);
 // the history slices are previous hashes as the DC returns them. SupplementalCredentials
-// is the transport-decrypted supplementalCredentials blob (Kerberos keys, cleartext, …)
-// left unparsed — decoding it is future work.
+// retains the transport-decrypted source blob; parsed keys, cleartext, and WDigest hashes
+// are exposed in the adjacent fields.
 type AccountSecrets struct {
 	DN             string
 	SAMAccountName string
@@ -26,6 +26,10 @@ type AccountSecrets struct {
 	LMHistory      [][16]byte
 
 	SupplementalCredentials []byte
+	KerberosKeys            []KerberosKey
+	CleartextPassword       string
+	CleartextPasswordRaw    []byte
+	WDigestHashes           [][16]byte
 }
 
 // DecryptSecrets decrypts the secret attributes of every replicated object that carries
@@ -103,6 +107,14 @@ func decryptObjectSecrets(obj ReplicatedObject, prefixTable drsrtypes.SCHEMA_PRE
 			return nil, fmt.Errorf("supplementalCredentials: %w", err)
 		}
 		sec.SupplementalCredentials = blob
+		parsed, err := ParseSupplementalCredentials(blob)
+		if err != nil {
+			return nil, err
+		}
+		sec.KerberosKeys = parsed.KerberosKeys
+		sec.CleartextPassword = parsed.CleartextPassword
+		sec.CleartextPasswordRaw = parsed.CleartextPasswordRaw
+		sec.WDigestHashes = parsed.WDigestHashes
 	}
 	return sec, nil
 }
