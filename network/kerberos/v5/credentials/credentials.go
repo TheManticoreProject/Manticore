@@ -24,7 +24,7 @@ const (
 	// SecretNTHash is the NT hash (MD4 of the UTF-16LE password), which is
 	// exactly the RC4-HMAC (etype 23) key — the basis of overpass-the-hash.
 	SecretNTHash
-	// SecretAESKey is a precomputed AES key for one specific etype (17 or 18),
+	// SecretAESKey is a precomputed AES key for one specific etype (17-20),
 	// the basis of pass-the-key.
 	SecretAESKey
 )
@@ -38,7 +38,7 @@ type Credential struct {
 	password string
 	ntHash   []byte // 16 bytes, when kind == SecretNTHash
 	aesKey   []byte // 16 or 32 bytes, when kind == SecretAESKey
-	aesEtype int    // 17 or 18, when kind == SecretAESKey
+	aesEtype int    // 17, 18, 19, or 20, when kind == SecretAESKey
 }
 
 // NewWithPassword creates a password-based credential. The realm is upper-cased.
@@ -82,17 +82,17 @@ func NewWithHexNTHash(username, realm, hexHash string) (*Credential, error) {
 }
 
 // NewWithAESKey creates a pass-the-key credential from a raw AES key. etype must
-// be 17 (AES128, 16-byte key) or 18 (AES256, 32-byte key) and match the key
-// length. The key is copied.
+// be one of the AES-SHA1 or AES-SHA2 profiles (17-20) and match the profile's
+// 16- or 32-byte key length. The key is copied.
 func NewWithAESKey(username, realm string, etype int, key []byte) (*Credential, error) {
 	var want int
 	switch etype {
-	case iana.ETypeAES128CTSHMACSHA196:
+	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES128CTSHMACSHA256:
 		want = 16
-	case iana.ETypeAES256CTSHMACSHA196:
+	case iana.ETypeAES256CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA384:
 		want = 32
 	default:
-		return nil, fmt.Errorf("credentials: AES key etype must be 17 or 18, got %d", etype)
+		return nil, fmt.Errorf("credentials: AES key etype must be 17, 18, 19, or 20, got %d", etype)
 	}
 	if len(key) != want {
 		return nil, fmt.Errorf("credentials: etype %d requires a %d-byte key, got %d", etype, want, len(key))
@@ -123,6 +123,18 @@ func NewWithHexAESKey(username, realm, hexKey string) (*Credential, error) {
 	default:
 		return nil, fmt.Errorf("credentials: AES key must be 16 or 32 bytes, got %d", len(raw))
 	}
+}
+
+// NewWithHexAESKeyForEType creates a pass-the-key credential for an explicit
+// AES-SHA1 or AES-SHA2 enctype. Unlike NewWithHexAESKey, it does not infer the
+// profile from the key length because the SHA1 and SHA2 variants use identical
+// key sizes.
+func NewWithHexAESKeyForEType(username, realm string, etype int, hexKey string) (*Credential, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(hexKey))
+	if err != nil {
+		return nil, fmt.Errorf("credentials: invalid hex AES key: %w", err)
+	}
+	return NewWithAESKey(username, realm, etype, raw)
 }
 
 // Username returns the principal's account name.
@@ -182,6 +194,8 @@ func (c *Credential) SupportedETypes() []int {
 	switch c.kind {
 	case SecretPassword:
 		return []int{
+			iana.ETypeAES256CTSHMACSHA384,
+			iana.ETypeAES128CTSHMACSHA256,
 			iana.ETypeAES256CTSHMACSHA196,
 			iana.ETypeAES128CTSHMACSHA196,
 			iana.ETypeRC4HMAC,

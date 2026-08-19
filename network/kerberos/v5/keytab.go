@@ -12,23 +12,23 @@ import (
 //
 // A keytab stores an account's long-term keys, so it lets a client authenticate
 // non-interactively — no password. These methods select a key from a keytab and
-// wire it into the client as an AES pass-the-key (etype 17/18) or, for RC4, an
+// wire it into the client as an AES pass-the-key (etype 17-20) or, for RC4, an
 // overpass-the-hash NT-hash credential, exactly as WithAESKey / WithNTHash would.
 // GetTGT / GetTGS then run unchanged.
 
 // credentialFromKeytabEntry converts a selected keytab entry into a long-term
 // credential for username@realm. AES128/AES256 keys become pass-the-key
 // credentials; the RC4-HMAC key is the NT hash, so it becomes an
-// overpass-the-hash credential. Other enctypes (DES, AES-SHA2) are not supported
-// by the credentials layer.
+// overpass-the-hash credential. Other enctypes such as DES are not supported.
 func credentialFromKeytabEntry(e *keytab.Entry, username, realm string) (*credentials.Credential, error) {
 	switch int(e.EType) {
-	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196:
+	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196,
+		iana.ETypeAES128CTSHMACSHA256, iana.ETypeAES256CTSHMACSHA384:
 		return credentials.NewWithAESKey(username, realm, int(e.EType), e.Key)
 	case iana.ETypeRC4HMAC:
 		return credentials.NewWithNTHash(username, realm, e.Key)
 	default:
-		return nil, fmt.Errorf("kerberos: keytab enctype %d is not usable for authentication (need AES128/AES256/RC4)", e.EType)
+		return nil, fmt.Errorf("kerberos: keytab enctype %d is not usable for authentication (need AES or RC4)", e.EType)
 	}
 }
 

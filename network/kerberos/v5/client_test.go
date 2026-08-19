@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/asn1"
 	"encoding/hex"
+	"reflect"
 	"testing"
 	"time"
 
@@ -51,6 +52,31 @@ func buildASRep(t *testing.T, etype int, key []byte, nonce int, sessionKey []byt
 		t.Fatalf("ASRep.Marshal: %v", err)
 	}
 	return wire
+}
+
+func TestServiceTicketETypesIncludeAESSHA2(t *testing.T) {
+	got := NewClient("alice", "corp.local", "10.0.0.1").serviceTicketETypes()
+	want := []int{
+		messages.ETypeAES256CTSHMACSHA384,
+		messages.ETypeAES128CTSHMACSHA256,
+		messages.ETypeAES256CTSHMACSHA196,
+		messages.ETypeAES128CTSHMACSHA196,
+		messages.ETypeRC4HMAC,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("serviceTicketETypes = %v, want %v", got, want)
+	}
+}
+
+func TestWithAESKeyForEType(t *testing.T) {
+	key := bytes.Repeat([]byte{0x42}, 32)
+	c := NewClient("alice", "corp.local", "10.0.0.1")
+	if err := c.WithAESKeyForEType(hex.EncodeToString(key), messages.ETypeAES256CTSHMACSHA384); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.cred.SupportedETypes(); len(got) != 1 || got[0] != messages.ETypeAES256CTSHMACSHA384 {
+		t.Fatalf("credential etypes = %v, want [20]", got)
+	}
 }
 
 // TestProcessASRepSuccess drives processASRep with a hand-built AS-REP encrypted
