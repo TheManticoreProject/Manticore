@@ -69,6 +69,9 @@ func (r *ASReq) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("asreq inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("asreq", inner.PVNO, inner.MsgType, MsgTypeASReq); err != nil {
+		return 0, err
+	}
 
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType

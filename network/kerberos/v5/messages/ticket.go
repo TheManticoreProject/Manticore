@@ -66,6 +66,9 @@ func (t *Ticket) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, err
 	}
+	if err := validateKerberosVersion("ticket", inner.TktVno); err != nil {
+		return 0, err
+	}
 
 	t.TktVno = inner.TktVno
 	t.Realm = inner.Realm

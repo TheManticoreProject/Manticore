@@ -49,6 +49,9 @@ func (r *APRep) Unmarshal(data []byte) (int, error) {
 	if _, err := asn1.Unmarshal(inner_bytes, &inner); err != nil {
 		return 0, fmt.Errorf("aprep inner unmarshal: %w", err)
 	}
+	if err := validateMessageHeader("aprep", inner.PVNO, inner.MsgType, MsgTypeAPRep); err != nil {
+		return 0, err
+	}
 	r.PVNO = inner.PVNO
 	r.MsgType = inner.MsgType
 	r.EncPart = inner.EncPart
