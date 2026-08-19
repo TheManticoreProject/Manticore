@@ -123,8 +123,8 @@ func TestFASTASReqBody(t *testing.T) {
 	if body.Nonce != 0x2233 {
 		t.Errorf("nonce = %d, want 0x2233", body.Nonce)
 	}
-	if len(body.EType) == 0 || body.EType[0] != messages.ETypeAES256CTSHMACSHA196 {
-		t.Errorf("etype list = %v, want AES256 first", body.EType)
+	if len(body.EType) == 0 || body.EType[0] != messages.ETypeAES256CTSHMACSHA384 {
+		t.Errorf("etype list = %v, want AES256-SHA2 first", body.EType)
 	}
 	for _, bit := range []int{kdcOptionForwardable, kdcOptionProxiable, kdcOptionRenewable} {
 		if body.KDCOptions.At(bit) != 1 {

@@ -3,6 +3,7 @@ package credentials
 import (
 	"bytes"
 	"encoding/hex"
+	"reflect"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
@@ -32,6 +33,20 @@ func TestPasswordDerivesAES(t *testing.T) {
 	}
 	if len(k) != 32 {
 		t.Errorf("AES256 key length = %d, want 32", len(k))
+	}
+}
+
+func TestPasswordAdvertisesAESSHA2(t *testing.T) {
+	c := NewWithPassword("alice", "CORP.LOCAL", "password")
+	want := []int{
+		iana.ETypeAES256CTSHMACSHA384,
+		iana.ETypeAES128CTSHMACSHA256,
+		iana.ETypeAES256CTSHMACSHA196,
+		iana.ETypeAES128CTSHMACSHA196,
+		iana.ETypeRC4HMAC,
+	}
+	if got := c.SupportedETypes(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("SupportedETypes = %v, want %v", got, want)
 	}
 }
 
@@ -95,6 +110,29 @@ func TestPassTheKey(t *testing.T) {
 	}
 	if _, err := ck.Key(iana.ETypeRC4HMAC, "", nil); err == nil {
 		t.Error("expected error: AES key cannot serve RC4")
+	}
+}
+
+func TestPassTheKeyAESSHA2(t *testing.T) {
+	for _, tc := range []struct {
+		etype int
+		size  int
+	}{
+		{iana.ETypeAES128CTSHMACSHA256, 16},
+		{iana.ETypeAES256CTSHMACSHA384, 32},
+	} {
+		key := bytes.Repeat([]byte{byte(tc.etype)}, tc.size)
+		c, err := NewWithHexAESKeyForEType("svc", "CORP.LOCAL", tc.etype, hex.EncodeToString(key))
+		if err != nil {
+			t.Fatalf("etype %d: %v", tc.etype, err)
+		}
+		got, err := c.Key(tc.etype, "", nil)
+		if err != nil {
+			t.Fatalf("etype %d Key: %v", tc.etype, err)
+		}
+		if !bytes.Equal(got, key) {
+			t.Errorf("etype %d key mismatch", tc.etype)
+		}
 	}
 }
 

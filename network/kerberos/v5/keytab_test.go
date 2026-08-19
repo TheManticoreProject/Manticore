@@ -88,11 +88,31 @@ func TestWithKeytabForcesEType(t *testing.T) {
 	}
 }
 
-// TestWithKeytabRejectsUnsupportedEType confirms an entry whose only key is an
-// AES-SHA2 (or DES) enctype — which the credentials layer cannot key for
-// authentication — is rejected rather than silently accepted.
+// TestWithKeytabAcceptsAESSHA2 confirms AES-SHA2 keytab entries can be used as
+// explicitly typed pass-the-key credentials.
+func TestWithKeytabAcceptsAESSHA2(t *testing.T) {
+	for _, tc := range []struct {
+		etype int
+		size  int
+	}{
+		{iana.ETypeAES128CTSHMACSHA256, 16},
+		{iana.ETypeAES256CTSHMACSHA384, 32},
+	} {
+		data := keytabBytes(t, map[int][]byte{tc.etype: bytes.Repeat([]byte{0x44}, tc.size)})
+		c := NewClient("alice", "corp.local", "10.0.0.1")
+		if err := c.WithKeytabBytes(data); err != nil {
+			t.Fatalf("etype %d: WithKeytabBytes: %v", tc.etype, err)
+		}
+		if got := c.cred.SupportedETypes(); len(got) != 1 || got[0] != tc.etype {
+			t.Errorf("etype %d: selected credential etypes = %v", tc.etype, got)
+		}
+	}
+}
+
+// TestWithKeytabRejectsUnsupportedEType confirms a DES entry, which the
+// credentials layer cannot key for authentication, is rejected.
 func TestWithKeytabRejectsUnsupportedEType(t *testing.T) {
-	for _, etype := range []int{iana.ETypeAES256CTSHMACSHA384, iana.ETypeDESCBCMD5} {
+	for _, etype := range []int{iana.ETypeDESCBCMD5} {
 		data := keytabBytes(t, map[int][]byte{etype: bytes.Repeat([]byte{0x44}, 32)})
 		c := NewClient("alice", "corp.local", "10.0.0.1")
 		if err := c.WithKeytabBytes(data); err == nil {

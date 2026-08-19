@@ -46,7 +46,8 @@ type KerberosClient struct {
 	hasTGT       bool
 
 	// stETypes overrides the etype list requested in the TGS-REQ (the service
-	// ticket's session-key etype). nil requests AES256, AES128, then RC4.
+	// ticket's session-key etype). nil requests all supported AES profiles,
+	// strongest first, then RC4.
 	stETypes []int
 
 	// postdateFrom, when non-zero, requests a postdated TGT: GetTGT sends the
@@ -147,6 +148,8 @@ func (c *KerberosClient) serviceTicketETypes() []int {
 		return c.stETypes
 	}
 	return []int{
+		messages.ETypeAES256CTSHMACSHA384,
+		messages.ETypeAES128CTSHMACSHA256,
 		messages.ETypeAES256CTSHMACSHA196,
 		messages.ETypeAES128CTSHMACSHA196,
 		messages.ETypeRC4HMAC,
@@ -193,6 +196,18 @@ func (c *KerberosClient) WithNTHash(hexHash string) error {
 // (16 bytes -> AES128, 32 bytes -> AES256).
 func (c *KerberosClient) WithAESKey(hexKey string) error {
 	cred, err := credentials.NewWithHexAESKey(c.username, c.realm, hexKey)
+	if err != nil {
+		return err
+	}
+	c.cred = cred
+	return nil
+}
+
+// WithAESKeyForEType configures a pass-the-key credential for an explicit
+// AES-SHA1 or AES-SHA2 enctype. The explicit enctype is required for AES-SHA2
+// because its key lengths are the same as the corresponding AES-SHA1 profiles.
+func (c *KerberosClient) WithAESKeyForEType(hexKey string, etype int) error {
+	cred, err := credentials.NewWithHexAESKeyForEType(c.username, c.realm, etype, hexKey)
 	if err != nil {
 		return err
 	}
@@ -256,13 +271,19 @@ func (c *KerberosClient) GetTGT() error {
 	}
 
 	// Start with the strongest etype the credential can satisfy and the AD
-	// default salt. The KDC corrects both via PREAUTH_REQUIRED if needed.
-	etype := c.cred.SupportedETypes()[0]
+	// default salt. The KDC corrects both via PREAUTH_REQUIRED if needed. Some
+	// Windows Server 2025 KDCs reject a PA-ENC-TIMESTAMP using a supported but
+	// disabled AES-SHA2 profile with KDC_ERR_ETYPE_NOSUPP, so walk the
+	// credential's preference list until the KDC accepts one.
+	etypes := c.cred.SupportedETypes()
+	if len(etypes) == 0 {
+		return fmt.Errorf("kerberos: credential supports no encryption types")
+	}
 	salt := c.cred.DefaultSalt()
 
-	// At most two attempts: the second only ever follows a KRB_AP_ERR_SKEW, after
-	// the clock offset has been applied (RFC 4120 Section 5.9.1).
-	for attempt := 0; attempt < 2; attempt++ {
+	skewRetried := false
+	for i := 0; i < len(etypes); {
+		etype := etypes[i]
 		resp, nonce, err := c.sendASReqWithPreauth(etype, salt, nil)
 		if err != nil {
 			return err
@@ -271,6 +292,9 @@ func (c *KerberosClient) GetTGT() error {
 		var krb_err messages.KRBError
 		if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
 			switch krb_err.ErrorCode {
+			case iana.ErrETypeNoSupp:
+				i++
+				continue
 			case messages.ErrPreauthRequired, messages.ErrPreauthFailed:
 				// PREAUTH_REQUIRED means the KDC wants pre-auth with the etype/salt
 				// from its ETYPE-INFO2. PREAUTH_FAILED means our optimistic guess was
@@ -283,7 +307,8 @@ func (c *KerberosClient) GetTGT() error {
 				etype, salt, s2k_params := c.pickETypeFromError(krb_err)
 				return c.doASReqWithPreauth(etype, salt, s2k_params)
 			case messages.ErrSkew:
-				if attempt == 0 && c.applyClockSkew(krb_err) {
+				if !skewRetried && c.applyClockSkew(krb_err) {
+					skewRetried = true
 					continue // retry with the KDC-aligned clock
 				}
 				return fmt.Errorf("kerberos: KDC clock skew too great (error %d): %s", krb_err.ErrorCode, krb_err.EText)
@@ -294,7 +319,7 @@ func (c *KerberosClient) GetTGT() error {
 
 		return c.processASRep(resp, etype, salt, nil, nonce)
 	}
-	return fmt.Errorf("kerberos: GetTGT: clock-skew retry exhausted")
+	return fmt.Errorf("kerberos: KDC does not support any credential encryption type")
 }
 
 // pacRequestPA returns a PA-PAC-REQUEST PAData element with include-pac = TRUE.
