@@ -22,12 +22,6 @@ type MembershipGroup struct {
 // (opnum 9). opType selects which memberships to compute (e.g.
 // drsrtypes.RevMembGetGroupsForUser). limitingDomainNC, if non-empty, bounds the search
 // to that domain NC. It is read-only.
-//
-// NOTE: in lab testing against a fresh Windows Server 2016 DC this consistently returned
-// an empty set for accounts that do have group memberships, regardless of SID/GUID/DN
-// addressing or operation type. The request marshals and the reply parses correctly, so
-// the empty result is the server's response, not a client defect; the exact conditions
-// under which a DC returns data here are not yet established.
 func (c *Client) GetMemberships(sids [][]byte, opType drsrtypes.REVERSE_MEMBERSHIP_OPERATION_TYPE, limitingDomainNC string) ([]MembershipGroup, error) {
 	if !c.bound {
 		return nil, fmt.Errorf("msdrsr: not connected")
@@ -41,7 +35,7 @@ func (c *Client) GetMemberships(sids [][]byte, opType drsrtypes.REVERSE_MEMBERSH
 
 // GetMemberships2 issues a batch of reverse-membership requests in one call via
 // IDL_DRSGetMemberships2 (opnum 21), one request per SID set, returning the groups from
-// each reply concatenated. See GetMemberships for the lab-result caveat.
+// each reply concatenated.
 func (c *Client) GetMemberships2(sidSets [][][]byte, opType drsrtypes.REVERSE_MEMBERSHIP_OPERATION_TYPE, limitingDomainNC string) ([]MembershipGroup, error) {
 	if !c.bound {
 		return nil, fmt.Errorf("msdrsr: not connected")
@@ -72,9 +66,14 @@ func (c *Client) buildRevMembReq(sids [][]byte, opType drsrtypes.REVERSE_MEMBERS
 		d := drsrtypes.NewDSNameFromSID(sid)
 		names[i] = &d
 	}
+	return c.buildRevMembReqFromNames(names, opType, limitingDomainNC)
+}
+
+func (c *Client) buildRevMembReqFromNames(names []*drsrtypes.DSNAME, opType drsrtypes.REVERSE_MEMBERSHIP_OPERATION_TYPE, limitingDomainNC string) drsrtypes.DRS_MSG_REVMEMB_REQ_V1 {
 	v1 := drsrtypes.DRS_MSG_REVMEMB_REQ_V1{
-		CDsNames:      ndr.DWORD(len(sids)),
+		CDsNames:      ndr.DWORD(len(names)),
 		PpDsNames:     names,
+		DwFlags:       drsrtypes.DRS_REVMEMB_FLAG_GET_ATTRIBUTES,
 		OperationType: opType,
 	}
 	if limitingDomainNC != "" {

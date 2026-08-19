@@ -18,6 +18,10 @@ const (
 	DS_DNS_DOMAIN_NAME         uint32 = 12
 )
 
+// DRS_REVMEMB_FLAG_GET_ATTRIBUTES requests the SE_GROUP attributes associated with
+// each group returned by IDL_DRSGetMemberships ([MS-DRSR] 4.1.7.2.1).
+const DRS_REVMEMB_FLAG_GET_ATTRIBUTES uint32 = 0x00000001
+
 // DS_NAME_ERROR is the per-item status in DS_NAME_RESULT_ITEMW.Status
 // ([MS-DRSR] 4.1.4.1.2). DS_NAME_NO_ERROR (0) means the item resolved.
 const (

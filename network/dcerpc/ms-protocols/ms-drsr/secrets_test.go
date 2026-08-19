@@ -61,4 +61,7 @@ func TestDecryptObjectSecrets(t *testing.T) {
 	if sec.RID != 500 {
 		t.Errorf("RID = %d, want 500", sec.RID)
 	}
+	if got, want := hex.EncodeToString(sec.SID), hex.EncodeToString(obj.Attributes[0].Values[0]); got != want {
+		t.Errorf("SID = %s, want %s", got, want)
+	}
 }
