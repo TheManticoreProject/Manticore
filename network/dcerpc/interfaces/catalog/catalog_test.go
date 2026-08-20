@@ -34,6 +34,31 @@ func TestLocalInterfacesPresent(t *testing.T) {
 	}
 }
 
+func TestIssue639DocumentedInterfacesPresent(t *testing.T) {
+	cases := []struct {
+		uuid, name, protocol, service string
+	}{
+		{"0b6edbfa-4a24-4fc6-8a23-942b1eca65d1", "IRPCAsyncNotify", "MS-PAN", "Spooler"},
+		{"ae33069b-a2a8-46ee-a235-ddfd339be281", "IRPCRemoteObject", "MS-PAN", "Spooler"},
+		{"d95afe70-a6d5-4259-822e-2c84da1ddb0d", "WindowsShutdown", "MS-RSP", ""},
+		{"906b0ce0-c70b-1067-b317-00dd010662da", "IXnRemote", "MS-CMPO", ""},
+	}
+	for _, c := range cases {
+		e, ok := Lookup(mustGUID(c.uuid), 1, 0)
+		if !ok {
+			t.Errorf("Lookup(%s v1.0) not found", c.uuid)
+			continue
+		}
+		if e.Name != c.name || e.Protocol != c.protocol || e.Service != c.service {
+			t.Errorf("Lookup(%s v1.0) = (%q/%q/%q), want (%q/%q/%q)",
+				c.uuid, e.Name, e.Protocol, e.Service, c.name, c.protocol, c.service)
+		}
+		if len(e.Pipes) != 0 {
+			t.Errorf("Lookup(%s v1.0).Pipes = %v, want no named pipe for dynamic endpoint", c.uuid, e.Pipes)
+		}
+	}
+}
+
 func TestDefault_BuildsAndIsConsistent(t *testing.T) {
 	db := Default() // panics if the seed table is malformed
 	all := db.All()
@@ -86,11 +111,11 @@ func TestResolveFallback(t *testing.T) {
 }
 
 func TestSearchByFields(t *testing.T) {
-	if got := SearchByExecutable("SPOOLSV.EXE"); len(got) != 2 { // spoolss + IRemoteWinspool, case-insensitive
-		t.Errorf("SearchByExecutable(spoolsv.exe) = %d entries, want 2: %v", len(got), names(got))
+	if got := SearchByExecutable("SPOOLSV.EXE"); len(got) != 4 { // spoolss, IRemoteWinspool, and both MS-PAN interfaces
+		t.Errorf("SearchByExecutable(spoolsv.exe) = %d entries, want 4: %v", len(got), names(got))
 	}
-	if got := SearchByService("Spooler"); len(got) != 2 {
-		t.Errorf("SearchByService(Spooler) = %d, want 2: %v", len(got), names(got))
+	if got := SearchByService("Spooler"); len(got) != 4 {
+		t.Errorf("SearchByService(Spooler) = %d, want 4: %v", len(got), names(got))
 	}
 	if got := SearchByProtocol("MS-EFSR"); len(got) != 2 { // two EFSR interface UUIDs
 		t.Errorf("SearchByProtocol(MS-EFSR) = %d, want 2: %v", len(got), names(got))
