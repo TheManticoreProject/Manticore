@@ -16,6 +16,7 @@ import (
 type AccountSecrets struct {
 	DN             string
 	SAMAccountName string
+	SID            []byte
 	RID            uint32
 	NTHash         [16]byte
 	LMHash         [16]byte
@@ -59,6 +60,9 @@ func (c *Client) DecryptSecrets(res *ReplicationResult) ([]*AccountSecrets, erro
 // decryptObjectSecrets extracts and decrypts the secret attributes of a single object.
 func decryptObjectSecrets(obj ReplicatedObject, prefixTable drsrtypes.SCHEMA_PREFIX_TABLE, sessionKey []byte, rid uint32) (*AccountSecrets, error) {
 	sec := &AccountSecrets{DN: obj.DN, RID: rid}
+	if sid := firstValue(findAttr(obj, prefixTable, oidObjectSid)); sid != nil {
+		sec.SID = append([]byte(nil), sid...)
+	}
 
 	// isDeleted is a 4-byte LE boolean: TRUE = 0x01000000
 	if v := firstValue(findAttr(obj, prefixTable, oidIsDeleted)); v != nil && len(v) >= 4 && v[0] != 0 {
