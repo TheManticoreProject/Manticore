@@ -4,12 +4,15 @@ package msdrsr_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	msdrsr "github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/ms-drsr"
+	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
@@ -136,6 +139,64 @@ func TestCrackAndReplicate(t *testing.T) {
 	}
 	// secretsdump-style line: sAMAccountName:RID:LMHash:NTHash:::
 	t.Logf("%s:%d:%x:%x:::", s.SAMAccountName, s.RID, s.LMHash, s.NTHash)
+}
+
+// TestSupplementalCredentials live-validates supplemental credential parsing and,
+// when DRSUAPI_TEST_VERIFY_PASSWORD is set to the target account's password, checks the
+// extracted current AES256 key with the RFC 3962 string-to-key implementation.
+func TestSupplementalCredentials(t *testing.T) {
+	host := os.Getenv("DRSUAPI_TEST_HOST")
+	dn := os.Getenv("DRSUAPI_TEST_DN")
+	if host == "" || dn == "" {
+		t.Skip("set DRSUAPI_TEST_HOST and DRSUAPI_TEST_DN to run")
+	}
+	creds, err := credentials.NewCredentials(
+		os.Getenv("DRSUAPI_TEST_DOMAIN"), os.Getenv("DRSUAPI_TEST_USER"),
+		os.Getenv("DRSUAPI_TEST_PASS"), os.Getenv("DRSUAPI_TEST_HASHES"),
+	)
+	if err != nil {
+		t.Fatalf("build credentials: %v", err)
+	}
+	c := msdrsr.New(host, creds)
+	c.SetTimeout(15 * time.Second)
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	account, err := c.DCSyncByDN(dn)
+	if err != nil {
+		t.Fatalf("DCSyncByDN(%q): %v", dn, err)
+	}
+	if len(account.SupplementalCredentials) == 0 {
+		t.Fatal("target has no supplementalCredentials")
+	}
+	if len(account.KerberosKeys) == 0 {
+		t.Fatal("target has no parsed Kerberos keys")
+	}
+	t.Logf("parsed %d Kerberos keys, %d WDigest hashes, cleartext=%v", len(account.KerberosKeys), len(account.WDigestHashes), len(account.CleartextPasswordRaw) != 0)
+
+	password := os.Getenv("DRSUAPI_TEST_VERIFY_PASSWORD")
+	if password == "" {
+		return
+	}
+	for _, key := range account.KerberosKeys {
+		if key.KeyType != iana.ETypeAES256CTSHMACSHA196 || key.Category != msdrsr.KerberosKeyCurrent {
+			continue
+		}
+		var params [4]byte
+		binary.BigEndian.PutUint32(params[:], key.IterationCount)
+		derived, err := kerbcrypto.StringToKey(int(key.KeyType), password, key.Salt, params[:])
+		if err != nil {
+			t.Fatalf("derive AES256 key: %v", err)
+		}
+		if !bytes.Equal(derived, key.Value) {
+			t.Fatalf("extracted AES256 key does not match RFC 3962 derivation")
+		}
+		t.Logf("validated current AES256 key with salt %q and %d iterations", key.Salt, key.IterationCount)
+		return
+	}
+	t.Fatal("target has no current AES256 key")
 }
 
 // TestDomainControllerInfoAndDCSync exercises the Phase 5 workflow: IDL_DRSDomainController
