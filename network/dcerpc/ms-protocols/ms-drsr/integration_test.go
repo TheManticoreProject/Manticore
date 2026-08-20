@@ -5,7 +5,6 @@ package msdrsr_test
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"os"
 	"strconv"
 	"testing"
@@ -440,15 +439,67 @@ func TestReadOpnums2(t *testing.T) {
 		t.Logf("GetNT4ChangeLog: ntstatus=0x%x logLen=%d restartLen=%d", cl.ActualNTStatus, len(cl.Log), len(cl.Restart))
 	}
 
-	adminSID, _ := hex.DecodeString("010500000000000515000000fdca06a7cba8d22c3eae86ecf4010000")
-	if groups, err := c.GetMemberships([][]byte{adminSID}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
+	admin, err := c.DCSyncByDN(acct)
+	if err != nil {
+		t.Fatalf("DCSyncByDN(%s): %v", acct, err)
+	}
+	if len(admin.SID) == 0 {
+		t.Fatalf("DCSyncByDN(%s): object has no SID", acct)
+	}
+	if groups, err := c.GetMemberships([][]byte{admin.SID}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
 		t.Fatalf("GetMemberships: %v", err)
 	} else {
 		t.Logf("GetMemberships: %d group(s)", len(groups))
+		for _, group := range groups {
+			if group.Attribute == 0 {
+				t.Errorf("GetMemberships group %q has no requested attributes", group.DN)
+			}
+		}
 	}
-	if groups, err := c.GetMemberships2([][][]byte{{adminSID}}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
+	if groups, err := c.GetMemberships2([][][]byte{{admin.SID}}, drsrtypes.RevMembGetGroupsForUser, nc); err != nil {
 		t.Fatalf("GetMemberships2: %v", err)
 	} else {
 		t.Logf("GetMemberships2: %d group(s)", len(groups))
+		for _, group := range groups {
+			if group.Attribute == 0 {
+				t.Errorf("GetMemberships2 group %q has no requested attributes", group.DN)
+			}
+		}
+	}
+
+	replication, err := c.ReplicateNC(nc)
+	if err != nil {
+		t.Fatalf("ReplicateNC(%s): %v", nc, err)
+	}
+	if len(replication.Objects) == 0 || replication.Reply == nil || replication.Reply.PUpToDateVecSrc == nil {
+		t.Fatal("ReplicateNC returned no objects or up-to-date vector")
+	}
+	startGUID := replication.Objects[0].GUID
+	for _, object := range replication.Objects[1:] {
+		if bytes.Compare(object.GUID.ToBytes(), startGUID.ToBytes()) < 0 {
+			startGUID = object.GUID
+		}
+	}
+	vectorV2 := replication.Reply.PUpToDateVecSrc
+	vectorV1 := &drsrtypes.UPTODATE_VECTOR_V1_EXT{
+		DwVersion:   1,
+		CNumCursors: vectorV2.CNumCursors,
+		RgCursors:   make([]drsrtypes.UPTODATE_CURSOR_V1, len(vectorV2.RgCursors)),
+	}
+	for i, cursor := range vectorV2.RgCursors {
+		vectorV1.RgCursors[i] = drsrtypes.UPTODATE_CURSOR_V1{
+			UuidDsa:           cursor.UuidDsa,
+			UsnHighPropUpdate: cursor.UsnHighPropUpdate,
+		}
+	}
+	existence, err := c.GetObjectExistence(nc, startGUID, 1, vectorV1, [16]byte{})
+	if err != nil {
+		t.Fatalf("GetObjectExistence: %v", err)
+	}
+	t.Logf("GetObjectExistence: digestMatches=%v GUIDs=%d", existence.DigestMatches, len(existence.GUIDs))
+	if existence.DigestMatches || len(existence.GUIDs) != 1 {
+		t.Errorf("GetObjectExistence = matches %v, %d GUIDs; want false, 1", existence.DigestMatches, len(existence.GUIDs))
+	} else if existence.GUIDs[0] != startGUID {
+		t.Errorf("GetObjectExistence GUID = %s, want %s", existence.GUIDs[0].ToFormatD(), startGUID.ToFormatD())
 	}
 }
