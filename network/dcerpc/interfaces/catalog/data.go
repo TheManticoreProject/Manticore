@@ -102,6 +102,30 @@ var builtin = []Interface{
 		Executable:  "spoolsv.exe", Service: "Spooler", Protocol: "MS-PAR", Pipes: []string{`\pipe\spoolss`},
 	},
 	{
+		UUID: mustGUID("0b6edbfa-4a24-4fc6-8a23-942b1eca65d1"), Version: v(1, 0),
+		Name: "IRPCAsyncNotify", Title: "Print System Asynchronous Notification Protocol",
+		Description: "Registers print clients and exchanges asynchronous print notifications.",
+		Executable:  "spoolsv.exe", Service: "Spooler", Protocol: "MS-PAN",
+	},
+	{
+		UUID: mustGUID("ae33069b-a2a8-46ee-a235-ddfd339be281"), Version: v(1, 0),
+		Name: "IRPCRemoteObject", Title: "Print System Asynchronous Notification Remote Object",
+		Description: "Creates and destroys remote objects that refer to printers.",
+		Executable:  "spoolsv.exe", Service: "Spooler", Protocol: "MS-PAN",
+	},
+	{
+		UUID: mustGUID("d95afe70-a6d5-4259-822e-2c84da1ddb0d"), Version: v(1, 0),
+		Name: "WindowsShutdown", Title: "Remote Shutdown Protocol (WindowsShutdown)",
+		Description: "Initiates or aborts a remote shutdown through a dynamic RPC-over-TCP endpoint.",
+		Protocol:    "MS-RSP",
+	},
+	{
+		UUID: mustGUID("906b0ce0-c70b-1067-b317-00dd010662da"), Version: v(1, 0),
+		Name: "IXnRemote", Title: "MSDTC Connection Manager: OleTx Transports Protocol",
+		Description: "Establishes peer-to-peer MSDTC partner communication over dynamic RPC endpoints.",
+		Protocol:    "MS-CMPO",
+	},
+	{
 		UUID: mustGUID("12345678-1234-abcd-ef00-01234567cffb"), Version: v(1, 0),
 		Name: "netlogon", Title: "Netlogon Remote Protocol",
 		Description: "Domain authentication; abused via Zerologon.",
