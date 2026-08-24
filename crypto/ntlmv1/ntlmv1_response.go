@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// HashcatMode is the hashcat hash-mode number for a NetNTLMv1 response, so a
+// caller writing captured material to a file can label it correctly. It is a
+// different mode from a NetNTLMv2 response, which hashcat expects in a different
+// field layout (see crypto/ntlmv2.HashcatMode).
+const HashcatMode = 5500
+
 type NTLMv1Response struct {
 	Username string // Username for authentication
 	Domain   string // Domain name

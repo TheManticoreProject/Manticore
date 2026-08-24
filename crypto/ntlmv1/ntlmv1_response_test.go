@@ -1,6 +1,8 @@
 package ntlmv1
 
 import (
+	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -112,5 +114,67 @@ func TestNTLMv1ResponseEqual(t *testing.T) {
 	other.SetServerChallenge([8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 	if resp.Equal(other) {
 		t.Error("Equal() returned true for different responses")
+	}
+}
+
+// TestNTLMv1HashcatStringMatchesPublishedExample asserts the renderer reproduces
+// the published hashcat mode-5500 example hash, pinning the field order.
+//
+// NetNTLMv1 and NetNTLMv2 use different layouts, and confusing them is easy: mode
+// 5500 puts the server challenge LAST, after the LM and NT responses, whereas
+// mode 5600 puts it BEFORE the NTProofStr and blob. This guards the v1 side of
+// that distinction; crypto/ntlmv2 guards the other.
+//
+// Source: https://hashcat.net/wiki/doku.php?id=example_hashes
+func TestNTLMv1HashcatStringMatchesPublishedExample(t *testing.T) {
+	const (
+		username        = "u4-netntlm"
+		domain          = "kNS"
+		lmResponse      = "338d08f8e26de93300000000000000000000000000000000"
+		ntResponse      = "9526fb8c23a90751cdd619b6cea564742e1e4bf33006ba41"
+		serverChallenge = "cb8086049ec4736c"
+		exampleHash     = username + "::" + domain + ":" + lmResponse + ":" + ntResponse + ":" + serverChallenge
+	)
+
+	mustDecode := func(s string) []byte {
+		b, err := hex.DecodeString(s)
+		if err != nil {
+			t.Fatalf("bad hex %q: %v", s, err)
+		}
+		return b
+	}
+
+	var challenge [8]byte
+	var lm, nt [24]byte
+	copy(challenge[:], mustDecode(serverChallenge))
+	copy(lm[:], mustDecode(lmResponse))
+	copy(nt[:], mustDecode(ntResponse))
+
+	response := NewNTLMv1Response(username, domain, challenge, lm, nt)
+
+	got, err := response.HashcatString()
+	if err != nil {
+		t.Fatalf("HashcatString() error = %v", err)
+	}
+	// The renderer uppercases hex; hashcat parses it case-insensitively.
+	if !strings.EqualFold(got, exampleHash) {
+		t.Fatalf("HashcatString() =\n  %s\nwant (any case)\n  %s", got, exampleHash)
+	}
+
+	// The server challenge is the last field for mode 5500, not the first.
+	fields := strings.Split(got, ":")
+	if len(fields) != 6 {
+		t.Fatalf("line has %d colon-separated fields, want 6: %q", len(fields), got)
+	}
+	if !strings.EqualFold(fields[5], serverChallenge) {
+		t.Fatalf("last field = %q, want the server challenge %q", fields[5], serverChallenge)
+	}
+}
+
+// TestNTLMv1HashcatModeIsNetNTLMv1 guards the mode number a caller labels
+// captured material with.
+func TestNTLMv1HashcatModeIsNetNTLMv1(t *testing.T) {
+	if HashcatMode != 5500 {
+		t.Fatalf("HashcatMode = %d, want 5500 for NetNTLMv1", HashcatMode)
 	}
 }
