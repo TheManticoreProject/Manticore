@@ -40,6 +40,12 @@ type Open struct {
 	// IsDirectory records what the handle names.
 	IsDirectory bool
 
+	// IsPipe records that the handle names a named pipe rather than a file, so
+	// Path is a pipe name and there is no backend file behind it. A pipe handle
+	// is what a transaction acts on: [MS-CIFS] section 3.3.5.57.7 identifies the
+	// pipe by the FID in the request's setup words, not by the name it carries.
+	IsPipe bool
+
 	// Readable and Writable are the access the open was granted, enforced on
 	// every use so a handle opened for reading cannot later be written through.
 	Readable bool
@@ -115,6 +121,14 @@ func (c *Connection) closeOpen(fid uint16) error {
 	var firstErr error
 	if open.File != nil {
 		if err := open.File.Close(); err != nil {
+			firstErr = err
+		}
+	}
+
+	// A pipe handle has no backend file; what it holds is whatever the handler
+	// prepared when the pipe was opened, so closing it is the handler's business.
+	if open.IsPipe && open.Tree != nil && open.Tree.Share.Pipes != nil {
+		if err := open.Tree.Share.Pipes.ClosePipe(open.Path); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

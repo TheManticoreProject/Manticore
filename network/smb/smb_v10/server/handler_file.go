@@ -25,6 +25,23 @@ const (
 // share, and a file system — so they are checked once here rather than at the top
 // of each handler where one could be forgotten.
 func (c *Connection) treeFor(req *message.Message) (*Tree, nt_status.NT_STATUS) {
+	tree, status := c.anyTreeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return nil, status
+	}
+	if tree.Share.Type != ShareTypeDisk || tree.Share.FS == nil {
+		return nil, nt_status.NT_STATUS_BAD_DEVICE_TYPE
+	}
+	return tree, nt_status.NT_STATUS_SUCCESS
+}
+
+// anyTreeFor resolves the tree a request names, whatever kind of share it is.
+//
+// Only the commands that serve more than one kind of share use this — an open,
+// which reaches a file on a disk share and a pipe on a pipe share. Everything
+// else goes through treeFor and gets the disk check for free, which is what keeps
+// a file-system handler from being reached with a nil FS.
+func (c *Connection) anyTreeFor(req *message.Message) (*Tree, nt_status.NT_STATUS) {
 	tree := c.Tree(uint16(req.Header.TID))
 	if tree == nil {
 		return nil, nt_status.NT_STATUS_SMB_BAD_TID
@@ -35,9 +52,6 @@ func (c *Connection) treeFor(req *message.Message) (*Tree, nt_status.NT_STATUS) 
 		logger.Debugf("SMB1 server: %s used TID 0x%04X from UID 0x%04X, which does not own it",
 			c.Remote, tree.TID, uint16(req.Header.UID))
 		return nil, nt_status.NT_STATUS_SMB_BAD_TID
-	}
-	if tree.Share.Type != ShareTypeDisk || tree.Share.FS == nil {
-		return nil, nt_status.NT_STATUS_BAD_DEVICE_TYPE
 	}
 	return tree, nt_status.NT_STATUS_SUCCESS
 }
@@ -136,7 +150,9 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 
-	tree, status := conn.treeFor(req)
+	// An open is the one command that serves both kinds of share, so it resolves
+	// the tree without the disk check and applies its own.
+	tree, status := conn.anyTreeFor(req)
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return status
 	}
@@ -145,6 +161,16 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 	// repository's client sends file-I/O messages in OEM even when the connection
 	// negotiated Unicode, so the request's own flag is what governs.
 	requested := decodeWireString(request.FileName.Buffer, req.Header.Flags2.IsUnicode())
+
+	// A pipe share has no file system behind it, so it takes a different path
+	// entirely: what a client opens there is a pipe, and the handle it gets back
+	// is what a later transaction names.
+	if tree.Share.Type == ShareTypeNamedPipe {
+		return conn.openPipe(w, tree, requested)
+	}
+	if tree.Share.Type != ShareTypeDisk || tree.Share.FS == nil {
+		return nt_status.NT_STATUS_BAD_DEVICE_TYPE
+	}
 
 	path, err := resolvePath(requested)
 	if err != nil {
@@ -269,7 +295,8 @@ func handleClose(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 
 	// A client may set the modification time as it closes. 0 and -1 both mean
 	// "leave it alone", which is why the field cannot simply be applied.
-	if request.LastTimeModified != 0 && request.LastTimeModified != 0xFFFFFFFF && open.Writable {
+	if request.LastTimeModified != 0 && request.LastTimeModified != 0xFFFFFFFF && open.Writable &&
+		open.Tree != nil && open.Tree.Share.FS != nil {
 		modified := time.Unix(int64(request.LastTimeModified), 0).UTC()
 		if err := open.Tree.Share.FS.SetAttr(open.Path, FileAttr{Modified: modified}, AttrMask{Modified: true}); err != nil {
 			logger.Debugf("SMB1 server: could not set the modification time of %q: %v", open.Path, err)

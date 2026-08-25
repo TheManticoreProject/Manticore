@@ -41,6 +41,15 @@ type Share struct {
 
 	// FS is the storage behind a disk share.
 	FS FileSystem
+
+	// Security supplies the share's security descriptors. Nil refuses the
+	// security-descriptor subcommands, which is the honest answer for a share
+	// with no access-control model to describe.
+	Security SecurityProvider
+
+	// Pipes serves the named pipes on an IPC share. Nil refuses every pipe
+	// operation.
+	Pipes PipeHandler
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's

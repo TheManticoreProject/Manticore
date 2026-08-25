@@ -55,6 +55,16 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_TRANSACTION2:           handleTransaction2,
 	codes.SMB_COM_TRANSACTION2_SECONDARY: handleTransaction2Secondary,
 	codes.SMB_COM_FIND_CLOSE2:            handleFindClose2,
+
+	// NT_TRANSACT, which carries the security-descriptor and control
+	// subcommands.
+	codes.SMB_COM_NT_TRANSACT:           handleNtTransact,
+	codes.SMB_COM_NT_TRANSACT_SECONDARY: handleNtTransactSecondary,
+	codes.SMB_COM_NT_CANCEL:             handleNtCancel,
+
+	// TRANSACTION, which carries the named-pipe operations.
+	codes.SMB_COM_TRANSACTION:           handleTransaction,
+	codes.SMB_COM_TRANSACTION_SECONDARY: handleTransactionSecondary,
 }
 
 // sessionlessCommands are the commands a client may send before it holds a

@@ -13,7 +13,7 @@ import (
 // intend to read.
 //
 // Request parameters: InformationLevel(2) Reserved(4) FileName(variable).
-func handleQueryPathInformation(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleQueryPathInformation(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 6 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
@@ -54,7 +54,7 @@ func handleQueryPathInformation(conn *Connection, req *message.Message, reassemb
 // a path a client already holds open.
 //
 // Request parameters: FID(2) InformationLevel(2).
-func handleQueryFileInformation(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleQueryFileInformation(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 4 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
@@ -86,7 +86,7 @@ func handleQueryFileInformation(conn *Connection, req *message.Message, reassemb
 // handleSetPathInformation answers TRANS2_SET_PATH_INFORMATION.
 //
 // Request parameters: InformationLevel(2) Reserved(4) FileName(variable).
-func handleSetPathInformation(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleSetPathInformation(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 6 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
@@ -124,7 +124,7 @@ func handleSetPathInformation(conn *Connection, req *message.Message, reassembly
 // handleSetFileInformation answers TRANS2_SET_FILE_INFORMATION.
 //
 // Request parameters: FID(2) InformationLevel(2) Reserved(2).
-func handleSetFileInformation(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleSetFileInformation(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 4 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
@@ -159,7 +159,7 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 // volume behind the share.
 //
 // Request parameters: InformationLevel(2).
-func handleQueryFsInformation(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleQueryFsInformation(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 2 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER

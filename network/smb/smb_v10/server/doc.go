@@ -35,10 +35,34 @@
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
 //     responses both fragment across as many messages as they need.
+//   - Security descriptors and file-system controls, over NT_TRANSACT:
+//     QUERY_SECURITY_DESC, SET_SECURITY_DESC and IOCTL. SMB_COM_NT_CANCEL is
+//     accepted silently, since nothing here leaves a request outstanding.
+//   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
+//     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
+//     the answer. That write-then-read is the operation MS-RPC travels over, so a
+//     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//
+// All three transaction families share one reassembly, since they are the same
+// shape at different field widths: totals, a per-message count and a
+// displacement, with the subcommand selected by a setup word, a Function field or
+// a name.
 //
 // Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: byte-range
-// locking, seek, the legacy SMB_COM_OPEN_ANDX, the NT_TRANSACT subcommands,
-// named pipes, and batched AndX chains beyond their first command.
+// locking, seek, the legacy SMB_COM_OPEN_ANDX, and batched AndX chains beyond
+// their first command.
+//
+// NT_TRANSACT_NOTIFY_CHANGE is deliberately absent rather than pending. It needs
+// two things this package does not have: a FileSystem that can be watched, and a
+// connection whose write path can be used from outside the request that is being
+// served — a notification is answered when the change happens, not when it is
+// asked for. Both are architectural additions, and half of either would be worse
+// than the honest refusal.
+//
+// NT_TRANSACT_CREATE and NT_TRANSACT_RENAME are also absent by choice: they
+// duplicate SMB_COM_NT_CREATE_ANDX and SMB_COM_RENAME, which are served. The
+// quota subcommands are absent because nothing here tracks a quota, and a number
+// invented for them is a number a client would believe.
 //
 // # Shares
 //
@@ -50,6 +74,33 @@
 // A share may be marked ReadOnly, which refuses every modifying command whatever
 // access the client asked for. That is enforced in the handlers rather than left
 // to the backend, so a backend cannot forget it.
+//
+// # Security descriptors
+//
+// A Share may carry a SecurityProvider, which answers the NT_TRANSACT security
+// subcommands. NewReflectiveSecurityProvider derives a descriptor from the
+// share's own configuration: a read-only share does not describe write access,
+// because it does not grant any. That is the point of deriving one rather than
+// returning a fixed descriptor — a client uses a descriptor to predict what it
+// will be allowed to do, so one that disagreed with the handlers would make the
+// client wrong. For the same reason it refuses a change instead of accepting one
+// it has nowhere to store.
+//
+// A share with no provider answers STATUS_NOT_SUPPORTED rather than inventing a
+// descriptor.
+//
+// # Named pipes
+//
+// A Share of type ShareTypeNamedPipe carries a PipeHandler instead of a
+// FileSystem. A client opens a pipe on it with SMB_COM_NT_CREATE_ANDX and then
+// transacts on the handle: [MS-CIFS] identifies the pipe a transaction acts on by
+// the FID in the request's setup words, not by the name the request carries, so
+// the handle is what matters and the name is boilerplate.
+//
+// An answer larger than the client's buffer is cut to fit and reported with
+// STATUS_BUFFER_OVERFLOW, which is what tells the client to read again. Reporting
+// plain success would leave an RPC client parsing a truncated response as a whole
+// one.
 //
 // # Path containment
 //

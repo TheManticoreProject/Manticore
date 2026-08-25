@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"testing"
@@ -105,6 +106,44 @@ func FuzzServerFrame(f *testing.F) {
 			flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
 			append([]byte{0x0C}, make([]byte, 12*2+2)...)))
 	}
+
+	// The NT_TRANSACT family, whose counts are 32-bit: a declared total is an
+	// allocation, so the bound on it is reachable from the first frame a client
+	// sends. WordCount 19 selects the primary form, 18 the secondary.
+	f.Add(rawFrame(codes.SMB_COM_NT_TRANSACT, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x13}, make([]byte, 19*2+2)...)))
+	// The same, with every count field set to 0xFFFFFFFF.
+	f.Add(rawFrame(codes.SMB_COM_NT_TRANSACT, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x13}, bytes.Repeat([]byte{0xFF}, 19*2+2)...)))
+	f.Add(rawFrame(codes.SMB_COM_NT_TRANSACT_SECONDARY, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x12}, make([]byte, 18*2+2)...)))
+	f.Add(rawFrame(codes.SMB_COM_NT_CANCEL, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES), []byte{0x00, 0x00, 0x00}))
+
+	// The TRANSACTION family, whose data block begins with a name the decoder has
+	// to find the end of. A block with no terminator at all is the case that a
+	// scan without a bound would run off.
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x0E}, make([]byte, 14*2+2)...)))
+	transactionWithName := append([]byte{0x10}, make([]byte, 16*2)...)
+	// SetupCount at word 14 (byte offset 1+28), then two setup words, then a
+	// ByteCount naming a block of unterminated name bytes.
+	transactionWithName[1+26] = 0x02
+	transactionWithName = append(transactionWithName, 0x0C, 0x00)
+	transactionWithName = append(transactionWithName, []byte(`\PIPE\srvsvc`)...)
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES), transactionWithName))
+	// The same declared as Unicode, where the terminator is two bytes wide and an
+	// odd-length block cannot hold one.
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES|flags2.FLAGS2_UNICODE), transactionWithName))
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION_SECONDARY, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x08}, make([]byte, 8*2+2)...)))
 
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		srv, err := NewServer(Config{})

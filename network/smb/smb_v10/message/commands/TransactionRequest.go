@@ -259,12 +259,16 @@ func (c *TransactionRequest) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshalling data Name
-	bytesStream, err := c.Name.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	rawDataContent = append(rawDataContent, bytesStream...)
+	// Marshalling data Name.
+	//
+	// Per [MS-CIFS] section 2.2.4.33.1 the Name is "a null-terminated array of
+	// OEM characters", or of 16-bit Unicode characters when SMB_FLAGS2_UNICODE is
+	// set, and it "MUST be the first field in this section". There is no
+	// buffer-format byte: marshalling it through SMB_STRING would prepend a
+	// spurious 0x04, which a server reads as the first character of the name. The
+	// same is done for SMB_COM_NT_CREATE_ANDX's FileName, for the same reason.
+	rawDataContent = append(rawDataContent, []byte(c.Name.Buffer)...)
+	rawDataContent = append(rawDataContent, nameTerminator(c.IsUnicode())...)
 
 	// Marshalling data Pad1
 	rawDataContent = append(rawDataContent, c.Pad1...)
@@ -532,12 +536,12 @@ func (c *TransactionRequest) Unmarshal(rawData []byte) (int, error) {
 	// Then unmarshal the data
 	offset = 0
 
-	// Unmarshalling data Name
-	bytesRead, err = c.Name.Unmarshal(rawDataContent[offset:])
-	if err != nil {
-		return offset, err
-	}
-	offset += bytesRead
+	// Unmarshalling data Name: a raw null-terminated string with no SMB_STRING
+	// buffer-format byte (mirrors Marshal above).
+	nameBytes, nameSize := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
+	c.Name.Buffer = []types.UCHAR(nameBytes)
+	c.Name.Length = types.USHORT(len(nameBytes))
+	offset += nameSize
 
 	// Unmarshalling data Pad1, Trans_Parameters, Pad2, Trans_Data.
 	//
