@@ -79,7 +79,7 @@ func supportedFindLevel(level uint16) bool {
 // Returns:
 //   - The encoded entries
 //   - How many were encoded, which the response reports as its count
-func encodeFindEntries(search *Search, count, budget int) ([]byte, int) {
+func encodeFindEntries(search *Search, count, budget int, unicode bool) ([]byte, int) {
 	if count <= 0 {
 		count = len(search.Entries)
 	}
@@ -92,7 +92,7 @@ func encodeFindEntries(search *Search, count, budget int) ([]byte, int) {
 
 	for returned < count && !search.exhausted() {
 		entry := search.Entries[search.Position]
-		rendered := encodeFindEntry(search.InformationLevel, entry.Attr)
+		rendered := encodeFindEntry(search.InformationLevel, entry.Attr, unicode)
 
 		// The entry must fit whole.
 		if len(encoded)+len(rendered) > budget {
@@ -135,10 +135,13 @@ func zeroLastNextEntryOffset(encoded []byte, level uint16) {
 
 // encodeFindEntry renders one directory entry in the requested level.
 //
-// Names are written as OEM bytes. That is what this repository's client reads them
-// as, and the FIND request itself carries its pattern in OEM, so the two agree.
-func encodeFindEntry(level uint16, attr FileAttr) []byte {
-	name := []byte(attr.Name)
+// Names go out in the encoding the request declared, and the lengths that describe
+// them are byte counts either way. Writing them as OEM regardless is not a
+// cosmetic difference: a client that negotiated Unicode reads the buffer as UTF-16
+// whatever the server put there, so an OEM name comes out as half as many
+// characters of nonsense.
+func encodeFindEntry(level uint16, attr FileAttr, unicode bool) []byte {
+	name := encodeWireString(attr.Name, unicode)
 
 	switch level {
 	case smbFindFileNamesInfo:
@@ -209,7 +212,7 @@ func padTo4(buffer []byte) []byte {
 
 // encodeFileInformation renders a file in a query level, or reports that the level
 // is not served.
-func encodeFileInformation(level uint16, attr FileAttr, path string) ([]byte, bool) {
+func encodeFileInformation(level uint16, attr FileAttr, path string, unicode bool) ([]byte, bool) {
 	switch level {
 	case smbQueryFileBasicInfo:
 		// Four timestamps(8 each) ExtFileAttributes(4) Reserved(4).
@@ -239,7 +242,7 @@ func encodeFileInformation(level uint16, attr FileAttr, path string) ([]byte, bo
 
 	case smbQueryFileNameInfo, smbQueryFileAltNameInfo:
 		// FileNameLength(4) FileName(variable).
-		name := []byte(pathForClient(path))
+		name := encodeWireString(pathForClient(path), unicode)
 		info := make([]byte, 4)
 		binary.LittleEndian.PutUint32(info[0:4], uint32(len(name)))
 		return append(info, name...), true
@@ -247,12 +250,12 @@ func encodeFileInformation(level uint16, attr FileAttr, path string) ([]byte, bo
 	case smbQueryFileAllInfo:
 		// The basic and standard blocks together, then EaSize and the name.
 		info := make([]byte, 0, 104)
-		basic, _ := encodeFileInformation(smbQueryFileBasicInfo, attr, path)
-		standard, _ := encodeFileInformation(smbQueryFileStandardInfo, attr, path)
+		basic, _ := encodeFileInformation(smbQueryFileBasicInfo, attr, path, unicode)
+		standard, _ := encodeFileInformation(smbQueryFileStandardInfo, attr, path, unicode)
 		info = append(info, basic...)
 		info = append(info, standard...)
 		info = append(info, make([]byte, 4)...) // EaSize
-		name := []byte(pathForClient(path))
+		name := encodeWireString(pathForClient(path), unicode)
 		lengthField := make([]byte, 4)
 		binary.LittleEndian.PutUint32(lengthField, uint32(len(name)))
 		info = append(info, lengthField...)
@@ -278,12 +281,20 @@ func pathForClient(path string) string {
 
 // encodeVolumeInformation renders a volume in a query level, or reports that the
 // level is not served.
-func encodeVolumeInformation(level uint16, volume VolumeInfo) ([]byte, bool) {
+func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]byte, bool) {
+	// A level at or above the pass-through base names a native information class
+	// rather than an SMB one ([MS-SMB] section 2.2.2.3.5). A client that asks for
+	// free space asks this way, so refusing the range means refusing the question
+	// most often asked about a volume.
+	if level >= smbInfoPassthrough {
+		return encodeNativeVolumeInformation(level-smbInfoPassthrough, volume, unicode)
+	}
+
 	switch level {
 	case smbQueryFsVolumeInfo:
 		// VolumeCreationTime(8) SerialNumber(4) VolumeLabelSize(4) Reserved(2)
 		// VolumeLabel(variable).
-		label := []byte(volume.Label)
+		label := encodeWireString(volume.Label, unicode)
 		info := make([]byte, 18)
 		binary.LittleEndian.PutUint32(info[8:12], volume.SerialNumber)
 		binary.LittleEndian.PutUint32(info[12:16], uint32(len(label)))
@@ -317,7 +328,7 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo) ([]byte, bool) {
 		// Only case-preserving names are claimed. Claiming a capability the
 		// storage does not have — unicode-on-disk, compression, quotas — is worse
 		// than claiming none, because a client then uses it.
-		name := []byte(volume.FileSystemName)
+		name := encodeWireString(volume.FileSystemName, unicode)
 		info := make([]byte, 12)
 		binary.LittleEndian.PutUint32(info[0:4], 0x00000002) // FILE_CASE_PRESERVED_NAMES
 		binary.LittleEndian.PutUint32(info[4:8], MaxPathComponentLength)
@@ -395,4 +406,64 @@ func timeFromFiletime(filetime uint64) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(0, int64(filetime-unixEpochIn100ns)*100).UTC()
+}
+
+// smbInfoPassthrough is the base of the pass-through information levels: a level
+// of smbInfoPassthrough + N carries the native information class N.
+const smbInfoPassthrough = 0x03E8
+
+// Native file-system information classes, as they arrive through the pass-through
+// range ([MS-FSCC] section 2.5).
+const (
+	fileFsVolumeInformation    = 1
+	fileFsSizeInformation      = 3
+	fileFsDeviceInformation    = 4
+	fileFsAttributeInformation = 5
+	fileFsFullSizeInformation  = 7
+)
+
+// encodeNativeVolumeInformation renders a volume in a native information class.
+//
+// Most of the classes have the same layout as the SMB level that shadows them, so
+// those are answered by the level rather than duplicated. Only the full-size class
+// has no SMB equivalent, and it is the one a client actually uses: it reports the
+// caller's available space separately from the volume's, which is what a client
+// displays as free space.
+func encodeNativeVolumeInformation(class uint16, volume VolumeInfo, unicode bool) ([]byte, bool) {
+	switch class {
+	case fileFsVolumeInformation:
+		return encodeVolumeInformation(smbQueryFsVolumeInfo, volume, unicode)
+	case fileFsSizeInformation:
+		return encodeVolumeInformation(smbQueryFsSizeInfo, volume, unicode)
+	case fileFsDeviceInformation:
+		return encodeVolumeInformation(smbQueryFsDeviceInfo, volume, unicode)
+	case fileFsAttributeInformation:
+		return encodeVolumeInformation(smbQueryFsAttributeInfo, volume, unicode)
+
+	case fileFsFullSizeInformation:
+		// TotalAllocationUnits(8) CallerAvailableAllocationUnits(8)
+		// ActualAvailableAllocationUnits(8) SectorsPerAllocationUnit(4)
+		// BytesPerSector(4).
+		sectors, bytesPerSector := volume.SectorsPerAllocationUnit, volume.BytesPerSector
+		if sectors == 0 {
+			sectors = defaultSectorsPerAllocationUnit
+		}
+		if bytesPerSector == 0 {
+			bytesPerSector = defaultBytesPerSector
+		}
+		unit := int64(sectors) * int64(bytesPerSector)
+
+		info := make([]byte, 32)
+		binary.LittleEndian.PutUint64(info[0:8], uint64(volume.TotalBytes/unit))
+		// Nothing here imposes a quota, so what the caller may use is what the
+		// volume has. Reporting a smaller figure would make a client refuse a write
+		// the server would have accepted.
+		binary.LittleEndian.PutUint64(info[8:16], uint64(volume.FreeBytes/unit))
+		binary.LittleEndian.PutUint64(info[16:24], uint64(volume.FreeBytes/unit))
+		binary.LittleEndian.PutUint32(info[24:28], sectors)
+		binary.LittleEndian.PutUint32(info[28:32], bytesPerSector)
+		return info, true
+	}
+
+	return nil, false
 }

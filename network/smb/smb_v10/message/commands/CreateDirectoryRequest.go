@@ -71,7 +71,7 @@ func (c *CreateDirectoryRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data DirectoryName
 	c.DirectoryName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-	bytesStream, err := c.DirectoryName.Marshal()
+	bytesStream, err := c.DirectoryName.MarshalWithEncoding(c.IsUnicode())
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (c *CreateDirectoryRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data DirectoryName
-	bytesRead, err = c.DirectoryName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.DirectoryName.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
 	if err != nil {
 		return offset, err
 	}

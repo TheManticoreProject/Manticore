@@ -42,6 +42,11 @@
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
 //     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
+//     the pass-through information classes above 0x03E8 that carry the native
+//     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
+//     free space after a listing whether or not anything wanted it, so leaving
+//     these unanswered puts an error in every session.
 //
 // All three transaction families share one reassembly, since they are the same
 // shape at different field widths: totals, a per-message count and a
@@ -102,6 +107,23 @@
 // plain success would leave an RPC client parsing a truncated response as a whole
 // one.
 //
+// # Character encoding
+//
+// Unicode is a per-message property, not a per-connection one: SMB_FLAGS2_UNICODE
+// is set on each message, and a client may negotiate Unicode and then send a
+// request in OEM. So every name is read and written in the encoding that message
+// declared, never in the connection's.
+//
+// The consequences are easy to underestimate. A null-terminated field ends at its
+// first null CHARACTER, so a Unicode name has a two-byte terminator and a
+// single-byte scan ends it after one character. A Unicode field also has to begin
+// on a 2-byte boundary measured from the start of the SMB header, so a padding byte
+// stands before it whenever the fields ahead of it did not leave it aligned — which
+// for the second name of a rename depends on the length of the first. And a name in
+// a response is read by the client as whatever the message declared, so a name
+// written in the other encoding produces a reply of the right shape and the wrong
+// text rather than an error.
+//
 // # Path containment
 //
 // Every path a client sends passes through resolvePath before any backend sees
@@ -153,6 +175,27 @@
 // whose header is well formed but whose body will not decode, is answered or
 // dropped rather than propagated, and a panic in a handler takes down only that
 // connection. FuzzServerFrame in this package exercises that path.
+//
+// A handle is not always backed by a file — a pipe handle has a handler instead,
+// and a backend may decline to open a directory — so every command that reads or
+// writes through one checks. The client chooses the handle, so an unguarded
+// dereference there is reachable by anyone who can open a pipe.
+//
+// # Interoperability
+//
+// The unit suite pairs this server with the SMB1 client in this repository, which
+// is fast to work with but shares this implementation's assumptions: a wire detail
+// both halves get wrong agrees with itself, and every round-trip passes.
+// live_interop_integration_test.go exists for that reason. Behind the
+// "integration" build tag, it drives a third-party client and a third-party RPC
+// client against a server started in-process, and asserts a clean session: a
+// listing by name, a file in both directions, the name-carrying commands, a
+// mandatory-signing session verified in both directions, and an RPC bind completed
+// over a named pipe.
+//
+// Not covered there: the NT_TRANSACT security-descriptor path, because the tool
+// that would drive it cannot be pointed at a non-privileged port. It is covered by
+// unit tests that parse the descriptor back with an independent parser.
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/
 package server

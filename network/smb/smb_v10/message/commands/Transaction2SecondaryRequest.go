@@ -164,6 +164,20 @@ func (c *Transaction2SecondaryRequest) Marshal() ([]byte, error) {
 		}
 	}
 
+	// The offsets are derived from the layout being written rather than taken from
+	// the caller: a declared offset that disagrees with where the bytes actually
+	// went is worse than one that is missing, because a receiver following
+	// [MS-CIFS] trusts it and reads the payload at the wrong place.
+	c.ParameterOffset, c.DataOffset = types.USHORT(0), types.USHORT(0)
+	{
+		parameterOffset, dataOffset := deriveTransactionOffsets(
+			transaction2SecondaryWordCount,
+			0, len(c.Pad1), len(c.Trans2_Parameters), len(c.Pad2), len(c.Trans2_Data),
+		)
+		c.ParameterOffset = types.USHORT(parameterOffset)
+		c.DataOffset = types.USHORT(dataOffset)
+	}
+
 	// First marshal the data and then the parameters
 	// This is because some parameters are dependent on the data, for example the size of some fields within
 	// the data will be stored in the parameters
@@ -356,52 +370,25 @@ func (c *Transaction2SecondaryRequest) Unmarshal(rawData []byte) (int, error) {
 
 	// Unmarshalling data Pad1, Trans2_Parameters, Pad2, Trans2_Data.
 	//
-	// ParameterOffset and DataOffset are measured from the start of the SMB header,
-	// not as lengths within this data block, so they cannot be used directly as the
-	// Pad1/Pad2 byte counts. Recover the inter-block gaps from the shared
-	// header-relative base instead:
-	//   len(Pad2) = DataOffset - (ParameterOffset + ParameterCount)
-	//   len(Pad1) = remaining bytes once Trans2_Parameters, Pad2 and Trans2_Data are accounted for
-	parameterCount := int(c.ParameterCount)
-	dataCount := int(c.DataCount)
-
-	pad2Length := 0
-	if dataCount > 0 {
-		pad2Length = int(c.DataOffset) - (int(c.ParameterOffset) + parameterCount)
-		if pad2Length < 0 {
-			return offset, fmt.Errorf("invalid offsets: DataOffset precedes end of Trans2_Parameters")
-		}
+	// The two blocks are located by the offsets the message declares, which
+	// [MS-CIFS] measures from the start of the SMB header and requires the receiver
+	// to use. They are not derived by subtracting the field lengths from the size
+	// of the data block: a sender pads the end of the block as well as the middle,
+	// and that arithmetic charges the trailing padding to the leading pad, which
+	// shifts every field in both blocks.
+	pad1, parameterBlock, pad2, dataBlock, consumed, err := locateTransactionBlocks(
+		rawDataContent, rawParametersContent, offset,
+		int(c.ParameterOffset), int(c.ParameterCount),
+		int(c.DataOffset), int(c.DataCount),
+	)
+	if err != nil {
+		return offset, err
 	}
 
-	pad1Length := len(rawDataContent) - offset - parameterCount - pad2Length - dataCount
-	if pad1Length < 0 {
-		return offset, fmt.Errorf("rawDataContent too short for Transaction2_Secondary data block")
-	}
+	c.Pad1 = pad1
+	c.Trans2_Parameters = parameterBlock
+	c.Pad2 = pad2
+	c.Trans2_Data = dataBlock
 
-	// Unmarshalling data Pad1
-	c.Pad1 = rawDataContent[offset : offset+pad1Length]
-	offset += pad1Length
-
-	// Unmarshalling data Trans2_Parameters
-	if len(rawDataContent) < offset+parameterCount {
-		return offset, fmt.Errorf("rawDataContent too short for Trans2_Parameters")
-	}
-	c.Trans2_Parameters = rawDataContent[offset : offset+parameterCount]
-	offset += parameterCount
-
-	// Unmarshalling data Pad2
-	if len(rawDataContent) < offset+pad2Length {
-		return offset, fmt.Errorf("rawDataContent too short for Pad2")
-	}
-	c.Pad2 = rawDataContent[offset : offset+pad2Length]
-	offset += pad2Length
-
-	// Unmarshalling data Trans2_Data
-	if len(rawDataContent) < offset+dataCount {
-		return offset, fmt.Errorf("rawDataContent too short for Trans2_Data")
-	}
-	c.Trans2_Data = rawDataContent[offset : offset+dataCount]
-	offset += dataCount
-
-	return offset, nil
+	return consumed, nil
 }

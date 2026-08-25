@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"net"
 	"testing"
@@ -144,6 +145,44 @@ func FuzzServerFrame(f *testing.F) {
 	f.Add(rawFrame(codes.SMB_COM_TRANSACTION_SECONDARY, flags.Flags(0),
 		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
 		append([]byte{0x08}, make([]byte, 8*2+2)...)))
+
+	// The Unicode shapes, which the live matrix showed are a different code path
+	// rather than the same one with wider characters. A name whose terminator is
+	// found at an odd offset leaves a buffer of odd length for the UTF-16 decoder,
+	// which is what took a connection down.
+	for _, command := range []codes.CommandCode{
+		codes.SMB_COM_CREATE_DIRECTORY, codes.SMB_COM_DELETE_DIRECTORY,
+		codes.SMB_COM_CHECK_DIRECTORY, codes.SMB_COM_DELETE, codes.SMB_COM_RENAME,
+		codes.SMB_COM_NT_CREATE_ANDX, codes.SMB_COM_TREE_CONNECT_ANDX,
+	} {
+		unicodeFlags := flags2.Flags2(flags2.FLAGS2_UNICODE | flags2.FLAGS2_NT_STATUS_ERROR_CODES)
+		// A buffer-format byte followed by an odd number of bytes with no aligned
+		// terminator.
+		f.Add(rawFrame(command, flags.Flags(0), unicodeFlags,
+			[]byte{0x00, 0x04, 0x00, 0x04, 0x5C, 0x00, 0x61}))
+		// A name whose only null byte sits at an odd offset.
+		f.Add(rawFrame(command, flags.Flags(0), unicodeFlags,
+			[]byte{0x01, 0x16, 0x00, 0x05, 0x00, 0x04, 0x5C, 0x00, 0x00}))
+		// Two names, the second of which is cut short mid-character.
+		f.Add(rawFrame(command, flags.Flags(0), unicodeFlags,
+			[]byte{0x01, 0x16, 0x00, 0x0C, 0x00, 0x04, 0x61, 0x00, 0x00, 0x00, 0x04, 0x00, 0x62}))
+	}
+
+	// A transaction whose declared offsets point outside its own data block, in
+	// both directions: before the block, and past its end.
+	transactionOffsets := append([]byte{0x0F}, make([]byte, 15*2+2)...)
+	// ParameterCount at word 11, ParameterOffset at word 12.
+	binary.LittleEndian.PutUint16(transactionOffsets[1+20:1+22], 8)
+	binary.LittleEndian.PutUint16(transactionOffsets[1+22:1+24], 0)
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION2, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES), transactionOffsets))
+	binary.LittleEndian.PutUint16(transactionOffsets[1+22:1+24], 0xFFFF)
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION2, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES), transactionOffsets))
+
+	// The legacy disk query, which reaches the volume arithmetic.
+	f.Add(rawFrame(codes.SMB_COM_QUERY_INFORMATION_DISK, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES), []byte{0x00, 0x00, 0x00}))
 
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		srv, err := NewServer(Config{})

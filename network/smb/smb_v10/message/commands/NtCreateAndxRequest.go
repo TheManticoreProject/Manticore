@@ -377,17 +377,20 @@ func (c *NtCreateAndxRequest) Unmarshal(rawData []byte) (int, error) {
 
 	// Unmarshalling data FileName: a raw null-terminated string with no SMB_STRING
 	// buffer-format byte (mirrors Marshal above).
-	nameBytes := []byte{}
-	for offset < len(rawDataContent) && rawDataContent[offset] != 0x00 {
-		nameBytes = append(nameBytes, rawDataContent[offset])
+	//
+	// A Unicode FileName is 16-bit aligned relative to the start of the SMB header
+	// ([MS-CIFS] section 2.2.4.64.1), and the data block begins at an even offset
+	// there — SMB_HEADER_SIZE(32) + WordCount(1) + 24 words(48) + ByteCount(2) = 83,
+	// odd — so a pad byte precedes the name. Its terminator is two bytes wide too:
+	// scanning for a single null byte ends the name at the high half of its first
+	// character.
+	if c.IsUnicode() && (ntCreateAndxDataOffset+offset)%2 != 0 && offset < len(rawDataContent) {
 		offset++
 	}
+	nameBytes, nameSize := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
 	c.FileName.Buffer = []types.UCHAR(nameBytes)
 	c.FileName.Length = types.USHORT(len(nameBytes))
-	if offset < len(rawDataContent) {
-		// Consume the null terminator.
-		offset++
-	}
+	offset += nameSize
 
 	return offset, nil
 }

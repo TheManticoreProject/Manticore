@@ -139,3 +139,16 @@ func decodeOEMString(raw []types.UCHAR) string {
 func trimTerminator(value string) string {
 	return strings.TrimRight(value, "\x00")
 }
+
+// encodeWireString renders a string in the encoding a message declared, which is
+// the inverse of decodeWireString.
+//
+// No terminator is added: the fields that carry a name in a response describe it
+// with a byte count rather than by terminating it, and the ones that do terminate
+// it append their own.
+func encodeWireString(value string, useUnicode bool) []byte {
+	if useUnicode {
+		return utf16.EncodeUTF16LE(value)
+	}
+	return []byte(value)
+}

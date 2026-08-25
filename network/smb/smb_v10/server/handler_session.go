@@ -182,16 +182,19 @@ func (c *Connection) finishAuthentication(
 	}
 
 	if armSigning {
-		// Signing is bootstrapped by this very exchange: the client signed this
-		// request with the key it derived, so the server can only check it now
-		// that it has derived the same key from the response.
-		if !signing.Verify(session.SessionKey, c.currentRequestFrame, authenticateRequestSequenceNumber) {
-			logger.Warnf("SMB1 server: %s from %s failed signature verification on the AUTHENTICATE",
-				session.Account(), c.Remote)
-			c.uids.Release(uid)
-			return nt_status.NT_STATUS_ACCESS_DENIED
-		}
-
+		// Signing is activated by this exchange rather than checked on it. The
+		// AUTHENTICATE request's own signature is not verified, and [MS-SMB]
+		// section 3.3.5.3 does not ask for it to be: it says only that once the key
+		// is acquired "the server MUST sign the SMB_COM_SESSION_SETUP_ANDX
+		// response ... by passing in a sequence number of one". The first request
+		// the server verifies is therefore the next one, at two.
+		//
+		// Verifying it would also add nothing. The key is derived from the very
+		// message the signature would cover, so anyone able to produce an
+		// AUTHENTICATE that verifies can produce its signature as well. What it
+		// does do is break real clients: a client that has not yet armed signing
+		// puts a placeholder in the field, and refusing that makes signing
+		// unusable rather than mandatory.
 		c.SigningActive = true
 		c.SigningKey = session.SessionKey
 		c.ExpectedRequestSequenceNumber = signing.NextRequestSequenceNumber(authenticateRequestSequenceNumber)
@@ -204,9 +207,26 @@ func (c *Connection) finishAuthentication(
 	if session.IsGuest {
 		response.Action = types.USHORT(SMB_SETUP_GUEST)
 	}
-	// The final leg carries no further token: the exchange is complete.
+	// The final leg carries the token that closes the SPNEGO exchange. There is no
+	// NTLM message left to send — the client's AUTHENTICATE was the last one — but
+	// the negotiation still has to be reported as settled: an initiator waiting for
+	// accept-completed treats an empty final blob as a protocol violation and drops
+	// the session, however successful the logon was.
+	//
+	// A client that authenticated without extended security has no SPNEGO exchange
+	// to close, so it gets nothing.
 	response.SecurityBlob = []types.UCHAR{}
 	response.SecurityBlobLength = types.USHORT(0)
+	if accept != nil {
+		completion, err := accept.CompletionToken()
+		if err != nil {
+			logger.Warnf("SMB1 server: could not build the completing SPNEGO token for %s: %v", c.Remote, err)
+			c.uids.Release(uid)
+			return nt_status.NT_STATUS_INTERNAL_ERROR
+		}
+		response.SecurityBlob = []types.UCHAR(completion)
+		response.SecurityBlobLength = types.USHORT(len(completion))
+	}
 
 	c.addSession(session)
 	logger.Infof("SMB1 server: %s authenticated as %s%s", c.Remote, session.Account(), admissionSuffix(session))
