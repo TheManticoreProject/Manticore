@@ -64,6 +64,10 @@ type ResponseWriter interface {
 	// until the server assigns one, so the leg that assigns it has to say so.
 	SetResponseUID(uid uint16)
 
+	// SetResponseTID overrides the tree identifier echoed in responses to this
+	// request, for the tree connect that assigns one.
+	SetResponseTID(tid uint16)
+
 	// SignResponse signs responses to this request with the given key and
 	// sequence number.
 	//
@@ -78,9 +82,11 @@ type responseWriter struct {
 	conn    *Connection
 	request *message.Message
 
-	// uid, when set, replaces the request's UID in responses.
+	// uid and tid, when set, replace the request's values in responses.
 	uid    uint16
 	uidSet bool
+	tid    uint16
+	tidSet bool
 
 	// signKey and signSequence, when set, sign responses to this request.
 	signKey      []byte
@@ -108,6 +114,12 @@ func (w *responseWriter) SetResponseUID(uid uint16) {
 	w.uidSet = true
 }
 
+// SetResponseTID overrides the TID echoed in responses to this request.
+func (w *responseWriter) SetResponseTID(tid uint16) {
+	w.tid = tid
+	w.tidSet = true
+}
+
 // SignResponse signs responses to this request with the given key and sequence
 // number.
 func (w *responseWriter) SignResponse(macKey []byte, sequenceNumber uint32) {
@@ -130,6 +142,9 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 	reply.Header = replyHeader(w.request.Header, status, len(w.signKey) > 0)
 	if w.uidSet {
 		reply.Header.UID = types.USHORT(w.uid)
+	}
+	if w.tidSet {
+		reply.Header.TID = types.USHORT(w.tid)
 	}
 
 	// A command marshals its string fields according to the message's Unicode

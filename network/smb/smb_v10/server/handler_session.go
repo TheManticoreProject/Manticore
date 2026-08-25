@@ -279,6 +279,10 @@ func handleLogoffAndx(conn *Connection, w ResponseWriter, req *message.Message) 
 		return nt_status.NT_STATUS_SMB_BAD_UID
 	}
 
+	// A logoff releases the trees and handles the session held, rather than
+	// leaving them reachable through a UID that no longer names anything.
+	conn.closeSessionResources(uid)
+
 	logger.Debugf("SMB1 server: %s logged off %s on UID 0x%04X", conn.Remote, session.Account(), uid)
 
 	// Signing stays armed: it is a property of the connection rather than of one

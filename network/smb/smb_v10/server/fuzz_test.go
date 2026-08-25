@@ -46,8 +46,8 @@ func FuzzServerFrame(f *testing.F) {
 		f.Add(marshalled)
 	}
 	// A recognized command with no handler.
-	unimplemented := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
-	unimplemented.AddCommand(commands.NewTreeConnectAndxRequest())
+	unimplemented := newRequest(codes.SMB_COM_SEEK)
+	unimplemented.AddCommand(commands.NewSeekRequest())
 	if marshalled, err := unimplemented.Marshal(); err == nil {
 		f.Add(marshalled)
 	}

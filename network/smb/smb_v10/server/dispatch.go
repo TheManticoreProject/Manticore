@@ -26,10 +26,29 @@ type commandHandler func(conn *Connection, w ResponseWriter, req *message.Messag
 // reserved and never implemented, and the specification requires exactly that
 // answer for them.
 var dispatchTable = map[codes.CommandCode]commandHandler{
+	// Connection and session.
 	codes.SMB_COM_NEGOTIATE:          handleNegotiate,
 	codes.SMB_COM_SESSION_SETUP_ANDX: handleSessionSetupAndx,
 	codes.SMB_COM_LOGOFF_ANDX:        handleLogoffAndx,
 	codes.SMB_COM_ECHO:               handleEcho,
+
+	// Trees.
+	codes.SMB_COM_TREE_CONNECT_ANDX: handleTreeConnectAndx,
+	codes.SMB_COM_TREE_DISCONNECT:   handleTreeDisconnect,
+
+	// File handles.
+	codes.SMB_COM_NT_CREATE_ANDX: handleNtCreateAndx,
+	codes.SMB_COM_CLOSE:          handleClose,
+	codes.SMB_COM_READ_ANDX:      handleReadAndx,
+	codes.SMB_COM_WRITE_ANDX:     handleWriteAndx,
+	codes.SMB_COM_FLUSH:          handleFlush,
+
+	// File management.
+	codes.SMB_COM_DELETE:           handleDelete,
+	codes.SMB_COM_RENAME:           handleRename,
+	codes.SMB_COM_CREATE_DIRECTORY: handleCreateDirectory,
+	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
+	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
 }
 
 // sessionlessCommands are the commands a client may send before it holds a
