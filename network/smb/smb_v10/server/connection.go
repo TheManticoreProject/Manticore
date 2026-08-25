@@ -70,10 +70,15 @@ type Connection struct {
 	SigningKey                    []byte
 	ExpectedRequestSequenceNumber uint32
 
-	// sessions are the authenticated sessions on this connection, by UID, and
-	// uids allocates those identifiers.
+	// sessions are the authenticated sessions on this connection, by UID, trees
+	// the shares connected to, and opens the file handles held. Each has its own
+	// allocator, since the three identifier spaces are independent.
 	sessions map[uint16]*Session
 	uids     *identifierAllocator
+	trees    map[uint16]*Tree
+	tids     *identifierAllocator
+	opens    map[uint16]*Open
+	fids     *identifierAllocator
 
 	// currentRequestFrame is the raw frame being handled, kept because a
 	// signature covers the message as received: verifying one means hashing those
@@ -100,6 +105,10 @@ func newConnection(srv *Server, t transport.Transport, remote net.Addr) *Connect
 		Remote:      remote,
 		sessions:    make(map[uint16]*Session),
 		uids:        newIdentifierAllocator(srv.config.MaxSessionsPerConnection),
+		trees:       make(map[uint16]*Tree),
+		tids:        newIdentifierAllocator(srv.config.MaxTreesPerConnection),
+		opens:       make(map[uint16]*Open),
+		fids:        newIdentifierAllocator(srv.config.MaxOpensPerConnection),
 		pendingAuth: make(map[uint16]*spnego.AcceptContext),
 	}
 }

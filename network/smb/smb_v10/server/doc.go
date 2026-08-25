@@ -28,11 +28,40 @@
 //   - SMB_COM_LOGOFF_ANDX.
 //   - SMB_COM_ECHO.
 //   - Message signing in both directions, when the policy calls for it.
+//   - Tree connect and disconnect against a registered share.
+//   - File service: open and create, read, write, close, flush, delete, rename,
+//     and the directory create, remove and check commands.
 //
-// Not yet implemented: every other command, answered with
-// STATUS_NOT_IMPLEMENTED. A client can now authenticate, but there is still
-// nothing to reach: no share can be connected to and no file opened, because
-// tree connect and the file commands arrive with a later phase.
+// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: directory
+// enumeration (the TRANSACTION2 FIND subcommands), the query and set information
+// commands, byte-range locking, seek, the legacy SMB_COM_OPEN_ANDX, the
+// NT_TRANSACT subcommands, named pipes, and batched AndX chains beyond their
+// first command. A client can open and read a file by name but cannot yet list a
+// directory or ask about a file without opening it.
+//
+// # Shares
+//
+// A Share is registered with AddShare and backed by a FileSystem.
+// NewLocalFileSystem serves a directory on the host; NewMemoryFileSystem serves
+// storage that never touches disk, which is what the tests use and what a share
+// meant to look real without being real would use.
+//
+// A share may be marked ReadOnly, which refuses every modifying command whatever
+// access the client asked for. That is enforced in the handlers rather than left
+// to the backend, so a backend cannot forget it.
+//
+// # Path containment
+//
+// Every path a client sends passes through resolvePath before any backend sees
+// it, and a backend is entitled to assume the result cannot escape the share. The
+// resolver refuses rather than normalises: a path containing ".." is rejected
+// outright instead of being rewritten, because rewriting turns a traversal attempt
+// into a successful access somewhere unintended.
+//
+// LocalFileSystem adds a second, independent check, because path validation
+// cannot see a symbolic link inside the share pointing out of it: every resolved
+// host path is compared against the share root again after the host has followed
+// its links.
 //
 // # Authentication
 //

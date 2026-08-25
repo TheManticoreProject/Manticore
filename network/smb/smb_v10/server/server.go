@@ -72,9 +72,12 @@ type Config struct {
 	// demanded. The zero value is SigningDisabled.
 	SigningPolicy SigningPolicy
 
-	// MaxSessionsPerConnection bounds the sessions one connection may establish.
-	// Zero applies DefaultMaxSessionsPerConnection.
+	// MaxSessionsPerConnection, MaxTreesPerConnection and MaxOpensPerConnection
+	// bound what one connection may hold at once, so a client cannot exhaust an
+	// identifier space or the backend's handles. Zero applies the default.
 	MaxSessionsPerConnection int
+	MaxTreesPerConnection    int
+	MaxOpensPerConnection    int
 
 	// Timeout bounds each read on a connection, so a client that opens a socket
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
@@ -102,9 +105,13 @@ const (
 	// rather than a promise of concurrency.
 	DefaultMaxMpxCount uint16 = 50
 
-	// DefaultMaxSessionsPerConnection bounds how many sessions one connection may
-	// establish, so a client cannot exhaust the 16-bit identifier space.
+	// DefaultMaxSessionsPerConnection, DefaultMaxTreesPerConnection and
+	// DefaultMaxOpensPerConnection bound what one connection may hold at once.
+	// The open limit is the largest because a client legitimately holds many
+	// files, and the smallest of the three would be the one that broke first.
 	DefaultMaxSessionsPerConnection = 64
+	DefaultMaxTreesPerConnection    = 64
+	DefaultMaxOpensPerConnection    = 1024
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
@@ -184,6 +191,7 @@ type Server struct {
 	handlers  []Handler
 	listeners []transport.Listener
 	conns     map[*Connection]struct{}
+	shares    map[string]*Share
 	closed    bool
 
 	// slots bounds concurrent connections when MaxConnections is set. It is nil
@@ -227,8 +235,20 @@ func NewServer(config Config) (*Server, error) {
 	if config.MaxSessionsPerConnection == 0 {
 		config.MaxSessionsPerConnection = DefaultMaxSessionsPerConnection
 	}
-	if config.MaxSessionsPerConnection < 0 {
-		return nil, fmt.Errorf("MaxSessionsPerConnection cannot be negative (got %d)", config.MaxSessionsPerConnection)
+	if config.MaxTreesPerConnection == 0 {
+		config.MaxTreesPerConnection = DefaultMaxTreesPerConnection
+	}
+	if config.MaxOpensPerConnection == 0 {
+		config.MaxOpensPerConnection = DefaultMaxOpensPerConnection
+	}
+	for name, limit := range map[string]int{
+		"MaxSessionsPerConnection": config.MaxSessionsPerConnection,
+		"MaxTreesPerConnection":    config.MaxTreesPerConnection,
+		"MaxOpensPerConnection":    config.MaxOpensPerConnection,
+	} {
+		if limit < 0 {
+			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, limit)
+		}
 	}
 	// A policy that demands signatures cannot be served by a configuration that
 	// can only produce sessions without a key.
@@ -242,6 +262,7 @@ func NewServer(config Config) (*Server, error) {
 	s := &Server{
 		config: config,
 		conns:  make(map[*Connection]struct{}),
+		shares: make(map[string]*Share),
 	}
 	if config.MaxConnections > 0 {
 		s.slots = make(chan struct{}, config.MaxConnections)
@@ -463,6 +484,20 @@ func (s *Server) Close() error {
 
 	s.wg.Wait()
 	return firstErr
+}
+
+// liveConnections returns the connections currently being served. It is for a
+// caller inspecting server state, and for tests asserting that resources were
+// released.
+func (s *Server) liveConnections() []*Connection {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	live := make([]*Connection, 0, len(s.conns))
+	for conn := range s.conns {
+		live = append(live, conn)
+	}
+	return live
 }
 
 // isClosed reports whether Close has been called.

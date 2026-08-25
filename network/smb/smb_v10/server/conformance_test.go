@@ -118,6 +118,21 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_SESSION_SETUP_ANDX: "runs the authentication exchange",
 	codes.SMB_COM_LOGOFF_ANDX:        "drops the session",
 	codes.SMB_COM_ECHO:               "echoes the payload",
+
+	codes.SMB_COM_TREE_CONNECT_ANDX: "connects a tree to a share",
+	codes.SMB_COM_TREE_DISCONNECT:   "drops the tree and its handles",
+
+	codes.SMB_COM_NT_CREATE_ANDX: "opens or creates a file or directory",
+	codes.SMB_COM_CLOSE:          "releases a handle",
+	codes.SMB_COM_READ_ANDX:      "reads from a handle",
+	codes.SMB_COM_WRITE_ANDX:     "writes through a handle",
+	codes.SMB_COM_FLUSH:          "commits a handle, or the whole tree",
+
+	codes.SMB_COM_DELETE:           "deletes a file, wildcards included",
+	codes.SMB_COM_RENAME:           "renames or moves an entry",
+	codes.SMB_COM_CREATE_DIRECTORY: "creates a directory",
+	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
+	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
 }
 
 // TestConformanceServedCommandsAreServed asserts every command in the served set
@@ -246,9 +261,9 @@ func TestConformanceClientAPI(t *testing.T) {
 				}
 			})
 
-			t.Run("TreeConnect is not served yet", func(t *testing.T) {
-				if err := client.TreeConnect("share"); err == nil {
-					t.Fatal("TreeConnect() succeeded, but no share can be reached at this phase")
+			t.Run("TreeConnect to an unserved share", func(t *testing.T) {
+				if err := client.TreeConnect("nosuchshare"); err == nil {
+					t.Fatal("TreeConnect() succeeded for a share that is not served")
 				}
 			})
 

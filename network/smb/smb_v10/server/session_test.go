@@ -226,7 +226,7 @@ func TestSessionEstablishedWithValidCredential(t *testing.T) {
 
 	// The session is usable: a command that requires one is now dispatched
 	// rather than refused.
-	response := sendOnSession(t, session, codes.SMB_COM_TREE_CONNECT_ANDX, commands.NewTreeConnectAndxRequest())
+	response := sendOnSession(t, session, codes.SMB_COM_TREE_CONNECT_ANDX, commands.NewSeekRequest())
 	if response.Header.Status != uint32(nt_status.NT_STATUS_NOT_IMPLEMENTED) {
 		t.Fatalf("Status = 0x%08X, want NT_STATUS_NOT_IMPLEMENTED on an established session", response.Header.Status)
 	}
@@ -483,9 +483,9 @@ func TestCommandWithoutSessionIsRefused(t *testing.T) {
 	negotiateWithRawClient(t, client)
 
 	// A command that needs a session, on UID 0.
-	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	request := newRequest(codes.SMB_COM_SEEK)
 	request.Header.UID = 0
-	request.AddCommand(commands.NewTreeConnectAndxRequest())
+	request.AddCommand(commands.NewSeekRequest())
 	sendRequest(t, client, request)
 
 	response, _ := receiveResponse(t, client)
@@ -517,7 +517,7 @@ func TestLogoffReleasesTheSession(t *testing.T) {
 	}
 
 	// The UID no longer names a session.
-	after := sendOnSession(t, session, codes.SMB_COM_TREE_CONNECT_ANDX, commands.NewTreeConnectAndxRequest())
+	after := sendOnSession(t, session, codes.SMB_COM_TREE_CONNECT_ANDX, commands.NewSeekRequest())
 	if after.Header.Status != uint32(nt_status.NT_STATUS_SMB_BAD_UID) {
 		t.Fatalf("Status = 0x%08X after logoff, want NT_STATUS_SMB_BAD_UID", after.Header.Status)
 	}

@@ -270,10 +270,10 @@ func TestUnimplementedCommandIsRefused(t *testing.T) {
 	_, addr := serverWithAccount(t, SigningDisabled, nil)
 	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
-	// SMB_COM_TREE_CONNECT_ANDX is a recognized command that no handler serves yet.
-	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	// SMB_COM_SEEK is a recognized command that no handler serves yet.
+	request := newRequest(codes.SMB_COM_SEEK)
 	request.Header.UID = session.uid
-	request.AddCommand(commands.NewTreeConnectAndxRequest())
+	request.AddCommand(commands.NewSeekRequest())
 	sendRequest(t, session.client, request)
 
 	response, raw := receiveResponse(t, session.client)
@@ -303,11 +303,11 @@ func TestUnimplementedCommandUsesLegacyStatusEncoding(t *testing.T) {
 	_, addr := serverWithAccount(t, SigningDisabled, nil)
 	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
-	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	request := newRequest(codes.SMB_COM_SEEK)
 	request.Header.UID = session.uid
 	// Clear the NT-status bit, leaving an old-style client.
 	request.Header.Flags2 &= ^flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES)
-	request.AddCommand(commands.NewTreeConnectAndxRequest())
+	request.AddCommand(commands.NewSeekRequest())
 	sendRequest(t, session.client, request)
 
 	response, _ := receiveResponse(t, session.client)
