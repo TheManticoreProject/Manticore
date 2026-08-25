@@ -35,14 +35,28 @@ const (
 	// claimed total from becoming an allocation.
 	maxTrans2Payload = 0xFFFF
 
-	// trans2ReassemblyTimeout bounds how long a half-delivered transaction is
+	// transactionReassemblyTimeout bounds how long a half-delivered transaction is
 	// held. A client that starts one and stops would otherwise pin the memory for
 	// as long as the connection lasts.
-	trans2ReassemblyTimeout = 30 * time.Second
+	transactionReassemblyTimeout = 30 * time.Second
 )
 
-// trans2Reassembly is a transaction being received across several messages.
-type trans2Reassembly struct {
+// transactionReassembly is a transaction being received across several messages.
+//
+// All three transaction families — TRANSACTION, TRANSACTION2 and NT_TRANSACT —
+// carry the same shape: running totals, a per-message count, and a displacement
+// saying where the message's bytes belong. They differ only in the width of those
+// fields and in how the subcommand is named. So the reassembly is shared and each
+// family's handler extracts the fields, which keeps the arithmetic that is easy to
+// get wrong in one place.
+type transactionReassembly struct {
+	// family names which transaction this is, for the log line that reports a
+	// malformed one.
+	family string
+
+	// subcommand is the selector the family carries: a setup word for
+	// TRANSACTION2, a function code for NT_TRANSACT, a pipe operation for
+	// TRANSACTION.
 	subcommand uint16
 
 	// parameters and data are the blocks being filled in, sized to the totals the
@@ -60,11 +74,19 @@ type trans2Reassembly struct {
 	maxParameterCount int
 	maxDataCount      int
 
+	// setup holds the family's setup words, which some subcommands carry their
+	// arguments in rather than in the parameter block.
+	setup []types.USHORT
+
+	// name is the resource a TRANSACTION names, which is how a client says which
+	// pipe it is talking to. The other two families carry no name.
+	name string
+
 	started time.Time
 }
 
 // complete reports whether every declared byte has arrived.
-func (r *trans2Reassembly) complete() bool {
+func (r *transactionReassembly) complete() bool {
 	return r.parametersSeen >= len(r.parameters) && r.dataSeen >= len(r.data)
 }
 
@@ -74,7 +96,7 @@ func (r *trans2Reassembly) complete() bool {
 // rather than clamped: it means the client's own arithmetic disagrees with itself,
 // and guessing which half to believe would let a fragment land somewhere it was
 // not meant to.
-func (r *trans2Reassembly) place(
+func (r *transactionReassembly) place(
 	parameters []byte, parameterDisplacement int,
 	data []byte, dataDisplacement int,
 ) error {
@@ -126,7 +148,8 @@ func handleTransaction2(conn *Connection, w ResponseWriter, req *message.Message
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 
-	reassembly := &trans2Reassembly{
+	reassembly := &transactionReassembly{
+		family:            "TRANSACTION2",
 		subcommand:        subcommand,
 		parameters:        make([]byte, totalParameters),
 		data:              make([]byte, totalData),
@@ -153,7 +176,7 @@ func handleTransaction2(conn *Connection, w ResponseWriter, req *message.Message
 	// More is coming. Only one transaction is tracked at a time: [MS-CIFS] has a
 	// client complete one before starting another, and holding several would let a
 	// client pin memory by opening many and finishing none.
-	conn.trans2 = reassembly
+	conn.transaction = reassembly
 	logger.Debugf("SMB1 server: %s began a fragmented TRANSACTION2 (subcommand 0x%04X, %d+%d bytes)",
 		conn.Remote, subcommand, totalParameters, totalData)
 
@@ -170,13 +193,13 @@ func handleTransaction2Secondary(conn *Connection, w ResponseWriter, req *messag
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 
-	reassembly := conn.trans2
+	reassembly := conn.transaction
 	if reassembly == nil {
 		logger.Debugf("SMB1 server: %s sent a TRANSACTION2_SECONDARY with no transaction in progress", conn.Remote)
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
-	if time.Since(reassembly.started) > trans2ReassemblyTimeout {
-		conn.trans2 = nil
+	if time.Since(reassembly.started) > transactionReassemblyTimeout {
+		conn.transaction = nil
 		logger.Debugf("SMB1 server: %s continued a TRANSACTION2 that had timed out", conn.Remote)
 		return nt_status.NT_STATUS_IO_TIMEOUT
 	}
@@ -185,7 +208,7 @@ func handleTransaction2Secondary(conn *Connection, w ResponseWriter, req *messag
 		[]byte(request.Trans2_Parameters), int(request.ParameterDisplacement),
 		[]byte(request.Trans2_Data), int(request.DataDisplacement),
 	); err != nil {
-		conn.trans2 = nil
+		conn.transaction = nil
 		logger.Debugf("SMB1 server: %s sent an inconsistent TRANSACTION2_SECONDARY: %v", conn.Remote, err)
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
@@ -194,13 +217,13 @@ func handleTransaction2Secondary(conn *Connection, w ResponseWriter, req *messag
 		return nt_status.NT_STATUS_SUCCESS
 	}
 
-	conn.trans2 = nil
+	conn.transaction = nil
 	return conn.runTransaction2(w, req, reassembly)
 }
 
 // runTransaction2 dispatches a fully assembled transaction to its subcommand and
 // sends the result back, fragmenting the response if it does not fit.
-func (c *Connection) runTransaction2(w ResponseWriter, req *message.Message, reassembly *trans2Reassembly) nt_status.NT_STATUS {
+func (c *Connection) runTransaction2(w ResponseWriter, req *message.Message, reassembly *transactionReassembly) nt_status.NT_STATUS {
 	handler, ok := trans2Handlers[subcommands.Transaction2Subcommand(reassembly.subcommand)]
 	if !ok {
 		logger.Debugf("SMB1 server: %s sent unimplemented TRANSACTION2 subcommand 0x%04X",
@@ -221,7 +244,7 @@ func (c *Connection) runTransaction2(w ResponseWriter, req *message.Message, rea
 
 // trans2Handler answers one TRANSACTION2 subcommand, returning the parameter and
 // data blocks to send back.
-type trans2Handler func(*Connection, *message.Message, *trans2Reassembly) (parameters, data []byte, status nt_status.NT_STATUS)
+type trans2Handler func(*Connection, *message.Message, *transactionReassembly) (parameters, data []byte, status nt_status.NT_STATUS)
 
 // trans2Handlers maps a subcommand to its handler. A subcommand with no entry is
 // answered with STATUS_NOT_IMPLEMENTED, which for the DFS and OS/2-era
@@ -244,7 +267,7 @@ var trans2Handlers = map[subcommands.Transaction2Subcommand]trans2Handler{
 // start of the SMB header, which is what the client reads them as.
 func (c *Connection) sendTransaction2Response(
 	w ResponseWriter,
-	reassembly *trans2Reassembly,
+	reassembly *transactionReassembly,
 	parameters, data []byte,
 ) error {
 	// What the client said it can receive bounds each message, and so does the

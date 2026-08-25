@@ -484,8 +484,8 @@ func TestSetPathInformationOnReadOnlyShare(t *testing.T) {
 // including the inconsistencies it has to refuse. A fragment landing in the wrong
 // place would corrupt a request in a way that is very hard to see from the outside.
 func TestTransaction2FragmentPlacement(t *testing.T) {
-	newReassembly := func(parameters, data int) *trans2Reassembly {
-		return &trans2Reassembly{
+	newReassembly := func(parameters, data int) *transactionReassembly {
+		return &transactionReassembly{
 			parameters: make([]byte, parameters),
 			data:       make([]byte, data),
 		}

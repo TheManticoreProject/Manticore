@@ -79,7 +79,7 @@ func (c *Connection) closeSearch(sid uint16) bool {
 //
 // Request parameters: SearchAttributes(2) SearchCount(2) Flags(2)
 // InformationLevel(2) SearchStorageType(4) FileName(variable).
-func handleFindFirst2(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleFindFirst2(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 12 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
@@ -166,7 +166,7 @@ func handleFindFirst2(conn *Connection, req *message.Message, reassembly *trans2
 //
 // Request parameters: SID(2) SearchCount(2) InformationLevel(2) ResumeKey(4)
 // Flags(2) FileName(variable).
-func handleFindNext2(conn *Connection, req *message.Message, reassembly *trans2Reassembly) ([]byte, []byte, nt_status.NT_STATUS) {
+func handleFindNext2(conn *Connection, req *message.Message, reassembly *transactionReassembly) ([]byte, []byte, nt_status.NT_STATUS) {
 	parameters := reassembly.parameters
 	if len(parameters) < 12 {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER

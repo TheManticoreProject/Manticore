@@ -138,6 +138,75 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
 	codes.SMB_COM_FIND_CLOSE2:            "releases a search handle",
+
+	codes.SMB_COM_TRANSACTION:           "carries the named-pipe subcommands",
+	codes.SMB_COM_TRANSACTION_SECONDARY: "continues a fragmented pipe transaction",
+
+	codes.SMB_COM_NT_TRANSACT:           "carries the security-descriptor and control subcommands",
+	codes.SMB_COM_NT_TRANSACT_SECONDARY: "continues a fragmented NT_TRANSACT",
+	codes.SMB_COM_NT_CANCEL:             "accepts a cancel, which has nothing to cancel",
+}
+
+// servedNtTransactFunctions are the NT_TRANSACT functions the server answers.
+//
+// The absences are deliberate and are asserted, not merely omitted:
+// NT_TRANSACT_CREATE and NT_TRANSACT_RENAME duplicate commands that exist in
+// their own right, the quota functions have nothing to report a quota from, and
+// NOTIFY_CHANGE needs a watching file system and a concurrent write path that
+// neither the FileSystem interface nor the connection has.
+var servedNtTransactFunctions = map[subcommands.NtTransactSubcommand]string{
+	subcommands.NT_TRANSACT_QUERY_SECURITY_DESC: "returns a share's security descriptor",
+	subcommands.NT_TRANSACT_SET_SECURITY_DESC:   "applies one, if the share can store it",
+	subcommands.NT_TRANSACT_IOCTL:               "carries the file-system control codes",
+}
+
+// servedFsctlCodes are the file-system control codes NT_TRANSACT_IOCTL answers.
+var servedFsctlCodes = map[uint32]string{
+	fsctlGetCompression:  "reports that nothing is compressed",
+	fsctlIsPathnameValid: "asks the path resolver whether a name is usable",
+}
+
+// servedPipeSubcommands are the TRANSACTION subcommands the server answers.
+//
+// TRANS_TRANSACT_NMPIPE is the one that matters: it is the write-then-read that
+// MS-RPC travels over. The others exist because an RPC client asks them on its
+// way in.
+var servedPipeSubcommands = map[subcommands.TransactionSubcommand]string{
+	subcommands.TRANS_TRANSACT_NMPIPE:    "writes a message to a pipe and returns the answer",
+	subcommands.TRANS_WAIT_NMPIPE:        "reports a pipe available",
+	subcommands.TRANS_QUERY_NMPIPE_STATE: "reports a message-mode pipe",
+	subcommands.TRANS_SET_NMPIPE_STATE:   "accepts the state a client sets",
+}
+
+// TestConformanceServedNtTransactFunctionsAreServed asserts the NT_TRANSACT table
+// and the handler table agree, in both directions.
+func TestConformanceServedNtTransactFunctionsAreServed(t *testing.T) {
+	for function := range servedNtTransactFunctions {
+		if _, ok := ntTransactHandlers[function]; !ok {
+			t.Errorf("NT_TRANSACT function 0x%04X is listed as served but has no handler", uint16(function))
+		}
+	}
+	for function := range ntTransactHandlers {
+		if _, ok := servedNtTransactFunctions[function]; !ok {
+			t.Errorf("NT_TRANSACT function 0x%04X has a handler but is not listed; add it with a note on what it does",
+				uint16(function))
+		}
+	}
+}
+
+// TestConformanceServedFsctlCodesAreServed asserts the control-code table and the
+// handler table agree, in both directions.
+func TestConformanceServedFsctlCodesAreServed(t *testing.T) {
+	for code := range servedFsctlCodes {
+		if _, ok := fsctlHandlers[code]; !ok {
+			t.Errorf("FSCTL 0x%08X is listed as served but has no handler", code)
+		}
+	}
+	for code := range fsctlHandlers {
+		if _, ok := servedFsctlCodes[code]; !ok {
+			t.Errorf("FSCTL 0x%08X has a handler but is not listed; add it with a note on what it does", code)
+		}
+	}
 }
 
 // servedTrans2Subcommands are the TRANSACTION2 subcommands the server answers.
@@ -203,13 +272,17 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	// while asserting nothing.
 	exercised := 0
 	skippedUnmarshalable := 0
+	known := 0
+	skippedServed := 0
 
 	for value := 0; value <= 0xFF; value++ {
 		command := codes.CommandCode(value)
-		if _, served := servedCommands[command]; served {
+		if !isKnownCommand(command) {
 			continue
 		}
-		if !isKnownCommand(command) {
+		known++
+		if _, served := servedCommands[command]; served {
+			skippedServed++
 			continue
 		}
 
@@ -259,14 +332,23 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 		}
 	}
 
-	// The message layer knows well over a hundred commands, so a walk that
-	// exercised only a handful means the loop stopped covering the space.
-	if exercised < 50 {
-		t.Fatalf("only %d commands were exercised (%d skipped as unmarshalable); the walk is no longer covering the command space",
-			exercised, skippedUnmarshalable)
+	// Every command the message layer knows was either exercised here, skipped as
+	// served, or skipped as unmarshalable. Accounting for all of them is what
+	// makes this a walk of the command space rather than of whatever the loop
+	// happened to reach — and unlike a fixed floor it stays true as later phases
+	// move commands into the served set.
+	if accounted := exercised + skippedServed + skippedUnmarshalable; accounted != known {
+		t.Fatalf("accounted for %d of %d known commands (%d exercised, %d served, %d unmarshalable); the walk is skipping commands silently",
+			accounted, known, exercised, skippedServed, skippedUnmarshalable)
 	}
-	t.Logf("exercised %d unserved commands, skipped %d whose zero value cannot be marshalled",
-		exercised, skippedUnmarshalable)
+	// A floor as well, so a message layer that stopped recognizing commands at all
+	// would not make the accounting trivially true.
+	if exercised < 40 {
+		t.Fatalf("only %d commands were exercised of %d known; the walk is no longer covering the command space",
+			exercised, known)
+	}
+	t.Logf("exercised %d of %d known commands (%d served, %d whose zero value cannot be marshalled)",
+		exercised, known, skippedServed, skippedUnmarshalable)
 }
 
 // TestConformanceClientAPI walks the client's entry points against the server and

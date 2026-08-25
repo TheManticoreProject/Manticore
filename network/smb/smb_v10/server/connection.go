@@ -91,7 +91,7 @@ type Connection struct {
 	// when none is. One at a time: a client completes a transaction before
 	// starting another, and holding several would let it pin memory by opening
 	// many and finishing none.
-	trans2 *trans2Reassembly
+	transaction *transactionReassembly
 
 	// searches are the directory enumerations in progress, by search identifier,
 	// and sids allocates those identifiers.
