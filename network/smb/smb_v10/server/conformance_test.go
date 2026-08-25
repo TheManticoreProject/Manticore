@@ -14,6 +14,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
@@ -133,6 +134,39 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_CREATE_DIRECTORY: "creates a directory",
 	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
 	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
+
+	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
+	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
+	codes.SMB_COM_FIND_CLOSE2:            "releases a search handle",
+}
+
+// servedTrans2Subcommands are the TRANSACTION2 subcommands the server answers.
+// The same discipline as servedCommands: a subcommand gaining a handler has to
+// gain a row, and the cross-check below fails if the two drift.
+var servedTrans2Subcommands = map[subcommands.Transaction2Subcommand]string{
+	subcommands.TRANS2_FIND_FIRST2:            "opens a directory enumeration",
+	subcommands.TRANS2_FIND_NEXT2:             "continues one",
+	subcommands.TRANS2_QUERY_PATH_INFORMATION: "describes a path",
+	subcommands.TRANS2_QUERY_FILE_INFORMATION: "describes an open handle",
+	subcommands.TRANS2_SET_PATH_INFORMATION:   "changes a path",
+	subcommands.TRANS2_SET_FILE_INFORMATION:   "changes an open handle",
+	subcommands.TRANS2_QUERY_FS_INFORMATION:   "describes the volume",
+}
+
+// TestConformanceServedTrans2SubcommandsAreServed asserts the subcommand table and
+// the handler table agree, in both directions.
+func TestConformanceServedTrans2SubcommandsAreServed(t *testing.T) {
+	for subcommand := range servedTrans2Subcommands {
+		if _, ok := trans2Handlers[subcommand]; !ok {
+			t.Errorf("TRANSACTION2 subcommand 0x%04X is listed as served but has no handler", uint16(subcommand))
+		}
+	}
+	for subcommand := range trans2Handlers {
+		if _, ok := servedTrans2Subcommands[subcommand]; !ok {
+			t.Errorf("TRANSACTION2 subcommand 0x%04X has a handler but is not listed; add it with a note on what it does",
+				uint16(subcommand))
+		}
+	}
 }
 
 // TestConformanceServedCommandsAreServed asserts every command in the served set
@@ -264,6 +298,16 @@ func TestConformanceClientAPI(t *testing.T) {
 			t.Run("TreeConnect to an unserved share", func(t *testing.T) {
 				if err := client.TreeConnect("nosuchshare"); err == nil {
 					t.Fatal("TreeConnect() succeeded for a share that is not served")
+				}
+			})
+
+			t.Run("ListDirectory", func(t *testing.T) {
+				// No share is registered on the conformance server, so a listing
+				// has nowhere to run: what is asserted is that it is refused
+				// rather than crashing, since the file-service tests cover the
+				// working path against a share.
+				if _, err := client.ListEntries("\\*"); err == nil {
+					t.Fatal("ListEntries() succeeded with no tree connected")
 				}
 			})
 

@@ -87,6 +87,17 @@ type Connection struct {
 	// goroutine owns the connection.
 	currentRequestFrame []byte
 
+	// trans2 is the TRANSACTION2 being received across several messages, or nil
+	// when none is. One at a time: a client completes a transaction before
+	// starting another, and holding several would let it pin memory by opening
+	// many and finishing none.
+	trans2 *trans2Reassembly
+
+	// searches are the directory enumerations in progress, by search identifier,
+	// and sids allocates those identifiers.
+	searches map[uint16]*Search
+	sids     *identifierAllocator
+
 	// pendingAuth holds the authentication exchanges part-way through, keyed by
 	// the UID assigned when the challenge was issued.
 	//
@@ -109,6 +120,8 @@ func newConnection(srv *Server, t transport.Transport, remote net.Addr) *Connect
 		tids:        newIdentifierAllocator(srv.config.MaxTreesPerConnection),
 		opens:       make(map[uint16]*Open),
 		fids:        newIdentifierAllocator(srv.config.MaxOpensPerConnection),
+		searches:    make(map[uint16]*Search),
+		sids:        newIdentifierAllocator(srv.config.MaxSearchesPerConnection),
 		pendingAuth: make(map[uint16]*spnego.AcceptContext),
 	}
 }

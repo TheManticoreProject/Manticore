@@ -49,6 +49,12 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_CREATE_DIRECTORY: handleCreateDirectory,
 	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
 	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
+
+	// Transactions, which carry the directory-enumeration and information
+	// subcommands.
+	codes.SMB_COM_TRANSACTION2:           handleTransaction2,
+	codes.SMB_COM_TRANSACTION2_SECONDARY: handleTransaction2Secondary,
+	codes.SMB_COM_FIND_CLOSE2:            handleFindClose2,
 }
 
 // sessionlessCommands are the commands a client may send before it holds a
