@@ -64,6 +64,28 @@ func FuzzServerFrame(f *testing.F) {
 	f.Add(rawFrame(codes.SMB_COM_SESSION_SETUP_ANDX, flags.Flags(0), flags2.Flags2(0),
 		[]byte{0x0D, byte(codes.SMB_COM_TREE_CONNECT_ANDX), 0x00, 0x20, 0x00}))
 
+	// The session-setup layouts, which the authentication phases made reachable.
+	// The extended-security form is chosen by WordCount 12 and the password form
+	// by WordCount 10, and each carries client-controlled lengths that the
+	// decoder has to bound.
+	f.Add(rawFrame(codes.SMB_COM_SESSION_SETUP_ANDX, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_EXTENDED_SECURITY),
+		append([]byte{0x0C}, make([]byte, 12*2+2)...)))
+	f.Add(rawFrame(codes.SMB_COM_SESSION_SETUP_ANDX, flags.Flags(0), flags2.Flags2(0),
+		append([]byte{0x0A}, make([]byte, 10*2+2)...)))
+
+	// A logoff, which reaches the session table.
+	f.Add(rawFrame(codes.SMB_COM_LOGOFF_ANDX, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		[]byte{0x02, byte(codes.SMB_COM_NO_ANDX_COMMAND), 0x00, 0x00, 0x00, 0x00, 0x00}))
+
+	// A frame announcing a signature on a connection that is not signing, and one
+	// with the signature field filled in, since the verification path reads that
+	// field before anything else looks at the body.
+	f.Add(rawFrame(codes.SMB_COM_ECHO, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE),
+		[]byte{0x01, 0x01, 0x00, 0x00, 0x00}))
+
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		srv, err := NewServer(Config{})
 		if err != nil {
