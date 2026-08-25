@@ -13,6 +13,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
@@ -361,7 +362,7 @@ func (s *Session) SessionSetup() error {
 	if signingRequired {
 		s.Client.Connection.SigningSessionKey = signingKey
 		s.Client.Connection.IsSigningActive = true
-		signSMBMessage(signingKey, marshalledStep2, 0)
+		signing.Sign(signingKey, marshalledStep2, 0)
 	}
 
 	// Send the message
@@ -414,12 +415,12 @@ func (s *Session) SessionSetup() error {
 	// arming the per-message sequence counter for subsequent requests.
 	s.SessionKey = signingKey
 	if s.Client.Connection.IsSigningActive {
-		if !verifySMBSignature(signingKey, rawAuthResponse, 1) {
+		if !signing.Verify(signingKey, rawAuthResponse, 1) {
 			return fmt.Errorf("session setup response failed SMB signature verification")
 		}
 		// The AUTHENTICATE request used sequence 0 and its response sequence 1, so the
 		// next outbound request uses sequence 2.
-		s.Client.Connection.ClientNextSendSequenceNumber = 2
+		s.Client.Connection.ClientNextSendSequenceNumber = signing.NextRequestSequenceNumber(0)
 	}
 
 	return nil
