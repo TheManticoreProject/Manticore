@@ -21,12 +21,27 @@
 //   - Error responses in both encodings: the NTSTATUS form, and the legacy
 //     SMBSTATUS class/code form for a client that did not negotiate
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
+//   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
+//     security.
+//   - SMB_COM_SESSION_SETUP_ANDX, as far as issuing an NTLM challenge and
+//     recording the response to it.
 //   - SMB_COM_ECHO.
 //
-// Not yet implemented: every other command. A request carrying one is answered
-// with STATUS_NOT_IMPLEMENTED, which means in particular that no client can yet
-// negotiate a dialect, authenticate, or reach a share. Negotiation and
-// authentication arrive with the phases that add them.
+// Not yet implemented: every other command, answered with
+// STATUS_NOT_IMPLEMENTED. In particular **no authentication ever succeeds** and
+// no share can be reached: the second leg of a session setup is always refused,
+// because verifying a response needs a credential store that arrives with a
+// later phase. A client will negotiate, offer a credential, and be told the
+// logon failed.
+//
+// # Credential capture
+//
+// That refusal is the point of the current phase rather than a limitation of it.
+// A CaptureHandler registered on the server harvests the NTLM response from
+// every attempt and renders it in hashcat form, so material a server cannot
+// verify can be cracked offline instead. Everything else on the connection
+// behaves normally, so a client has no way to tell that the refusal was
+// deliberate.
 //
 // # Security posture
 //

@@ -150,12 +150,11 @@ func (c *NegotiateRequest) Unmarshal(rawData []byte) (int, error) {
 	// First unmarshal the parameters
 	offset = 0
 
-	// Unmarshalling parameter WordCount
-	if len(rawParametersContent) < offset+1 {
-		return offset, fmt.Errorf("rawData too short for WordCount")
-	}
-	c.WordCount = types.UCHAR(rawParametersContent[offset])
-	offset++
+	// WordCount is the parameter block's own count byte, which
+	// Parameters.Unmarshal has already consumed; it is not one of the parameter
+	// words. Reading it out of the words content could never succeed, because a
+	// NEGOTIATE request carries WordCount 0 and so has no words at all.
+	c.WordCount = types.UCHAR(c.GetParameters().WordCount)
 
 	// Then unmarshal the data
 	offset = 0

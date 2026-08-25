@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
@@ -22,9 +24,9 @@ var smbMagic = []byte{0xFF, 'S', 'M', 'B'}
 // the accept loop and owned by the single goroutine that serves the connection,
 // so its fields need no locking.
 //
-// It holds only what the current phase populates. The negotiated dialect,
-// session and tree tables, and signing state arrive with the phases that
-// establish them, rather than being declared here in advance.
+// It holds only what the current phase populates. The session and tree tables and
+// the signing state arrive with the phases that establish them, rather than being
+// declared here in advance.
 type Connection struct {
 	// Server is the server this connection was accepted by.
 	Server *Server
@@ -36,6 +38,33 @@ type Connection struct {
 	// Remote is the client's address, used for logging and for a handler that
 	// wants to record who it is talking to.
 	Remote net.Addr
+
+	// Dialect is the dialect string selected during negotiation, empty before it.
+	Dialect string
+
+	// Negotiated records that a dialect has been agreed. A second NEGOTIATE on
+	// one connection is a protocol violation, and every command other than
+	// NEGOTIATE and ECHO requires one to have happened.
+	Negotiated bool
+
+	// ClientMaxBufferSize and ClientCapabilities are what the client advertised
+	// in its session setup, bounding what the server may send back.
+	ClientMaxBufferSize uint32
+	ClientCapabilities  capabilities.Capabilities
+
+	// UseUnicode and UseNTStatus record what the client negotiated, so a handler
+	// does not have to re-derive them from each request header.
+	UseUnicode  bool
+	UseNTStatus bool
+
+	// ExtendedSecurity records that the client negotiated extended security, and
+	// so expects a GSS security blob rather than a challenge in the clear.
+	ExtendedSecurity bool
+
+	// Accept is the authentication exchange in progress, created when the first
+	// session-setup request arrives and holding the challenge that was issued.
+	// It is nil until then.
+	Accept *spnego.AcceptContext
 }
 
 // newConnection binds an accepted transport to the server that accepted it.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
+	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
 // Config configures a Server.
@@ -16,6 +17,34 @@ import (
 // does nothing is worse than one that does not exist yet. Negotiation and
 // authentication settings arrive with the phases that consume them.
 type Config struct {
+	// ServerName and DomainName are the NetBIOS names advertised during
+	// authentication, and DNSComputerName and DNSDomainName their fully
+	// qualified forms. They reach the client in the CHALLENGE TargetInfo, where a
+	// client folds them into its response, so they are part of what it commits
+	// to. Empty names are omitted rather than advertised as empty.
+	ServerName      string
+	DomainName      string
+	DNSComputerName string
+	DNSDomainName   string
+
+	// NativeOS and NativeLanMan are the informational strings returned in the
+	// session-setup response. They MUST NOT be empty: strict clients reject a
+	// session setup that leaves them blank, so NewServer defaults them.
+	NativeOS     string
+	NativeLanMan string
+
+	// MaxBufferSize is the largest SMB message the server accepts, and
+	// MaxMpxCount the number of commands it will have outstanding. NewServer
+	// defaults both.
+	MaxBufferSize uint32
+	MaxMpxCount   uint16
+
+	// ServerGUID is advertised in the negotiate response under extended
+	// security. The zero value means generate a random one at NewServer time; a
+	// client uses it only to notice that two names resolve to one host, and it
+	// is not a secure identifier.
+	ServerGUID guid.GUID
+
 	// Timeout bounds each read on a connection, so a client that opens a socket
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
 	Timeout time.Duration
@@ -25,6 +54,23 @@ type Config struct {
 	// immediately. Zero means unbounded.
 	MaxConnections int
 }
+
+// Configuration defaults applied by NewServer when a field is left zero.
+const (
+	// DefaultNativeOS and DefaultNativeLanMan are informational only, but must
+	// be non-empty for strict clients to accept the session setup.
+	DefaultNativeOS     = "Unix"
+	DefaultNativeLanMan = "Manticore"
+
+	// DefaultMaxBufferSize is what Windows offers. [MS-CIFS] 2.2.4.52.2 requires
+	// a multiple of 4 and suggests at least 4356.
+	DefaultMaxBufferSize uint32 = 16644
+
+	// DefaultMaxMpxCount is the number of outstanding commands advertised. The
+	// server answers one request at a time, so this is what it will accept
+	// rather than a promise of concurrency.
+	DefaultMaxMpxCount uint16 = 50
+)
 
 // Server is an SMB 1.0 server. It is safe for concurrent use: handlers and
 // listeners may be registered before or during serving, and Close may be called
@@ -59,6 +105,25 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.Timeout < 0 {
 		return nil, fmt.Errorf("Timeout cannot be negative (got %s)", config.Timeout)
+	}
+
+	if config.NativeOS == "" {
+		config.NativeOS = DefaultNativeOS
+	}
+	if config.NativeLanMan == "" {
+		config.NativeLanMan = DefaultNativeLanMan
+	}
+	if config.MaxBufferSize == 0 {
+		config.MaxBufferSize = DefaultMaxBufferSize
+	}
+	if config.MaxBufferSize%4 != 0 {
+		return nil, fmt.Errorf("MaxBufferSize must be a multiple of 4 (got %d)", config.MaxBufferSize)
+	}
+	if config.MaxMpxCount == 0 {
+		config.MaxMpxCount = DefaultMaxMpxCount
+	}
+	if config.ServerGUID == (guid.GUID{}) {
+		config.ServerGUID = *guid.NewGUID()
 	}
 
 	s := &Server{
