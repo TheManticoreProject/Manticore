@@ -58,6 +58,13 @@ type AuthenticateMessage struct {
 	// the NtChallengeResponse also carry MsvAvFlags with the MIC-present bit.
 	NeedsMIC bool
 
+	// MICOffset is the byte offset the MIC was read from, set by Unmarshal when a
+	// MIC was present. A verifier needs it to zero the field in the bytes as
+	// received: re-marshalling to recompute the digest would only reproduce the
+	// original if this implementation encodes the message identically to whoever
+	// sent it, which is not something a verifier can assume.
+	MICOffset int
+
 	// Payload section
 
 	// LmChallengeResponse (16 bytes): A payload containing LmChallengeResponse data.
@@ -275,6 +282,51 @@ func (msg *AuthenticateMessage) ComputeMIC(negotiateMessage, challengeMessage []
 	return nil
 }
 
+// VerifyMIC reports whether the message integrity code carried by the message
+// verifies against an exported session key, the acceptor-side counterpart of
+// ComputeMIC.
+//
+// The digest is taken over the message as received, with only the 16 MIC bytes
+// zeroed, rather than over a re-marshalling of the parsed fields: the MIC covers
+// the sender's exact encoding, and any difference in how this implementation
+// would lay the message out would produce a mismatch that looks identical to a
+// forged MIC.
+//
+//	MIC = HMAC_MD5(ExportedSessionKey, NEGOTIATE || CHALLENGE || AUTHENTICATE)
+//
+// The comparison is constant-time.
+//
+// Parameters:
+//   - exportedSessionKey: the key derived from the verified NT response
+//   - negotiateMessage: the raw NEGOTIATE_MESSAGE of this exchange
+//   - challengeMessage: the raw CHALLENGE_MESSAGE of this exchange
+//   - rawAuthenticate: this message exactly as received
+//
+// Returns:
+//   - true when the MIC verifies
+func (msg *AuthenticateMessage) VerifyMIC(exportedSessionKey, negotiateMessage, challengeMessage, rawAuthenticate []byte) bool {
+	if len(exportedSessionKey) == 0 || !msg.NeedsMIC {
+		return false
+	}
+	if msg.MICOffset <= 0 || msg.MICOffset+MICLength > len(rawAuthenticate) {
+		return false
+	}
+
+	// Zero the MIC field in a copy, so the caller's buffer is untouched.
+	zeroed := make([]byte, len(rawAuthenticate))
+	copy(zeroed, rawAuthenticate)
+	for i := msg.MICOffset; i < msg.MICOffset+MICLength; i++ {
+		zeroed[i] = 0x00
+	}
+
+	mac := hmac.New(md5.New, exportedSessionKey)
+	mac.Write(negotiateMessage)
+	mac.Write(challengeMessage)
+	mac.Write(zeroed)
+
+	return hmac.Equal(msg.MIC[:], mac.Sum(nil))
+}
+
 // Marshal serializes the AuthenticateMessage into a byte slice
 func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 	// Offset, in bytes, from the start of the AUTHENTICATE_MESSAGE to the payload.
@@ -423,6 +475,34 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 }
 
 // Unmarshal deserializes a byte slice into an AuthenticateMessage
+// MICLength is the length in bytes of the AUTHENTICATE_MESSAGE message integrity
+// code.
+const MICLength = 16
+
+// payloadStart returns the lowest buffer offset among the payload fields, which
+// is where the fixed part of the message ends. A field with a zero length carries
+// no payload and its offset is not meaningful, so it is skipped.
+//
+// It is only valid once the field descriptors have been read.
+func (msg *AuthenticateMessage) payloadStart() int {
+	start := 0
+	consider := func(length uint16, offset uint32) {
+		if length == 0 {
+			return
+		}
+		if start == 0 || int(offset) < start {
+			start = int(offset)
+		}
+	}
+	consider(msg.LmChallengeResponseFields.Len, msg.LmChallengeResponseFields.BufferOffset)
+	consider(msg.NtChallengeResponseFields.Len, msg.NtChallengeResponseFields.BufferOffset)
+	consider(msg.DomainNameFields.Len, msg.DomainNameFields.BufferOffset)
+	consider(msg.UserNameFields.Len, msg.UserNameFields.BufferOffset)
+	consider(msg.WorkstationFields.Len, msg.WorkstationFields.BufferOffset)
+	consider(msg.EncryptedRandomSessionKeyFields.Len, msg.EncryptedRandomSessionKeyFields.BufferOffset)
+	return start
+}
+
 func (msg *AuthenticateMessage) Unmarshal(data []byte) (int, error) {
 	totalBytesRead := 0
 
@@ -521,6 +601,31 @@ func (msg *AuthenticateMessage) Unmarshal(data []byte) (int, error) {
 		msg.Version = nil
 		// Read 8 bytes of zeros
 		totalBytesRead += 8
+	}
+
+	// Read the MIC when one is present.
+	//
+	// The MIC is not self-describing: nothing in the fixed header announces it. It
+	// occupies the 16 bytes immediately before the payload, so it is located from
+	// where the payload starts rather than from the cursor above. That matters,
+	// because two layouts appear in the wild and they put the payload in different
+	// places: [MS-NLMP] treats Version as always present (payload at 72 without a
+	// MIC, 88 with one), while this implementation's Marshal omits Version when
+	// NTLMSSP_NEGOTIATE_VERSION is clear (payload at 64, or 80 with a MIC).
+	// Deriving the offset from the payload handles both, and a MIC is present in
+	// either layout exactly when the payload starts at 80 or beyond.
+	//
+	// Without this the MIC a client sent was silently discarded, so an acceptor had
+	// nothing to verify and a tampered MIC was indistinguishable from a correct
+	// one.
+	if payloadStart := msg.payloadStart(); payloadStart >= 80 {
+		micOffset := payloadStart - MICLength
+		if micOffset < 64 || payloadStart > len(data) {
+			return 0, fmt.Errorf("data too short to read MIC in AuthenticateMessage")
+		}
+		copy(msg.MIC[:], data[micOffset:payloadStart])
+		msg.NeedsMIC = true
+		msg.MICOffset = micOffset
 	}
 
 	// Read payload section
