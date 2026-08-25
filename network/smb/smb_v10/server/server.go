@@ -361,6 +361,49 @@ func (s *Server) Serve(listener transport.Listener) error {
 	}
 }
 
+// ServeConn serves one already-established connection and returns when it ends.
+//
+// It is the entry point for a caller that does its own accepting, or that carries
+// SMB over something other than a socket — a pipe, a tunnel, a relayed
+// connection. Serve is this in a loop behind a listener.
+//
+// The connection is closed when serving finishes. The server's connection limit
+// and idle timeout apply, and Close tears this connection down like any other.
+//
+// Parameters:
+//   - conn: the transport to serve, already connected and handshaken
+//   - remote: the peer's address, for logging; may be nil
+//
+// Returns:
+//   - An error if the server is closed or at its connection limit
+func (s *Server) ServeConn(conn transport.Transport, remote net.Addr) error {
+	if conn == nil {
+		return fmt.Errorf("cannot serve a nil connection")
+	}
+	if !s.acquireSlot() {
+		conn.Close()
+		return fmt.Errorf("already serving the maximum of %d connections", s.config.MaxConnections)
+	}
+	defer s.releaseSlot()
+
+	if s.config.Timeout > 0 {
+		conn.SetTimeout(s.config.Timeout)
+	}
+
+	connection := newConnection(s, conn, remote)
+	if !s.trackConnection(connection) {
+		connection.Close()
+		return fmt.Errorf("server is closed")
+	}
+	defer s.untrackConnection(connection)
+
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	connection.serve()
+	return nil
+}
+
 // Listening reports whether the server currently has a listener.
 func (s *Server) Listening() bool {
 	s.mutex.RLock()
