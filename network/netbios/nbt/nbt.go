@@ -61,6 +61,19 @@ func NewNBTTransport() *NBTTransport {
 	}
 }
 
+// NewNBTTransportFromConn wraps an already-established connection — typically one
+// returned by net.Listener.Accept — as a NetBIOS over TCP transport. Connect MUST
+// NOT be called on the result; the accept-side handshake is performed by
+// AcceptSession instead of by Connect.
+func NewNBTTransportFromConn(conn net.Conn) *NBTTransport {
+	return &NBTTransport{
+		conn:        conn,
+		handshake:   true,
+		calledName:  DefaultCalledName,
+		callingName: defaultCallingName(),
+	}
+}
+
 // SetHandshakeEnabled controls whether Connect performs the RFC 1002
 // session-establishment handshake. Disable it to talk to a modern server that
 // accepts SESSION MESSAGEs on port 139 without a prior SESSION REQUEST.
@@ -209,6 +222,102 @@ func (n *NBTTransport) EstablishSession(calledName, callingName string) error {
 			return fmt.Errorf("unexpected NetBIOS session response type 0x%02X (%s)", messageType, netbios.SESSION_MESSAGE_TYPE(messageType))
 		}
 	}
+}
+
+// AcceptSession completes the RFC 1002 4.3 session-establishment handshake on an
+// accepted connection, the server-side counterpart of EstablishSession: it reads
+// the SESSION REQUEST (0x81), decodes the CALLED and CALLING names it carries,
+// and answers either a POSITIVE SESSION RESPONSE (0x82) or a NEGATIVE SESSION
+// RESPONSE (0x83).
+//
+// The CALLED name is accepted when acceptedNames is empty (any name is served),
+// when it matches one of acceptedNames case-insensitively, or when it is a
+// wildcard such as the "*SMBSERVER" convention that clients use before they know
+// a host's real machine name. A name that matches none of these is refused with
+// NEGATIVE_SESSION_NOT_LISTENING_ON_CALLED_NAME, mirroring what EstablishSession
+// expects to receive and retry against.
+//
+// Parameters:
+//   - acceptedNames: the CALLED names this endpoint answers to; empty accepts any
+//
+// Returns:
+//   - called: the CALLED name the client asked for
+//   - calling: the CALLING name the client identified itself with
+//   - err: non-nil if the handshake did not complete, in which case the caller
+//     should close the connection
+func (n *NBTTransport) AcceptSession(acceptedNames []string) (called, calling string, err error) {
+	if !n.IsConnected() {
+		return "", "", fmt.Errorf("not connected")
+	}
+
+	messageType, body, err := n.readFrame()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read SESSION REQUEST: %v", err)
+	}
+	if netbios.SESSION_MESSAGE_TYPE(messageType) != netbios.SESSION_REQUEST {
+		return "", "", fmt.Errorf("unexpected NetBIOS session message type 0x%02X (%s), expected SESSION REQUEST", messageType, netbios.SESSION_MESSAGE_TYPE(messageType))
+	}
+
+	// RFC 1002 4.3.2: the body is the CALLED name followed by the CALLING name,
+	// each second-level encoded. A malformed name is answered with an
+	// unspecified-error NEGATIVE response rather than silently dropped, so the
+	// client fails with a protocol error instead of a read timeout.
+	calledName, calledSuffix, consumed, err := nbns.DecodeSessionServiceName(body)
+	if err != nil {
+		n.sendNegativeSessionResponse(netbios.NEGATIVE_SESSION_UNSPECIFIED_ERROR)
+		return "", "", fmt.Errorf("failed to decode CALLED name: %v", err)
+	}
+	callingName, _, _, err := nbns.DecodeSessionServiceName(body[consumed:])
+	if err != nil {
+		n.sendNegativeSessionResponse(netbios.NEGATIVE_SESSION_UNSPECIFIED_ERROR)
+		return "", "", fmt.Errorf("failed to decode CALLING name: %v", err)
+	}
+
+	// The CALLED name of an SMB session request carries the server-service
+	// suffix; anything else is addressed to a different NetBIOS service.
+	if calledSuffix != NetBIOSSuffixServer {
+		n.sendNegativeSessionResponse(netbios.NEGATIVE_SESSION_CALLED_NAME_NOT_PRESENT)
+		return "", "", fmt.Errorf("CALLED name %q has service suffix 0x%02X, expected the server service 0x%02X", calledName, calledSuffix, NetBIOSSuffixServer)
+	}
+
+	if !calledNameAccepted(calledName, acceptedNames) {
+		n.sendNegativeSessionResponse(netbios.NEGATIVE_SESSION_NOT_LISTENING_ON_CALLED_NAME)
+		return "", "", fmt.Errorf("not listening on CALLED name %q", calledName)
+	}
+
+	// RFC 1002 4.3.3: a POSITIVE SESSION RESPONSE is a bare header with a zero
+	// LENGTH and no body.
+	positive := []byte{byte(netbios.SESSION_POSITIVE_RESPONSE), 0x00, 0x00, 0x00}
+	if _, err := n.conn.Write(positive); err != nil {
+		return "", "", fmt.Errorf("failed to send POSITIVE SESSION RESPONSE: %v", err)
+	}
+
+	return calledName, callingName, nil
+}
+
+// sendNegativeSessionResponse answers a SESSION REQUEST with a NEGATIVE SESSION
+// RESPONSE (RFC 1002 4.3.4): a header with LENGTH 1 followed by the one-byte
+// error code. A write failure is discarded because the caller is already
+// abandoning the connection on every path that reaches here.
+func (n *NBTTransport) sendNegativeSessionResponse(code netbios.NEGATIVE_SESSION_ERROR) {
+	//nolint:errcheck // the connection is being abandoned regardless
+	n.conn.Write([]byte{byte(netbios.SESSION_NEGATIVE_RESPONSE), 0x00, 0x00, 0x01, byte(code)})
+}
+
+// calledNameAccepted reports whether a SESSION REQUEST addressed to calledName
+// should be served. An empty acceptedNames list serves any name; a wildcard
+// called name is always served, because a client that does not know the host's
+// machine name has no better option than the "*SMBSERVER" convention.
+func calledNameAccepted(calledName string, acceptedNames []string) bool {
+	if len(acceptedNames) == 0 || isWildcardCalledName(calledName) {
+		return true
+	}
+	for _, accepted := range acceptedNames {
+		if strings.EqualFold(strings.TrimSpace(accepted), calledName) {
+			return true
+		}
+	}
+	return false
 }
 
 // isWildcardCalledName reports whether name is a wildcard called name (e.g. the

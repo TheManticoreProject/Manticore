@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/network/netbios/nbns"
 	"github.com/TheManticoreProject/Manticore/network/netbios/nbt"
 )
 
@@ -463,4 +464,285 @@ func TestNBTTransport_ReceiveTimesOutOnSilentServer(t *testing.T) {
 	if elapsed > 5*time.Second {
 		t.Fatalf("NBTTransport.Receive() took %v to fail, want a bounded timeout", elapsed)
 	}
+}
+
+// acceptSessionResult carries the outcome of a server-side AcceptSession run
+// back to the test goroutine.
+type acceptSessionResult struct {
+	transport *nbt.NBTTransport
+	called    string
+	calling   string
+	err       error
+}
+
+// serveAcceptSession listens on an ephemeral port and runs AcceptSession on the
+// first connection it accepts, delivering the outcome on the returned channel.
+// It is the server-side counterpart of the connectedPair helper above.
+func serveAcceptSession(t *testing.T, acceptedNames []string) (*net.TCPAddr, <-chan acceptSessionResult, func()) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start test server: %v", err)
+	}
+
+	ch := make(chan acceptSessionResult, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			ch <- acceptSessionResult{err: err}
+			return
+		}
+		tr := nbt.NewNBTTransportFromConn(conn)
+		tr.SetTimeout(5 * time.Second)
+		called, calling, err := tr.AcceptSession(acceptedNames)
+		ch <- acceptSessionResult{transport: tr, called: called, calling: calling, err: err}
+	}()
+
+	return ln.Addr().(*net.TCPAddr), ch, func() { ln.Close() }
+}
+
+// TestNBTTransport_AcceptSessionPositive verifies the accept side completes the
+// handshake against the client side of the same implementation, and that the
+// resulting transports carry SESSION MESSAGEs in both directions.
+func TestNBTTransport_AcceptSessionPositive(t *testing.T) {
+	addr, results, cleanup := serveAcceptSession(t, []string{"FILESERVER"})
+	defer cleanup()
+
+	client := nbt.NewNBTTransport()
+	client.SetCalledName("FILESERVER")
+	client.SetCallingName("TESTCLIENT")
+	client.SetTimeout(5 * time.Second)
+	if err := client.Connect(addr.IP, addr.Port); err != nil {
+		t.Fatalf("client Connect() error = %v", err)
+	}
+	defer client.Close()
+
+	got := <-results
+	if got.err != nil {
+		t.Fatalf("AcceptSession() error = %v", got.err)
+	}
+	defer got.transport.Close()
+
+	if got.called != "FILESERVER" {
+		t.Fatalf("called name = %q, want %q", got.called, "FILESERVER")
+	}
+	if got.calling != "TESTCLIENT" {
+		t.Fatalf("calling name = %q, want %q", got.calling, "TESTCLIENT")
+	}
+
+	// The session is established, so both ends must now frame SESSION MESSAGEs
+	// for each other.
+	payload := []byte{0xFF, 'S', 'M', 'B', 0x72}
+	if _, err := client.Send(payload); err != nil {
+		t.Fatalf("client Send() error = %v", err)
+	}
+	received, err := got.transport.Receive()
+	if err != nil {
+		t.Fatalf("server Receive() error = %v", err)
+	}
+	if !bytes.Equal(received, payload) {
+		t.Fatalf("server received % x, want % x", received, payload)
+	}
+
+	reply := []byte{0xFF, 'S', 'M', 'B', 0x72, 0x00}
+	if _, err := got.transport.Send(reply); err != nil {
+		t.Fatalf("server Send() error = %v", err)
+	}
+	back, err := client.Receive()
+	if err != nil {
+		t.Fatalf("client Receive() error = %v", err)
+	}
+	if !bytes.Equal(back, reply) {
+		t.Fatalf("client received % x, want % x", back, reply)
+	}
+}
+
+// TestNBTTransport_AcceptSessionWildcard verifies the "*SMBSERVER" convention is
+// answered even when it is not in the accepted-name list, and that an empty list
+// answers to any name.
+func TestNBTTransport_AcceptSessionWildcard(t *testing.T) {
+	cases := []struct {
+		name          string
+		acceptedNames []string
+		calledName    string
+	}{
+		{"wildcard against a named endpoint", []string{"FILESERVER"}, "*SMBSERVER"},
+		{"any name against an empty list", nil, "SOMEOTHERHOST"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			addr, results, cleanup := serveAcceptSession(t, tc.acceptedNames)
+			defer cleanup()
+
+			client := nbt.NewNBTTransport()
+			client.SetCalledName(tc.calledName)
+			client.SetTimeout(5 * time.Second)
+			if err := client.Connect(addr.IP, addr.Port); err != nil {
+				t.Fatalf("client Connect() to %q error = %v", tc.calledName, err)
+			}
+			defer client.Close()
+
+			got := <-results
+			if got.err != nil {
+				t.Fatalf("AcceptSession() error = %v", got.err)
+			}
+			got.transport.Close()
+			if got.called != tc.calledName {
+				t.Fatalf("called name = %q, want %q", got.called, tc.calledName)
+			}
+		})
+	}
+}
+
+// TestNBTTransport_AcceptSessionRefusesUnknownName verifies a CALLED name the
+// endpoint does not serve is refused with a NEGATIVE SESSION RESPONSE carrying
+// NEGATIVE_SESSION_NOT_LISTENING_ON_CALLED_NAME (0x80), which is what the client
+// side surfaces as an error.
+func TestNBTTransport_AcceptSessionRefusesUnknownName(t *testing.T) {
+	addr, results, cleanup := serveAcceptSession(t, []string{"FILESERVER"})
+	defer cleanup()
+
+	// Drive the client at the raw byte level so the response can be inspected
+	// exactly, rather than through Connect's fallback logic.
+	conn, err := net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		t.Fatalf("dial error = %v", err)
+	}
+	defer conn.Close()
+
+	request := sessionRequestBytes(t, "OTHERHOST", 0x20, "TESTCLIENT", 0x00)
+	if _, err := conn.Write(request); err != nil {
+		t.Fatalf("write SESSION REQUEST error = %v", err)
+	}
+
+	response := make([]byte, 5)
+	if _, err := io.ReadFull(conn, response); err != nil {
+		t.Fatalf("read SESSION RESPONSE error = %v", err)
+	}
+	want := []byte{0x83, 0x00, 0x00, 0x01, 0x80}
+	if !bytes.Equal(response, want) {
+		t.Fatalf("response = % x, want % x", response, want)
+	}
+
+	got := <-results
+	if got.err == nil {
+		t.Fatal("AcceptSession() should reject a CALLED name the endpoint does not serve")
+	}
+	if !strings.Contains(got.err.Error(), "OTHERHOST") {
+		t.Fatalf("error %q does not name the refused CALLED name", got.err.Error())
+	}
+}
+
+// TestNBTTransport_AcceptSessionRejectsWrongSuffix verifies a CALLED name
+// addressed to a service other than the server service (0x20) is refused with
+// NEGATIVE_SESSION_CALLED_NAME_NOT_PRESENT (0x82).
+func TestNBTTransport_AcceptSessionRejectsWrongSuffix(t *testing.T) {
+	addr, results, cleanup := serveAcceptSession(t, nil)
+	defer cleanup()
+
+	conn, err := net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		t.Fatalf("dial error = %v", err)
+	}
+	defer conn.Close()
+
+	// Suffix 0x00 is the workstation service, not the server service.
+	request := sessionRequestBytes(t, "FILESERVER", 0x00, "TESTCLIENT", 0x00)
+	if _, err := conn.Write(request); err != nil {
+		t.Fatalf("write SESSION REQUEST error = %v", err)
+	}
+
+	response := make([]byte, 5)
+	if _, err := io.ReadFull(conn, response); err != nil {
+		t.Fatalf("read SESSION RESPONSE error = %v", err)
+	}
+	want := []byte{0x83, 0x00, 0x00, 0x01, 0x82}
+	if !bytes.Equal(response, want) {
+		t.Fatalf("response = % x, want % x", response, want)
+	}
+
+	if got := <-results; got.err == nil {
+		t.Fatal("AcceptSession() should reject a non-server service suffix")
+	}
+}
+
+// TestNBTTransport_AcceptSessionRejectsMalformed verifies the accept side refuses
+// a frame that is not a SESSION REQUEST, and refuses a SESSION REQUEST whose
+// names are malformed, without hanging or panicking.
+func TestNBTTransport_AcceptSessionRejectsMalformed(t *testing.T) {
+	cases := []struct {
+		name  string
+		frame []byte
+	}{
+		// A SESSION MESSAGE (0x00) where a SESSION REQUEST is required.
+		{"wrong message type", []byte{0x00, 0x00, 0x00, 0x02, 0xFF, 0x53}},
+		// A SESSION REQUEST with an empty body.
+		{"empty body", []byte{0x81, 0x00, 0x00, 0x00}},
+		// A SESSION REQUEST whose CALLED name has a bad length byte.
+		{"bad called name", append([]byte{0x81, 0x00, 0x00, 0x22, 0x10}, bytes.Repeat([]byte{'A'}, 33)...)},
+		// A well-formed CALLED name with no CALLING name following it.
+		{"missing calling name", func() []byte {
+			called := sessionServiceNameBytes(0x20)
+			frame := []byte{0x81, 0x00, 0x00, byte(len(called))}
+			return append(frame, called...)
+		}()},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			addr, results, cleanup := serveAcceptSession(t, nil)
+			defer cleanup()
+
+			conn, err := net.DialTCP("tcp", nil, addr)
+			if err != nil {
+				t.Fatalf("dial error = %v", err)
+			}
+			defer conn.Close()
+
+			if _, err := conn.Write(tc.frame); err != nil {
+				t.Fatalf("write error = %v", err)
+			}
+
+			got := <-results
+			if got.err == nil {
+				if got.transport != nil {
+					got.transport.Close()
+				}
+				t.Fatalf("AcceptSession() should reject %s", tc.name)
+			}
+		})
+	}
+}
+
+// sessionRequestBytes builds a SESSION REQUEST frame carrying the given CALLED
+// and CALLING names with explicit service suffixes, so a test can address a
+// service other than the one the client-side helpers assume.
+func sessionRequestBytes(t *testing.T, calledName string, calledSuffix byte, callingName string, callingSuffix byte) []byte {
+	t.Helper()
+
+	called, err := nbns.EncodeSessionServiceName(calledName, calledSuffix)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName(%q) error = %v", calledName, err)
+	}
+	calling, err := nbns.EncodeSessionServiceName(callingName, callingSuffix)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName(%q) error = %v", callingName, err)
+	}
+
+	length := len(called) + len(calling)
+	frame := []byte{0x81, 0x00, byte((length >> 8) & 0xFF), byte(length & 0xFF)}
+	frame = append(frame, called...)
+	return append(frame, calling...)
+}
+
+// sessionServiceNameBytes returns one encoded session-service name for use in
+// hand-built frames.
+func sessionServiceNameBytes(suffix byte) []byte {
+	encoded, err := nbns.EncodeSessionServiceName("FILESERVER", suffix)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
 }

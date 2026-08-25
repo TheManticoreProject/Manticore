@@ -25,6 +25,15 @@ func NewTCPTransport() *TCPTransport {
 	return &TCPTransport{}
 }
 
+// NewTCPTransportFromConn wraps an already-established connection — typically one
+// returned by net.Listener.Accept — as a Direct TCP transport, so the server side
+// of a connection uses the same framing as the client side. Connect MUST NOT be
+// called on the result: the transport is connected from the outset, and calling
+// Connect would dial a second connection and leak conn.
+func NewTCPTransportFromConn(conn net.Conn) *TCPTransport {
+	return &TCPTransport{conn: conn}
+}
+
 // Connect establishes a Direct TCP connection
 func (t *TCPTransport) Connect(ipaddr net.IP, port int) error {
 	// Default SMB port is 445 if not specified

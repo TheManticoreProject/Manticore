@@ -150,6 +150,79 @@ func EncodeSessionServiceName(name string, suffix byte) ([]byte, error) {
 	return encoded, nil
 }
 
+// DecodeSessionServiceName decodes one second-level-encoded NetBIOS name as it
+// appears in a SESSION REQUEST (RFC 1002 4.3.2), the inverse of
+// EncodeSessionServiceName: a 0x20 length byte, EncodedNameLength encoded bytes,
+// then the label sequence terminating the name — a bare 0x00 for the default
+// scope, or one or more length-prefixed scope labels followed by 0x00.
+//
+// It returns the name with its trailing space padding removed, the one-byte
+// service suffix that occupied the 16th position, and the total number of bytes
+// consumed, so a caller can decode the CALLED name and then the CALLING name
+// that follows it.
+//
+// Parameters:
+//   - b: the buffer positioned at the start of the encoded name
+//
+// Returns:
+//   - name: the decoded name, trailing padding removed
+//   - suffix: the one-byte service suffix
+//   - n: the number of bytes consumed from b
+//   - err: non-nil if the encoding is malformed
+func DecodeSessionServiceName(b []byte) (name string, suffix byte, n int, err error) {
+	// The shortest well-formed name is the length byte, the encoded name and a
+	// single 0x00 label terminator.
+	if len(b) < 1+EncodedNameLength+1 {
+		return "", 0, 0, fmt.Errorf("truncated session-service name: need at least %d bytes, got %d", 1+EncodedNameLength+1, len(b))
+	}
+	if b[0] != EncodedNameLength {
+		return "", 0, 0, fmt.Errorf("invalid session-service name length byte: expected 0x%02X, got 0x%02X", EncodedNameLength, b[0])
+	}
+
+	// First-level decoding: each pair of characters in the range 'A'..'P' encodes
+	// the high and low half-byte of one name byte.
+	decoded := make([]byte, NetBIOSNameLength)
+	for i := 0; i < NetBIOSNameLength; i++ {
+		high := b[1+i*2] - ASCII_A
+		low := b[1+i*2+1] - ASCII_A
+		if high > 0x0F || low > 0x0F {
+			return "", 0, 0, fmt.Errorf("invalid encoding character at offset %d", 1+i*2)
+		}
+		decoded[i] = (high << 4) | low
+	}
+
+	n = 1 + EncodedNameLength
+
+	// Walk the remaining labels. The default scope is a single 0x00 terminator;
+	// a scoped name carries length-prefixed labels before it. Bounding each
+	// label by the DNS 63-byte limit keeps a malformed buffer from being read as
+	// one enormous label.
+	for {
+		if n >= len(b) {
+			return "", 0, 0, fmt.Errorf("session-service name is not terminated")
+		}
+		labelLength := int(b[n])
+		n++
+		if labelLength == 0 {
+			break
+		}
+		if labelLength > 63 {
+			return "", 0, 0, fmt.Errorf("invalid scope label length %d at offset %d", labelLength, n-1)
+		}
+		if n+labelLength > len(b) {
+			return "", 0, 0, fmt.Errorf("truncated scope label at offset %d", n-1)
+		}
+		n += labelLength
+	}
+
+	// The 16th byte is the service suffix; the preceding 15 are the name, padded
+	// with spaces on the wire.
+	suffix = decoded[NetBIOSNameLength-1]
+	name = string(bytes.TrimRight(decoded[:NetBIOSNameLength-1], " "))
+
+	return name, suffix, n, nil
+}
+
 // FirstLevelDecode decodes a first level encoded NetBIOS name
 func FirstLevelDecode(encoded string) (*NetBIOSName, error) {
 	parts := strings.SplitN(encoded, ".", 2)

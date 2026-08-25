@@ -215,3 +215,155 @@ func TestEncodeSessionServiceName(t *testing.T) {
 		t.Fatal("EncodeSessionServiceName() should reject names longer than 15 characters")
 	}
 }
+
+// TestDecodeSessionServiceName asserts the exact wire decoding of a
+// second-level-encoded session-service name, including the RFC 1001 known
+// answer, the suffix split and the byte count consumed.
+func TestDecodeSessionServiceName(t *testing.T) {
+	// The "*SMBSERVER" / 0x20 encoding from TestEncodeSessionServiceName.
+	encoded := append(append([]byte{0x20}, []byte("CKFDENECFDEFFCFGEFFCCACACACACACA")...), 0x00)
+
+	name, suffix, n, err := DecodeSessionServiceName(encoded)
+	if err != nil {
+		t.Fatalf("DecodeSessionServiceName() error = %v", err)
+	}
+	if name != "*SMBSERVER" {
+		t.Fatalf("name = %q, want %q", name, "*SMBSERVER")
+	}
+	if suffix != 0x20 {
+		t.Fatalf("suffix = 0x%02X, want 0x20", suffix)
+	}
+	if n != 34 {
+		t.Fatalf("consumed = %d, want 34", n)
+	}
+
+	// Trailing bytes must be left untouched: a SESSION REQUEST carries the
+	// CALLING name immediately after the CALLED name, so the caller decodes the
+	// second name from encoded[n:].
+	twoNames := append(append([]byte{}, encoded...), encoded...)
+	_, _, first, err := DecodeSessionServiceName(twoNames)
+	if err != nil {
+		t.Fatalf("DecodeSessionServiceName() on a two-name buffer error = %v", err)
+	}
+	second, secondSuffix, _, err := DecodeSessionServiceName(twoNames[first:])
+	if err != nil {
+		t.Fatalf("DecodeSessionServiceName() on the second name error = %v", err)
+	}
+	if second != "*SMBSERVER" || secondSuffix != 0x20 {
+		t.Fatalf("second name = %q/0x%02X, want *SMBSERVER/0x20", second, secondSuffix)
+	}
+}
+
+// TestDecodeSessionServiceNameRoundTrip asserts DecodeSessionServiceName is the
+// exact inverse of EncodeSessionServiceName across name lengths and suffixes,
+// including the space padding the encoder applies.
+func TestDecodeSessionServiceNameRoundTrip(t *testing.T) {
+	cases := []struct {
+		name   string
+		suffix byte
+	}{
+		{"A", 0x00},
+		{"CLIENT", 0x00},
+		{"FILESERVER01", 0x20},
+		{"*SMBSERVER", 0x20},
+		{"WORKSTATION1234", 0x03}, // exactly 15 characters, the maximum
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			encoded, err := EncodeSessionServiceName(tc.name, tc.suffix)
+			if err != nil {
+				t.Fatalf("EncodeSessionServiceName() error = %v", err)
+			}
+			got, suffix, n, err := DecodeSessionServiceName(encoded)
+			if err != nil {
+				t.Fatalf("DecodeSessionServiceName() error = %v", err)
+			}
+			if got != tc.name {
+				t.Fatalf("name = %q, want %q", got, tc.name)
+			}
+			if suffix != tc.suffix {
+				t.Fatalf("suffix = 0x%02X, want 0x%02X", suffix, tc.suffix)
+			}
+			if n != len(encoded) {
+				t.Fatalf("consumed = %d, want %d", n, len(encoded))
+			}
+		})
+	}
+}
+
+// TestDecodeSessionServiceNameScoped asserts a name carrying scope labels is
+// decoded and that the consumed count covers the whole label sequence, so a
+// following name is still found at the right offset.
+func TestDecodeSessionServiceNameScoped(t *testing.T) {
+	base, err := EncodeSessionServiceName("SERVER", 0x20)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName() error = %v", err)
+	}
+	// Replace the bare 0x00 terminator with two scope labels ("EXAMPLE.COM")
+	// followed by the terminator.
+	scoped := append([]byte{}, base[:len(base)-1]...)
+	scoped = append(scoped, 7)
+	scoped = append(scoped, []byte("EXAMPLE")...)
+	scoped = append(scoped, 3)
+	scoped = append(scoped, []byte("COM")...)
+	scoped = append(scoped, 0x00)
+
+	name, suffix, n, err := DecodeSessionServiceName(scoped)
+	if err != nil {
+		t.Fatalf("DecodeSessionServiceName() on a scoped name error = %v", err)
+	}
+	if name != "SERVER" || suffix != 0x20 {
+		t.Fatalf("name = %q/0x%02X, want SERVER/0x20", name, suffix)
+	}
+	if n != len(scoped) {
+		t.Fatalf("consumed = %d, want %d", n, len(scoped))
+	}
+}
+
+// TestDecodeSessionServiceNameErrors asserts each malformed encoding is rejected
+// rather than producing a garbage name or reading out of bounds.
+func TestDecodeSessionServiceNameErrors(t *testing.T) {
+	valid, err := EncodeSessionServiceName("SERVER", 0x20)
+	if err != nil {
+		t.Fatalf("EncodeSessionServiceName() error = %v", err)
+	}
+
+	// A length byte other than 0x20.
+	badLength := append([]byte{}, valid...)
+	badLength[0] = 0x10
+
+	// An encoding character outside the 'A'..'P' half-byte alphabet.
+	badChar := append([]byte{}, valid...)
+	badChar[1] = 'Z'
+
+	// No label terminator at all.
+	unterminated := append([]byte{}, valid[:len(valid)-1]...)
+
+	// A scope label whose length runs past the end of the buffer.
+	truncatedLabel := append(append([]byte{}, valid[:len(valid)-1]...), 40, 'A', 'B')
+
+	// A scope label longer than the 63-byte DNS limit.
+	oversizeLabel := append(append([]byte{}, valid[:len(valid)-1]...), 64)
+
+	cases := []struct {
+		name  string
+		input []byte
+	}{
+		{"empty", nil},
+		{"truncated", valid[:20]},
+		{"bad length byte", badLength},
+		{"bad encoding character", badChar},
+		{"unterminated", unterminated},
+		{"truncated scope label", truncatedLabel},
+		{"oversize scope label", oversizeLabel},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, _, err := DecodeSessionServiceName(tc.input); err == nil {
+				t.Fatalf("DecodeSessionServiceName(% x) should fail", tc.input)
+			}
+		})
+	}
+}
