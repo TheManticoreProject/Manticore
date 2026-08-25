@@ -268,9 +268,9 @@ func TestUnimplementedCommandIsRefused(t *testing.T) {
 	_, addr := testServer(t)
 	client := dialServer(t, addr)
 
-	// SMB_COM_NEGOTIATE is a recognized command that no handler serves yet.
-	request := newRequest(codes.SMB_COM_NEGOTIATE)
-	request.AddCommand(commands.NewNegotiateRequest())
+	// SMB_COM_TREE_CONNECT_ANDX is a recognized command that no handler serves yet.
+	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	request.AddCommand(commands.NewTreeConnectAndxRequest())
 	sendRequest(t, client, request)
 
 	response, raw := receiveResponse(t, client)
@@ -301,10 +301,10 @@ func TestUnimplementedCommandUsesLegacyStatusEncoding(t *testing.T) {
 	_, addr := testServer(t)
 	client := dialServer(t, addr)
 
-	request := newRequest(codes.SMB_COM_NEGOTIATE)
+	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
 	// Clear the NT-status bit, leaving an old-style client.
 	request.Header.Flags2 &= ^flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES)
-	request.AddCommand(commands.NewNegotiateRequest())
+	request.AddCommand(commands.NewTreeConnectAndxRequest())
 	sendRequest(t, client, request)
 
 	response, _ := receiveResponse(t, client)

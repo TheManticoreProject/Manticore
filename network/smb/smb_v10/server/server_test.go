@@ -289,16 +289,35 @@ func TestRegisterHandlerIgnoresNil(t *testing.T) {
 	}
 }
 
-// TestConfigIsReported asserts the server reports back the configuration it was
-// built with.
+// TestConfigIsReported asserts the server reports back the configuration it is
+// running with: the values it was given, plus the defaults filled in for the
+// fields left zero.
 func TestConfigIsReported(t *testing.T) {
-	want := Config{Timeout: 3 * time.Second, MaxConnections: 7}
-	srv, err := NewServer(want)
+	srv, err := NewServer(Config{
+		ServerName:     "MANTICORE",
+		DomainName:     "LAB",
+		Timeout:        3 * time.Second,
+		MaxConnections: 7,
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
-	if got := srv.Config(); got != want {
-		t.Fatalf("Config() = %+v, want %+v", got, want)
+
+	got := srv.Config()
+
+	// What was supplied is preserved.
+	if got.ServerName != "MANTICORE" || got.DomainName != "LAB" {
+		t.Fatalf("Config() lost the supplied names: %+v", got)
+	}
+	if got.Timeout != 3*time.Second || got.MaxConnections != 7 {
+		t.Fatalf("Config() lost the supplied limits: %+v", got)
+	}
+	// What was omitted is defaulted, since a client depends on these being set.
+	if got.NativeOS != DefaultNativeOS || got.NativeLanMan != DefaultNativeLanMan {
+		t.Fatalf("Config() did not default the native strings: %+v", got)
+	}
+	if got.MaxBufferSize != DefaultMaxBufferSize || got.MaxMpxCount != DefaultMaxMpxCount {
+		t.Fatalf("Config() did not default the sizes: %+v", got)
 	}
 }
 

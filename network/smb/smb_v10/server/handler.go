@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
@@ -45,16 +46,32 @@ type ResponseWriter interface {
 	// responses, such as SMB_COM_ECHO.
 	WriteResponse(cmd command_interface.CommandInterface) error
 
+	// WriteResponseWithStatus sends a response carrying cmd together with a
+	// status other than success. An interim response needs this: a status such
+	// as STATUS_MORE_PROCESSING_REQUIRED travels alongside a payload rather than
+	// instead of one, which is how a multi-leg authentication reports that it is
+	// unfinished.
+	WriteResponseWithStatus(cmd command_interface.CommandInterface, status nt_status.NT_STATUS) error
+
 	// WriteError sends an error response: a header carrying status, with no
 	// command payload (WordCount 0, ByteCount 0). The status is encoded in
 	// whichever form the request selected.
 	WriteError(status nt_status.NT_STATUS) error
+
+	// SetResponseUID overrides the user identifier echoed in responses to this
+	// request. A request arrives with the UID the client knows, which is zero
+	// until the server assigns one, so the leg that assigns it has to say so.
+	SetResponseUID(uid uint16)
 }
 
 // responseWriter is the ResponseWriter bound to one request on one connection.
 type responseWriter struct {
 	conn    *Connection
 	request *message.Message
+
+	// uid, when set, replaces the request's UID in responses.
+	uid    uint16
+	uidSet bool
 }
 
 // RemoteAddr returns the address of the client being answered.
@@ -65,6 +82,17 @@ func (w *responseWriter) RemoteAddr() net.Addr {
 // WriteResponse sends a successful response carrying cmd.
 func (w *responseWriter) WriteResponse(cmd command_interface.CommandInterface) error {
 	return w.write(cmd, nt_status.NT_STATUS_SUCCESS)
+}
+
+// WriteResponseWithStatus sends a response carrying cmd and a non-success status.
+func (w *responseWriter) WriteResponseWithStatus(cmd command_interface.CommandInterface, status nt_status.NT_STATUS) error {
+	return w.write(cmd, status)
+}
+
+// SetResponseUID overrides the UID echoed in responses to this request.
+func (w *responseWriter) SetResponseUID(uid uint16) {
+	w.uid = uid
+	w.uidSet = true
 }
 
 // WriteError sends a payload-less error response carrying status.
@@ -80,6 +108,9 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 
 	reply := message.NewMessage()
 	reply.Header = replyHeader(w.request.Header, status)
+	if w.uidSet {
+		reply.Header.UID = types.USHORT(w.uid)
+	}
 
 	// A command marshals its string fields according to the message's Unicode
 	// setting, so the response must use the same encoding the request did.

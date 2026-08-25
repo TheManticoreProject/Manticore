@@ -26,7 +26,9 @@ type commandHandler func(conn *Connection, w ResponseWriter, req *message.Messag
 // reserved and never implemented, and the specification requires exactly that
 // answer for them.
 var dispatchTable = map[codes.CommandCode]commandHandler{
-	codes.SMB_COM_ECHO: handleEcho,
+	codes.SMB_COM_NEGOTIATE:          handleNegotiate,
+	codes.SMB_COM_SESSION_SETUP_ANDX: handleSessionSetupAndx,
+	codes.SMB_COM_ECHO:               handleEcho,
 }
 
 // echoedRequestFlags are the SMB_FLAGS bits a response mirrors from its request.
