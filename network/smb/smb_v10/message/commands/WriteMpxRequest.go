@@ -305,8 +305,12 @@ func (c *WriteMpxRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data Pad
-	if len(rawDataContent) < offset+1 {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad")
+	//
+	// DataOffset is client-controlled, so the bound has to cover the whole slice
+	// rather than just its first byte: guarding offset+1 while slicing
+	// offset+DataOffset let any peer read past the end of the buffer.
+	if len(rawDataContent) < offset+int(c.DataOffset) {
+		return offset, fmt.Errorf("rawDataContent too short for Pad")
 	}
 	c.Pad = rawDataContent[offset : offset+int(c.DataOffset)]
 	offset += int(c.DataOffset)

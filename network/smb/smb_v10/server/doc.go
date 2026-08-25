@@ -23,25 +23,47 @@
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
 //   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
 //     security.
-//   - SMB_COM_SESSION_SETUP_ANDX, as far as issuing an NTLM challenge and
-//     recording the response to it.
+//   - SMB_COM_SESSION_SETUP_ANDX, including verifying the response against a
+//     credential, establishing a session, and the guest and anonymous policies.
+//   - SMB_COM_LOGOFF_ANDX.
 //   - SMB_COM_ECHO.
+//   - Message signing in both directions, when the policy calls for it.
 //
 // Not yet implemented: every other command, answered with
-// STATUS_NOT_IMPLEMENTED. In particular **no authentication ever succeeds** and
-// no share can be reached: the second leg of a session setup is always refused,
-// because verifying a response needs a credential store that arrives with a
-// later phase. A client will negotiate, offer a credential, and be told the
-// logon failed.
+// STATUS_NOT_IMPLEMENTED. A client can now authenticate, but there is still
+// nothing to reach: no share can be connected to and no file opened, because
+// tree connect and the file commands arrive with a later phase.
+//
+// # Authentication
+//
+// Config.Authenticator resolves a claimed identity to its NT hash, and
+// StaticAccounts builds one from a fixed list. With no Authenticator no logon
+// can succeed, which is the configuration a server whose purpose is harvesting
+// responses wants.
+//
+// Config.AllowGuest admits an identity the store does not know, reporting
+// SMB_SETUP_GUEST so the client knows it was not authenticated as itself, and
+// Config.AllowAnonymous admits a null session. Neither derives a key, so neither
+// can sign: under a policy that requires signatures they are refused outright
+// rather than granted a session that could not carry a single request.
+//
+// # Signing
+//
+// Config.SigningPolicy selects whether signatures are unsupported, offered or
+// demanded, and only what the server will honour is advertised. Signing is
+// bootstrapped by the authentication exchange itself: the client signs its
+// AUTHENTICATE with the key it derived, and the server can only check that once
+// it has derived the same key from the response. From then on every request must
+// carry a valid signature at the number the exchange has reached, and every
+// response is signed at the number above.
 //
 // # Credential capture
 //
-// That refusal is the point of the current phase rather than a limitation of it.
 // A CaptureHandler registered on the server harvests the NTLM response from
 // every attempt and renders it in hashcat form, so material a server cannot
-// verify can be cracked offline instead. Everything else on the connection
-// behaves normally, so a client has no way to tell that the refusal was
-// deliberate.
+// verify can be cracked offline instead. It composes with the above: a server
+// with no Authenticator refuses every logon and captures every response, while
+// one with an Authenticator serves the identities it knows and captures the rest.
 //
 // # Security posture
 //

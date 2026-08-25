@@ -11,6 +11,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
@@ -61,15 +62,56 @@ type Connection struct {
 	// so expects a GSS security blob rather than a challenge in the clear.
 	ExtendedSecurity bool
 
-	// Accept is the authentication exchange in progress, created when the first
-	// session-setup request arrives and holding the challenge that was issued.
-	// It is nil until then.
-	Accept *spnego.AcceptContext
+	// SigningActive reports that every request must carry a valid signature and
+	// every response must be signed. SigningKey is the MAC key, and
+	// ExpectedRequestSequenceNumber the number the next request must be signed
+	// at.
+	SigningActive                 bool
+	SigningKey                    []byte
+	ExpectedRequestSequenceNumber uint32
+
+	// sessions are the authenticated sessions on this connection, by UID, and
+	// uids allocates those identifiers.
+	sessions map[uint16]*Session
+	uids     *identifierAllocator
+
+	// currentRequestFrame is the raw frame being handled, kept because a
+	// signature covers the message as received: verifying one means hashing those
+	// exact bytes rather than a re-marshalling of the decoded fields. It is valid
+	// only for the duration of one handler call, which is safe because a single
+	// goroutine owns the connection.
+	currentRequestFrame []byte
+
+	// pendingAuth holds the authentication exchanges part-way through, keyed by
+	// the UID assigned when the challenge was issued.
+	//
+	// They are keyed rather than held in a single field because a connection may
+	// carry several sessions: once one client identity is established, the next
+	// session setup starts a new exchange, and a single field could not tell the
+	// first leg of the second exchange from the second leg of the first.
+	pendingAuth map[uint16]*spnego.AcceptContext
 }
 
 // newConnection binds an accepted transport to the server that accepted it.
 func newConnection(srv *Server, t transport.Transport, remote net.Addr) *Connection {
-	return &Connection{Server: srv, Transport: t, Remote: remote}
+	return &Connection{
+		Server:      srv,
+		Transport:   t,
+		Remote:      remote,
+		sessions:    make(map[uint16]*Session),
+		uids:        newIdentifierAllocator(srv.config.MaxSessionsPerConnection),
+		pendingAuth: make(map[uint16]*spnego.AcceptContext),
+	}
+}
+
+// PendingAuth returns the authentication exchange a UID names while it is still
+// in progress, or nil when the UID names no such exchange. A handler uses it to
+// tell the second leg of a session setup from the first.
+func (c *Connection) PendingAuth(uid uint16) *spnego.AcceptContext {
+	if uid == 0 {
+		return nil
+	}
+	return c.pendingAuth[uid]
 }
 
 // Close closes the connection's transport. It is safe to call more than once.
@@ -143,6 +185,18 @@ func (c *Connection) handleFrame(raw []byte) error {
 		return fmt.Errorf("frame has SMB_FLAGS_REPLY set, so it is a response rather than a request")
 	}
 
+	// A connection that is signing accepts nothing unsigned, and each request
+	// consumes the number the exchange has reached.
+	var responseSequenceNumber uint32
+	if c.SigningActive {
+		expected := c.ExpectedRequestSequenceNumber
+		if !signing.Verify(c.SigningKey, raw, expected) {
+			return fmt.Errorf("request failed signature verification at sequence %d", expected)
+		}
+		responseSequenceNumber = signing.ResponseSequenceNumber(expected)
+		c.ExpectedRequestSequenceNumber = signing.NextRequestSequenceNumber(expected)
+	}
+
 	request := message.NewMessage()
 	if err := request.Unmarshal(raw); err != nil {
 		// The header is intact, so the client gets a proper error response and
@@ -161,6 +215,15 @@ func (c *Connection) handleFrame(raw []byte) error {
 	}
 
 	w := &responseWriter{conn: c, request: request}
+	if c.SigningActive {
+		w.SignResponse(c.SigningKey, responseSequenceNumber)
+	}
+
+	// The raw frame is kept for the duration of this handler call: the exchange
+	// that arms signing has to verify its own request, which it can only do after
+	// deriving the key from that request's contents.
+	c.currentRequestFrame = raw
+	defer func() { c.currentRequestFrame = nil }()
 
 	// Registered handlers see the request first, so a caller can observe or
 	// intercept it before the built-in dispatch answers it.

@@ -69,11 +69,19 @@ func handleNegotiate(conn *Connection, w ResponseWriter, req *message.Message) n
 
 	response.DialectIndex = types.USHORT(index)
 
-	// User-level access control with challenge/response authentication. The
-	// signing bits are deliberately clear: this phase cannot sign a message, and
-	// advertising a capability the server cannot honour breaks every client that
-	// takes it at its word.
+	// User-level access control with challenge/response authentication, plus
+	// whatever the signing policy allows. Only what the server will actually
+	// honour is advertised: a client that is told signatures are available and
+	// then receives an unsigned response abandons the connection.
 	response.SecurityMode = securitymode.NEGOTIATE_USER_SECURITY | securitymode.NEGOTIATE_ENCRYPT_PASSWORDS
+	switch conn.Server.config.SigningPolicy {
+	case SigningEnabled:
+		response.SecurityMode |= securitymode.NEGOTIATE_SECURITY_SIGNATURES_ENABLED
+	case SigningRequired:
+		// [MS-CIFS] 2.2.4.52.2: the REQUIRED bit MUST NOT be set on its own.
+		response.SecurityMode |= securitymode.NEGOTIATE_SECURITY_SIGNATURES_ENABLED |
+			securitymode.NEGOTIATE_SECURITY_SIGNATURES_REQUIRED
+	}
 
 	response.MaxMpxCount = types.USHORT(conn.Server.config.MaxMpxCount)
 	// One virtual circuit per connection: multiplexed circuits are not served.

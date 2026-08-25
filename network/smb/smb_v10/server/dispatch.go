@@ -28,7 +28,17 @@ type commandHandler func(conn *Connection, w ResponseWriter, req *message.Messag
 var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_NEGOTIATE:          handleNegotiate,
 	codes.SMB_COM_SESSION_SETUP_ANDX: handleSessionSetupAndx,
+	codes.SMB_COM_LOGOFF_ANDX:        handleLogoffAndx,
 	codes.SMB_COM_ECHO:               handleEcho,
+}
+
+// sessionlessCommands are the commands a client may send before it holds a
+// session. Everything else requires one: NEGOTIATE and SESSION_SETUP_ANDX are how
+// a session comes into being, and ECHO is defined to work without one.
+var sessionlessCommands = map[codes.CommandCode]bool{
+	codes.SMB_COM_NEGOTIATE:          true,
+	codes.SMB_COM_SESSION_SETUP_ANDX: true,
+	codes.SMB_COM_ECHO:               true,
 }
 
 // echoedRequestFlags are the SMB_FLAGS bits a response mirrors from its request.
@@ -51,10 +61,11 @@ const echoedRequestFlags2 = flags2.Flags2(flags2.FLAGS2_UNICODE |
 // Parameters:
 //   - request: the request header being answered
 //   - status: the status to report
+//   - signed: whether the response will carry a signature
 //
 // Returns:
 //   - The response header
-func replyHeader(request *header.Header, status nt_status.NT_STATUS) *header.Header {
+func replyHeader(request *header.Header, status nt_status.NT_STATUS, signed bool) *header.Header {
 	h := header.NewHeader()
 
 	h.Command = request.Command
@@ -62,6 +73,11 @@ func replyHeader(request *header.Header, status nt_status.NT_STATUS) *header.Hea
 
 	h.Flags = flags.Flags(flags.FLAGS_REPLY) | (request.Flags & echoedRequestFlags)
 	h.Flags2 = request.Flags2 & echoedRequestFlags2
+	if signed {
+		// A signed message announces the fact, so the receiver knows to check
+		// the SecurityFeatures field rather than ignore it.
+		h.Flags2 |= flags2.FLAGS2_SECURITY_SIGNATURE
+	}
 
 	// The identifiers are the client's, echoed so it can match the response to
 	// the request it sent.
@@ -110,6 +126,18 @@ func isKnownCommand(command codes.CommandCode) bool {
 // dispatch runs the built-in handler for a decoded request, or answers with the
 // status that says why it could not.
 func (s *Server) dispatch(conn *Connection, w ResponseWriter, req *message.Message) {
+	// A command that acts within a session must name one that exists. Checking
+	// here rather than in each handler means a command added later cannot forget
+	// to.
+	if !sessionlessCommands[req.Header.Command] {
+		if conn.Session(uint16(req.Header.UID)) == nil {
+			logger.Debugf("SMB1 server: %s sent command 0x%02X on UID 0x%04X, which names no session",
+				conn.Remote, uint8(req.Header.Command), uint16(req.Header.UID))
+			s.writeError(conn, w, nt_status.NT_STATUS_SMB_BAD_UID)
+			return
+		}
+	}
+
 	handler, ok := dispatchTable[req.Header.Command]
 	if !ok {
 		logger.Debugf("SMB1 server: %s sent unimplemented command 0x%02X (%s)",
