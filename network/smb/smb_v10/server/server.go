@@ -78,6 +78,7 @@ type Config struct {
 	MaxSessionsPerConnection int
 	MaxTreesPerConnection    int
 	MaxOpensPerConnection    int
+	MaxSearchesPerConnection int
 
 	// Timeout bounds each read on a connection, so a client that opens a socket
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
@@ -112,6 +113,7 @@ const (
 	DefaultMaxSessionsPerConnection = 64
 	DefaultMaxTreesPerConnection    = 64
 	DefaultMaxOpensPerConnection    = 1024
+	DefaultMaxSearchesPerConnection = 128
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
@@ -241,10 +243,14 @@ func NewServer(config Config) (*Server, error) {
 	if config.MaxOpensPerConnection == 0 {
 		config.MaxOpensPerConnection = DefaultMaxOpensPerConnection
 	}
+	if config.MaxSearchesPerConnection == 0 {
+		config.MaxSearchesPerConnection = DefaultMaxSearchesPerConnection
+	}
 	for name, limit := range map[string]int{
 		"MaxSessionsPerConnection": config.MaxSessionsPerConnection,
 		"MaxTreesPerConnection":    config.MaxTreesPerConnection,
 		"MaxOpensPerConnection":    config.MaxOpensPerConnection,
+		"MaxSearchesPerConnection": config.MaxSearchesPerConnection,
 	} {
 		if limit < 0 {
 			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, limit)

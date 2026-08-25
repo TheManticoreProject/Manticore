@@ -31,13 +31,14 @@
 //   - Tree connect and disconnect against a registered share.
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//   - Directory enumeration and the information levels, over TRANSACTION2:
+//     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
+//     for a path and for an open handle, and the volume levels. Requests and
+//     responses both fragment across as many messages as they need.
 //
-// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: directory
-// enumeration (the TRANSACTION2 FIND subcommands), the query and set information
-// commands, byte-range locking, seek, the legacy SMB_COM_OPEN_ANDX, the
-// NT_TRANSACT subcommands, named pipes, and batched AndX chains beyond their
-// first command. A client can open and read a file by name but cannot yet list a
-// directory or ask about a file without opening it.
+// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: byte-range
+// locking, seek, the legacy SMB_COM_OPEN_ANDX, the NT_TRANSACT subcommands,
+// named pipes, and batched AndX chains beyond their first command.
 //
 // # Shares
 //

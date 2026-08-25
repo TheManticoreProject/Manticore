@@ -86,6 +86,26 @@ func FuzzServerFrame(f *testing.F) {
 		flags2.Flags2(flags2.FLAGS2_SECURITY_SIGNATURE),
 		[]byte{0x01, 0x01, 0x00, 0x00, 0x00}))
 
+	// A TRANSACTION2 whose declared totals exceed what it carries, which is what
+	// the reassembly arithmetic has to refuse rather than allocate for, and a
+	// secondary message with no transaction in progress.
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION2, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x0F}, make([]byte, 15*2+2)...)))
+	f.Add(rawFrame(codes.SMB_COM_TRANSACTION2_SECONDARY, flags.Flags(0),
+		flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+		append([]byte{0x09}, make([]byte, 9*2+2)...)))
+
+	// The file commands, each carrying a client-controlled length or offset.
+	for _, command := range []codes.CommandCode{
+		codes.SMB_COM_NT_CREATE_ANDX, codes.SMB_COM_READ_ANDX, codes.SMB_COM_WRITE_ANDX,
+		codes.SMB_COM_TREE_CONNECT_ANDX, codes.SMB_COM_DELETE, codes.SMB_COM_RENAME,
+	} {
+		f.Add(rawFrame(command, flags.Flags(0),
+			flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES),
+			append([]byte{0x0C}, make([]byte, 12*2+2)...)))
+	}
+
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		srv, err := NewServer(Config{})
 		if err != nil {
