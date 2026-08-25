@@ -10,6 +10,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/crypto/ntlmv1"
 	"github.com/TheManticoreProject/Manticore/crypto/ntlmv2"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -189,10 +190,11 @@ func (h *CaptureHandler) Run(srv *Server, conn *Connection, w ResponseWriter, re
 	if req.Header.Command != codes.SMB_COM_SESSION_SETUP_ANDX {
 		return false
 	}
-	// The first leg has no response to capture: it carries the client's
-	// NEGOTIATE, and the built-in handler answers it with the challenge that the
-	// response will be computed against.
-	if conn.Accept == nil {
+	// Only the second leg carries a response to capture. The first has no UID
+	// yet: it carries the client's NEGOTIATE, and the built-in handler answers it
+	// with the challenge that the response will be computed against.
+	accept := conn.PendingAuth(uint16(req.Header.UID))
+	if accept == nil {
 		return false
 	}
 
@@ -201,14 +203,14 @@ func (h *CaptureHandler) Run(srv *Server, conn *Connection, w ResponseWriter, re
 		return false
 	}
 
-	if err := conn.Accept.AcceptAuthenticateToken([]byte(request.SecurityBlob)); err != nil {
+	if err := accept.AcceptAuthenticateToken([]byte(request.SecurityBlob)); err != nil {
 		logger.Debugf("SMB1 server: could not read the NTLM AUTHENTICATE from %s: %v", conn.Remote, err)
 		// Let the built-in handler produce the protocol error, rather than
 		// answering with a logon failure for something that was not a logon.
 		return false
 	}
 
-	h.record(conn)
+	h.record(conn, accept)
 
 	if err := w.WriteError(h.config.Status); err != nil {
 		logger.Debugf("SMB1 server: failed to refuse the logon from %s: %v", conn.Remote, err)
@@ -216,15 +218,14 @@ func (h *CaptureHandler) Run(srv *Server, conn *Connection, w ResponseWriter, re
 	return true
 }
 
-// record builds a Credential from the connection's authentication exchange and
-// reports it.
-func (h *CaptureHandler) record(conn *Connection) {
-	authenticate := conn.Accept.Authenticate
+// record builds a Credential from an authentication exchange and reports it.
+func (h *CaptureHandler) record(conn *Connection, accept *spnego.AcceptContext) {
+	authenticate := accept.Authenticate
 	if authenticate == nil {
 		return
 	}
 
-	domain, username, workstation := conn.Accept.Identity()
+	domain, username, workstation := accept.Identity()
 
 	credential := Credential{
 		RemoteAddr:      conn.Remote,
@@ -232,7 +233,7 @@ func (h *CaptureHandler) record(conn *Connection) {
 		Domain:          domain,
 		Username:        username,
 		Workstation:     workstation,
-		ServerChallenge: conn.Accept.ServerChallenge,
+		ServerChallenge: accept.ServerChallenge,
 		// Copy the responses: they alias the buffer the request was decoded
 		// from, which the connection reuses for the next frame.
 		LmResponse: append([]byte(nil), authenticate.LmChallengeResponse...),

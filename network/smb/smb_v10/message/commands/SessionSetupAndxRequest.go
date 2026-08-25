@@ -501,15 +501,19 @@ func (c *SessionSetupAndxRequest) Unmarshal(rawData []byte) (int, error) {
 		c.NativeLanMan = string(nativeLanMandata)
 	} else {
 		// Unmarshalling data OEMPassword
-		if len(rawDataContent) < offset+1 {
-			return offset, fmt.Errorf("rawParametersContent too short for OEMPassword")
+		// OEMPasswordLen is client-controlled, so the bound has to cover the
+		// whole slice rather than just its first byte.
+		if len(rawDataContent) < offset+int(c.OEMPasswordLen) {
+			return offset, fmt.Errorf("rawDataContent too short for OEMPassword")
 		}
 		c.OEMPassword = rawDataContent[offset : offset+int(c.OEMPasswordLen)]
 		offset += int(c.OEMPasswordLen)
 
 		// Unmarshalling data UnicodePassword
-		if len(rawDataContent) < offset+1 {
-			return offset, fmt.Errorf("rawParametersContent too short for UnicodePassword")
+		// UnicodePasswordLen is client-controlled, so the bound has to cover the
+		// whole slice rather than just its first byte.
+		if len(rawDataContent) < offset+int(c.UnicodePasswordLen) {
+			return offset, fmt.Errorf("rawDataContent too short for UnicodePassword")
 		}
 		c.UnicodePassword = rawDataContent[offset : offset+int(c.UnicodePasswordLen)]
 		offset += int(c.UnicodePasswordLen)

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,36 @@ type Config struct {
 	// is not a secure identifier.
 	ServerGUID guid.GUID
 
+	// Authenticator resolves a claimed identity to the account's NT hash, and
+	// reports false for an identity it does not know. StaticAccounts builds one
+	// from a fixed list.
+	//
+	// Nil means no logon can succeed: every attempt is refused, which is what a
+	// server whose purpose is to harvest responses wants. Holding NT hashes
+	// rather than passwords is deliberate — the hash is all verification needs.
+	Authenticator func(domain, username string) (ntHash [16]byte, ok bool)
+
+	// AllowGuest admits a logon whose identity the Authenticator does not know,
+	// as a guest, reporting SMB_SETUP_GUEST so the client knows it was not
+	// authenticated as itself.
+	//
+	// A guest session derives no key, so it cannot sign. It is therefore refused
+	// outright when the signing policy requires signatures, rather than being
+	// granted a session that cannot carry a single subsequent request.
+	AllowGuest bool
+
+	// AllowAnonymous admits a null session: a logon claiming no identity and
+	// carrying no response. Like a guest session it has no key and cannot sign.
+	AllowAnonymous bool
+
+	// SigningPolicy selects whether message signing is unsupported, offered or
+	// demanded. The zero value is SigningDisabled.
+	SigningPolicy SigningPolicy
+
+	// MaxSessionsPerConnection bounds the sessions one connection may establish.
+	// Zero applies DefaultMaxSessionsPerConnection.
+	MaxSessionsPerConnection int
+
 	// Timeout bounds each read on a connection, so a client that opens a socket
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
 	Timeout time.Duration
@@ -70,7 +101,78 @@ const (
 	// server answers one request at a time, so this is what it will accept
 	// rather than a promise of concurrency.
 	DefaultMaxMpxCount uint16 = 50
+
+	// DefaultMaxSessionsPerConnection bounds how many sessions one connection may
+	// establish, so a client cannot exhaust the 16-bit identifier space.
+	DefaultMaxSessionsPerConnection = 64
 )
+
+// SigningPolicy selects a server's stance on SMB message signing.
+type SigningPolicy int
+
+const (
+	// SigningDisabled advertises no signing support and never signs. A client
+	// that requires signatures will refuse to talk to the server.
+	SigningDisabled SigningPolicy = iota
+
+	// SigningEnabled advertises signing and uses it when the client asks for it,
+	// leaving an unsigned session available to a client that does not.
+	SigningEnabled
+
+	// SigningRequired advertises signing as mandatory and refuses a session that
+	// cannot sign, which includes every guest and anonymous session.
+	SigningRequired
+)
+
+// String renders the policy for a log line.
+func (p SigningPolicy) String() string {
+	switch p {
+	case SigningDisabled:
+		return "disabled"
+	case SigningEnabled:
+		return "enabled"
+	case SigningRequired:
+		return "required"
+	}
+	return "unknown"
+}
+
+// Account is one credential the server will authenticate against.
+type Account struct {
+	// Domain and Username are matched against what a client claims. The domain
+	// is compared exactly, because NTLMv2 folds it into the response as sent, so
+	// a client claiming a different spelling produced a different response.
+	Domain   string
+	Username string
+
+	// NTHash is the account's NT hash, which is all that verification needs.
+	NTHash [16]byte
+}
+
+// StaticAccounts returns an Authenticator backed by a fixed list of accounts.
+//
+// The username is matched case-insensitively, as Windows does; the domain is
+// matched exactly, because it is folded into the client's response as sent and a
+// different spelling is a different credential.
+//
+// Parameters:
+//   - accounts: the credentials to accept
+//
+// Returns:
+//   - An Authenticator over those credentials
+func StaticAccounts(accounts ...Account) func(domain, username string) ([16]byte, bool) {
+	stored := make([]Account, len(accounts))
+	copy(stored, accounts)
+
+	return func(domain, username string) ([16]byte, bool) {
+		for _, account := range stored {
+			if account.Domain == domain && strings.EqualFold(account.Username, username) {
+				return account.NTHash, true
+			}
+		}
+		return [16]byte{}, false
+	}
+}
 
 // Server is an SMB 1.0 server. It is safe for concurrent use: handlers and
 // listeners may be registered before or during serving, and Close may be called
@@ -121,6 +223,17 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.MaxMpxCount == 0 {
 		config.MaxMpxCount = DefaultMaxMpxCount
+	}
+	if config.MaxSessionsPerConnection == 0 {
+		config.MaxSessionsPerConnection = DefaultMaxSessionsPerConnection
+	}
+	if config.MaxSessionsPerConnection < 0 {
+		return nil, fmt.Errorf("MaxSessionsPerConnection cannot be negative (got %d)", config.MaxSessionsPerConnection)
+	}
+	// A policy that demands signatures cannot be served by a configuration that
+	// can only produce sessions without a key.
+	if config.SigningPolicy == SigningRequired && config.Authenticator == nil {
+		return nil, fmt.Errorf("SigningRequired needs an Authenticator: a session that cannot be verified derives no key to sign with")
 	}
 	if config.ServerGUID == (guid.GUID{}) {
 		config.ServerGUID = *guid.NewGUID()

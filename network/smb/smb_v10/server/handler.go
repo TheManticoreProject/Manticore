@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
@@ -62,6 +63,14 @@ type ResponseWriter interface {
 	// request. A request arrives with the UID the client knows, which is zero
 	// until the server assigns one, so the leg that assigns it has to say so.
 	SetResponseUID(uid uint16)
+
+	// SignResponse signs responses to this request with the given key and
+	// sequence number.
+	//
+	// The dispatch loop arms this for a connection that is already signing. The
+	// exchange that establishes signing has to arm it itself, because the key
+	// does not exist until that exchange has been verified.
+	SignResponse(macKey []byte, sequenceNumber uint32)
 }
 
 // responseWriter is the ResponseWriter bound to one request on one connection.
@@ -72,6 +81,10 @@ type responseWriter struct {
 	// uid, when set, replaces the request's UID in responses.
 	uid    uint16
 	uidSet bool
+
+	// signKey and signSequence, when set, sign responses to this request.
+	signKey      []byte
+	signSequence uint32
 }
 
 // RemoteAddr returns the address of the client being answered.
@@ -95,6 +108,13 @@ func (w *responseWriter) SetResponseUID(uid uint16) {
 	w.uidSet = true
 }
 
+// SignResponse signs responses to this request with the given key and sequence
+// number.
+func (w *responseWriter) SignResponse(macKey []byte, sequenceNumber uint32) {
+	w.signKey = macKey
+	w.signSequence = sequenceNumber
+}
+
 // WriteError sends a payload-less error response carrying status.
 func (w *responseWriter) WriteError(status nt_status.NT_STATUS) error {
 	return w.write(newErrorResponse(w.request.Header.Command), status)
@@ -107,7 +127,7 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 	}
 
 	reply := message.NewMessage()
-	reply.Header = replyHeader(w.request.Header, status)
+	reply.Header = replyHeader(w.request.Header, status, len(w.signKey) > 0)
 	if w.uidSet {
 		reply.Header.UID = types.USHORT(w.uid)
 	}
@@ -125,6 +145,12 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 	marshalled, err := reply.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal the response: %v", err)
+	}
+
+	// Signing happens after marshalling and over the whole message, because the
+	// signature occupies a field inside the header it covers.
+	if len(w.signKey) > 0 {
+		signing.Sign(w.signKey, marshalled, w.signSequence)
 	}
 
 	if _, err := w.conn.Transport.Send(marshalled); err != nil {

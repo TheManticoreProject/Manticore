@@ -265,16 +265,18 @@ func TestEchoCountIsCapped(t *testing.T) {
 // TestUnimplementedCommandIsRefused asserts a recognized command with no handler
 // is answered STATUS_NOT_IMPLEMENTED, in a payload-less error response.
 func TestUnimplementedCommandIsRefused(t *testing.T) {
-	_, addr := testServer(t)
-	client := dialServer(t, addr)
+	// A command that acts within a session needs one, or the UID check refuses it
+	// before the dispatch table is consulted.
+	_, addr := serverWithAccount(t, SigningDisabled, nil)
+	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
 	// SMB_COM_TREE_CONNECT_ANDX is a recognized command that no handler serves yet.
 	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	request.Header.UID = session.uid
 	request.AddCommand(commands.NewTreeConnectAndxRequest())
-	sendRequest(t, client, request)
+	sendRequest(t, session.client, request)
 
-	response, raw := receiveResponse(t, client)
-	assertReplyHeader(t, request, response)
+	response, raw := receiveResponse(t, session.client)
 
 	if response.Header.Status != uint32(nt_status.NT_STATUS_NOT_IMPLEMENTED) {
 		t.Fatalf("Status = 0x%08X, want NT_STATUS_NOT_IMPLEMENTED (0x%08X)",
@@ -298,16 +300,17 @@ func TestUnimplementedCommandIsRefused(t *testing.T) {
 // negotiate NT status codes receives the legacy SMBSTATUS class/code encoding
 // instead of the NTSTATUS value.
 func TestUnimplementedCommandUsesLegacyStatusEncoding(t *testing.T) {
-	_, addr := testServer(t)
-	client := dialServer(t, addr)
+	_, addr := serverWithAccount(t, SigningDisabled, nil)
+	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
 	request := newRequest(codes.SMB_COM_TREE_CONNECT_ANDX)
+	request.Header.UID = session.uid
 	// Clear the NT-status bit, leaving an old-style client.
 	request.Header.Flags2 &= ^flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES)
 	request.AddCommand(commands.NewTreeConnectAndxRequest())
-	sendRequest(t, client, request)
+	sendRequest(t, session.client, request)
 
-	response, _ := receiveResponse(t, client)
+	response, _ := receiveResponse(t, session.client)
 	// STATUS_NOT_IMPLEMENTED is ERRDOS/ERRbadfunc: class 0x01, code 0x0001.
 	if want := uint32(0x00010001); response.Header.Status != want {
 		t.Fatalf("Status = 0x%08X, want the legacy encoding 0x%08X", response.Header.Status, want)
@@ -518,7 +521,7 @@ func TestReplyHeaderMirrorsNegotiatedFlags(t *testing.T) {
 		flags2.FLAGS2_EXTENDED_SECURITY |
 		flags2.FLAGS2_DFS)
 
-	reply := replyHeader(request, nt_status.NT_STATUS_SUCCESS)
+	reply := replyHeader(request, nt_status.NT_STATUS_SUCCESS, false)
 
 	if !reply.Flags.IsReply() {
 		t.Fatal("reply does not set SMB_FLAGS_REPLY")

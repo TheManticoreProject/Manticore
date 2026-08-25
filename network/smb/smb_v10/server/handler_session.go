@@ -1,6 +1,9 @@
 package server
 
 import (
+	"errors"
+	"time"
+
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/targetinfo"
@@ -8,28 +11,27 @@ import (
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
-// provisionalUID is the user identifier returned alongside the challenge, before
-// anything has been authenticated. The client echoes it on the second leg so the
-// server can match the two halves of one exchange.
-//
-// It is a fixed value because this phase serves one authentication attempt per
-// connection: a session table, and with it real identifier allocation, arrives
-// with the phase that establishes authenticated sessions.
-const provisionalUID = 0x0800
+// authenticateRequestSequenceNumber is the sequence number the AUTHENTICATE
+// request is signed at, and so the number signing is bootstrapped from. Its
+// response takes the number above, and the first request after it the one above
+// that.
+const authenticateRequestSequenceNumber = 0
 
 // handleSessionSetupAndx answers SMB_COM_SESSION_SETUP_ANDX.
 //
-// Extended security makes this a two-leg exchange. The first request carries the
-// client's NTLM NEGOTIATE, and is answered with a CHALLENGE and
-// STATUS_MORE_PROCESSING_REQUIRED. The second carries the AUTHENTICATE, which is
-// recorded and then refused, because verifying it needs a credential store that
-// arrives with a later phase.
+// Extended security makes this a two-leg exchange, and the legs are told apart by
+// the UID: a client opens one with UID 0 and echoes the identifier the server
+// assigned on the second leg. That is what allows a connection to carry several
+// sessions — once one identity is established, the next setup starts a fresh
+// exchange rather than being mistaken for the tail of the previous one.
 //
-// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/b7b0e2e5-4b62-4b0f-b2ba-6dfe0c4e6d5f
+// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/8c9d1b1e-3b0e-4c1d-9dcb-e5e0f6b5e5a5
 func handleSessionSetupAndx(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
 	request, ok := req.Command.(*commands.SessionSetupAndxRequest)
 	if !ok {
@@ -43,45 +45,62 @@ func handleSessionSetupAndx(conn *Connection, w ResponseWriter, req *message.Mes
 	}
 
 	// Only the extended-security path is served. A client that did not negotiate
-	// it is expecting to send a password or a bare NTLM response against the
-	// challenge from the negotiate response, which this server does not issue.
+	// it expects to send a password or a bare NTLM response against a challenge
+	// from the negotiate response, which this server does not issue.
 	if !conn.ExtendedSecurity || len(request.SecurityBlob) == 0 {
 		logger.Debugf("SMB1 server: %s attempted a session setup without extended security", conn.Remote)
 		return nt_status.NT_STATUS_NOT_IMPLEMENTED
 	}
 
-	// Record what the client says it can handle. It bounds what the server may
-	// send back, so it is worth keeping even before the session exists.
+	// Record what the client says it can handle: it bounds what may be sent back.
 	conn.ClientMaxBufferSize = uint32(request.MaxBufferSize)
 	conn.ClientCapabilities = request.Capabilities
 
-	if conn.Accept == nil {
+	uid := uint16(req.Header.UID)
+	switch {
+	case uid == 0:
 		return conn.beginAuthentication(w, request)
+	case conn.PendingAuth(uid) != nil:
+		return conn.finishAuthentication(w, req, request, uid)
+	default:
+		// A UID naming neither a pending exchange nor zero is either an
+		// established session being reused for a setup, or a value the client
+		// invented.
+		logger.Debugf("SMB1 server: %s continued a session setup on unknown UID 0x%04X", conn.Remote, uid)
+		return nt_status.NT_STATUS_SMB_BAD_UID
 	}
-	return conn.finishAuthentication(w, request)
 }
 
-// beginAuthentication answers the first leg: it consumes the client's NEGOTIATE
-// and returns the CHALLENGE.
+// beginAuthentication answers the first leg: it consumes the client's NEGOTIATE,
+// assigns a UID and returns the CHALLENGE.
 func (c *Connection) beginAuthentication(w ResponseWriter, request *commands.SessionSetupAndxRequest) nt_status.NT_STATUS {
+	uid, err := c.uids.Allocate()
+	if err != nil {
+		logger.Warnf("SMB1 server: refusing a session setup from %s: %v", c.Remote, err)
+		return nt_status.NT_STATUS_TOO_MANY_SESSIONS
+	}
+
 	targetInfo, err := c.Server.targetInfo()
 	if err != nil {
 		logger.Errorf("SMB1 server: failed to build the TargetInfo for %s: %v", c.Remote, err)
+		c.uids.Release(uid)
 		return nt_status.NT_STATUS_UNSUCCESSFUL
 	}
 
 	// The NetBIOS domain names the target, since that is what a client resolves
 	// an account against.
 	accept := spnego.NewAcceptContext(c.Server.config.DomainName, challenge.TargetTypeDomain, targetInfo)
+	accept.CredentialLookup = c.Server.config.Authenticator
 
 	challengeBlob, err := accept.AcceptNegotiateToken([]byte(request.SecurityBlob))
 	if err != nil {
 		logger.Debugf("SMB1 server: could not answer the NTLM NEGOTIATE from %s: %v", c.Remote, err)
+		c.uids.Release(uid)
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
-	c.Accept = accept
+	c.pendingAuth[uid] = accept
 
-	logger.Debugf("SMB1 server: issued an NTLM challenge %x to %s", accept.ServerChallenge, c.Remote)
+	logger.Debugf("SMB1 server: issued an NTLM challenge %x to %s on UID 0x%04X", accept.ServerChallenge, c.Remote, uid)
 
 	response := c.newSessionSetupResponse()
 	response.SecurityBlob = []types.UCHAR(challengeBlob)
@@ -89,37 +108,185 @@ func (c *Connection) beginAuthentication(w ResponseWriter, request *commands.Ses
 
 	// The challenge leg reports that the exchange is unfinished, and carries the
 	// identifier the client echoes on the second leg.
-	w.SetResponseUID(provisionalUID)
+	w.SetResponseUID(uid)
 	if err := w.WriteResponseWithStatus(response, nt_status.NT_STATUS_MORE_PROCESSING_REQUIRED); err != nil {
 		logger.Debugf("SMB1 server: failed to send the NTLM challenge to %s: %v", c.Remote, err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }
 
-// finishAuthentication answers the second leg: it records the AUTHENTICATE and
-// then decides.
-//
-// The decision is currently always a refusal, because verifying a response needs
-// a credential store this phase does not have. Recording first means the material
-// is not lost by the refusal, which is what a capture handler relies on.
-func (c *Connection) finishAuthentication(w ResponseWriter, request *commands.SessionSetupAndxRequest) nt_status.NT_STATUS {
-	if err := c.Accept.AcceptAuthenticateToken([]byte(request.SecurityBlob)); err != nil {
+// finishAuthentication answers the second leg: it records the AUTHENTICATE,
+// decides whether to honour it, and on success establishes the session and arms
+// signing.
+func (c *Connection) finishAuthentication(
+	w ResponseWriter,
+	req *message.Message,
+	request *commands.SessionSetupAndxRequest,
+	uid uint16,
+) nt_status.NT_STATUS {
+	accept := c.pendingAuth[uid]
+
+	// The exchange is over either way. A client that fails starts a new one
+	// rather than retrying against the same challenge, which would let it grind
+	// candidate passwords against a single nonce.
+	defer delete(c.pendingAuth, uid)
+
+	if err := accept.AcceptAuthenticateToken([]byte(request.SecurityBlob)); err != nil {
 		logger.Debugf("SMB1 server: could not read the NTLM AUTHENTICATE from %s: %v", c.Remote, err)
+		c.uids.Release(uid)
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 
-	domain, username, workstation := c.Accept.Identity()
-	logger.Debugf("SMB1 server: %s authenticated as %s\\%s from %q", c.Remote, domain, username, workstation)
-
-	// Verify reports why it could not confirm the authentication. With no
-	// credential store the answer is always ErrCaptureOnly, and the honest reply
-	// is a logon failure: it is what a client retries against, and it does not
-	// pretend the server could have served the session.
-	if err := c.Accept.Verify(); err != nil {
-		logger.Debugf("SMB1 server: refusing %s\\%s from %s: %v", domain, username, c.Remote, err)
+	domain, username, workstation := accept.Identity()
+	session := &Session{
+		UID:         uid,
+		Domain:      domain,
+		Username:    username,
+		Workstation: workstation,
+		Created:     time.Now().UTC(),
 	}
 
-	return nt_status.NT_STATUS_LOGON_FAILURE
+	verifyErr := accept.Verify()
+	switch {
+	case verifyErr == nil:
+		session.SessionKey = accept.GetSessionKey()
+
+	case errors.Is(verifyErr, spnego.ErrUnknownIdentity), errors.Is(verifyErr, spnego.ErrCaptureOnly):
+		// Either there is no credential store at all, or it does not know this
+		// identity. Both are admissible only as a guest, and only where a caller
+		// has asked for that.
+		anonymous := isAnonymousAttempt(accept)
+		if !c.Server.config.AllowGuest || (anonymous && !c.Server.config.AllowAnonymous) {
+			logger.Debugf("SMB1 server: refusing %s from %s: %v", session.Account(), c.Remote, verifyErr)
+			c.uids.Release(uid)
+			return nt_status.NT_STATUS_LOGON_FAILURE
+		}
+		session.IsGuest = true
+		session.IsAnonymous = anonymous
+
+	default:
+		// A response that did not verify, or a MIC that did not, is refused
+		// regardless of policy: guest access is for an identity the server does
+		// not know, not for one whose credential was answered wrongly.
+		logger.Debugf("SMB1 server: refusing %s from %s: %v", session.Account(), c.Remote, verifyErr)
+		c.uids.Release(uid)
+		return nt_status.NT_STATUS_LOGON_FAILURE
+	}
+
+	// Decide about signing before committing the session, because a session that
+	// cannot meet the policy must not be established at all.
+	armSigning, status := c.signingDecision(req, session)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		c.uids.Release(uid)
+		return status
+	}
+
+	if armSigning {
+		// Signing is bootstrapped by this very exchange: the client signed this
+		// request with the key it derived, so the server can only check it now
+		// that it has derived the same key from the response.
+		if !signing.Verify(session.SessionKey, c.currentRequestFrame, authenticateRequestSequenceNumber) {
+			logger.Warnf("SMB1 server: %s from %s failed signature verification on the AUTHENTICATE",
+				session.Account(), c.Remote)
+			c.uids.Release(uid)
+			return nt_status.NT_STATUS_ACCESS_DENIED
+		}
+
+		c.SigningActive = true
+		c.SigningKey = session.SessionKey
+		c.ExpectedRequestSequenceNumber = signing.NextRequestSequenceNumber(authenticateRequestSequenceNumber)
+		w.SignResponse(session.SessionKey, signing.ResponseSequenceNumber(authenticateRequestSequenceNumber))
+
+		logger.Debugf("SMB1 server: signing armed for %s on UID 0x%04X", c.Remote, uid)
+	}
+
+	response := c.newSessionSetupResponse()
+	if session.IsGuest {
+		response.Action = types.USHORT(SMB_SETUP_GUEST)
+	}
+	// The final leg carries no further token: the exchange is complete.
+	response.SecurityBlob = []types.UCHAR{}
+	response.SecurityBlobLength = types.USHORT(0)
+
+	c.addSession(session)
+	logger.Infof("SMB1 server: %s authenticated as %s%s", c.Remote, session.Account(), admissionSuffix(session))
+
+	w.SetResponseUID(uid)
+	if err := w.WriteResponse(response); err != nil {
+		logger.Debugf("SMB1 server: failed to complete the session setup for %s: %v", c.Remote, err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
+// signingDecision reports whether signing should be armed for a session, and the
+// status to refuse it with when the policy cannot be met.
+//
+// A guest or anonymous session derives no key, so it cannot sign. Under a policy
+// that requires signatures such a session is refused rather than established: it
+// could not carry a single subsequent request, and granting it would look like
+// success while breaking everything after.
+func (c *Connection) signingDecision(req *message.Message, session *Session) (bool, nt_status.NT_STATUS) {
+	switch c.Server.config.SigningPolicy {
+	case SigningRequired:
+		if !session.CanSign() {
+			logger.Debugf("SMB1 server: refusing %s from %s: signing is required and the session has no key",
+				session.Account(), c.Remote)
+			return false, nt_status.NT_STATUS_LOGON_FAILURE
+		}
+		return true, nt_status.NT_STATUS_SUCCESS
+
+	case SigningEnabled:
+		// Offered, so it is the client's choice, which it signals with
+		// SMB_FLAGS2_SECURITY_SIGNATURE on the request.
+		wanted := req.Header.Flags2&flags2.FLAGS2_SECURITY_SIGNATURE != 0
+		return wanted && session.CanSign(), nt_status.NT_STATUS_SUCCESS
+	}
+
+	return false, nt_status.NT_STATUS_SUCCESS
+}
+
+// isAnonymousAttempt reports whether an authentication claimed no identity and
+// carried no response, which is what a null session looks like.
+func isAnonymousAttempt(accept *spnego.AcceptContext) bool {
+	if accept.Authenticate == nil {
+		return false
+	}
+	_, username, _ := accept.Identity()
+	return username == "" && len(accept.Authenticate.NtChallengeResponse) == 0
+}
+
+// admissionSuffix renders how a session was admitted, for the log line that
+// records it. A logon granted as a guest is worth saying so about.
+func admissionSuffix(session *Session) string {
+	switch {
+	case session.IsAnonymous:
+		return " (anonymous)"
+	case session.IsGuest:
+		return " (guest)"
+	}
+	return ""
+}
+
+// handleLogoffAndx answers SMB_COM_LOGOFF_ANDX: it drops the session the request
+// arrived on and releases its identifier for reuse.
+//
+// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/2b9d1e6a-1f4e-4a4f-9b60-5a5c5f5d2c9f
+func handleLogoffAndx(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
+	uid := uint16(req.Header.UID)
+
+	session := conn.removeSession(uid)
+	if session == nil {
+		return nt_status.NT_STATUS_SMB_BAD_UID
+	}
+
+	logger.Debugf("SMB1 server: %s logged off %s on UID 0x%04X", conn.Remote, session.Account(), uid)
+
+	// Signing stays armed: it is a property of the connection rather than of one
+	// session, and another session on the same connection still expects it.
+	if err := w.WriteResponse(commands.NewLogoffAndxResponse()); err != nil {
+		logger.Debugf("SMB1 server: failed to answer LOGOFF_ANDX for %s: %v", conn.Remote, err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
 }
 
 // newSessionSetupResponse builds the parts of a session-setup response that do
@@ -159,9 +326,9 @@ func encodeNativeString(value string, useUnicode bool) []types.UCHAR {
 // targetInfo composes the AV_PAIR list advertised in the CHALLENGE.
 //
 // No MsvAvTimestamp is included. Supplying one obliges the client to carry a MIC
-// over the whole exchange, and while the acceptor can verify a MIC, requiring one
-// gains nothing for a server that is not yet completing sessions and costs
-// interoperability with clients that handle it poorly.
+// over the whole exchange; the acceptor can verify one, but requiring it costs
+// interoperability with clients that handle it poorly and gains nothing that
+// signing does not already give.
 func (s *Server) targetInfo() ([]byte, error) {
 	return targetinfo.BuildServerTargetInfo(
 		s.config.ServerName,
