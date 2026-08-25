@@ -353,8 +353,13 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 		length = 0
 	}
 
+	file, status := fileFor(open)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return status
+	}
+
 	buffer := make([]byte, length)
-	read, err := open.File.ReadAt(buffer, offset)
+	read, err := file.ReadAt(buffer, offset)
 	if err != nil && !errors.Is(err, io.EOF) {
 		logger.Debugf("SMB1 server: reading %q for %s failed: %v", open.Path, conn.Remote, err)
 		return statusForFSError(err)
@@ -405,7 +410,12 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 		data = data[:declared]
 	}
 
-	written, err := open.File.WriteAt(data, offset)
+	file, status := fileFor(open)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return status
+	}
+
+	written, err := file.WriteAt(data, offset)
 	if err != nil {
 		logger.Debugf("SMB1 server: writing %q for %s failed: %v", open.Path, conn.Remote, err)
 		return statusForFSError(err)
@@ -413,7 +423,7 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 
 	// WritethroughMode asks for the write to be committed before the response.
 	if uint16(request.WriteMode)&writeThroughMode != 0 {
-		if err := open.File.Sync(); err != nil {
+		if err := file.Sync(); err != nil {
 			logger.Debugf("SMB1 server: syncing %q for %s failed: %v", open.Path, conn.Remote, err)
 			return statusForFSError(err)
 		}
@@ -468,4 +478,27 @@ func handleFlush(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 		logger.Debugf("SMB1 server: failed to answer the flush for %s: %v", conn.Remote, err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
+}
+
+// fileFor returns the backend handle a data command acts through, or the status
+// that says why there is none.
+//
+// A handle does not always have a file behind it. A pipe handle has a handler
+// instead, and a directory handle may have nothing at all — a backend is entitled
+// to decline to open a directory, since a directory handle is only ever used to
+// query. Reaching either through a read or a write is not a caller's mistake to be
+// answered with a crash: the client picks the FID, so both are reachable by anyone
+// who can open a pipe or a directory, and both have to produce a status.
+func fileFor(open *Open) (File, nt_status.NT_STATUS) {
+	switch {
+	case open.IsPipe:
+		// The pipe handler serves a transacted exchange rather than a stream. A
+		// client that reads or writes a pipe handle directly is told so, rather
+		// than given an empty read it would take for an answer.
+		return nil, nt_status.NT_STATUS_NOT_SUPPORTED
+	case open.File == nil:
+		// What a read or a write on a directory is answered with.
+		return nil, nt_status.NT_STATUS_INVALID_DEVICE_REQUEST
+	}
+	return open.File, nt_status.NT_STATUS_SUCCESS
 }

@@ -32,9 +32,15 @@ func EncodeUTF16LE(s string) []byte {
 //
 // Returns:
 //   - A string representing the UTF-16 little endian decoded byte slice.
+//
+// A trailing odd byte is an incomplete code unit and is dropped rather than
+// decoded. Input of an odd length is not a caller's mistake to be punished with a
+// panic: this decoder is fed by fields taken off the network, where a length is
+// whatever the sender said it was, and a truncated final character is the ordinary
+// consequence of a field that was cut short.
 func DecodeUTF16LE(b []byte) string {
 	utf16le := make([]uint16, len(b)/2)
-	for i := 0; i < len(b); i += 2 {
+	for i := 0; i+1 < len(b); i += 2 {
 		utf16le[i/2] = uint16(b[i]) | (uint16(b[i+1]) << 8)
 	}
 	return string(utf16.Decode(utf16le))

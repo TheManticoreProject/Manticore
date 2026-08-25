@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
@@ -93,7 +94,10 @@ func handleFindFirst2(conn *Connection, req *message.Message, reassembly *transa
 	searchCount := int(binary.LittleEndian.Uint16(parameters[2:4]))
 	flags := binary.LittleEndian.Uint16(parameters[4:6])
 	informationLevel := binary.LittleEndian.Uint16(parameters[6:8])
-	requested := trimTerminator(string(parameters[12:]))
+	// The pattern is OEM or UTF-16 according to the request's own flag, like every
+	// other name a client sends. Reading it as OEM regardless turns a Unicode
+	// "\\*" into a backslash, a null and a star, which the path resolver refuses.
+	requested := decodeWireString([]types.UCHAR(parameters[12:]), req.Header.Flags2.IsUnicode())
 
 	if !supportedFindLevel(informationLevel) {
 		logger.Debugf("SMB1 server: %s asked for find information level 0x%04X, which is not served",
@@ -105,6 +109,18 @@ func handleFindFirst2(conn *Connection, req *message.Message, reassembly *transa
 	if err != nil {
 		logger.Debugf("SMB1 server: %s asked to enumerate %q, which is refused: %v", conn.Remote, requested, err)
 		return nil, nil, nt_status.NT_STATUS_OBJECT_PATH_SYNTAX_BAD
+	}
+
+	// A search whose pattern holds no wildcard resolves to a single path, and that
+	// path may name a file rather than a directory: naming one file exactly is how
+	// a client asks about it without opening it, and a client does that before
+	// deleting or renaming something. So a non-directory is turned back into a
+	// literal pattern matched in its parent, rather than being listed as a
+	// directory it is not.
+	if pattern == "" && directory != "" {
+		if attr, statErr := tree.Share.FS.Stat(directory); statErr == nil && !attr.IsDir {
+			directory, pattern = splitFinalElement(directory)
+		}
 	}
 
 	entries, err := tree.Share.FS.ReadDir(directory, pattern)
@@ -133,7 +149,7 @@ func handleFindFirst2(conn *Connection, req *message.Message, reassembly *transa
 		Created:          time.Now().UTC(),
 	}
 
-	data, returned := encodeFindEntries(search, searchCount, reassembly.maxDataCount)
+	data, returned := encodeFindEntries(search, searchCount, reassembly.maxDataCount, req.Header.Flags2.IsUnicode())
 	endOfSearch := search.exhausted()
 
 	// The search is kept only while there is more to hand out, and only if the
@@ -194,7 +210,7 @@ func handleFindNext2(conn *Connection, req *message.Message, reassembly *transac
 		return nil, nil, nt_status.NT_STATUS_INVALID_INFO_CLASS
 	}
 
-	data, returned := encodeFindEntries(search, searchCount, reassembly.maxDataCount)
+	data, returned := encodeFindEntries(search, searchCount, reassembly.maxDataCount, req.Header.Flags2.IsUnicode())
 	endOfSearch := search.exhausted()
 
 	if flags&findClose != 0 || (endOfSearch && flags&findCloseIfEndOfSearch != 0) {

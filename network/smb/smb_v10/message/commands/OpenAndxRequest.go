@@ -129,7 +129,7 @@ func (c *OpenAndxRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data FileName
-	bytesStream, err := c.FileName.Marshal()
+	bytesStream, err := c.FileName.MarshalWithEncoding(c.IsUnicode())
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (c *OpenAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data FileName
-	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
 	if err != nil {
 		return offset, err
 	}

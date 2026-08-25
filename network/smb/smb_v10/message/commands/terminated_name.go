@@ -47,3 +47,40 @@ func readTerminatedName(data []byte, unicode bool) (name []byte, size int) {
 	}
 	return data, len(data)
 }
+
+// treeConnectAndxDataOffset is where an SMB_COM_TREE_CONNECT_ANDX request's data
+// block begins, measured from the start of the SMB header: SMB_HEADER_SIZE(32) +
+// WordCount(1) + four parameter words(8) + ByteCount(2). The alignment of a
+// Unicode field inside the block is relative to the header, so the block's own
+// offset is part of the arithmetic.
+const treeConnectAndxDataOffset = 43
+
+// readTerminatedField measures a null-terminated field at the start of a buffer,
+// returning the number of bytes it occupies including its terminator, and whether
+// a terminator was found at all.
+//
+// It is readTerminatedName measured rather than sliced, for the fields a decoder
+// keeps with their terminator. Reporting whether the field was terminated is what
+// lets a caller tell an unterminated field running to the end of the block — after
+// which there is nothing — from a terminated one with more fields behind it.
+func readTerminatedField(data []byte, unicode bool) (size int, terminated bool) {
+	value, size := readTerminatedName(data, unicode)
+	return size, size > len(value)
+}
+
+// ntCreateAndxDataOffset is where an SMB_COM_NT_CREATE_ANDX request's data block
+// begins, measured from the start of the SMB header: SMB_HEADER_SIZE(32) +
+// WordCount(1) + twenty-four parameter words(48) + ByteCount(2).
+const ntCreateAndxDataOffset = 83
+
+// Where the data block of the two-name commands begins, measured from the start of
+// the SMB header: SMB_HEADER_SIZE(32) + WordCount(1) + the parameter words +
+// ByteCount(2). A Unicode string inside the block is aligned relative to the
+// header, so the block's own offset is part of that arithmetic.
+const (
+	// SMB_COM_RENAME carries one parameter word, SearchAttributes.
+	renameDataOffset = 37
+	// SMB_COM_NT_RENAME carries four: SearchAttributes, InformationLevel and the
+	// two halves of ClusterCount.
+	ntRenameDataOffset = 43
+)

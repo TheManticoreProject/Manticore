@@ -453,3 +453,37 @@ func expectMessageType(message []byte, want types.MessageType) error {
 
 	return nil
 }
+
+// CompletionToken builds the token that closes a SPNEGO exchange: a NegTokenResp
+// reporting accept-completed, wrapped in a SecurityBlob.
+//
+// This is not optional padding on a successful logon. RFC 4178 section 4.2.2 has
+// the acceptor report the outcome of the negotiation in negState, and a mechanism
+// that has finished is reported as accept-completed(0); an initiator whose state
+// machine is still waiting for that token treats an empty final blob as a
+// protocol violation and abandons the session, even though the server considered
+// the logon successful. So the final leg carries this rather than nothing.
+//
+// No responseToken accompanies it: NTLM's last message is the client's
+// AUTHENTICATE, so there is nothing left for the server to send. The mechanism is
+// named again so an initiator that tracks which mechanism was settled on can
+// confirm it.
+//
+// Returns:
+//   - The marshalled SecurityBlob
+//   - An error if it cannot be built
+func (ctx *AcceptContext) CompletionToken() ([]byte, error) {
+	negTokenResp := NewNegTokenResp(NegStateAcceptCompleted, NtlmOID, nil)
+	marshalledNegTokenResp, err := negTokenResp.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal the completing NegTokenResp: %v", err)
+	}
+
+	securityBlob := SecurityBlob{Data: marshalledNegTokenResp}
+	marshalledSecurityBlob, err := securityBlob.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal the completing SecurityBlob: %v", err)
+	}
+
+	return marshalledSecurityBlob, nil
+}

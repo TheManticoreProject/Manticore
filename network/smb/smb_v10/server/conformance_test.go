@@ -135,6 +135,8 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
 	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
 
+	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
+
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
 	codes.SMB_COM_FIND_CLOSE2:            "releases a search handle",

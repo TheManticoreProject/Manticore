@@ -97,7 +97,7 @@ func (c *NtRenameRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data OldFileName
 	c.OldFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-	bytesStream, err := c.OldFileName.Marshal()
+	bytesStream, err := c.OldFileName.MarshalWithEncoding(c.IsUnicode())
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,8 @@ func (c *NtRenameRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data NewFileName
 	c.NewFileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-	bytesStream, err = c.NewFileName.Marshal()
+	bytesStream, err = c.NewFileName.MarshalWithEncodingAt(c.IsUnicode(),
+		ntRenameDataOffset+len(rawDataContent)+1)
 	if err != nil {
 		return nil, err
 	}
@@ -218,14 +219,18 @@ func (c *NtRenameRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data OldFileName
-	bytesRead, err = c.OldFileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.OldFileName.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
 	if err != nil {
 		return offset, err
 	}
 	offset += bytesRead
 
 	// Unmarshalling data NewFileName
-	bytesRead, err = c.NewFileName.Unmarshal(rawDataContent[offset:])
+	// The second name is where the alignment byte turns up: the first name's
+	// length decides where this one starts, so it lands on an odd offset from
+	// the header half the time and a pad byte precedes its characters.
+	bytesRead, err = c.NewFileName.UnmarshalWithEncodingAt(
+		rawDataContent[offset:], c.IsUnicode(), ntRenameDataOffset+offset+1)
 	if err != nil {
 		return offset, err
 	}

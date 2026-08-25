@@ -86,7 +86,7 @@ func (c *CreateNewRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data FileName
 	c.FileName.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_NULL_TERMINATED_ASCII_STRING)
-	bytesStream, err := c.FileName.Marshal()
+	bytesStream, err := c.FileName.MarshalWithEncoding(c.IsUnicode())
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (c *CreateNewRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data FileName
-	bytesRead, err = c.FileName.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.FileName.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
 	if err != nil {
 		return offset, err
 	}

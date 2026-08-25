@@ -94,7 +94,7 @@ func (c *TreeConnectRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data Path
-	byteStream, err := c.Path.Marshal()
+	byteStream, err := c.Path.MarshalWithEncoding(c.IsUnicode())
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (c *TreeConnectRequest) Unmarshal(rawData []byte) (int, error) {
 	offset = 0
 
 	// Unmarshalling data Path
-	bytesRead, err = c.Path.Unmarshal(rawDataContent[offset:])
+	bytesRead, err = c.Path.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
 	if err != nil {
 		return 0, err
 	}

@@ -225,3 +225,15 @@ func resolvePathPattern(raw string) (directory, pattern string, err error) {
 	}
 	return directory, final, nil
 }
+
+// splitFinalElement separates a resolved path into its parent and its final
+// element. A path with no separator has the share root as its parent.
+//
+// The path is already resolved, so there is nothing left to validate: this only
+// divides what resolvePath has already accepted.
+func splitFinalElement(path string) (parent, final string) {
+	if index := strings.LastIndexByte(path, '/'); index >= 0 {
+		return path[:index], path[index+1:]
+	}
+	return "", path
+}
