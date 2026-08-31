@@ -64,10 +64,11 @@ type transactionReassembly struct {
 	parameters []byte
 	data       []byte
 
-	// parametersSeen and dataSeen count the bytes placed so far, so completion is
-	// known without scanning for gaps.
-	parametersSeen int
-	dataSeen       int
+	// parametersSeen and dataSeen record which parts of each block have arrived,
+	// so completion means every byte was written rather than merely that enough
+	// bytes were sent.
+	parametersSeen coverage
+	dataSeen       coverage
 
 	// maxParameterCount and maxDataCount are what the client said it can receive
 	// back, which bounds the response.
@@ -87,7 +88,69 @@ type transactionReassembly struct {
 
 // complete reports whether every declared byte has arrived.
 func (r *transactionReassembly) complete() bool {
-	return r.parametersSeen >= len(r.parameters) && r.dataSeen >= len(r.data)
+	return r.parametersSeen.covers(len(r.parameters)) && r.dataSeen.covers(len(r.data))
+}
+
+// coverage records which parts of a block have been written, as a sorted list of
+// disjoint half-open ranges.
+//
+// Counting bytes instead is not enough. A client may send its fragments at any
+// displacement it likes, so the same run can arrive twice: a counter reaches the
+// declared total while part of the block was never written, and the transaction
+// then runs against a buffer whose gaps are still zero. Recording what arrived
+// rather than how much makes a hole impossible to miss.
+//
+// A transaction carries few fragments, so the list stays short and a linear merge
+// is the right shape for it.
+type coverage struct {
+	ranges []span
+}
+
+// span is a half-open range of a block, [start, end).
+type span struct {
+	start int
+	end   int
+}
+
+// add records that [start, start+length) has been written, merging the range into
+// any it meets or overlaps.
+func (c *coverage) add(start, length int) {
+	if length <= 0 {
+		return
+	}
+	added := span{start: start, end: start + length}
+
+	merged := make([]span, 0, len(c.ranges)+1)
+	for _, existing := range c.ranges {
+		switch {
+		case existing.end < added.start:
+			// Entirely before the new range, and cannot touch what follows.
+			merged = append(merged, existing)
+		case existing.start > added.end:
+			// Entirely after it. Everything from here on is too, so the new
+			// range is settled and the rest is copied below.
+			merged = append(merged, added)
+			added = existing
+		default:
+			// They meet or overlap, so they become one.
+			if existing.start < added.start {
+				added.start = existing.start
+			}
+			if existing.end > added.end {
+				added.end = existing.end
+			}
+		}
+	}
+	c.ranges = append(merged, added)
+}
+
+// covers reports whether every byte of a block of the given total length has been
+// written. A block of no bytes is covered by definition.
+func (c *coverage) covers(total int) bool {
+	if total == 0 {
+		return true
+	}
+	return len(c.ranges) == 1 && c.ranges[0].start <= 0 && c.ranges[0].end >= total
 }
 
 // place copies a fragment into the blocks at its declared displacement.
@@ -106,8 +169,8 @@ func (r *transactionReassembly) place(
 	if err := placeFragment(r.data, data, dataDisplacement, "data"); err != nil {
 		return err
 	}
-	r.parametersSeen += len(parameters)
-	r.dataSeen += len(data)
+	r.parametersSeen.add(parameterDisplacement, len(parameters))
+	r.dataSeen.add(dataDisplacement, len(data))
 	return nil
 }
 
