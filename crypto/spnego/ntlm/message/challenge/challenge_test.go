@@ -128,6 +128,57 @@ func TestChallengeMessageMarshalUnmarshal(t *testing.T) {
 	}
 }
 
+// TestChallengeMessagePayloadOffsetOverflow asserts that a TargetName or
+// TargetInfo BufferOffset near the top of the 32-bit range is refused rather than
+// wrapping past the bounds check and panicking in the slice expression.
+//
+// BufferOffset is a 32-bit wire field and Len a 16-bit one, so computing the end
+// of the payload as BufferOffset+Len in uint32 overflows: 0xFFFFFFFF plus a small
+// length compares as inside the buffer.
+func TestChallengeMessagePayloadOffsetOverflow(t *testing.T) {
+	// The fixed part of a CHALLENGE: signature and type (12), TargetNameFields
+	// (8), NegotiateFlags (4), ServerChallenge (8), Reserved (8),
+	// TargetInfoFields (8), Version (8).
+	build := func(targetNameOffset, targetInfoOffset uint32) []byte {
+		message := make([]byte, 60)
+		copy(message, []byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0})
+		binary.LittleEndian.PutUint32(message[8:12], 2)
+
+		binary.LittleEndian.PutUint16(message[12:14], 8) // TargetName Len
+		binary.LittleEndian.PutUint16(message[14:16], 8) // TargetName MaxLen
+		binary.LittleEndian.PutUint32(message[16:20], targetNameOffset)
+
+		binary.LittleEndian.PutUint16(message[40:42], 8) // TargetInfo Len
+		binary.LittleEndian.PutUint16(message[42:44], 8) // TargetInfo MaxLen
+		binary.LittleEndian.PutUint32(message[44:48], targetInfoOffset)
+
+		return message
+	}
+
+	tests := []struct {
+		name    string
+		message []byte
+	}{
+		{name: "TargetName offset overflows", message: build(0xFFFFFFFF, 52)},
+		{name: "TargetInfo offset overflows", message: build(52, 0xFFFFFFFF)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Fatalf("Unmarshal() panicked instead of returning an error: %v", recovered)
+				}
+			}()
+
+			parsed := &challenge.ChallengeMessage{}
+			if _, err := parsed.Unmarshal(test.message); err == nil {
+				t.Error("Unmarshal() accepted a payload offset outside the message")
+			}
+		})
+	}
+}
+
 // TestChallengeMessageRejectsAnotherMessageType asserts a NEGOTIATE is not parsed
 // as a CHALLENGE. The three messages have different layouts and no discriminator
 // beyond the header's MessageType, so parsing one as another fills the fields

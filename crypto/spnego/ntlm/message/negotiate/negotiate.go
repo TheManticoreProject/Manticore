@@ -249,20 +249,30 @@ func (msg *NegotiateMessage) Unmarshal(data []byte) (int, error) {
 
 	// Read payload section
 
+	// The payload bounds are computed in 64-bit. BufferOffset is a 32-bit field
+	// taken straight off the wire, so adding Len to it in 32-bit arithmetic wraps:
+	// an offset of 0xFFFFFFFF produces a sum that compares as inside the buffer,
+	// and the slice expression below then panics. uint64 cannot overflow for a
+	// uint32 offset plus a uint16 length, whatever the width of int on the host.
+
 	// Domain name
 	if msg.DomainNameFields.Len != 0 {
-		if msg.DomainNameFields.BufferOffset+uint32(msg.DomainNameFields.Len) > uint32(len(data)) {
+		domainStart := uint64(msg.DomainNameFields.BufferOffset)
+		domainEnd := domainStart + uint64(msg.DomainNameFields.Len)
+		if domainEnd > uint64(len(data)) {
 			return 0, fmt.Errorf("data too short to read DomainName in payload section in NegotiateMessage")
 		}
-		msg.DomainName = data[msg.DomainNameFields.BufferOffset : msg.DomainNameFields.BufferOffset+uint32(msg.DomainNameFields.Len)]
+		msg.DomainName = data[domainStart:domainEnd]
 	}
 
 	// Workstation
 	if msg.WorkstationFields.Len != 0 {
-		if msg.WorkstationFields.BufferOffset+uint32(msg.WorkstationFields.Len) > uint32(len(data)) {
+		workstationStart := uint64(msg.WorkstationFields.BufferOffset)
+		workstationEnd := workstationStart + uint64(msg.WorkstationFields.Len)
+		if workstationEnd > uint64(len(data)) {
 			return 0, fmt.Errorf("data too short to read Workstation in payload section in NegotiateMessage")
 		}
-		msg.Workstation = data[msg.WorkstationFields.BufferOffset : msg.WorkstationFields.BufferOffset+uint32(msg.WorkstationFields.Len)]
+		msg.Workstation = data[workstationStart:workstationEnd]
 	}
 
 	return totalBytesRead, nil

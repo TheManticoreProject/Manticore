@@ -1,11 +1,17 @@
 package server
 
 import (
+	"bytes"
+	"encoding/binary"
 	"strings"
 	"testing"
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // namesOf renders a listing's names, so a test asserts on names rather than on
@@ -572,4 +578,411 @@ func pad4(value int) string {
 		value /= 10
 	}
 	return string(digits)
+}
+
+// TestFindNextRefusesAForeignTree asserts a search can only be continued through
+// the tree it was opened on.
+//
+// FIND_NEXT2 compared the request's TID against the value the search had recorded,
+// which skipped anyTreeFor and with it the check that the session owning the TID
+// is the one making the request. It also compared identifiers rather than trees,
+// and a TID is released for reuse when its tree disconnects while the search is
+// not, so a stale search's TID could come to name a live tree on another share.
+func TestFindNextRefusesAForeignTree(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("entry.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	share := &Share{Name: "other", Type: ShareTypeDisk, FS: fs}
+	if err := srv.AddShare(share); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	newConnection := func() *Connection {
+		return &Connection{
+			Server:   srv,
+			sessions: map[uint16]*Session{},
+			trees:    map[uint16]*Tree{},
+			tids:     newIdentifierAllocator(16),
+			opens:    map[uint16]*Open{},
+			fids:     newIdentifierAllocator(16),
+			searches: map[uint16]*Search{},
+			sids:     newIdentifierAllocator(16),
+		}
+	}
+
+	// A search opened on one tree, by the session that owns it.
+	conn := newConnection()
+	conn.addSession(&Session{UID: 1})
+	conn.addSession(&Session{UID: 2})
+
+	tid, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	tree := &Tree{TID: tid, Share: share, SessionUID: 1}
+	conn.addTree(tree)
+
+	sid, err := conn.sids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	conn.searches[sid] = &Search{
+		SID:     sid,
+		Tree:    tree,
+		Entries: []DirEntry{{Attr: FileAttr{Name: "entry.txt"}}},
+	}
+
+	continueSearch := func(uid, tid uint16) nt_status.NT_STATUS {
+		t.Helper()
+		parameters := make([]byte, 12)
+		binary.LittleEndian.PutUint16(parameters[0:2], sid)
+		binary.LittleEndian.PutUint16(parameters[2:4], 10)
+		binary.LittleEndian.PutUint16(parameters[4:6], 0) // InformationLevel
+		request := newRequest(codes.SMB_COM_TRANSACTION2)
+		request.Header.UID = types.USHORT(uid)
+		request.Header.TID = types.USHORT(tid)
+		_, _, status := handleFindNext2(conn, request, &transactionReassembly{parameters: parameters})
+		return status
+	}
+
+	// The session that does not own the tree cannot continue the search, even
+	// though it names the right TID.
+	if status := continueSearch(2, tid); status == nt_status.NT_STATUS_SUCCESS {
+		t.Error("a session that does not own the tree continued its search")
+	}
+
+	// Disconnecting the tree frees the TID, and the next tree takes it. The stale
+	// search must not follow the identifier onto the new tree.
+	conn.removeTree(tid)
+	reused, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	if reused != tid {
+		t.Skipf("the allocator did not reuse TID 0x%04X, so the reuse case is not exercised", tid)
+	}
+	conn.addTree(&Tree{TID: reused, Share: share, SessionUID: 2})
+
+	if _, stillOpen := conn.searches[sid]; stillOpen {
+		if status := continueSearch(2, reused); status == nt_status.NT_STATUS_SUCCESS {
+			t.Error("a search continued through a TID that had been reallocated to another tree")
+		}
+	}
+}
+
+// TestFindEntryChainTerminates asserts that the last entry of a batch carries a
+// NextEntryOffset of zero at every level served, so a client walking the chain
+// stops inside the buffer.
+//
+// SMB_FIND_FILE_NAMES_INFO was excluded from the termination pass even though its
+// entry begins with NextEntryOffset like every other level, so its final entry
+// pointed at the end of the buffer and the walk ran off it. The repository's own
+// client reads the entry count rather than walking the chain, which is why the
+// round-trip tests did not show this.
+func TestFindEntryChainTerminates(t *testing.T) {
+	levels := map[string]uint16{
+		"SMB_FIND_FILE_NAMES_INFO":          smbFindFileNamesInfo,
+		"SMB_FIND_FILE_DIRECTORY_INFO":      smbFindFileDirectoryInfo,
+		"SMB_FIND_FILE_FULL_DIRECTORY_INFO": smbFindFileFullDirectoryInfo,
+		"SMB_FIND_FILE_BOTH_DIRECTORY_INFO": smbFindFileBothDirectoryInfo,
+	}
+
+	for name, level := range levels {
+		t.Run(name, func(t *testing.T) {
+			search := &Search{
+				InformationLevel: level,
+				Entries: []DirEntry{
+					{Attr: FileAttr{Name: "alpha.txt"}},
+					{Attr: FileAttr{Name: "beta.txt"}},
+					{Attr: FileAttr{Name: "gamma.txt"}},
+				},
+			}
+
+			encoded, returned := encodeFindEntries(search, 0, 0, true)
+			if returned != 3 {
+				t.Fatalf("encodeFindEntries() returned %d entries, want 3", returned)
+			}
+
+			// Walk the chain the way a client does: each entry says where the
+			// next one starts, and a zero offset ends the listing.
+			position, walked := 0, 0
+			for {
+				if position+4 > len(encoded) {
+					t.Fatalf("the chain left the %d-byte buffer at offset %d", len(encoded), position)
+				}
+				walked++
+				next := int(binary.LittleEndian.Uint32(encoded[position : position+4]))
+				if next == 0 {
+					break
+				}
+				if walked > returned {
+					t.Fatalf("the chain did not terminate after %d entries", returned)
+				}
+				position += next
+			}
+
+			if walked != returned {
+				t.Errorf("the chain holds %d entries, want %d", walked, returned)
+			}
+		})
+	}
+}
+
+// TestSearchIsKeptUntilTheClientClosesIt asserts a search that has handed out
+// every entry stays open when the client asked for neither close flag, so the
+// FIND_CLOSE2 that client is expected to send resolves.
+//
+// Releasing it at end-of-search made FIND_CLOSE2 fail with STATUS_INVALID_HANDLE
+// and returned the identifier to the allocator while the client still believed it
+// held one. The SMB1 client in this repository sends Flags of zero and then calls
+// FIND_CLOSE2, which is exactly the case that was broken.
+func TestSearchIsKeptUntilTheClientClosesIt(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	conn, tid := searchFixture(t, srv, fs)
+
+	// A listing small enough to finish in one response, with no close flag set.
+	sid, status := openSearch(t, conn, tid, 0)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+	}
+	if conn.Search(sid) == nil {
+		t.Fatal("the search was released although the client asked for neither close flag")
+	}
+
+	// FIND_CLOSE2 is what releases it, and it succeeds.
+	if !conn.closeSearch(sid) {
+		t.Fatal("closeSearch() reported the handle was not open")
+	}
+	if conn.Search(sid) != nil {
+		t.Fatal("the search is still open after being closed")
+	}
+}
+
+// TestSearchIsReleasedWhenTheClientAsks asserts the two close flags still do what
+// they say, so keeping the search above did not cost the releases that were right.
+func TestSearchIsReleasedWhenTheClientAsks(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	for name, flags := range map[string]uint16{
+		"findClose":              findClose,
+		"findCloseIfEndOfSearch": findCloseIfEndOfSearch,
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn, tid := searchFixture(t, srv, fs)
+			sid, status := openSearch(t, conn, tid, flags)
+			if status != nt_status.NT_STATUS_SUCCESS {
+				t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+			}
+			if conn.Search(sid) != nil {
+				t.Errorf("the search is still open although the client set %s", name)
+			}
+		})
+	}
+}
+
+// TestTreeDisconnectReleasesItsSearches asserts an enumeration is released with
+// the tree it was opened on, rather than holding its snapshot and its identifier
+// for the life of the connection.
+func TestTreeDisconnectReleasesItsSearches(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	conn, tid := searchFixture(t, srv, fs)
+	sid, status := openSearch(t, conn, tid, 0)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+	}
+	if conn.Search(sid) == nil {
+		t.Fatal("the search was not opened")
+	}
+
+	conn.removeTree(tid)
+
+	if conn.Search(sid) != nil {
+		t.Error("the search outlived the tree it was opened on")
+	}
+	// The identifier is back, so a long-lived connection that connects and
+	// disconnects trees does not exhaust the search space.
+	if reused, err := conn.sids.Allocate(); err != nil {
+		t.Errorf("the search identifier was not released: %v", err)
+	} else if reused != sid {
+		t.Errorf("Allocate() returned 0x%04X, want the released 0x%04X", reused, sid)
+	}
+}
+
+// searchFixture builds a connection with one session and one tree on the share
+// backed by fs, ready for a search to be opened on it.
+func searchFixture(t *testing.T, srv *Server, fs FileSystem) (*Connection, uint16) {
+	t.Helper()
+
+	conn := &Connection{
+		Server:   srv,
+		sessions: map[uint16]*Session{},
+		trees:    map[uint16]*Tree{},
+		tids:     newIdentifierAllocator(16),
+		opens:    map[uint16]*Open{},
+		fids:     newIdentifierAllocator(16),
+		searches: map[uint16]*Search{},
+		sids:     newIdentifierAllocator(16),
+	}
+	conn.addSession(&Session{UID: 1})
+
+	tid, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	conn.addTree(&Tree{
+		TID:        tid,
+		Share:      &Share{Name: "files", Type: ShareTypeDisk, FS: fs},
+		SessionUID: 1,
+	})
+	return conn, tid
+}
+
+// openSearch issues a TRANS2_FIND_FIRST2 for everything in the share root and
+// returns the identifier the response reports.
+func openSearch(t *testing.T, conn *Connection, tid, flags uint16) (uint16, nt_status.NT_STATUS) {
+	t.Helper()
+
+	// SearchAttributes(2) SearchCount(2) Flags(2) InformationLevel(2)
+	// SearchStorageType(4) FileName(variable).
+	pattern := encodeWireString("\\*", true)
+	parameters := make([]byte, 12, 12+len(pattern))
+	binary.LittleEndian.PutUint16(parameters[2:4], 100)
+	binary.LittleEndian.PutUint16(parameters[4:6], flags)
+	binary.LittleEndian.PutUint16(parameters[6:8], smbFindFileBothDirectoryInfo)
+	parameters = append(parameters, pattern...)
+
+	request := newRequest(codes.SMB_COM_TRANSACTION2)
+	request.Header.UID = types.USHORT(1)
+	request.Header.TID = types.USHORT(tid)
+	request.Header.Flags2 |= flags2.FLAGS2_UNICODE
+
+	responseParameters, _, status := handleFindFirst2(conn, request,
+		&transactionReassembly{parameters: parameters, maxDataCount: 0xFFFF})
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return 0, status
+	}
+	return binary.LittleEndian.Uint16(responseParameters[0:2]), status
+}
+
+// TestTransactionCoverageTracksRanges covers the range bookkeeping directly,
+// including the arrival orders a byte counter cannot tell apart.
+func TestTransactionCoverageTracksRanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		total    int
+		fragment []span
+		covered  bool
+	}{
+		{name: "empty block", total: 0, covered: true},
+		{name: "one whole run", total: 40, fragment: []span{{0, 40}}, covered: true},
+		{name: "two runs in order", total: 40, fragment: []span{{0, 20}, {20, 40}}, covered: true},
+		{name: "two runs reversed", total: 40, fragment: []span{{20, 40}, {0, 20}}, covered: true},
+		{name: "three runs shuffled", total: 60, fragment: []span{{40, 60}, {0, 20}, {20, 40}}, covered: true},
+		{name: "overlapping runs", total: 40, fragment: []span{{0, 25}, {15, 40}}, covered: true},
+		{name: "run repeated", total: 40, fragment: []span{{0, 10}, {0, 10}, {0, 10}, {0, 10}}, covered: false},
+		{name: "hole in the middle", total: 40, fragment: []span{{0, 10}, {30, 40}}, covered: false},
+		{name: "short of the end", total: 40, fragment: []span{{0, 39}}, covered: false},
+		{name: "starts late", total: 40, fragment: []span{{1, 40}}, covered: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var tracked coverage
+			for _, run := range test.fragment {
+				tracked.add(run.start, run.end-run.start)
+			}
+			if covered := tracked.covers(test.total); covered != test.covered {
+				t.Errorf("covers(%d) = %t, want %t (ranges %v)", test.total, covered, test.covered, tracked.ranges)
+			}
+		})
+	}
+}
+
+// TestTransactionIsNotCompletedByRepeatedFragments asserts a transaction is
+// completed by every byte arriving, not by enough bytes arriving.
+//
+// Reassembly counted the bytes placed, so a client could re-send one fragment
+// until the counter reached the declared total. The transaction then ran against
+// a buffer most of which had never been written, with the gaps left as zeroes.
+func TestTransactionIsNotCompletedByRepeatedFragments(t *testing.T) {
+	reassembly := &transactionReassembly{
+		family:     "TRANSACTION2",
+		parameters: make([]byte, 0),
+		data:       make([]byte, 40),
+	}
+
+	fragment := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	for i := 0; i < 4; i++ {
+		if err := reassembly.place(nil, 0, fragment, 0); err != nil {
+			t.Fatalf("place() on copy %d error = %v", i, err)
+		}
+		if reassembly.complete() {
+			t.Fatalf("the transaction reported complete after %d copies of one fragment", i+1)
+		}
+	}
+
+	// The rest of the block still has to arrive, and then it is complete.
+	if err := reassembly.place(nil, 0, make([]byte, 30), 10); err != nil {
+		t.Fatalf("place() of the remainder error = %v", err)
+	}
+	if !reassembly.complete() {
+		t.Error("the transaction is not complete although every byte has arrived")
+	}
+}
+
+// TestTransactionCompletesOutOfOrder asserts fragments that arrive at
+// displacements out of order still complete the transaction, since the
+// displacement is what says where they belong.
+func TestTransactionCompletesOutOfOrder(t *testing.T) {
+	reassembly := &transactionReassembly{
+		family:     "TRANSACTION2",
+		parameters: make([]byte, 8),
+		data:       make([]byte, 30),
+	}
+
+	if err := reassembly.place([]byte{5, 6, 7, 8}, 4, []byte{3, 3, 3, 3, 3, 3, 3, 3, 3, 3}, 20); err != nil {
+		t.Fatalf("place() of the tail error = %v", err)
+	}
+	if reassembly.complete() {
+		t.Fatal("the transaction is complete although the head has not arrived")
+	}
+	if err := reassembly.place([]byte{1, 2, 3, 4}, 0, []byte{2, 2, 2, 2, 2, 2, 2, 2, 2, 2}, 10); err != nil {
+		t.Fatalf("place() of the middle error = %v", err)
+	}
+	if reassembly.complete() {
+		t.Fatal("the transaction is complete although the first data run has not arrived")
+	}
+	if err := reassembly.place(nil, 0, []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 0); err != nil {
+		t.Fatalf("place() of the head error = %v", err)
+	}
+	if !reassembly.complete() {
+		t.Fatal("the transaction is not complete although every byte has arrived")
+	}
+
+	if !bytes.Equal(reassembly.parameters, []byte{1, 2, 3, 4, 5, 6, 7, 8}) {
+		t.Errorf("parameters = %v", reassembly.parameters)
+	}
+	for index, value := range reassembly.data {
+		want := byte(index/10 + 1)
+		if value != want {
+			t.Fatalf("data[%d] = %d, want %d", index, value, want)
+		}
+	}
 }
