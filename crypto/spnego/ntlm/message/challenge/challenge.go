@@ -199,17 +199,27 @@ func (msg *ChallengeMessage) Unmarshal(data []byte) (int, error) {
 
 	// Read payload section
 
+	// The payload bounds are computed in 64-bit. BufferOffset is a 32-bit field
+	// taken straight off the wire, so adding Len to it in 32-bit arithmetic wraps:
+	// an offset of 0xFFFFFFFF produces a sum that compares as inside the buffer,
+	// and the slice expression below then panics. uint64 cannot overflow for a
+	// uint32 offset plus a uint16 length, whatever the width of int on the host.
+
 	// Target name
-	if msg.TargetNameFields.BufferOffset+uint32(msg.TargetNameFields.Len) > uint32(len(data)) {
+	targetNameStart := uint64(msg.TargetNameFields.BufferOffset)
+	targetNameEnd := targetNameStart + uint64(msg.TargetNameFields.Len)
+	if targetNameEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read TargetName in payload section in ChallengeMessage")
 	}
-	msg.TargetName = data[msg.TargetNameFields.BufferOffset : msg.TargetNameFields.BufferOffset+uint32(msg.TargetNameFields.Len)]
+	msg.TargetName = data[targetNameStart:targetNameEnd]
 
 	// Target info
-	if msg.TargetInfoFields.BufferOffset+uint32(msg.TargetInfoFields.Len) > uint32(len(data)) {
+	targetInfoStart := uint64(msg.TargetInfoFields.BufferOffset)
+	targetInfoEnd := targetInfoStart + uint64(msg.TargetInfoFields.Len)
+	if targetInfoEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read TargetInfo in payload section in ChallengeMessage")
 	}
-	msg.TargetInfo = data[msg.TargetInfoFields.BufferOffset : msg.TargetInfoFields.BufferOffset+uint32(msg.TargetInfoFields.Len)]
+	msg.TargetInfo = data[targetInfoStart:targetInfoEnd]
 
 	return totalBytesRead, nil
 }

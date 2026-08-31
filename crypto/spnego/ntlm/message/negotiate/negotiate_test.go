@@ -2,6 +2,7 @@ package negotiate_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
 
@@ -118,5 +119,56 @@ func TestUnmarshallRealData(t *testing.T) {
 	_, err = msg.Unmarshal(bytesBlob)
 	if err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
+	}
+}
+
+// TestNegotiateMessagePayloadOffsetOverflow asserts that a DomainName or
+// Workstation BufferOffset near the top of the 32-bit range is refused rather
+// than wrapping past the bounds check and panicking in the slice expression.
+//
+// BufferOffset is a 32-bit wire field and Len a 16-bit one, so computing the end
+// of the payload as BufferOffset+Len in uint32 overflows: 0xFFFFFFFF plus a small
+// length compares as inside the buffer.
+func TestNegotiateMessagePayloadOffsetOverflow(t *testing.T) {
+	// The fixed part of a NEGOTIATE: signature and type (12), NegotiateFlags (4),
+	// DomainNameFields (8), WorkstationFields (8), Version (8).
+	build := func(domainOffset, workstationOffset uint32) []byte {
+		message := make([]byte, 40)
+		copy(message, []byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0})
+		binary.LittleEndian.PutUint32(message[8:12], 1)
+		binary.LittleEndian.PutUint32(message[12:16], 0)
+
+		binary.LittleEndian.PutUint16(message[16:18], 8) // DomainName Len
+		binary.LittleEndian.PutUint16(message[18:20], 8) // DomainName MaxLen
+		binary.LittleEndian.PutUint32(message[20:24], domainOffset)
+
+		binary.LittleEndian.PutUint16(message[24:26], 8) // Workstation Len
+		binary.LittleEndian.PutUint16(message[26:28], 8) // Workstation MaxLen
+		binary.LittleEndian.PutUint32(message[28:32], workstationOffset)
+
+		return message
+	}
+
+	tests := []struct {
+		name    string
+		message []byte
+	}{
+		{name: "DomainName offset overflows", message: build(0xFFFFFFFF, 32)},
+		{name: "Workstation offset overflows", message: build(32, 0xFFFFFFFF)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Fatalf("Unmarshal() panicked instead of returning an error: %v", recovered)
+				}
+			}()
+
+			parsed := &negotiate.NegotiateMessage{}
+			if _, err := parsed.Unmarshal(test.message); err == nil {
+				t.Error("Unmarshal() accepted a payload offset outside the message")
+			}
+		})
 	}
 }
