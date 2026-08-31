@@ -2,6 +2,7 @@ package challenge_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
 
@@ -124,5 +125,21 @@ func TestChallengeMessageMarshalUnmarshal(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestChallengeMessageRejectsAnotherMessageType asserts a NEGOTIATE is not parsed
+// as a CHALLENGE. The three messages have different layouts and no discriminator
+// beyond the header's MessageType, so parsing one as another fills the fields
+// from the wrong offsets instead of failing.
+func TestChallengeMessageRejectsAnotherMessageType(t *testing.T) {
+	// A well-formed NEGOTIATE, long enough to clear the CHALLENGE length gate.
+	message := make([]byte, 64)
+	copy(message, header.NTLM_SIGNATURE[:])
+	binary.LittleEndian.PutUint32(message[8:12], 1) // MESSAGE_TYPE_NEGOTIATE
+
+	parsed := &challenge.ChallengeMessage{}
+	if _, err := parsed.Unmarshal(message); err == nil {
+		t.Error("Unmarshal() parsed a NEGOTIATE as a CHALLENGE")
 	}
 }
