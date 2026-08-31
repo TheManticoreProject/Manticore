@@ -1,11 +1,15 @@
 package server
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // namesOf renders a listing's names, so a test asserts on names rather than on
@@ -572,4 +576,97 @@ func pad4(value int) string {
 		value /= 10
 	}
 	return string(digits)
+}
+
+// TestFindNextRefusesAForeignTree asserts a search can only be continued through
+// the tree it was opened on.
+//
+// FIND_NEXT2 compared the request's TID against the value the search had recorded,
+// which skipped anyTreeFor and with it the check that the session owning the TID
+// is the one making the request. It also compared identifiers rather than trees,
+// and a TID is released for reuse when its tree disconnects while the search is
+// not, so a stale search's TID could come to name a live tree on another share.
+func TestFindNextRefusesAForeignTree(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("entry.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	share := &Share{Name: "other", Type: ShareTypeDisk, FS: fs}
+	if err := srv.AddShare(share); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	newConnection := func() *Connection {
+		return &Connection{
+			Server:   srv,
+			sessions: map[uint16]*Session{},
+			trees:    map[uint16]*Tree{},
+			tids:     newIdentifierAllocator(16),
+			opens:    map[uint16]*Open{},
+			fids:     newIdentifierAllocator(16),
+			searches: map[uint16]*Search{},
+			sids:     newIdentifierAllocator(16),
+		}
+	}
+
+	// A search opened on one tree, by the session that owns it.
+	conn := newConnection()
+	conn.addSession(&Session{UID: 1})
+	conn.addSession(&Session{UID: 2})
+
+	tid, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	tree := &Tree{TID: tid, Share: share, SessionUID: 1}
+	conn.addTree(tree)
+
+	sid, err := conn.sids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	conn.searches[sid] = &Search{
+		SID:     sid,
+		Tree:    tree,
+		Entries: []DirEntry{{Attr: FileAttr{Name: "entry.txt"}}},
+	}
+
+	continueSearch := func(uid, tid uint16) nt_status.NT_STATUS {
+		t.Helper()
+		parameters := make([]byte, 12)
+		binary.LittleEndian.PutUint16(parameters[0:2], sid)
+		binary.LittleEndian.PutUint16(parameters[2:4], 10)
+		binary.LittleEndian.PutUint16(parameters[4:6], 0) // InformationLevel
+		request := newRequest(codes.SMB_COM_TRANSACTION2)
+		request.Header.UID = types.USHORT(uid)
+		request.Header.TID = types.USHORT(tid)
+		_, _, status := handleFindNext2(conn, request, &transactionReassembly{parameters: parameters})
+		return status
+	}
+
+	// The session that does not own the tree cannot continue the search, even
+	// though it names the right TID.
+	if status := continueSearch(2, tid); status == nt_status.NT_STATUS_SUCCESS {
+		t.Error("a session that does not own the tree continued its search")
+	}
+
+	// Disconnecting the tree frees the TID, and the next tree takes it. The stale
+	// search must not follow the identifier onto the new tree.
+	conn.removeTree(tid)
+	reused, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	if reused != tid {
+		t.Skipf("the allocator did not reuse TID 0x%04X, so the reuse case is not exercised", tid)
+	}
+	conn.addTree(&Tree{TID: reused, Share: share, SessionUID: 2})
+
+	if _, stillOpen := conn.searches[sid]; stillOpen {
+		if status := continueSearch(2, reused); status == nt_status.NT_STATUS_SUCCESS {
+			t.Error("a search continued through a TID that had been reallocated to another tree")
+		}
+	}
 }
