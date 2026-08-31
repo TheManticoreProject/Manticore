@@ -196,6 +196,9 @@ func (msg *NegotiateMessage) Unmarshal(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if err := msg.Header.Expect(types.MESSAGE_TYPE_NEGOTIATE); err != nil {
+		return 0, err
+	}
 	totalBytesRead += bytesRead
 
 	// Read negotiate flags
