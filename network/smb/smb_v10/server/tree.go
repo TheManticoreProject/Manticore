@@ -76,12 +76,12 @@ func (c *Connection) addTree(tree *Tree) {
 	c.trees[tree.TID] = tree
 }
 
-// removeTree drops a tree, closes every handle opened on it, and releases its
-// identifier.
+// removeTree drops a tree, closes every handle and enumeration opened on it, and
+// releases its identifier.
 //
-// Closing the handles matters: a client that disconnects a tree without closing
-// its files expects them released, and a handle left behind would hold the
-// backend's resources with nothing able to reach it.
+// Closing them matters: a client that disconnects a tree without closing its
+// files expects them released, and anything left behind would hold the backend's
+// resources with nothing able to reach it.
 func (c *Connection) removeTree(tid uint16) *Tree {
 	tree, ok := c.trees[tid]
 	if !ok {
@@ -91,6 +91,17 @@ func (c *Connection) removeTree(tid uint16) *Tree {
 	for fid, open := range c.opens {
 		if open.Tree == tree {
 			c.closeOpen(fid)
+		}
+	}
+
+	// The enumerations opened on the tree go with it, for the same reason its
+	// handles do: a search names a directory on this tree, so once the tree is
+	// gone there is nothing for it to continue against. Leaving them behind held
+	// their snapshots for the life of the connection and kept identifiers
+	// allocated that no client could still use.
+	for sid, search := range c.searches {
+		if search.Tree == tree {
+			c.closeSearch(sid)
 		}
 	}
 
