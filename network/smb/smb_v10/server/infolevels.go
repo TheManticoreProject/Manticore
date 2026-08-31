@@ -107,8 +107,14 @@ func encodeFindEntries(search *Search, count, budget int, unicode bool) ([]byte,
 	// The last entry's NextEntryOffset is zero, which is how a client knows to
 	// stop walking the buffer. Patching it afterwards is simpler than knowing in
 	// advance which entry will be last, since the budget decides that.
-	if returned > 0 && search.InformationLevel != smbFindFileNamesInfo {
-		zeroLastNextEntryOffset(encoded, search.InformationLevel)
+	//
+	// Every level served here chains this way, SMB_FIND_FILE_NAMES_INFO included:
+	// its entry is NextEntryOffset(4) FileIndex(4) FileNameLength(4) FileName, so
+	// it carries the field at the same place as the others and encodeFindEntry
+	// fills it in the same way. Excluding it left the final entry pointing at the
+	// end of the buffer, and a client walking the chain stepped past it.
+	if returned > 0 {
+		zeroLastNextEntryOffset(encoded)
 	}
 
 	return encoded, returned
@@ -116,7 +122,10 @@ func encodeFindEntries(search *Search, count, budget int, unicode bool) ([]byte,
 
 // zeroLastNextEntryOffset walks the encoded entries and clears the final
 // NextEntryOffset.
-func zeroLastNextEntryOffset(encoded []byte, level uint16) {
+//
+// The walk is the same for every level, since NextEntryOffset is the first field
+// of each of them.
+func zeroLastNextEntryOffset(encoded []byte) {
 	position := 0
 	for position+4 <= len(encoded) {
 		next := int(binary.LittleEndian.Uint32(encoded[position : position+4]))

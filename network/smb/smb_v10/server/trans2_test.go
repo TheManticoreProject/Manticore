@@ -579,6 +579,157 @@ func pad4(value int) string {
 	return string(digits)
 }
 
+// TestFindNextRefusesAForeignTree asserts a search can only be continued through
+// the tree it was opened on.
+//
+// FIND_NEXT2 compared the request's TID against the value the search had recorded,
+// which skipped anyTreeFor and with it the check that the session owning the TID
+// is the one making the request. It also compared identifiers rather than trees,
+// and a TID is released for reuse when its tree disconnects while the search is
+// not, so a stale search's TID could come to name a live tree on another share.
+func TestFindNextRefusesAForeignTree(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("entry.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	share := &Share{Name: "other", Type: ShareTypeDisk, FS: fs}
+	if err := srv.AddShare(share); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	newConnection := func() *Connection {
+		return &Connection{
+			Server:   srv,
+			sessions: map[uint16]*Session{},
+			trees:    map[uint16]*Tree{},
+			tids:     newIdentifierAllocator(16),
+			opens:    map[uint16]*Open{},
+			fids:     newIdentifierAllocator(16),
+			searches: map[uint16]*Search{},
+			sids:     newIdentifierAllocator(16),
+		}
+	}
+
+	// A search opened on one tree, by the session that owns it.
+	conn := newConnection()
+	conn.addSession(&Session{UID: 1})
+	conn.addSession(&Session{UID: 2})
+
+	tid, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	tree := &Tree{TID: tid, Share: share, SessionUID: 1}
+	conn.addTree(tree)
+
+	sid, err := conn.sids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	conn.searches[sid] = &Search{
+		SID:     sid,
+		Tree:    tree,
+		Entries: []DirEntry{{Attr: FileAttr{Name: "entry.txt"}}},
+	}
+
+	continueSearch := func(uid, tid uint16) nt_status.NT_STATUS {
+		t.Helper()
+		parameters := make([]byte, 12)
+		binary.LittleEndian.PutUint16(parameters[0:2], sid)
+		binary.LittleEndian.PutUint16(parameters[2:4], 10)
+		binary.LittleEndian.PutUint16(parameters[4:6], 0) // InformationLevel
+		request := newRequest(codes.SMB_COM_TRANSACTION2)
+		request.Header.UID = types.USHORT(uid)
+		request.Header.TID = types.USHORT(tid)
+		_, _, status := handleFindNext2(conn, request, &transactionReassembly{parameters: parameters})
+		return status
+	}
+
+	// The session that does not own the tree cannot continue the search, even
+	// though it names the right TID.
+	if status := continueSearch(2, tid); status == nt_status.NT_STATUS_SUCCESS {
+		t.Error("a session that does not own the tree continued its search")
+	}
+
+	// Disconnecting the tree frees the TID, and the next tree takes it. The stale
+	// search must not follow the identifier onto the new tree.
+	conn.removeTree(tid)
+	reused, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	if reused != tid {
+		t.Skipf("the allocator did not reuse TID 0x%04X, so the reuse case is not exercised", tid)
+	}
+	conn.addTree(&Tree{TID: reused, Share: share, SessionUID: 2})
+
+	if _, stillOpen := conn.searches[sid]; stillOpen {
+		if status := continueSearch(2, reused); status == nt_status.NT_STATUS_SUCCESS {
+			t.Error("a search continued through a TID that had been reallocated to another tree")
+		}
+	}
+}
+
+// TestFindEntryChainTerminates asserts that the last entry of a batch carries a
+// NextEntryOffset of zero at every level served, so a client walking the chain
+// stops inside the buffer.
+//
+// SMB_FIND_FILE_NAMES_INFO was excluded from the termination pass even though its
+// entry begins with NextEntryOffset like every other level, so its final entry
+// pointed at the end of the buffer and the walk ran off it. The repository's own
+// client reads the entry count rather than walking the chain, which is why the
+// round-trip tests did not show this.
+func TestFindEntryChainTerminates(t *testing.T) {
+	levels := map[string]uint16{
+		"SMB_FIND_FILE_NAMES_INFO":          smbFindFileNamesInfo,
+		"SMB_FIND_FILE_DIRECTORY_INFO":      smbFindFileDirectoryInfo,
+		"SMB_FIND_FILE_FULL_DIRECTORY_INFO": smbFindFileFullDirectoryInfo,
+		"SMB_FIND_FILE_BOTH_DIRECTORY_INFO": smbFindFileBothDirectoryInfo,
+	}
+
+	for name, level := range levels {
+		t.Run(name, func(t *testing.T) {
+			search := &Search{
+				InformationLevel: level,
+				Entries: []DirEntry{
+					{Attr: FileAttr{Name: "alpha.txt"}},
+					{Attr: FileAttr{Name: "beta.txt"}},
+					{Attr: FileAttr{Name: "gamma.txt"}},
+				},
+			}
+
+			encoded, returned := encodeFindEntries(search, 0, 0, true)
+			if returned != 3 {
+				t.Fatalf("encodeFindEntries() returned %d entries, want 3", returned)
+			}
+
+			// Walk the chain the way a client does: each entry says where the
+			// next one starts, and a zero offset ends the listing.
+			position, walked := 0, 0
+			for {
+				if position+4 > len(encoded) {
+					t.Fatalf("the chain left the %d-byte buffer at offset %d", len(encoded), position)
+				}
+				walked++
+				next := int(binary.LittleEndian.Uint32(encoded[position : position+4]))
+				if next == 0 {
+					break
+				}
+				if walked > returned {
+					t.Fatalf("the chain did not terminate after %d entries", returned)
+				}
+				position += next
+			}
+
+			if walked != returned {
+				t.Errorf("the chain holds %d entries, want %d", walked, returned)
+			}
+		})
+	}
+}
+
 // TestSearchIsKeptUntilTheClientClosesIt asserts a search that has handed out
 // every entry stays open when the client asked for neither close flag, so the
 // FIND_CLOSE2 that client is expected to send resolves.

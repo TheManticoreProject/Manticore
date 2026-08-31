@@ -204,8 +204,24 @@ func handleFindNext2(conn *Connection, req *message.Message, reassembly *transac
 		logger.Debugf("SMB1 server: %s continued search 0x%04X, which is not open", conn.Remote, sid)
 		return nil, nil, nt_status.NT_STATUS_INVALID_HANDLE
 	}
-	// The search belongs to the tree it was opened on.
-	if search.Tree.TID != uint16(req.Header.TID) {
+	// The search belongs to the tree it was opened on, and that tree is resolved
+	// the way every other command resolves one: through anyTreeFor, which is the
+	// single place the session that owns a TID is checked. Comparing the TID
+	// against the search's own recorded value instead skipped that check, so a
+	// second session on the connection could continue the first's enumeration.
+	//
+	// The comparison is against the tree object rather than its identifier. A
+	// search outlives a disconnect of the tree it was opened on, and the TID is
+	// released for reuse at that point, so a stale search's recorded TID can come
+	// to match a live tree on an entirely different share. Only the object
+	// identifies the tree the search was actually opened on.
+	tree, status := conn.anyTreeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return nil, nil, status
+	}
+	if search.Tree != tree {
+		logger.Debugf("SMB1 server: %s continued search 0x%04X on TID 0x%04X, which does not hold it",
+			conn.Remote, sid, uint16(req.Header.TID))
 		return nil, nil, nt_status.NT_STATUS_INVALID_HANDLE
 	}
 	// A continuation that changed the shape would be describing a different
