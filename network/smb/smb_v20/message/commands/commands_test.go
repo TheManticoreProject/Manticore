@@ -236,3 +236,58 @@ func TestLogoffAndTreeDisconnect_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestNegotiateContextOffsetInsideHeader asserts that a NegotiateContextOffset
+// pointing inside or before the 64-byte SMB2 header is refused rather than
+// producing a negative index into the message body.
+//
+// The offset is header-relative and the body begins after the header, so the
+// parser subtracts the header size to index the body. The bounds checks that
+// follow are upper-bound comparisons, which a negative index satisfies, so
+// without an explicit lower bound the slice expression panics.
+func TestNegotiateContextOffsetInsideHeader(t *testing.T) {
+	// A NEGOTIATE response body with one announced context, an empty security
+	// buffer, and a context offset short of the header.
+	response := make([]byte, 64)
+	binary.LittleEndian.PutUint16(response[0:2], commands.NegotiateResponseStructureSize)
+	binary.LittleEndian.PutUint16(response[6:8], 1)   // NegotiateContextCount
+	binary.LittleEndian.PutUint16(response[56:58], 0) // SecurityBufferOffset
+	binary.LittleEndian.PutUint16(response[58:60], 0) // SecurityBufferLength
+
+	// A request body of the same shape. Its context offset sits at 28:32.
+	request := make([]byte, 36)
+	binary.LittleEndian.PutUint16(request[0:2], commands.NegotiateRequestStructureSize)
+	binary.LittleEndian.PutUint16(request[2:4], 1) // DialectCount
+	binary.LittleEndian.PutUint16(request[32:34], 1)
+	binary.LittleEndian.PutUint16(request[34:36], uint16(dialects.SMB2_DIALECT_3_1_1))
+
+	// Offset 0 is not included: it is the encoding for "no contexts", which both
+	// parsers skip before any arithmetic.
+	offsets := map[string]uint32{
+		"one byte in":      1,
+		"mid header":       50,
+		"last header byte": 63,
+	}
+
+	for name, offset := range offsets {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Fatalf("Unmarshal() panicked instead of returning an error: %v", recovered)
+				}
+			}()
+
+			binary.LittleEndian.PutUint32(response[60:64], offset)
+			var decodedResponse commands.NegotiateResponse
+			if _, err := decodedResponse.Unmarshal(response); err == nil {
+				t.Errorf("NegotiateResponse.Unmarshal() accepted a context offset of %d", offset)
+			}
+
+			binary.LittleEndian.PutUint32(request[28:32], offset)
+			var decodedRequest commands.NegotiateRequest
+			if _, err := decodedRequest.Unmarshal(request); err == nil {
+				t.Errorf("NegotiateRequest.Unmarshal() accepted a context offset of %d", offset)
+			}
+		})
+	}
+}
