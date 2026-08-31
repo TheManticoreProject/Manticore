@@ -833,3 +833,103 @@ func TestClientEstablishesSignedSession(t *testing.T) {
 		}
 	}
 }
+
+// TestSecondSessionKeepsTheConnectionSigning asserts a second session set up on a
+// connection that is already signing does not re-key it.
+//
+// Signing belongs to the connection: one key and one sequence carry every session
+// on it. Arming it again for a second logon reset both, so the first session's
+// next request was verified against a key it never used at a sequence the client
+// had long passed, and the connection was dropped.
+//
+// TestSeveralSessionsOnOneConnection covers two sessions on one connection but
+// runs with SigningDisabled, which is why this case needs its own test.
+func TestSecondSessionKeepsTheConnectionSigning(t *testing.T) {
+	const secondUsername, secondPassword = "bob", "bobs-password"
+
+	_, addr := serverWithAccount(t, SigningRequired, func(c *Config) {
+		c.Authenticator = StaticAccounts(
+			Account{Domain: captureDomain, Username: captureUsername, NTHash: nt.NTHash(capturePassword)},
+			Account{Domain: captureDomain, Username: secondUsername, NTHash: nt.NTHash(secondPassword)},
+		)
+	})
+
+	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, true)
+	if !session.signing {
+		t.Fatal("signing was not armed on the first session")
+	}
+	keyBefore := append([]byte(nil), session.key...)
+
+	// The first session works before the second logon. sendOnSession verifies the
+	// response signature and advances the sequence, so a failure here is already a
+	// signing failure.
+	echo := commands.NewEchoRequest()
+	echo.EchoCount = 1
+	echo.Data = []byte("before")
+	if response := sendOnSession(t, session, codes.SMB_COM_ECHO, echo); response.Header.Status != 0 {
+		t.Fatalf("the echo before the second logon answered 0x%08X, want success", response.Header.Status)
+	}
+
+	// A second logon for another account, on the same connection. Both legs are
+	// signed with the connection's key at the connection's sequence, because that
+	// is what a signing connection requires of every request on it.
+	auth := spnego.NewAuthContext(spnego.AuthTypeNTLM, captureDomain, secondUsername, secondPassword, "CLIENT01", true)
+	version := ntlmversion.DefaultVersion()
+	negotiateToken, err := auth.CreateNegotiateToken(testClientNegotiateFlags, &version)
+	if err != nil {
+		t.Fatalf("CreateNegotiateToken() error = %v", err)
+	}
+
+	first := sendSessionSetupSigned(t, session.client, negotiateToken, 0, true, session.key, session.sequence)
+	if first.Header.Status != uint32(nt_status.NT_STATUS_MORE_PROCESSING_REQUIRED) {
+		t.Fatalf("the second session's challenge leg answered 0x%08X, want NT_STATUS_MORE_PROCESSING_REQUIRED",
+			first.Header.Status)
+	}
+	session.sequence = signing.NextRequestSequenceNumber(session.sequence)
+
+	challengeResponse, ok := first.Command.(*commands.SessionSetupAndxResponse)
+	if !ok {
+		t.Fatalf("the second session's challenge leg command is %T", first.Command)
+	}
+	authenticateToken, err := auth.CreateAuthenticateTokenFromChallengeToken([]byte(challengeResponse.SecurityBlob))
+	if err != nil {
+		t.Fatalf("CreateAuthenticateTokenFromChallengeToken() error = %v", err)
+	}
+
+	second := sendSessionSetupSigned(t, session.client, authenticateToken, first.Header.UID, true,
+		session.key, session.sequence)
+	if second.Header.Status != 0 {
+		t.Fatalf("the second session setup answered 0x%08X, want success", second.Header.Status)
+	}
+	secondUID := second.Header.UID
+	if secondUID == session.uid {
+		t.Fatalf("both sessions were assigned UID 0x%04X", uint16(secondUID))
+	}
+	session.sequence = signing.NextRequestSequenceNumber(session.sequence)
+
+	// The connection's key is untouched, so the first session carries on.
+	if !bytes.Equal(session.key, keyBefore) {
+		t.Fatal("the test's own key changed, which it must not")
+	}
+	echo = commands.NewEchoRequest()
+	echo.EchoCount = 1
+	echo.Data = []byte("after")
+	if response := sendOnSession(t, session, codes.SMB_COM_ECHO, echo); response.Header.Status != 0 {
+		t.Fatalf("the echo after the second logon answered 0x%08X, want success", response.Header.Status)
+	}
+
+	// And so does the second session, on the same key and sequence.
+	onSecond := &authSession{
+		client:   session.client,
+		uid:      secondUID,
+		key:      session.key,
+		signing:  true,
+		sequence: session.sequence,
+	}
+	echo = commands.NewEchoRequest()
+	echo.EchoCount = 1
+	echo.Data = []byte("second session")
+	if response := sendOnSession(t, onSecond, codes.SMB_COM_ECHO, echo); response.Header.Status != 0 {
+		t.Fatalf("an echo on the second session answered 0x%08X, want success", response.Header.Status)
+	}
+}
