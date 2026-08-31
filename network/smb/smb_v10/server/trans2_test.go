@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 
@@ -572,4 +573,62 @@ func pad4(value int) string {
 		value /= 10
 	}
 	return string(digits)
+}
+
+// TestFindEntryChainTerminates asserts that the last entry of a batch carries a
+// NextEntryOffset of zero at every level served, so a client walking the chain
+// stops inside the buffer.
+//
+// SMB_FIND_FILE_NAMES_INFO was excluded from the termination pass even though its
+// entry begins with NextEntryOffset like every other level, so its final entry
+// pointed at the end of the buffer and the walk ran off it. The repository's own
+// client reads the entry count rather than walking the chain, which is why the
+// round-trip tests did not show this.
+func TestFindEntryChainTerminates(t *testing.T) {
+	levels := map[string]uint16{
+		"SMB_FIND_FILE_NAMES_INFO":          smbFindFileNamesInfo,
+		"SMB_FIND_FILE_DIRECTORY_INFO":      smbFindFileDirectoryInfo,
+		"SMB_FIND_FILE_FULL_DIRECTORY_INFO": smbFindFileFullDirectoryInfo,
+		"SMB_FIND_FILE_BOTH_DIRECTORY_INFO": smbFindFileBothDirectoryInfo,
+	}
+
+	for name, level := range levels {
+		t.Run(name, func(t *testing.T) {
+			search := &Search{
+				InformationLevel: level,
+				Entries: []DirEntry{
+					{Attr: FileAttr{Name: "alpha.txt"}},
+					{Attr: FileAttr{Name: "beta.txt"}},
+					{Attr: FileAttr{Name: "gamma.txt"}},
+				},
+			}
+
+			encoded, returned := encodeFindEntries(search, 0, 0, true)
+			if returned != 3 {
+				t.Fatalf("encodeFindEntries() returned %d entries, want 3", returned)
+			}
+
+			// Walk the chain the way a client does: each entry says where the
+			// next one starts, and a zero offset ends the listing.
+			position, walked := 0, 0
+			for {
+				if position+4 > len(encoded) {
+					t.Fatalf("the chain left the %d-byte buffer at offset %d", len(encoded), position)
+				}
+				walked++
+				next := int(binary.LittleEndian.Uint32(encoded[position : position+4]))
+				if next == 0 {
+					break
+				}
+				if walked > returned {
+					t.Fatalf("the chain did not terminate after %d entries", returned)
+				}
+				position += next
+			}
+
+			if walked != returned {
+				t.Errorf("the chain holds %d entries, want %d", walked, returned)
+			}
+		})
+	}
 }
