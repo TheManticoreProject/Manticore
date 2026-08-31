@@ -872,3 +872,84 @@ func TestLocalFileSystemNameOperationsDoNotFollowSymlinks(t *testing.T) {
 		}
 	})
 }
+
+// TestLocalFileSystemDirectoryOpenDoesNotCreate asserts that an open-existing-only
+// request for a directory that is not there is refused, and creates nothing.
+//
+// FILE_OPEN with FILE_DIRECTORY_FILE produces OpenFlags with Directory set and
+// Create clear. The backend's create-a-directory branch is reached whenever the
+// target is absent, so without a check on Create it answered a request to find a
+// directory by making one. On a read-only share it made one anyway: the read-only
+// guards test Write, Create, CreateNew and Truncate, and such a request sets none
+// of them.
+func TestLocalFileSystemDirectoryOpenDoesNotCreate(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		name := "writable share"
+		if readOnly {
+			name = "read-only share"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			fs, err := NewLocalFileSystem(root, "LOCAL")
+			if err != nil {
+				t.Fatalf("NewLocalFileSystem() error = %v", err)
+			}
+			fs.SetReadOnly(readOnly)
+			_, client := fileServer(t, fs, readOnly)
+
+			fid, err := client.OpenFile("absent", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+				fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+			if err == nil {
+				client.CloseFile(fid)
+				t.Error("OpenFile() with FILE_OPEN succeeded for a directory that does not exist")
+			}
+			if _, statErr := os.Stat(filepath.Join(root, "absent")); statErr == nil {
+				t.Error("the directory was created by a request that only asked to open one")
+			}
+		})
+	}
+}
+
+// TestLocalFileSystemDirectoryCreateStillWorks asserts the guard above did not
+// cost the dispositions that legitimately create a directory.
+func TestLocalFileSystemDirectoryCreateStillWorks(t *testing.T) {
+	dispositions := map[string]uint32{
+		"FILE_CREATE":  fileflags.FILE_CREATE,
+		"FILE_OPEN_IF": fileflags.FILE_OPEN_IF,
+	}
+
+	for name, disposition := range dispositions {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			fs, err := NewLocalFileSystem(root, "LOCAL")
+			if err != nil {
+				t.Fatalf("NewLocalFileSystem() error = %v", err)
+			}
+			_, client := fileServer(t, fs, false)
+
+			fid, err := client.OpenFile("made", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+				disposition, fileflags.FILE_DIRECTORY_FILE)
+			if err != nil {
+				t.Fatalf("OpenFile() with %s error = %v", name, err)
+			}
+			client.CloseFile(fid)
+
+			info, statErr := os.Stat(filepath.Join(root, "made"))
+			if statErr != nil {
+				t.Fatalf("the directory was not created: %v", statErr)
+			}
+			if !info.IsDir() {
+				t.Error("what was created is not a directory")
+			}
+
+			// And opening it again with FILE_OPEN now finds it.
+			reopened, err := client.OpenFile("made", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+				fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+			if err != nil {
+				t.Fatalf("OpenFile() with FILE_OPEN on the existing directory error = %v", err)
+			}
+			client.CloseFile(reopened)
+		})
+	}
+}

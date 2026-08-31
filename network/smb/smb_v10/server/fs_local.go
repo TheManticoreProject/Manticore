@@ -251,6 +251,18 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 	}
 
 	if flags.Directory {
+		// Reaching here means the target does not exist: an existing directory
+		// returned a handle above, and an existing file was refused there. So this
+		// branch creates one, and may only be taken when the disposition asked for
+		// a create.
+		//
+		// Without that condition an open-existing-only request created the
+		// directory it was meant to find, and did so on a read-only share as well:
+		// the read-only guards above test Write, Create, CreateNew and Truncate,
+		// none of which a bare FILE_OPEN with FILE_DIRECTORY_FILE sets.
+		if !flags.Create {
+			return nil, ErrNotFound
+		}
 		if err := os.Mkdir(host, 0o750); err != nil {
 			return nil, translate(err)
 		}
