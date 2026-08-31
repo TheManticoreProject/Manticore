@@ -119,6 +119,39 @@ func (fs *LocalFileSystem) hostPath(path string) (string, error) {
 	return resolved, nil
 }
 
+// hostPathNoFollow maps a resolved share-relative path to a host path without
+// resolving a symbolic link in its final element.
+//
+// The operations that act on a name rather than on contents -- deleting and
+// renaming -- must act on the name the client gave. Resolving its final element
+// makes them act on whatever it points at instead: a delete unlinks the target
+// and leaves the link, and a rename moves the target out from under it.
+//
+// Containment is unaffected. Every component but the last is still resolved and
+// the result checked against the root, which is what hostPath relies on for a
+// target that does not exist yet, and a link can only be traversed through a
+// component that exists. The final element is not traversed here at all -- it is
+// the thing being operated on -- so it cannot lead anywhere.
+func (fs *LocalFileSystem) hostPathNoFollow(path string) (string, error) {
+	if path == "" {
+		return fs.root, nil
+	}
+
+	candidate := filepath.Join(fs.root, filepath.FromSlash(path))
+
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(candidate))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if !fs.contains(resolvedParent) {
+		return "", ErrAccessDenied
+	}
+	return filepath.Join(resolvedParent, filepath.Base(candidate)), nil
+}
+
 // contains reports whether a resolved host path is the root or lies beneath it.
 //
 // The separator on the prefix matters: without it, a sibling directory whose name
@@ -297,11 +330,14 @@ func (fs *LocalFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) er
 }
 
 // Remove deletes a file.
+//
+// The name is resolved without following a link in its final element, so
+// deleting a symbolic link removes the link rather than what it points at.
 func (fs *LocalFileSystem) Remove(path string) error {
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	host, err := fs.hostPath(path)
+	host, err := fs.hostPathNoFollow(path)
 	if err != nil {
 		return err
 	}
@@ -316,15 +352,19 @@ func (fs *LocalFileSystem) Remove(path string) error {
 }
 
 // Rename moves a file or directory.
+//
+// Neither name has a link in its final element followed: renaming a symbolic link
+// moves the link, and renaming onto one replaces the link rather than writing
+// through it.
 func (fs *LocalFileSystem) Rename(oldPath, newPath string, replace bool) error {
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	oldHost, err := fs.hostPath(oldPath)
+	oldHost, err := fs.hostPathNoFollow(oldPath)
 	if err != nil {
 		return err
 	}
-	newHost, err := fs.hostPath(newPath)
+	newHost, err := fs.hostPathNoFollow(newPath)
 	if err != nil {
 		return err
 	}
@@ -359,7 +399,7 @@ func (fs *LocalFileSystem) Rmdir(path string) error {
 	if path == "" {
 		return ErrAccessDenied
 	}
-	host, err := fs.hostPath(path)
+	host, err := fs.hostPathNoFollow(path)
 	if err != nil {
 		return err
 	}
@@ -367,6 +407,9 @@ func (fs *LocalFileSystem) Rmdir(path string) error {
 	if err != nil {
 		return translate(err)
 	}
+	// A symbolic link is not a directory, whatever it points at, so removing a
+	// directory through one is refused rather than removing the directory it
+	// names. Remove is what unlinks the link itself.
 	if !info.IsDir() {
 		return ErrNotDirectory
 	}

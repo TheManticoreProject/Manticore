@@ -560,7 +560,9 @@ func TestLocalFileSystemContainsSymlinkEscape(t *testing.T) {
 		t.Fatalf("the file inside the share is not reachable: %v", err)
 	}
 
-	// Neither link is, however it is approached.
+	// Nothing outside the share can be reached through either link. Stat and Open
+	// resolve the path they are given, so a link leading out of the share is
+	// refused however it is approached.
 	escapes := []string{"link.txt", "linkdir/secret.txt", "linkdir"}
 	for _, path := range escapes {
 		path := path
@@ -572,10 +574,28 @@ func TestLocalFileSystemContainsSymlinkEscape(t *testing.T) {
 				file.Close()
 				t.Errorf("Open(%q) succeeded through a link out of the share", path)
 			}
-			if err := fs.Remove(path); err == nil {
-				t.Errorf("Remove(%q) succeeded through a link out of the share", path)
-			}
 		})
+	}
+
+	// Reaching *through* a link, to something the share does not contain, stays
+	// refused: the parent is resolved and checked against the root.
+	if err := fs.Remove("linkdir/secret.txt"); err == nil {
+		t.Error(`Remove("linkdir/secret.txt") reached through a link out of the share`)
+	}
+
+	// Deleting the link itself is a different question, and is allowed. The link
+	// is an entry of this share and unlinking it removes only that entry -- the
+	// assertion below confirms what it pointed at is untouched. Refusing it would
+	// leave an entry a client can list and can never remove.
+	//
+	// This is deliberately not the same rule as for Stat and Open above. Those
+	// act on what a path leads to, so a path leading out must be refused; a
+	// delete acts on the name, which is inside the share either way.
+	if err := fs.Remove("link.txt"); err != nil {
+		t.Errorf(`Remove("link.txt") did not remove the link itself: %v`, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "link.txt")); err == nil {
+		t.Error("the link is still present after being removed")
 	}
 
 	// The outside file is untouched.
@@ -731,4 +751,124 @@ func TestMemoryFileSystemDirectly(t *testing.T) {
 	if err := fs.Rmdir("a"); err == nil {
 		t.Fatal("Rmdir() removed a non-empty directory")
 	}
+}
+
+// TestLocalFileSystemNameOperationsDoNotFollowSymlinks asserts that deleting or
+// renaming a symbolic link acts on the link, not on what it points at.
+//
+// hostPath resolves a path through its symbolic links, which is right for
+// reading and writing contents and wrong for the operations that act on a name:
+// a delete unlinked the target and left the link behind, and a rename moved the
+// target out from under it.
+func TestLocalFileSystemNameOperationsDoNotFollowSymlinks(t *testing.T) {
+	// newShare builds a share holding a file, a directory, and a symbolic link to
+	// each.
+	newShare := func(t *testing.T) (*LocalFileSystem, string) {
+		t.Helper()
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("data"), 0o644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		if err := os.Mkdir(filepath.Join(root, "targetdir"), 0o750); err != nil {
+			t.Fatalf("Mkdir() error = %v", err)
+		}
+		if err := os.Symlink(filepath.Join(root, "target.txt"), filepath.Join(root, "link.txt")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		if err := os.Symlink(filepath.Join(root, "targetdir"), filepath.Join(root, "linkdir")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		fs, err := NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		return fs, root
+	}
+
+	exists := func(t *testing.T, path string) bool {
+		t.Helper()
+		_, err := os.Lstat(path)
+		return err == nil
+	}
+
+	t.Run("Remove unlinks the link", func(t *testing.T) {
+		fs, root := newShare(t)
+		if err := fs.Remove("link.txt"); err != nil {
+			t.Fatalf("Remove() error = %v", err)
+		}
+		if !exists(t, filepath.Join(root, "target.txt")) {
+			t.Error("deleting the link deleted its target")
+		}
+		if exists(t, filepath.Join(root, "link.txt")) {
+			t.Error("the link still exists after being deleted")
+		}
+	})
+
+	t.Run("Rmdir refuses a link to a directory", func(t *testing.T) {
+		fs, root := newShare(t)
+		if err := fs.Rmdir("linkdir"); err == nil {
+			t.Error("Rmdir() removed a directory through a symbolic link")
+		}
+		if !exists(t, filepath.Join(root, "targetdir")) {
+			t.Error("Rmdir() through the link removed the directory it points at")
+		}
+	})
+
+	t.Run("Rename moves the link", func(t *testing.T) {
+		fs, root := newShare(t)
+		if err := fs.Rename("link.txt", "moved.txt", false); err != nil {
+			t.Fatalf("Rename() error = %v", err)
+		}
+		if !exists(t, filepath.Join(root, "target.txt")) {
+			t.Error("renaming the link moved its target away")
+		}
+		if exists(t, filepath.Join(root, "link.txt")) {
+			t.Error("the link is still at its old name")
+		}
+		info, err := os.Lstat(filepath.Join(root, "moved.txt"))
+		if err != nil {
+			t.Fatalf("the link is not at its new name: %v", err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Error("what arrived at the new name is not a symbolic link")
+		}
+	})
+
+	// The ordinary cases still work, and containment still holds.
+	t.Run("a real file is still removed", func(t *testing.T) {
+		fs, root := newShare(t)
+		if err := fs.Remove("target.txt"); err != nil {
+			t.Fatalf("Remove() error = %v", err)
+		}
+		if exists(t, filepath.Join(root, "target.txt")) {
+			t.Error("the file was not removed")
+		}
+	})
+
+	t.Run("a real directory is still removed", func(t *testing.T) {
+		fs, root := newShare(t)
+		if err := fs.Rmdir("targetdir"); err != nil {
+			t.Fatalf("Rmdir() error = %v", err)
+		}
+		if exists(t, filepath.Join(root, "targetdir")) {
+			t.Error("the directory was not removed")
+		}
+	})
+
+	t.Run("a delete through a link out of the share is refused", func(t *testing.T) {
+		fs, root := newShare(t)
+		outside := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		if err := fs.Remove("escape/secret.txt"); err == nil {
+			t.Error("Remove() reached through a link pointing out of the share")
+		}
+		if !exists(t, filepath.Join(outside, "secret.txt")) {
+			t.Error("a file outside the share was deleted")
+		}
+	})
 }
