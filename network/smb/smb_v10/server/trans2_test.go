@@ -7,6 +7,7 @@ import (
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
@@ -727,4 +728,154 @@ func TestFindEntryChainTerminates(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSearchIsKeptUntilTheClientClosesIt asserts a search that has handed out
+// every entry stays open when the client asked for neither close flag, so the
+// FIND_CLOSE2 that client is expected to send resolves.
+//
+// Releasing it at end-of-search made FIND_CLOSE2 fail with STATUS_INVALID_HANDLE
+// and returned the identifier to the allocator while the client still believed it
+// held one. The SMB1 client in this repository sends Flags of zero and then calls
+// FIND_CLOSE2, which is exactly the case that was broken.
+func TestSearchIsKeptUntilTheClientClosesIt(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	conn, tid := searchFixture(t, srv, fs)
+
+	// A listing small enough to finish in one response, with no close flag set.
+	sid, status := openSearch(t, conn, tid, 0)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+	}
+	if conn.Search(sid) == nil {
+		t.Fatal("the search was released although the client asked for neither close flag")
+	}
+
+	// FIND_CLOSE2 is what releases it, and it succeeds.
+	if !conn.closeSearch(sid) {
+		t.Fatal("closeSearch() reported the handle was not open")
+	}
+	if conn.Search(sid) != nil {
+		t.Fatal("the search is still open after being closed")
+	}
+}
+
+// TestSearchIsReleasedWhenTheClientAsks asserts the two close flags still do what
+// they say, so keeping the search above did not cost the releases that were right.
+func TestSearchIsReleasedWhenTheClientAsks(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	for name, flags := range map[string]uint16{
+		"findClose":              findClose,
+		"findCloseIfEndOfSearch": findCloseIfEndOfSearch,
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn, tid := searchFixture(t, srv, fs)
+			sid, status := openSearch(t, conn, tid, flags)
+			if status != nt_status.NT_STATUS_SUCCESS {
+				t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+			}
+			if conn.Search(sid) != nil {
+				t.Errorf("the search is still open although the client set %s", name)
+			}
+		})
+	}
+}
+
+// TestTreeDisconnectReleasesItsSearches asserts an enumeration is released with
+// the tree it was opened on, rather than holding its snapshot and its identifier
+// for the life of the connection.
+func TestTreeDisconnectReleasesItsSearches(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("only.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	srv, _ := fileServer(t, fs, false)
+
+	conn, tid := searchFixture(t, srv, fs)
+	sid, status := openSearch(t, conn, tid, 0)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		t.Fatalf("TRANS2_FIND_FIRST2 answered %s", statusName(status))
+	}
+	if conn.Search(sid) == nil {
+		t.Fatal("the search was not opened")
+	}
+
+	conn.removeTree(tid)
+
+	if conn.Search(sid) != nil {
+		t.Error("the search outlived the tree it was opened on")
+	}
+	// The identifier is back, so a long-lived connection that connects and
+	// disconnects trees does not exhaust the search space.
+	if reused, err := conn.sids.Allocate(); err != nil {
+		t.Errorf("the search identifier was not released: %v", err)
+	} else if reused != sid {
+		t.Errorf("Allocate() returned 0x%04X, want the released 0x%04X", reused, sid)
+	}
+}
+
+// searchFixture builds a connection with one session and one tree on the share
+// backed by fs, ready for a search to be opened on it.
+func searchFixture(t *testing.T, srv *Server, fs FileSystem) (*Connection, uint16) {
+	t.Helper()
+
+	conn := &Connection{
+		Server:   srv,
+		sessions: map[uint16]*Session{},
+		trees:    map[uint16]*Tree{},
+		tids:     newIdentifierAllocator(16),
+		opens:    map[uint16]*Open{},
+		fids:     newIdentifierAllocator(16),
+		searches: map[uint16]*Search{},
+		sids:     newIdentifierAllocator(16),
+	}
+	conn.addSession(&Session{UID: 1})
+
+	tid, err := conn.tids.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
+	conn.addTree(&Tree{
+		TID:        tid,
+		Share:      &Share{Name: "files", Type: ShareTypeDisk, FS: fs},
+		SessionUID: 1,
+	})
+	return conn, tid
+}
+
+// openSearch issues a TRANS2_FIND_FIRST2 for everything in the share root and
+// returns the identifier the response reports.
+func openSearch(t *testing.T, conn *Connection, tid, flags uint16) (uint16, nt_status.NT_STATUS) {
+	t.Helper()
+
+	// SearchAttributes(2) SearchCount(2) Flags(2) InformationLevel(2)
+	// SearchStorageType(4) FileName(variable).
+	pattern := encodeWireString("\\*", true)
+	parameters := make([]byte, 12, 12+len(pattern))
+	binary.LittleEndian.PutUint16(parameters[2:4], 100)
+	binary.LittleEndian.PutUint16(parameters[4:6], flags)
+	binary.LittleEndian.PutUint16(parameters[6:8], smbFindFileBothDirectoryInfo)
+	parameters = append(parameters, pattern...)
+
+	request := newRequest(codes.SMB_COM_TRANSACTION2)
+	request.Header.UID = types.USHORT(1)
+	request.Header.TID = types.USHORT(tid)
+	request.Header.Flags2 |= flags2.FLAGS2_UNICODE
+
+	responseParameters, _, status := handleFindFirst2(conn, request,
+		&transactionReassembly{parameters: parameters, maxDataCount: 0xFFFF})
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return 0, status
+	}
+	return binary.LittleEndian.Uint16(responseParameters[0:2]), status
 }

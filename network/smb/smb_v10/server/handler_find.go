@@ -152,9 +152,15 @@ func handleFindFirst2(conn *Connection, req *message.Message, reassembly *transa
 	data, returned := encodeFindEntries(search, searchCount, reassembly.maxDataCount, req.Header.Flags2.IsUnicode())
 	endOfSearch := search.exhausted()
 
-	// The search is kept only while there is more to hand out, and only if the
-	// client did not ask for it to be closed.
-	keep := !endOfSearch && flags&findClose == 0
+	// The search is kept unless the client asked for it to be closed: with
+	// findClose after this response, or with findCloseIfEndOfSearch once the
+	// enumeration has finished.
+	//
+	// Reaching the end is not itself a reason to drop it. A client that set
+	// neither flag is expected to release the handle with FIND_CLOSE2, and
+	// releasing it here made that call fail -- and made the identifier available
+	// for reuse while the client still believed it held one.
+	keep := flags&findClose == 0
 	if endOfSearch && flags&findCloseIfEndOfSearch != 0 {
 		keep = false
 	}
