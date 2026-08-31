@@ -484,14 +484,14 @@ const MICLength = 16
 // no payload and its offset is not meaningful, so it is skipped.
 //
 // It is only valid once the field descriptors have been read.
-func (msg *AuthenticateMessage) payloadStart() int {
-	start := 0
+func (msg *AuthenticateMessage) payloadStart() uint64 {
+	start := uint64(0)
 	consider := func(length uint16, offset uint32) {
 		if length == 0 {
 			return
 		}
-		if start == 0 || int(offset) < start {
-			start = int(offset)
+		if start == 0 || uint64(offset) < start {
+			start = uint64(offset)
 		}
 	}
 	consider(msg.LmChallengeResponseFields.Len, msg.LmChallengeResponseFields.BufferOffset)
@@ -619,57 +619,78 @@ func (msg *AuthenticateMessage) Unmarshal(data []byte) (int, error) {
 	// nothing to verify and a tampered MIC was indistinguishable from a correct
 	// one.
 	if payloadStart := msg.payloadStart(); payloadStart >= 80 {
-		micOffset := payloadStart - MICLength
-		if micOffset < 64 || payloadStart > len(data) {
+		if payloadStart > uint64(len(data)) {
 			return 0, fmt.Errorf("data too short to read MIC in AuthenticateMessage")
 		}
-		copy(msg.MIC[:], data[micOffset:payloadStart])
+		// payloadStart is at least 80, so the MIC begins at 64 or beyond and the
+		// subtraction cannot reach back into the fixed part.
+		micOffset := int(payloadStart) - MICLength
+		copy(msg.MIC[:], data[micOffset:int(payloadStart)])
 		msg.NeedsMIC = true
 		msg.MICOffset = micOffset
 	}
 
-	// Read payload section
+	// Read payload section.
+	//
+	// The bounds are computed in 64-bit. BufferOffset is a 32-bit field taken
+	// straight off the wire, and int is 32 bits on a 32-bit host -- which this
+	// builds and tests for -- so int(BufferOffset) turns a large offset into a
+	// negative index, which passes an upper-bound check and then panics in the
+	// slice expression. uint64 cannot overflow for a uint32 offset plus a uint16
+	// length and cannot go negative, whatever the width of int.
 
 	// LM response
-	if int(msg.LmChallengeResponseFields.BufferOffset)+int(msg.LmChallengeResponseFields.Len) > len(data) {
+	lmChallengeResponseStart := uint64(msg.LmChallengeResponseFields.BufferOffset)
+	lmChallengeResponseEnd := lmChallengeResponseStart + uint64(msg.LmChallengeResponseFields.Len)
+	if lmChallengeResponseEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read LmChallengeResponse in payload section in AuthenticateMessage")
 	}
-	msg.LmChallengeResponse = data[int(msg.LmChallengeResponseFields.BufferOffset) : int(msg.LmChallengeResponseFields.BufferOffset)+int(msg.LmChallengeResponseFields.Len)]
+	msg.LmChallengeResponse = data[lmChallengeResponseStart:lmChallengeResponseEnd]
 	totalBytesRead += int(msg.LmChallengeResponseFields.Len)
 
 	// NT response
-	if int(msg.NtChallengeResponseFields.BufferOffset)+int(msg.NtChallengeResponseFields.Len) > len(data) {
+	ntChallengeResponseStart := uint64(msg.NtChallengeResponseFields.BufferOffset)
+	ntChallengeResponseEnd := ntChallengeResponseStart + uint64(msg.NtChallengeResponseFields.Len)
+	if ntChallengeResponseEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read NtChallengeResponse in payload section in AuthenticateMessage")
 	}
-	msg.NtChallengeResponse = data[int(msg.NtChallengeResponseFields.BufferOffset) : int(msg.NtChallengeResponseFields.BufferOffset)+int(msg.NtChallengeResponseFields.Len)]
+	msg.NtChallengeResponse = data[ntChallengeResponseStart:ntChallengeResponseEnd]
 	totalBytesRead += int(msg.NtChallengeResponseFields.Len)
 
 	// Domain name
-	if int(msg.DomainNameFields.BufferOffset)+int(msg.DomainNameFields.Len) > len(data) {
+	domainNameStart := uint64(msg.DomainNameFields.BufferOffset)
+	domainNameEnd := domainNameStart + uint64(msg.DomainNameFields.Len)
+	if domainNameEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read DomainName in payload section in AuthenticateMessage")
 	}
-	msg.DomainName = data[int(msg.DomainNameFields.BufferOffset) : int(msg.DomainNameFields.BufferOffset)+int(msg.DomainNameFields.Len)]
+	msg.DomainName = data[domainNameStart:domainNameEnd]
 	totalBytesRead += int(msg.DomainNameFields.Len)
 
 	// User name
-	if int(msg.UserNameFields.BufferOffset)+int(msg.UserNameFields.Len) > len(data) {
+	userNameStart := uint64(msg.UserNameFields.BufferOffset)
+	userNameEnd := userNameStart + uint64(msg.UserNameFields.Len)
+	if userNameEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read UserName in payload section in AuthenticateMessage")
 	}
-	msg.UserName = data[int(msg.UserNameFields.BufferOffset) : int(msg.UserNameFields.BufferOffset)+int(msg.UserNameFields.Len)]
+	msg.UserName = data[userNameStart:userNameEnd]
 	totalBytesRead += int(msg.UserNameFields.Len)
 
 	// Workstation
-	if int(msg.WorkstationFields.BufferOffset)+int(msg.WorkstationFields.Len) > len(data) {
+	workstationStart := uint64(msg.WorkstationFields.BufferOffset)
+	workstationEnd := workstationStart + uint64(msg.WorkstationFields.Len)
+	if workstationEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read Workstation in payload section in AuthenticateMessage")
 	}
-	msg.Workstation = data[int(msg.WorkstationFields.BufferOffset) : int(msg.WorkstationFields.BufferOffset)+int(msg.WorkstationFields.Len)]
+	msg.Workstation = data[workstationStart:workstationEnd]
 	totalBytesRead += int(msg.WorkstationFields.Len)
 
 	// Encrypted random session key
-	if int(msg.EncryptedRandomSessionKeyFields.BufferOffset)+int(msg.EncryptedRandomSessionKeyFields.Len) > len(data) {
+	encryptedRandomSessionKeyStart := uint64(msg.EncryptedRandomSessionKeyFields.BufferOffset)
+	encryptedRandomSessionKeyEnd := encryptedRandomSessionKeyStart + uint64(msg.EncryptedRandomSessionKeyFields.Len)
+	if encryptedRandomSessionKeyEnd > uint64(len(data)) {
 		return 0, fmt.Errorf("data too short to read EncryptedRandomSessionKey in payload section in AuthenticateMessage")
 	}
-	msg.EncryptedRandomSessionKey = data[int(msg.EncryptedRandomSessionKeyFields.BufferOffset) : int(msg.EncryptedRandomSessionKeyFields.BufferOffset)+int(msg.EncryptedRandomSessionKeyFields.Len)]
+	msg.EncryptedRandomSessionKey = data[encryptedRandomSessionKeyStart:encryptedRandomSessionKeyEnd]
 	totalBytesRead += int(msg.EncryptedRandomSessionKeyFields.Len)
 
 	return totalBytesRead, nil
