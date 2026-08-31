@@ -181,7 +181,16 @@ func (c *Connection) finishAuthentication(
 		return status
 	}
 
-	if armSigning {
+	// Signing belongs to the connection rather than to a session: one key and one
+	// sequence carry every session on it. So it is armed once, by the first
+	// exchange that can, and a later session setup leaves it alone.
+	//
+	// Re-keying here would strand every session already established. The
+	// connection's sequence would restart at two while the client is far past it,
+	// and the key would change under sessions that never asked for a new one, so
+	// the next request any of them sent would fail verification and the connection
+	// would be dropped.
+	if armSigning && !c.SigningActive {
 		// Signing is activated by this exchange rather than checked on it. The
 		// AUTHENTICATE request's own signature is not verified, and [MS-SMB]
 		// section 3.3.5.3 does not ask for it to be: it says only that once the key
@@ -202,6 +211,9 @@ func (c *Connection) finishAuthentication(
 
 		logger.Debugf("SMB1 server: signing armed for %s on UID 0x%04X", c.Remote, uid)
 	}
+	// On a connection that is already signing, this response needs no signature
+	// applied here: handleFrame verified the request against the connection's key
+	// and armed the writer with the response sequence that follows it.
 
 	response := c.newSessionSetupResponse()
 	if session.IsGuest {
