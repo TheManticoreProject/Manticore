@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/binary"
 	"strings"
 	"testing"
@@ -878,4 +879,110 @@ func openSearch(t *testing.T, conn *Connection, tid, flags uint16) (uint16, nt_s
 		return 0, status
 	}
 	return binary.LittleEndian.Uint16(responseParameters[0:2]), status
+}
+
+// TestTransactionCoverageTracksRanges covers the range bookkeeping directly,
+// including the arrival orders a byte counter cannot tell apart.
+func TestTransactionCoverageTracksRanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		total    int
+		fragment []span
+		covered  bool
+	}{
+		{name: "empty block", total: 0, covered: true},
+		{name: "one whole run", total: 40, fragment: []span{{0, 40}}, covered: true},
+		{name: "two runs in order", total: 40, fragment: []span{{0, 20}, {20, 40}}, covered: true},
+		{name: "two runs reversed", total: 40, fragment: []span{{20, 40}, {0, 20}}, covered: true},
+		{name: "three runs shuffled", total: 60, fragment: []span{{40, 60}, {0, 20}, {20, 40}}, covered: true},
+		{name: "overlapping runs", total: 40, fragment: []span{{0, 25}, {15, 40}}, covered: true},
+		{name: "run repeated", total: 40, fragment: []span{{0, 10}, {0, 10}, {0, 10}, {0, 10}}, covered: false},
+		{name: "hole in the middle", total: 40, fragment: []span{{0, 10}, {30, 40}}, covered: false},
+		{name: "short of the end", total: 40, fragment: []span{{0, 39}}, covered: false},
+		{name: "starts late", total: 40, fragment: []span{{1, 40}}, covered: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var tracked coverage
+			for _, run := range test.fragment {
+				tracked.add(run.start, run.end-run.start)
+			}
+			if covered := tracked.covers(test.total); covered != test.covered {
+				t.Errorf("covers(%d) = %t, want %t (ranges %v)", test.total, covered, test.covered, tracked.ranges)
+			}
+		})
+	}
+}
+
+// TestTransactionIsNotCompletedByRepeatedFragments asserts a transaction is
+// completed by every byte arriving, not by enough bytes arriving.
+//
+// Reassembly counted the bytes placed, so a client could re-send one fragment
+// until the counter reached the declared total. The transaction then ran against
+// a buffer most of which had never been written, with the gaps left as zeroes.
+func TestTransactionIsNotCompletedByRepeatedFragments(t *testing.T) {
+	reassembly := &transactionReassembly{
+		family:     "TRANSACTION2",
+		parameters: make([]byte, 0),
+		data:       make([]byte, 40),
+	}
+
+	fragment := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	for i := 0; i < 4; i++ {
+		if err := reassembly.place(nil, 0, fragment, 0); err != nil {
+			t.Fatalf("place() on copy %d error = %v", i, err)
+		}
+		if reassembly.complete() {
+			t.Fatalf("the transaction reported complete after %d copies of one fragment", i+1)
+		}
+	}
+
+	// The rest of the block still has to arrive, and then it is complete.
+	if err := reassembly.place(nil, 0, make([]byte, 30), 10); err != nil {
+		t.Fatalf("place() of the remainder error = %v", err)
+	}
+	if !reassembly.complete() {
+		t.Error("the transaction is not complete although every byte has arrived")
+	}
+}
+
+// TestTransactionCompletesOutOfOrder asserts fragments that arrive at
+// displacements out of order still complete the transaction, since the
+// displacement is what says where they belong.
+func TestTransactionCompletesOutOfOrder(t *testing.T) {
+	reassembly := &transactionReassembly{
+		family:     "TRANSACTION2",
+		parameters: make([]byte, 8),
+		data:       make([]byte, 30),
+	}
+
+	if err := reassembly.place([]byte{5, 6, 7, 8}, 4, []byte{3, 3, 3, 3, 3, 3, 3, 3, 3, 3}, 20); err != nil {
+		t.Fatalf("place() of the tail error = %v", err)
+	}
+	if reassembly.complete() {
+		t.Fatal("the transaction is complete although the head has not arrived")
+	}
+	if err := reassembly.place([]byte{1, 2, 3, 4}, 0, []byte{2, 2, 2, 2, 2, 2, 2, 2, 2, 2}, 10); err != nil {
+		t.Fatalf("place() of the middle error = %v", err)
+	}
+	if reassembly.complete() {
+		t.Fatal("the transaction is complete although the first data run has not arrived")
+	}
+	if err := reassembly.place(nil, 0, []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, 0); err != nil {
+		t.Fatalf("place() of the head error = %v", err)
+	}
+	if !reassembly.complete() {
+		t.Fatal("the transaction is not complete although every byte has arrived")
+	}
+
+	if !bytes.Equal(reassembly.parameters, []byte{1, 2, 3, 4, 5, 6, 7, 8}) {
+		t.Errorf("parameters = %v", reassembly.parameters)
+	}
+	for index, value := range reassembly.data {
+		want := byte(index/10 + 1)
+		if value != want {
+			t.Fatalf("data[%d] = %d, want %d", index, value, want)
+		}
+	}
 }
