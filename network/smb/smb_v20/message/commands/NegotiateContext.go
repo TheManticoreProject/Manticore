@@ -101,6 +101,15 @@ func marshalNegotiateContexts(bodyOffset int, contexts []*NegotiateContext) ([]b
 // header). Each context is 8-byte aligned relative to the header.
 func parseNegotiateContexts(data []byte, headerRelativeOffset int, count int) ([]*NegotiateContext, error) {
 	contexts := make([]*NegotiateContext, 0, count)
+	// The offset is header-relative and the data begins at the body, so the header
+	// size is subtracted to reach an index into data. An offset that points inside
+	// or before the header would make that index negative, and the bounds checks
+	// below are upper-bound comparisons that a negative index satisfies -- so it
+	// is refused here rather than allowed to reach a slice expression.
+	if headerRelativeOffset < header.SMB2_HEADER_SIZE {
+		return nil, fmt.Errorf("negotiate context offset %d is inside the %d-byte SMB2 header",
+			headerRelativeOffset, header.SMB2_HEADER_SIZE)
+	}
 	off := headerRelativeOffset - header.SMB2_HEADER_SIZE
 	for i := 0; i < count; i++ {
 		// Align to 8 relative to the header.
