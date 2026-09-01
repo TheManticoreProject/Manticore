@@ -29,6 +29,35 @@ import (
 // If the search is successful, it returns the search results. If an error occurs, it logs a warning
 // and returns an empty slice.
 func (ldapSession *Session) Query(searchBase string, query string, attributes []string, scope int) ([]*ldap.Entry, error) {
+	return ldapSession.QueryWithControls(searchBase, query, attributes, scope, nil)
+}
+
+// QueryWithControls performs an LDAP search operation with the given LDAP controls
+// attached to the search request.
+//
+// Some searches cannot be expressed by the search request alone. Reading
+// nTSecurityDescriptor is the common case: without the LDAP_SERVER_SD_FLAGS_OID
+// control (1.2.840.113556.1.4.801, MS-ADTS 3.1.1.3.4.1.11) naming the parts of the
+// descriptor to return, a domain controller tries to include the SACL, and a client
+// that does not hold SE_SECURITY_NAME gets the attribute back empty rather than an
+// error. See ControlMicrosoftSDFlags in security_descriptors.go.
+//
+// Parameters:
+//   - searchBase: A string representing the base DN (Distinguished Name) from which the search should start.
+//     Special values "defaultNamingContext", "configurationNamingContext", and "schemaNamingContext"
+//     will be replaced with the corresponding values from the root DSE.
+//   - query: A string representing the LDAP search filter.
+//   - attributes: A slice of strings specifying the attributes to retrieve from the search results.
+//   - scope: An integer representing the scope of the search. Valid values are:
+//   - ScopeBaseObject: Search only the base object.
+//   - ScopeSingleLevel: Search one level under the base object.
+//   - ScopeWholeSubtree: Search the entire subtree under the base object.
+//   - controls: The LDAP controls to attach to the search request. A nil or empty slice
+//     sends the search without any control, which is what Query does.
+//
+// Returns:
+// - A slice of pointers to ldap.Entry objects representing the search results.
+func (ldapSession *Session) QueryWithControls(searchBase string, query string, attributes []string, scope int, controls []ldap.Control) ([]*ldap.Entry, error) {
 	// Parsing parameters
 	if len(searchBase) == 0 {
 		searchBase = "defaultNamingContext"
@@ -76,7 +105,7 @@ func (ldapSession *Session) Query(searchBase string, query string, attributes []
 		// Attributes to retrieve
 		attributes,
 		// Controls
-		nil,
+		controls,
 	)
 
 	// Perform LDAP search
@@ -193,6 +222,31 @@ func (ldapSession *Session) QuerySingleLevel(searchBase string, query string, at
 //   - The function logs warnings if the search fails or if no entries are found.
 func (ldapSession *Session) QueryWholeSubtree(searchBase string, query string, attributes []string) ([]*ldap.Entry, error) {
 	entries, err := ldapSession.Query(searchBase, query, attributes, ldap.ScopeWholeSubtree)
+	if err != nil {
+		return nil, fmt.Errorf("error querying LDAP: %w", err)
+	}
+	return entries, nil
+}
+
+// QueryWholeSubtreeWithControls performs an LDAP query with a scope of Whole Subtree,
+// with the given LDAP controls attached to the search request.
+//
+// This is the subtree form of QueryWithControls, and exists because the searches that
+// need a control are usually the ones that sweep a whole naming context: reading the
+// security descriptor of every object of a domain needs LDAP_SERVER_SD_FLAGS_OID on a
+// subtree search, and doing it one base object at a time is one round trip per object.
+//
+// Parameters:
+//   - searchBase (string): The base DN (Distinguished Name) from which the search should start.
+//   - query (string): The LDAP query to be executed.
+//   - attributes ([]string): The list of attributes to retrieve for each entry.
+//   - controls ([]ldap.Control): The LDAP controls to attach to the search request.
+//
+// Returns:
+//   - []*ldap.Entry: A slice of LDAP entries that match the query within the whole subtree.
+//   - error: An error if the search fails, nil otherwise.
+func (ldapSession *Session) QueryWholeSubtreeWithControls(searchBase string, query string, attributes []string, controls []ldap.Control) ([]*ldap.Entry, error) {
+	entries, err := ldapSession.QueryWithControls(searchBase, query, attributes, ldap.ScopeWholeSubtree, controls)
 	if err != nil {
 		return nil, fmt.Errorf("error querying LDAP: %w", err)
 	}

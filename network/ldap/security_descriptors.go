@@ -7,6 +7,27 @@ import (
 	"github.com/go-ldap/ldap/v3"
 )
 
+// Security Information constants for NT Security Descriptor flags, as carried in the
+// LDAP_SERVER_SD_FLAGS_OID control value.
+//
+// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/3888c2b7-35b9-45b7-afeb-b772aa932dd0
+//
+// SACL_SECURITY_INFORMATION is the one to think about before requesting: reading a
+// SACL needs the SE_SECURITY_NAME privilege, and a domain controller answers a client
+// that lacks it with the nTSecurityDescriptor attribute absent from the entry rather
+// than with an error. A caller that only needs the owner, the group and the DACL
+// should ask for exactly those, which is what SECURITY_INFORMATION_DEFAULT is.
+const (
+	OWNER_SECURITY_INFORMATION = 0x1 // Owner identifier of the object
+	GROUP_SECURITY_INFORMATION = 0x2 // Primary group identifier
+	DACL_SECURITY_INFORMATION  = 0x4 // Discretionary access control list (DACL) of the object
+	SACL_SECURITY_INFORMATION  = 0x8 // System access control list (SACL) of the object
+
+	// SECURITY_INFORMATION_DEFAULT is the everything-but-the-SACL set, which is what
+	// an unprivileged read of a security descriptor has to ask for.
+	SECURITY_INFORMATION_DEFAULT = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION
+)
+
 type ControlMicrosoftSDFlags struct {
 	Criticality  bool
 	ControlValue int32
@@ -54,17 +75,9 @@ func NewControlMicrosoftSDFlags() *ControlMicrosoftSDFlags {
 func (s *Session) GetNtSecurityDescriptorOf(distinguishedName string) (string, error) {
 	// Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/3888c2b7-35b9-45b7-afeb-b772aa932dd0
 
-	// Security Information constants for NT Security Descriptor flags
-	const (
-		OWNER_SECURITY_INFORMATION = 0x1 // Owner identifier of the object
-		GROUP_SECURITY_INFORMATION = 0x2 // Primary group identifier
-		DACL_SECURITY_INFORMATION  = 0x4 // Discretionary access control list (DACL) of the object
-		SACL_SECURITY_INFORMATION  = 0x8 // System access control list (SACL) of the object
-	)
-
 	control := &ControlMicrosoftSDFlags{
 		Criticality:  false,
-		ControlValue: int32(OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION),
+		ControlValue: int32(SECURITY_INFORMATION_DEFAULT),
 	}
 
 	searchRequest := ldap.NewSearchRequest(
