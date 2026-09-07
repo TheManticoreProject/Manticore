@@ -8,12 +8,21 @@ import (
 type UserAccountControl uint32
 
 // UserAccountControl
+//
+// The bit values are those of [MS-ADTS] 2.2.16 userAccountControl Bits, which is
+// the authoritative table; the reserved names below sit on the bits it marks
+// "X: Unused. Must be zero and ignored." SCRIPT (0x1), TEMP_DUPLICATE_ACCOUNT
+// (0x100) and MNS_LOGON_ACCOUNT (0x20000) are among that set for MS-ADTS but are
+// defined by ADS_USER_FLAG_ENUM, so they are kept under their ADSI names.
+//
+// Src: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/dd302fd1-0aa7-406b-ad91-2a6b35738557
+// Src: https://learn.microsoft.com/en-us/windows/win32/api/iads/ne-iads-ads_user_flag_enum
 // Src: https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/useraccountcontrol-manipulate-account-properties
 const (
 	UAF_SCRIPT                         UserAccountControl = 1       // 1
 	UAF_ACCOUNT_DISABLED               UserAccountControl = 1 << 1  // 2
-	UAF_HOMEDIR_REQUIRED               UserAccountControl = 1 << 2  // 4
-	UAF_RESERVED_03                    UserAccountControl = 1 << 3  // 8
+	UAF_RESERVED_02                    UserAccountControl = 1 << 2  // 4
+	UAF_HOMEDIR_REQUIRED               UserAccountControl = 1 << 3  // 8
 	UAF_LOCKOUT                        UserAccountControl = 1 << 4  // 16
 	UAF_PASSWD_NOTREQD                 UserAccountControl = 1 << 5  // 32
 	UAF_PASSWD_CANT_CHANGE             UserAccountControl = 1 << 6  // 64
@@ -35,9 +44,9 @@ const (
 	UAF_DONT_REQ_PREAUTH               UserAccountControl = 1 << 22 // 4194304
 	UAF_PASSWORD_EXPIRED               UserAccountControl = 1 << 23 // 8388608
 	UAF_TRUSTED_TO_AUTH_FOR_DELEGATION UserAccountControl = 1 << 24 // 16777216
-	UAF_RESERVED_25                    UserAccountControl = 1 << 25 // 33554432
-	UAF_RESERVED_26                    UserAccountControl = 1 << 26 // 67108864
-	UAF_PARTIAL_SECRETS_ACCOUNT        UserAccountControl = 1 << 27 // 134217728
+	UAF_NO_AUTH_DATA_REQUIRED          UserAccountControl = 1 << 25 // 33554432
+	UAF_PARTIAL_SECRETS_ACCOUNT        UserAccountControl = 1 << 26 // 67108864
+	UAF_RESERVED_27                    UserAccountControl = 1 << 27 // 134217728
 	UAF_RESERVED_28                    UserAccountControl = 1 << 28 // 268435456
 	UAF_RESERVED_29                    UserAccountControl = 1 << 29 // 536870912
 	UAF_RESERVED_30                    UserAccountControl = 1 << 30 // 1073741824
@@ -66,6 +75,7 @@ var UserAccountControlMap = map[UserAccountControl]string{
 	UAF_DONT_REQ_PREAUTH:               "DONT_REQ_PREAUTH",
 	UAF_PASSWORD_EXPIRED:               "PASSWORD_EXPIRED",
 	UAF_TRUSTED_TO_AUTH_FOR_DELEGATION: "TRUSTED_TO_AUTH_FOR_DELEGATION",
+	UAF_NO_AUTH_DATA_REQUIRED:          "NO_AUTH_DATA_REQUIRED",
 	UAF_PARTIAL_SECRETS_ACCOUNT:        "PARTIAL_SECRETS_ACCOUNT",
 }
 
