@@ -121,25 +121,29 @@ func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv vers
 // - A byte slice containing the binary representation of the time in little-endian format.
 //
 // Note:
-// The function currently treats all versions and sources the same way, converting the time
-// directly to a Unix time in nanoseconds and then encoding it in little-endian format.
+// The function currently treats all versions and sources the same way, encoding the time as a
+// count of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC in little-endian format,
+// which is the representation ConvertFromBinaryTime decodes.
 func ConvertToBinaryTime(date time.Time, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) []byte {
-	timeStamp := date.UnixNano()
+	// The field holds ticks since 1601, not nanoseconds since 1970. Deriving them
+	// through NewDateTimeFromTime keeps this function the exact inverse of
+	// ConvertFromBinaryTime instead of an encoder for a different representation.
+	timeStamp := NewDateTimeFromTime(date).ToTicks()
 
 	switch kcv.Value {
 	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
-		return binary.LittleEndian.AppendUint64(nil, uint64(timeStamp))
+		return binary.LittleEndian.AppendUint64(nil, timeStamp)
 	case version.KeyCredentialLinkVersion_2:
 		if ksrc.Value == source.KeySource_AD {
-			return binary.LittleEndian.AppendUint64(nil, uint64(timeStamp))
+			return binary.LittleEndian.AppendUint64(nil, timeStamp)
 		} else {
-			return binary.LittleEndian.AppendUint64(nil, uint64(timeStamp))
+			return binary.LittleEndian.AppendUint64(nil, timeStamp)
 		}
 	default:
 		if ksrc.Value == source.KeySource_AD {
-			return binary.LittleEndian.AppendUint64(nil, uint64(timeStamp))
+			return binary.LittleEndian.AppendUint64(nil, timeStamp)
 		} else {
-			return binary.LittleEndian.AppendUint64(nil, uint64(timeStamp))
+			return binary.LittleEndian.AppendUint64(nil, timeStamp)
 		}
 	}
 }
