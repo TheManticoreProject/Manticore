@@ -1,7 +1,16 @@
 package ldap_attributes
 
 // Predefined RIDs
+//
+// These are the RIDs whose well-known SID is domain-relative, of the form
+// S-1-5-<domain>-<rid>. The BUILTIN RIDs below, of the form S-1-5-32-<rid>, are a
+// separate list: the distinction is what FindObjectSIDByRID uses to decide which
+// SID to build, and it does not follow the DOMAIN_ALIAS_RID_* naming of the Windows
+// headers — RAS and IAS Servers and the two RODC password replication groups carry
+// alias-style names but are domain groups.
+//
 // Src: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-samr/565a6584-3061-4ede-a531-f5c53826504b
+// Src: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
 const (
 	RID_DOMAIN_USER_KRBTGT                                  = 0x000001F6
 	RID_DOMAIN_USER_ADMIN                                   = 0x000001F4
@@ -22,8 +31,11 @@ const (
 	RID_DOMAIN_GROUP_PROTECTED_USERS                        = 0x0000020D
 	RID_DOMAIN_GROUP_KEY_ADMINS                             = 0x0000020E
 	RID_DOMAIN_GROUP_ENTERPRISE_KEY_ADMINS                  = 0x0000020F
+	RID_DOMAIN_GROUP_ALLOWED_RODC_PASSWORD_REPLICATION      = 0x0000023B
 	RID_DOMAIN_GROUP_DENIED_RODC_PASSWORD_REPLICATION       = 0x0000023C
-	RID_DOMAIN_GROUP_ALIAS_CERTSVC_DCOM_ACCESS              = 0x0000023E
+	// S-1-5-<domain>-553, despite the DOMAIN_ALIAS_RID_RAS_SERVERS name in the
+	// Windows headers.
+	RID_DOMAIN_ALIAS_RAS_SERVERS = 0x00000229
 )
 
 var DomainRIDs = []int{
@@ -46,12 +58,20 @@ var DomainRIDs = []int{
 	RID_DOMAIN_GROUP_PROTECTED_USERS,
 	RID_DOMAIN_GROUP_KEY_ADMINS,
 	RID_DOMAIN_GROUP_ENTERPRISE_KEY_ADMINS,
+	RID_DOMAIN_GROUP_ALLOWED_RODC_PASSWORD_REPLICATION,
 	RID_DOMAIN_GROUP_DENIED_RODC_PASSWORD_REPLICATION,
-	RID_DOMAIN_GROUP_ALIAS_CERTSVC_DCOM_ACCESS,
+	RID_DOMAIN_ALIAS_RAS_SERVERS,
 }
 
-// Local RID
+// Local (BUILTIN) RIDs
+//
+// These are the RIDs whose well-known SID is of the form S-1-5-32-<rid>. RIDs whose
+// SID is domain-relative belong in the list above, not here: FindObjectSIDByRID
+// builds S-1-5-32-<rid> for every member of LocalRIDs, so a domain-relative RID
+// listed here is looked up as a SID that cannot exist.
+//
 // Src: https://learn.microsoft.com/en-us/windows/win32/secauthz/well-known-sids
+// Src: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers
 const (
 	RID_LOCAL_ADMINS                         = 0x00000220
 	RID_LOCAL_USERS                          = 0x00000221
@@ -62,7 +82,6 @@ const (
 	RID_LOCAL_PRINT_OPS                      = 0x00000226
 	RID_LOCAL_BACKUP_OPS                     = 0x00000227
 	RID_LOCAL_REPLICATOR                     = 0x00000228
-	RID_LOCAL_RAS_SERVERS                    = 0x00000229
 	RID_LOCAL_PREW2KCOMPACCESS               = 0x0000022A
 	RID_LOCAL_REMOTE_DESKTOP_USERS           = 0x0000022B
 	RID_LOCAL_NETWORK_CONFIGURATION_OPS      = 0x0000022C
@@ -74,8 +93,6 @@ const (
 	RID_LOCAL_DCOM_USERS                     = 0x00000232
 	RID_LOCAL_IUSERS                         = 0x00000238
 	RID_LOCAL_CRYPTO_OPERATORS               = 0x00000239
-	RID_LOCAL_CACHEABLE_PRINCIPALS_GROUP     = 0x0000023B
-	RID_LOCAL_NON_CACHEABLE_PRINCIPALS_GROUP = 0x0000023C
 	RID_LOCAL_EVENT_LOG_READERS_GROUP        = 0x0000023D
 	RID_LOCAL_CERTSVC_DCOM_ACCESS_GROUP      = 0x0000023E
 	RID_LOCAL_RDS_REMOTE_ACCESS_SERVERS      = 0x0000023F
@@ -99,7 +116,6 @@ var LocalRIDs = []int{
 	RID_LOCAL_PRINT_OPS,
 	RID_LOCAL_BACKUP_OPS,
 	RID_LOCAL_REPLICATOR,
-	RID_LOCAL_RAS_SERVERS,
 	RID_LOCAL_PREW2KCOMPACCESS,
 	RID_LOCAL_REMOTE_DESKTOP_USERS,
 	RID_LOCAL_NETWORK_CONFIGURATION_OPS,
@@ -111,8 +127,6 @@ var LocalRIDs = []int{
 	RID_LOCAL_DCOM_USERS,
 	RID_LOCAL_IUSERS,
 	RID_LOCAL_CRYPTO_OPERATORS,
-	RID_LOCAL_CACHEABLE_PRINCIPALS_GROUP,
-	RID_LOCAL_NON_CACHEABLE_PRINCIPALS_GROUP,
 	RID_LOCAL_EVENT_LOG_READERS_GROUP,
 	RID_LOCAL_CERTSVC_DCOM_ACCESS_GROUP,
 	RID_LOCAL_RDS_REMOTE_ACCESS_SERVERS,
