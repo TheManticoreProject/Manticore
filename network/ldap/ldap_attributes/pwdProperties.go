@@ -1,5 +1,10 @@
 package ldap_attributes
 
+import (
+	"sort"
+	"strings"
+)
+
 type PasswordProperties uint32
 
 // PasswordProperties
@@ -53,16 +58,63 @@ var PasswordPropertiesDescriptions = map[PasswordProperties]string{
 	PASSWORD_PROPERTY_DOMAIN_REFUSE_PASSWORD_CHANGE:   "Removes the requirement that the machine account password be automatically changed every week. This value should not be used as it can weaken security.",
 }
 
+// String returns the names of the flags set in the value, sorted alphabetically and
+// separated by a pipe ("|").
+//
+// pwdProperties is a bit field and a domain policy routinely sets several flags at
+// once, so each flag is tested with a bitwise AND rather than the whole value being
+// looked up as a single key. A value with no known flag set returns an empty string.
+//
+// Returns:
+//   - A string containing the names of the set flags, separated by a pipe ("|").
 func (pwdProperties PasswordProperties) String() string {
-	if _, ok := PasswordPropertiesMap[pwdProperties]; ok {
-		return PasswordPropertiesMap[pwdProperties]
+	names := []string{}
+	for flag, name := range PasswordPropertiesMap {
+		if pwdProperties&flag != 0 {
+			names = append(names, name)
+		}
 	}
-	return ""
+
+	sort.Strings(names)
+
+	return strings.Join(names, "|")
 }
 
+// Description returns the descriptions of the flags set in the value, one per line.
+//
+// As with String, the value is a bit field, so every set flag is described rather
+// than the whole value being looked up as a single key.
+//
+// Returns:
+//   - A string containing the descriptions of the set flags, separated by newlines.
 func (pwdProperties PasswordProperties) Description() string {
-	if _, ok := PasswordPropertiesDescriptions[pwdProperties]; ok {
-		return PasswordPropertiesDescriptions[pwdProperties]
+	descriptions := []string{}
+	for flag, description := range PasswordPropertiesDescriptions {
+		if pwdProperties&flag != 0 {
+			descriptions = append(descriptions, description)
+		}
 	}
-	return ""
+
+	sort.Strings(descriptions)
+
+	return strings.Join(descriptions, "\n")
+}
+
+// GetFlags returns the flags set in the value, sorted in ascending order.
+//
+// Returns:
+//   - A slice of PasswordProperties values representing the set flags.
+func (pwdProperties PasswordProperties) GetFlags() []PasswordProperties {
+	flags := []PasswordProperties{}
+	for flag := range PasswordPropertiesMap {
+		if pwdProperties&flag != 0 {
+			flags = append(flags, flag)
+		}
+	}
+
+	sort.Slice(flags, func(i, j int) bool {
+		return flags[i] < flags[j]
+	})
+
+	return flags
 }
