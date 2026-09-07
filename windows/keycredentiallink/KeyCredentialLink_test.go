@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt/keys/magic"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/usage"
 	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/utils"
 	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/version"
 )
@@ -280,4 +281,122 @@ func TestDescribe_ZeroValue(t *testing.T) {
 	kc := keycredentiallink.KeyCredentialLink{}
 
 	kc.Describe(0)
+}
+
+// KeyUsage_AdminKey is 0, which is also the zero value of the KeyUsage struct, so a
+// blob carrying no KeyUsage entry used to be indistinguishable from one declaring an
+// admin (PIN-reset) key — both when described and when marshalled back out.
+func TestKeyUsage_AbsentEntryIsNotAdminKey(t *testing.T) {
+	// A version plus a single KeyID entry: no KeyUsage entry at all.
+	dnWithBinary := ldap.DNWithBinary{}
+	if _, err := dnWithBinary.Unmarshal([]byte("B:18:00020000020001aabb:CN=PC01,DC=MANTICORE,DC=local")); err != nil {
+		t.Fatalf("DNWithBinary.Unmarshal() error = %v, want nil", err)
+	}
+
+	kc := keycredentiallink.KeyCredentialLink{}
+	if err := kc.ParseDNWithBinary(dnWithBinary); err != nil {
+		t.Fatalf("ParseDNWithBinary() error = %v, want nil", err)
+	}
+
+	if kc.Usage != nil {
+		t.Errorf("Usage = %v, want nil for a blob that carried no KeyUsage entry", kc.Usage)
+	}
+
+	// And it must describe without claiming a usage.
+	kc.Describe(0)
+}
+
+// The absence must not be written back out as a declared usage. Marshalling needs
+// key material, which the blob above does not carry, so this covers the same absent
+// Usage on a credential that can be marshalled.
+func TestKeyUsage_AbsentEntryIsNotMarshalled(t *testing.T) {
+	kc := keycredentiallink.KeyCredentialLink{
+		Version:     version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
+		KeyMaterial: testKeyMaterial(0x01),
+	}
+
+	if kc.Usage != nil {
+		t.Fatalf("Usage = %v, want nil", kc.Usage)
+	}
+
+	blob, err := kc.ToKeyCredentialLinkBlob()
+	if err != nil {
+		t.Fatalf("ToKeyCredentialLinkBlob() error = %v, want nil", err)
+	}
+
+	for _, entry := range blob.Entries {
+		if entry.Identifier == keycredentiallink.KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage {
+			t.Errorf("blob carries a KeyUsage entry with value %v, want none", entry.Value)
+		}
+	}
+}
+
+// A blob that does declare a usage keeps it, so the fix does not turn every usage
+// into an absence.
+func TestKeyUsage_DeclaredAdminKeyIsPreserved(t *testing.T) {
+	// version 0x200 + KeyUsage entry (identifier 0x04) whose single byte is 0x00.
+	dnWithBinary := ldap.DNWithBinary{}
+	if _, err := dnWithBinary.Unmarshal([]byte("B:16:0002000001000400:CN=PC01,DC=MANTICORE,DC=local")); err != nil {
+		t.Fatalf("DNWithBinary.Unmarshal() error = %v, want nil", err)
+	}
+
+	kc := keycredentiallink.KeyCredentialLink{}
+	if err := kc.ParseDNWithBinary(dnWithBinary); err != nil {
+		t.Fatalf("ParseDNWithBinary() error = %v, want nil", err)
+	}
+
+	if kc.Usage == nil {
+		t.Fatalf("Usage = nil, want a declared AdminKey usage")
+	}
+
+	if kc.Usage.Value != usage.KeyUsage_AdminKey {
+		t.Errorf("Usage.Value = 0x%02x, want 0x%02x (AdminKey)", kc.Usage.Value, usage.KeyUsage_AdminKey)
+	}
+}
+
+// A legacy blob carries its usage as a string in the same entry identifier. Emitting
+// the binary entry unconditionally gave such a blob two entries under identifier
+// 0x04: a fabricated AdminKey plus the legacy string.
+func TestKeyUsage_LegacyUsageDoesNotGainASecondEntry(t *testing.T) {
+	kc := keycredentiallink.KeyCredentialLink{
+		Version:     version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
+		KeyMaterial: testKeyMaterial(0x01),
+		LegacyUsage: "NGC",
+	}
+
+	blob, err := kc.ToKeyCredentialLinkBlob()
+	if err != nil {
+		t.Fatalf("ToKeyCredentialLinkBlob() error = %v, want nil", err)
+	}
+
+	usageEntries := make([][]byte, 0)
+	for _, entry := range blob.Entries {
+		if entry.Identifier == keycredentiallink.KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage {
+			usageEntries = append(usageEntries, entry.Value)
+		}
+	}
+
+	if len(usageEntries) != 1 {
+		t.Errorf("blob carries %d KeyUsage entries (%v), want exactly 1 (the legacy string)", len(usageEntries), usageEntries)
+	}
+
+	if len(usageEntries) == 1 && string(usageEntries[0]) != "NGC" {
+		t.Errorf("KeyUsage entry = %q, want %q", usageEntries[0], "NGC")
+	}
+}
+
+// A credential built by the constructor still declares NGC.
+func TestKeyUsage_ConstructorSetsNGC(t *testing.T) {
+	now := utils.NewDateTimeFromTicks(0)
+	kcv := version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2}
+
+	kc := keycredentiallink.NewKeyCredentialLink(kcv, "", testKeyMaterial(0x01), guid.NewGUID(), &now, &now)
+
+	if kc.Usage == nil {
+		t.Fatalf("Usage = nil, want NGC")
+	}
+
+	if kc.Usage.Value != usage.KeyUsage_NGC {
+		t.Errorf("Usage.Value = 0x%02x, want 0x%02x (NGC)", kc.Usage.Value, usage.KeyUsage_NGC)
+	}
 }
