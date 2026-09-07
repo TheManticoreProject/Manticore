@@ -332,3 +332,47 @@ func TestDateTime_SetTicks_SubSecondPrecision(t *testing.T) {
 		t.Errorf("GetTime() = %s, want %s", dt.GetTime().UTC(), expected)
 	}
 }
+
+// withNonUTCLocalZone points time.Local at a fixed offset for the duration of a
+// test. The defect these tests cover is invisible on a UTC host — which is what CI
+// runs — because the local zone and UTC then coincide, so the zone has to be pinned
+// for the assertions to mean anything.
+func withNonUTCLocalZone(t *testing.T) {
+	t.Helper()
+
+	original := time.Local
+	time.Local = time.FixedZone("TEST", 2*60*60)
+	t.Cleanup(func() { time.Local = original })
+}
+
+// A DateTime must report the same zone however it was populated: SetTime stores a
+// UTC value, and time.Unix inside SetTicks returns a local-zone one, so a decoded
+// timestamp used to print with the collector's offset under Describe's "(UTC)" label.
+func TestDateTime_SetTicks_StoresUTC(t *testing.T) {
+	withNonUTCLocalZone(t)
+
+	dt := utils.DateTime{}
+	dt.SetTicks(132918192030000000) // 2022-03-15 12:00:03 UTC
+
+	if zone, offset := dt.GetTime().Zone(); offset != 0 {
+		t.Errorf("SetTicks stored zone %s with offset %d, want UTC (offset 0)", zone, offset)
+	}
+
+	if got, want := dt.String(), "2022-03-15 12:00:03 +0000 UTC"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+// SetTicks and SetTime must agree on the zone for the same instant.
+func TestDateTime_SetTicksAndSetTimeAgreeOnZone(t *testing.T) {
+	withNonUTCLocalZone(t)
+
+	viaTicks := utils.DateTime{}
+	viaTicks.SetTicks(132918192030000000)
+
+	viaTime := utils.NewDateTimeFromTime(viaTicks.GetTime())
+
+	if viaTicks.String() != viaTime.String() {
+		t.Errorf("SetTicks gave %q, SetTime gave %q for the same instant", viaTicks.String(), viaTime.String())
+	}
+}

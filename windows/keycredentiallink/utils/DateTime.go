@@ -106,7 +106,11 @@ func (dt *DateTime) SetTicks(ticks uint64) {
 
 	secondsFromUnixEpoch := int64(secondsSince1601) - int64(ticksBetween1601AndUnix/ticksPerSecond)
 
-	dt.time = time.Unix(secondsFromUnixEpoch, int64(remainderTicks)*100)
+	// The result is normalised to UTC to match SetTime, which stores a UTC value:
+	// time.Unix returns a Time in the machine's local zone, which would otherwise
+	// make the zone of a DateTime depend on how it was populated, and Describe
+	// prints these values under a label that says UTC.
+	dt.time = time.Unix(secondsFromUnixEpoch, int64(remainderTicks)*100).UTC()
 }
 
 // GetTicks returns the number of 100-nanosecond intervals (ticks) stored in the DateTime instance.
