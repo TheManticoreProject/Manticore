@@ -285,16 +285,51 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 			}
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyApproximateLastLogonTimeStamp:
-			t := utils.ConvertFromBinaryTime(entry.Value, *kc.Source, kc.Version)
-			kc.LastLogonTime = &t
+			t, err := kc.parseBinaryTime(entry.Value)
+			if err != nil {
+				return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink last logon time: %w", err)
+			}
+			kc.LastLogonTime = t
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyCreationTime:
-			t := utils.ConvertFromBinaryTime(entry.Value, *kc.Source, kc.Version)
-			kc.CreationTime = &t
+			t, err := kc.parseBinaryTime(entry.Value)
+			if err != nil {
+				return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink creation time: %w", err)
+			}
+			kc.CreationTime = t
 		}
 	}
 
 	return bytesRead, nil
+}
+
+// parseBinaryTime decodes a timestamp entry value into a DateTime.
+//
+// The KeySource entry is optional, and the entries of a blob are not guaranteed
+// to contain one even though it sorts before the timestamp entries, so an absent
+// source is decoded as the zero source instead of being dereferenced. The value
+// itself is a 64-bit integer, so a shorter one is a malformed entry rather than
+// something to decode.
+//
+// Parameters:
+// - value: The raw value of the timestamp entry.
+//
+// Returns:
+// - A pointer to the decoded DateTime object.
+// - An error if the value cannot hold a timestamp.
+func (kc *KeyCredentialLink) parseBinaryTime(value []byte) (*utils.DateTime, error) {
+	if len(value) < 8 {
+		return nil, fmt.Errorf("malformed KeyCredentialLink: insufficient bytes for a timestamp (expected at least 8, got %d)", len(value))
+	}
+
+	keySource := source.KeySource{}
+	if kc.Source != nil {
+		keySource = *kc.Source
+	}
+
+	t := utils.ConvertFromBinaryTime(value, keySource, kc.Version)
+
+	return &t, nil
 }
 
 // CheckIntegrity checks the integrity of the key credential.
@@ -410,6 +445,11 @@ func (kc *KeyCredentialLink) ToKeyCredentialLinkBlob() (*KEYCREDENTIALLINK_BLOB,
 	}
 
 	// Key Material (entry type 0x03) [MANDATORY]
+	// A parsed blob may still lack the entry, so the absence is reported as an
+	// error rather than dereferenced.
+	if kc.KeyMaterial == nil {
+		return nil, fmt.Errorf("cannot build a KeyCredentialLink blob without key material")
+	}
 	keyMaterialBytes, err := kc.KeyMaterial.Marshal()
 	if err != nil {
 		return nil, err
@@ -547,16 +587,34 @@ func (kc *KeyCredentialLink) Describe(indent int) {
 			fmt.Printf("%s │ \x1b[93mKeyHash\x1b[0m: %s (\x1b[91minvalid\x1b[0m)\n", indentPrompt, hex.EncodeToString(kc.KeyHash))
 		}
 	}
-	kc.KeyMaterial.Describe(indent + 1)
+	// Every entry below is described only when the blob carried it: the entries the
+	// specification marks mandatory are not guaranteed to be present in a blob that
+	// was parsed rather than built, so an absent one is reported instead of being
+	// dereferenced.
+	if kc.KeyMaterial != nil {
+		kc.KeyMaterial.Describe(indent + 1)
+	} else {
+		fmt.Printf("%s │ \x1b[93mKeyMaterial\x1b[0m: \x1b[91m<absent>\x1b[0m\n", indentPrompt)
+	}
 	fmt.Printf("%s │ \x1b[93mUsage\x1b[0m: %s\n", indentPrompt, kc.Usage.String())
 	if len(kc.LegacyUsage) != 0 {
 		fmt.Printf("%s │ \x1b[93mLegacyUsage\x1b[0m: %s\n", indentPrompt, kc.LegacyUsage)
 	}
-	fmt.Printf("%s │ \x1b[93mSource\x1b[0m: 0x%02x (%s)\n", indentPrompt, kc.Source.Value, kc.Source.String())
-	fmt.Printf("%s │ \x1b[93mDeviceId\x1b[0m: %s\n", indentPrompt, kc.DeviceId.ToFormatD())
-	kc.CustomKeyInfo.Describe(indent + 1)
-	fmt.Printf("%s │ \x1b[93mLastLogonTime (UTC)\x1b[0m: %s\n", indentPrompt, kc.LastLogonTime.String())
-	fmt.Printf("%s │ \x1b[93mCreationTime (UTC)\x1b[0m: %s\n", indentPrompt, kc.CreationTime.String())
+	if kc.Source != nil {
+		fmt.Printf("%s │ \x1b[93mSource\x1b[0m: 0x%02x (%s)\n", indentPrompt, kc.Source.Value, kc.Source.String())
+	}
+	if kc.DeviceId != nil {
+		fmt.Printf("%s │ \x1b[93mDeviceId\x1b[0m: %s\n", indentPrompt, kc.DeviceId.ToFormatD())
+	}
+	if kc.CustomKeyInfo != nil {
+		kc.CustomKeyInfo.Describe(indent + 1)
+	}
+	if kc.LastLogonTime != nil {
+		fmt.Printf("%s │ \x1b[93mLastLogonTime (UTC)\x1b[0m: %s\n", indentPrompt, kc.LastLogonTime.String())
+	}
+	if kc.CreationTime != nil {
+		fmt.Printf("%s │ \x1b[93mCreationTime (UTC)\x1b[0m: %s\n", indentPrompt, kc.CreationTime.String())
+	}
 	fmt.Printf("%s └───\n", indentPrompt)
 }
 

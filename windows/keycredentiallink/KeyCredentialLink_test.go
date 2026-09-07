@@ -188,3 +188,96 @@ func TestComputeKeyIdentifier_NoKeyMaterial(t *testing.T) {
 		t.Errorf("ComputeKeyIdentifier() = %q, want an empty string", got)
 	}
 }
+
+// msDS-KeyCredentialLink is read off objects the caller does not control, so a
+// malformed value has to come back as an error from ParseDNWithBinary instead of
+// ending the process. Each value below is well formed as a DN-with-binary and
+// malformed as a blob.
+func TestParseDNWithBinary_MalformedValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		wantError bool
+	}{
+		{
+			// B:4:0000 declares four hexadecimal digits and supplies four, which is two
+			// bytes: too few to hold the four-byte version.
+			name:      "binary shorter than the version",
+			value:     "B:4:0000:CN=PC01,DC=MANTICORE,DC=local",
+			wantError: true,
+		},
+		{
+			// A timestamp entry whose value cannot hold a 64-bit integer.
+			name:      "truncated last logon timestamp",
+			value:     "B:30:000200000100050104000800000000:CN=PC01,DC=MANTICORE,DC=local",
+			wantError: true,
+		},
+		{
+			// A version and nothing else: the entries the specification marks mandatory
+			// are absent, which the caller handles, so this parses.
+			name:      "version only",
+			value:     "B:8:00020000:CN=PC01,DC=MANTICORE,DC=local",
+			wantError: false,
+		},
+		{
+			// A timestamp entry with no KeySource entry before it. The source governs how
+			// the timestamp is decoded and is itself optional, so its absence must not be
+			// dereferenced.
+			name:      "last logon timestamp without a key source",
+			value:     "B:30:000200000800080000000000000000:CN=PC01,DC=MANTICORE,DC=local",
+			wantError: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dnWithBinary := ldap.DNWithBinary{}
+			if _, err := dnWithBinary.Unmarshal([]byte(test.value)); err != nil {
+				t.Fatalf("DNWithBinary.Unmarshal() error = %v, want nil", err)
+			}
+
+			kc := keycredentiallink.KeyCredentialLink{}
+			err := kc.ParseDNWithBinary(dnWithBinary)
+
+			if test.wantError && err == nil {
+				t.Fatalf("ParseDNWithBinary() returned no error, want one")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("ParseDNWithBinary() error = %v, want nil", err)
+			}
+
+			if err != nil {
+				return
+			}
+
+			// A value that parses must also describe: the entries it lacks are reported,
+			// not dereferenced.
+			kc.Describe(0)
+		})
+	}
+}
+
+// A blob that omits the mandatory KeyMaterial entry cannot be marshalled back, and
+// the integrity check that goes through the same path has to report a mismatch
+// rather than dereferencing the absent material.
+func TestToKeyCredentialLinkBlob_NoKeyMaterial(t *testing.T) {
+	kc := keycredentiallink.KeyCredentialLink{
+		Version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
+		KeyHash: []byte{0x01, 0x02, 0x03, 0x04},
+	}
+
+	if _, err := kc.ToKeyCredentialLinkBlob(); err == nil {
+		t.Errorf("ToKeyCredentialLinkBlob() returned no error, want one")
+	}
+
+	if kc.CheckIntegrity() {
+		t.Errorf("CheckIntegrity() = true, want false for a credential without key material")
+	}
+}
+
+// Describe on a zero-valued structure touches every optional field at once.
+func TestDescribe_ZeroValue(t *testing.T) {
+	kc := keycredentiallink.KeyCredentialLink{}
+
+	kc.Describe(0)
+}

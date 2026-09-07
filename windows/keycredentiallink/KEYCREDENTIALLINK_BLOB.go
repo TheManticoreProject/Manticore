@@ -48,7 +48,16 @@ func NewKEYCREDENTIALLINK_BLOB(version version.KeyCredentialLinkVersion, entries
 func (k *KEYCREDENTIALLINK_BLOB) Unmarshal(data []byte) (int, error) {
 	bytesRead := 0
 
-	k.Version.Unmarshal(data[bytesRead:4])
+	// The version is a fixed four-byte field, and the entry loop below already
+	// refuses a truncated entry header, so the version needs the same check
+	// rather than slicing a buffer that may be shorter than the field.
+	if len(data) < 4 {
+		return bytesRead, fmt.Errorf("malformed KeyCredentialLink: insufficient bytes for the version (expected at least 4, got %d)", len(data))
+	}
+
+	if _, err := k.Version.Unmarshal(data[bytesRead : bytesRead+4]); err != nil {
+		return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink version: %w", err)
+	}
 	bytesRead += 4
 
 	k.Entries = make([]KEYCREDENTIALLINK_ENTRY, 0)
