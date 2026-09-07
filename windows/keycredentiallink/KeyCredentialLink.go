@@ -25,7 +25,7 @@ import (
 // requires; supply one only to reproduce a specific credential.
 // - KeyHash: A byte slice containing the hash of the key material.
 // - KeyMaterial: A KeyMaterial object representing the key material of the key credential.
-// - Usage: A KeyUsage object representing the usage of the key credential.
+// - Usage: A KeyUsage object representing the usage of the key credential, or nil when the blob carried no KeyUsage entry.
 // - LegacyUsage: A string representing the legacy usage of the key credential.
 // - Source: A KeySource object representing the source of the key credential.
 // - LastLogonTime: A DateTime object representing the last logon time associated with the key credential.
@@ -54,8 +54,11 @@ type KeyCredentialLink struct {
 	// This field is MANDATORY.
 	KeyMaterial bcrypt.KeyMaterial
 	// A KeyUsage object representing the usage of the key credential.
-	// This field is MANDATORY.
-	Usage usage.KeyUsage
+	// This field is MANDATORY, but a blob that was parsed rather than built may
+	// still lack the entry, so it is held as a pointer: KeyUsage_AdminKey is 0,
+	// which collides with the zero value of the struct, and a nil pointer is the
+	// only way to tell an absent entry from a declared admin key.
+	Usage *usage.KeyUsage
 	// A string representing the legacy usage of the key credential.
 	// This field is OPTIONAL.
 	LegacyUsage string
@@ -118,7 +121,7 @@ func NewKeyCredentialLink(
 		Identifier:  identifier,
 		KeyHash:     []byte{},
 		KeyMaterial: keyMaterial,
-		Usage:       usage.KeyUsage{Value: usage.KeyUsage_NGC},
+		Usage:       &usage.KeyUsage{Value: usage.KeyUsage_NGC},
 		LegacyUsage: "",
 		Source:      &source.KeySource{},
 		CustomKeyInfo: &customkeyinformation.CustomKeyInformation{
@@ -251,6 +254,9 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage:
 			if len(entry.Value) == 1 {
 				// This is apparently a V2 structure (single byte enum).
+				if kc.Usage == nil {
+					kc.Usage = &usage.KeyUsage{}
+				}
 				_, err := kc.Usage.Unmarshal(entry.Value)
 				if err != nil {
 					return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink usage: %w", err)
@@ -462,18 +468,24 @@ func (kc *KeyCredentialLink) ToKeyCredentialLinkBlob() (*KEYCREDENTIALLINK_BLOB,
 	)
 
 	// Key Usage (entry type 0x04) [MANDATORY]
-	usageBytes, err := kc.Usage.Marshal()
-	if err != nil {
-		return nil, err
+	// Written only when the credential carries one. Emitting it unconditionally
+	// declared KeyUsage_AdminKey for a blob that never held the entry, and a
+	// legacy blob — which carries its usage as the string in LegacyUsage below —
+	// ended up with two entries under this identifier.
+	if kc.Usage != nil {
+		usageBytes, err := kc.Usage.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		blob.Entries = append(
+			blob.Entries,
+			KEYCREDENTIALLINK_ENTRY{
+				Identifier: KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage,
+				Value:      usageBytes,
+				Length:     uint16(len(usageBytes)),
+			},
+		)
 	}
-	blob.Entries = append(
-		blob.Entries,
-		KEYCREDENTIALLINK_ENTRY{
-			Identifier: KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage,
-			Value:      usageBytes,
-			Length:     uint16(len(usageBytes)),
-		},
-	)
 
 	// Legacy Key Usage (entry type 0x04) [OPTIONAL]
 	if len(kc.LegacyUsage) > 0 {
@@ -594,7 +606,11 @@ func (kc *KeyCredentialLink) Describe(indent int) {
 	} else {
 		fmt.Printf("%s │ \x1b[93mKeyMaterial\x1b[0m: \x1b[91m<absent>\x1b[0m\n", indentPrompt)
 	}
-	fmt.Printf("%s │ \x1b[93mUsage\x1b[0m: %s\n", indentPrompt, kc.Usage.String())
+	if kc.Usage != nil {
+		fmt.Printf("%s │ \x1b[93mUsage\x1b[0m: %s\n", indentPrompt, kc.Usage.String())
+	} else if len(kc.LegacyUsage) == 0 {
+		fmt.Printf("%s │ \x1b[93mUsage\x1b[0m: \x1b[91m<absent>\x1b[0m\n", indentPrompt)
+	}
 	if len(kc.LegacyUsage) != 0 {
 		fmt.Printf("%s │ \x1b[93mLegacyUsage\x1b[0m: %s\n", indentPrompt, kc.LegacyUsage)
 	}
