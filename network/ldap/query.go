@@ -109,7 +109,7 @@ func (ldapSession *Session) QueryWithControls(searchBase string, query string, a
 	)
 
 	// Perform LDAP search
-	searchResult, err := ldapSession.connection.SearchWithPaging(searchRequest, 1000)
+	searchResult, err := ldapSession.connection.SearchWithPaging(searchRequest, ldapSession.GetPageSize())
 	if err != nil {
 		return nil, fmt.Errorf("error searching LDAP: %w", err)
 	}

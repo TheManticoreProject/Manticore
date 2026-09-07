@@ -65,7 +65,21 @@ type Session struct {
 	// negotiated per-message security context survives past the bind and is torn
 	// down on Close.
 	gssClient *nativeGSSAPIClient
+	// pageSize is the number of entries a paged search asks the server for per
+	// page. It defaults to DefaultPageSize; use SetPageSize to change it. Zero
+	// means unset and selects DefaultPageSize, so a Session built as a literal
+	// rather than through NewSession still pages.
+	pageSize uint32
 }
+
+// DefaultPageSize is the page size a session requests for a paged search unless
+// SetPageSize says otherwise.
+//
+// It matches MaxPageSize in the default Active Directory query policy
+// (CN=Default Query Policy,CN=Query-Policies,CN=Directory Service,CN=Windows NT,
+// CN=Services,<configurationNamingContext>), which is the ceiling a domain
+// controller applies to a paged search out of the box.
+const DefaultPageSize uint32 = 1000
 
 // NewSession creates a new LDAP session with the provided configuration and credentials.
 //
@@ -112,6 +126,8 @@ func NewSession(host string, port int, credentials *credentials.Credentials, use
 	// Preserve the historical default of an auth-only GSSAPI bind (no ongoing
 	// sign/seal); callers opt into a security layer explicitly.
 	s.gssapiLayer = saslLayerNone
+	// Preserve the historical page size every paged search used to hardcode.
+	s.pageSize = DefaultPageSize
 
 	return s, nil
 }
@@ -142,6 +158,34 @@ func (s *Session) SetGSSAPISealing() {
 // This must be called before Connect to take effect.
 func (s *Session) SetTLSSkipVerify(skip bool) {
 	s.tlsSkipVerify = skip
+}
+
+// SetPageSize sets how many entries a paged search asks the server for per page.
+//
+// The server caps this at its own limit (MaxPageSize in the Active Directory query
+// policy, 1000 by default), so a larger value is not an error, it is simply not
+// honoured. A smaller one costs more round-trips and returns the first entries
+// sooner.
+//
+// It applies to every subsequent paged search made through the session: Query and
+// its scope wrappers, QueryWithControls, and GetNtSecurityDescriptorOf. It may be
+// called at any time, before or after Connect.
+//
+// Parameters:
+//
+//	pageSize (uint32): The number of entries per page. Zero means unset and
+//	  selects DefaultPageSize.
+func (s *Session) SetPageSize(pageSize uint32) {
+	s.pageSize = pageSize
+}
+
+// GetPageSize returns the page size a paged search on this session requests, which
+// is DefaultPageSize unless SetPageSize set another one.
+func (s *Session) GetPageSize() uint32 {
+	if s.pageSize == 0 {
+		return DefaultPageSize
+	}
+	return s.pageSize
 }
 
 // SetKerberosSPNHostname sets the hostname used to build the ldap/<host> service
