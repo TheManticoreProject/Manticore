@@ -205,6 +205,10 @@ func (dt *DateTime) Unmarshal(data []byte) error {
 	if len(data) != 8 {
 		return fmt.Errorf("invalid data length: %d", len(data))
 	}
-	dt.ticks = binary.LittleEndian.Uint64(data)
+	// Routed through SetTicks so the derived time field is recomputed with the tick
+	// count: assigning dt.ticks alone leaves the two fields describing different
+	// instants, and every other mutator in this file maintains the pair.
+	dt.SetTicks(binary.LittleEndian.Uint64(data))
+
 	return nil
 }
