@@ -40,9 +40,19 @@ func (v DomainFunctionalityLevel) String() string {
 	}
 }
 
-// IsSupported returns true if the domain functionality level is supported by the current version of Windows
+// IsSupported returns true if the value is a domain functionality level this package
+// recognises, that is one named by DomainFunctionalityLevelToWindowsVersion.
+//
+// The check consults that table rather than restating its contents as a chain of
+// equality comparisons, which is how the two came to disagree: the comparison chain
+// listed eight of the nine defined levels and omitted 2003 Interim.
+//
+// Returns:
+//   - true if the level is one this package defines, false otherwise.
 func (v DomainFunctionalityLevel) IsSupported() bool {
-	return v == DOMAIN_FUNCTIONALITY_LEVEL_2000 || v == DOMAIN_FUNCTIONALITY_LEVEL_2003 || v == DOMAIN_FUNCTIONALITY_LEVEL_2008 || v == DOMAIN_FUNCTIONALITY_LEVEL_2008_R2 || v == DOMAIN_FUNCTIONALITY_LEVEL_2012 || v == DOMAIN_FUNCTIONALITY_LEVEL_2012_R2 || v == DOMAIN_FUNCTIONALITY_LEVEL_2016 || v == DOMAIN_FUNCTIONALITY_LEVEL_2025
+	_, exists := DomainFunctionalityLevelToWindowsVersion[v]
+
+	return exists
 }
 
 // Equal returns true if the domain functionality level is equal to the specified level
