@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -80,32 +81,40 @@ func ConvertFromBinaryIdentifier(keyIdentifier []byte, kcv version.KeyCredential
 // - version: The version of the KeyCredentialLink, which can affect the interpretation of the time.
 //
 // Returns:
-// - A time.Time object representing the converted time.
+// - A DateTime object representing the converted time.
+// - An error if the buffer cannot hold a 64-bit timestamp.
 //
 // Note:
 // The function currently treats all versions and sources the same way, decoding the binary
 // timestamp as a count of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC.
 //
 // Src : https://github.com/microsoft/referencesource/blob/master/mscorlib/system/datetime.cs
-func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) DateTime {
+func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) (DateTime, error) {
+	// The value comes from a KEYCREDENTIALLINK_ENTRY whose length is whatever the
+	// entry declared, so a blob can parse into an entry too short to hold the
+	// field. Reading it unchecked indexes past the end of the slice.
+	if len(rawBinaryTime) < 8 {
+		return DateTime{}, fmt.Errorf("insufficient bytes for a timestamp (expected at least 8, got %d)", len(rawBinaryTime))
+	}
+
 	timeStamp := binary.LittleEndian.Uint64(rawBinaryTime)
 
 	switch kcv.Value {
 	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
-		return dateTimeFromWireTicks(timeStamp)
+		return dateTimeFromWireTicks(timeStamp), nil
 	case version.KeyCredentialLinkVersion_2:
 		if ksrc.Value == source.KeySource_AD {
-			return dateTimeFromWireTicks(timeStamp)
+			return dateTimeFromWireTicks(timeStamp), nil
 		} else {
 			// This is not fully supported right now, you may encounter issues.
-			return dateTimeFromWireTicks(timeStamp)
+			return dateTimeFromWireTicks(timeStamp), nil
 		}
 	default:
 		if ksrc.Value == source.KeySource_AD {
-			return dateTimeFromWireTicks(timeStamp)
+			return dateTimeFromWireTicks(timeStamp), nil
 		} else {
 			// This is not fully supported right now, you may encounter issues.
-			return dateTimeFromWireTicks(timeStamp)
+			return dateTimeFromWireTicks(timeStamp), nil
 		}
 	}
 }

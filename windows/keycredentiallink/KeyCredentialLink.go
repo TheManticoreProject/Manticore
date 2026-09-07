@@ -307,9 +307,8 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 //
 // The KeySource entry is optional, and the entries of a blob are not guaranteed
 // to contain one even though it sorts before the timestamp entries, so an absent
-// source is decoded as the zero source instead of being dereferenced. The value
-// itself is a 64-bit integer, so a shorter one is a malformed entry rather than
-// something to decode.
+// source is decoded as the zero source instead of being dereferenced. A value too
+// short to hold a timestamp is reported by ConvertFromBinaryTime itself.
 //
 // Parameters:
 // - value: The raw value of the timestamp entry.
@@ -318,16 +317,15 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 // - A pointer to the decoded DateTime object.
 // - An error if the value cannot hold a timestamp.
 func (kc *KeyCredentialLink) parseBinaryTime(value []byte) (*utils.DateTime, error) {
-	if len(value) < 8 {
-		return nil, fmt.Errorf("malformed KeyCredentialLink: insufficient bytes for a timestamp (expected at least 8, got %d)", len(value))
-	}
-
 	keySource := source.KeySource{}
 	if kc.Source != nil {
 		keySource = *kc.Source
 	}
 
-	t := utils.ConvertFromBinaryTime(value, keySource, kc.Version)
+	t, err := utils.ConvertFromBinaryTime(value, keySource, kc.Version)
+	if err != nil {
+		return nil, fmt.Errorf("malformed KeyCredentialLink: %w", err)
+	}
 
 	return &t, nil
 }
