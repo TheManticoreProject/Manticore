@@ -41,10 +41,33 @@ func ConvertToBinaryIdentifier(keyIdentifier string, kcv version.KeyCredentialLi
 	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
 		return hex.DecodeString(keyIdentifier)
 	case version.KeyCredentialLinkVersion_2:
-		return base64.StdEncoding.DecodeString(strings.TrimRight(keyIdentifier, "=") + "=")
+		return decodeBase64Identifier(keyIdentifier)
 	default:
-		return base64.StdEncoding.DecodeString(strings.TrimRight(keyIdentifier, "=") + "=")
+		return decodeBase64Identifier(keyIdentifier)
 	}
+}
+
+// decodeBase64Identifier decodes a base64 key identifier, accepting both the padded
+// form ConvertFromBinaryIdentifier produces and an unpadded one.
+//
+// The padding is left as it is rather than rewritten. Base64 uses two padding
+// characters when the encoded length is 1 mod 3, one when it is 2 mod 3 and none
+// otherwise, so stripping the padding and appending a fixed single '=' only ever
+// produced a decodable string for the 2-mod-3 case and corrupted the length of
+// every other one.
+//
+// Parameters:
+// - keyIdentifier: A string containing the base64 representation of the key identifier.
+//
+// Returns:
+// - A byte slice containing the decoded key identifier.
+// - An error if the string is not valid base64.
+func decodeBase64Identifier(keyIdentifier string) ([]byte, error) {
+	if strings.HasSuffix(keyIdentifier, "=") {
+		return base64.StdEncoding.DecodeString(keyIdentifier)
+	}
+
+	return base64.RawStdEncoding.DecodeString(keyIdentifier)
 }
 
 // ConvertFromBinaryIdentifier converts a binary key identifier to its string representation.

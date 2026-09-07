@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 
@@ -326,4 +327,58 @@ func TestConvertFromBinaryTime_ShortBuffer(t *testing.T) {
 			t.Errorf("decoded %s, want %s", decoded.GetTime(), expected)
 		}
 	})
+}
+
+// Base64 padding is one or two characters depending on the encoded length, so an
+// identifier of any length has to survive the round trip. Rewriting the padding with
+// a fixed single '=' only ever worked for lengths that are 2 mod 3 — which is what a
+// 32-byte SHA-256 hash happens to be, hiding the defect on the normal path.
+func TestConvertToBinaryIdentifier_RoundTripsEveryLength(t *testing.T) {
+	for _, kcv := range []version.KeyCredentialLinkVersion{
+		{Value: version.KeyCredentialLinkVersion_0},
+		{Value: version.KeyCredentialLinkVersion_1},
+		{Value: version.KeyCredentialLinkVersion_2},
+	} {
+		for size := 1; size <= 40; size++ {
+			raw := make([]byte, size)
+			for i := range raw {
+				raw[i] = byte(i)
+			}
+
+			encoded := utils.ConvertFromBinaryIdentifier(raw, kcv)
+
+			decoded, err := utils.ConvertToBinaryIdentifier(encoded, kcv)
+			if err != nil {
+				t.Errorf("version %d, %d bytes (%d mod 3): ConvertToBinaryIdentifier(%q) error = %v",
+					kcv.Value, size, size%3, encoded, err)
+				continue
+			}
+
+			if !bytes.Equal(decoded, raw) {
+				t.Errorf("version %d, %d bytes: round trip gave %d bytes, want the original %d",
+					kcv.Value, size, len(decoded), size)
+			}
+		}
+	}
+}
+
+// An identifier whose padding has been stripped still decodes, which is what the
+// original padding rewrite was reaching for.
+func TestConvertToBinaryIdentifier_AcceptsUnpaddedInput(t *testing.T) {
+	kcv := version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2}
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = byte(i)
+	}
+
+	unpadded := strings.TrimRight(utils.ConvertFromBinaryIdentifier(raw, kcv), "=")
+
+	decoded, err := utils.ConvertToBinaryIdentifier(unpadded, kcv)
+	if err != nil {
+		t.Fatalf("ConvertToBinaryIdentifier(%q) error = %v, want nil", unpadded, err)
+	}
+
+	if !bytes.Equal(decoded, raw) {
+		t.Errorf("decoded %d bytes, want the original 32", len(decoded))
+	}
 }
