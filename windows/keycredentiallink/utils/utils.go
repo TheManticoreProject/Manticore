@@ -83,8 +83,8 @@ func ConvertFromBinaryIdentifier(keyIdentifier []byte, kcv version.KeyCredential
 // - A time.Time object representing the converted time.
 //
 // Note:
-// The function currently treats all versions and sources the same way, converting the binary
-// timestamp directly to a Unix time in nanoseconds.
+// The function currently treats all versions and sources the same way, decoding the binary
+// timestamp as a count of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC.
 //
 // Src : https://github.com/microsoft/referencesource/blob/master/mscorlib/system/datetime.cs
 func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) DateTime {
@@ -92,20 +92,20 @@ func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv vers
 
 	switch kcv.Value {
 	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
-		return NewDateTimeFromTicks(uint64(timeStamp))
+		return dateTimeFromWireTicks(timeStamp)
 	case version.KeyCredentialLinkVersion_2:
 		if ksrc.Value == source.KeySource_AD {
-			return NewDateTimeFromTicks(uint64(timeStamp))
+			return dateTimeFromWireTicks(timeStamp)
 		} else {
 			// This is not fully supported right now, you may encounter issues.
-			return NewDateTimeFromTicks(uint64(timeStamp))
+			return dateTimeFromWireTicks(timeStamp)
 		}
 	default:
 		if ksrc.Value == source.KeySource_AD {
-			return NewDateTimeFromTicks(uint64(timeStamp))
+			return dateTimeFromWireTicks(timeStamp)
 		} else {
 			// This is not fully supported right now, you may encounter issues.
-			return NewDateTimeFromTicks(uint64(timeStamp))
+			return dateTimeFromWireTicks(timeStamp)
 		}
 	}
 }
