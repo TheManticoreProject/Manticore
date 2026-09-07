@@ -3,6 +3,7 @@ package utils_test
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -93,32 +94,31 @@ func TestConvertFromBinaryTime(t *testing.T) {
 	}
 }
 
+// The encoder has to emit the FILETIME the field holds. This test previously called
+// only ConvertFromBinaryTime despite its name, which is why the encoder emitting
+// Unix nanoseconds went unnoticed.
 func TestConvertToBinaryTime(t *testing.T) {
-	// Create test timestamp (2022-03-15 12:00:03 UTC)
-	testTimeBytes := []byte{0x80, 0xa3, 0x22, 0x34, 0x64, 0x38, 0xd8, 0x01}
+	// 2022-03-15 12:00:03 UTC, and the bytes Windows writes for it.
 	testTimeStruct := time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC)
+	testTimeBytes := []byte{0x80, 0xa3, 0x22, 0x34, 0x64, 0x38, 0xd8, 0x01}
 
 	testCases := []struct {
 		name    string
-		input   []byte
 		source  source.KeySource
 		version version.KeyCredentialLinkVersion
 	}{
 		{
 			name:    "Version 0 AD source",
-			input:   testTimeBytes,
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_0},
 		},
 		{
 			name:    "Version 1 AD source",
-			input:   testTimeBytes,
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1},
 		},
 		{
 			name:    "Version 2 AD source",
-			input:   testTimeBytes,
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
 		},
@@ -126,9 +126,17 @@ func TestConvertToBinaryTime(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converted := utils.ConvertFromBinaryTime(tc.input, tc.source, tc.version)
-			if !converted.GetTime().Equal(testTimeStruct) {
-				t.Errorf("Time conversion mismatch. \n | Expected '%v'\n | utils.ConvertToBinaryTime(_) = %v\n | final decoded time '%v'", testTimeStruct, tc.input, converted.GetTime())
+			encoded := utils.ConvertToBinaryTime(testTimeStruct, tc.source, tc.version)
+
+			if !bytes.Equal(encoded, testTimeBytes) {
+				t.Errorf("ConvertToBinaryTime() = %s, want %s (the FILETIME Windows writes)",
+					hex.EncodeToString(encoded), hex.EncodeToString(testTimeBytes))
+			}
+
+			// The two functions are named as inverses and have to behave as such.
+			decoded := utils.ConvertFromBinaryTime(encoded, tc.source, tc.version)
+			if !decoded.GetTime().Equal(testTimeStruct) {
+				t.Errorf("round-trip gave %v, want %v", decoded.GetTime(), testTimeStruct)
 			}
 		})
 	}
