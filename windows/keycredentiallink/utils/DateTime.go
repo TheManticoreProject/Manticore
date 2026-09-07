@@ -26,6 +26,9 @@ type DateTime struct {
 
 const ticksBetween1601AndUnix uint64 = 116444736000000000 // (Unix(1970)-1601) in 100ns ticks
 
+// ticksPerSecond is the number of 100-nanosecond intervals in one second.
+const ticksPerSecond uint64 = 10000000
+
 // NewDateTimeFromTicks initializes a new DateTime instance from a number of ticks.
 //
 // Parameters:
@@ -92,16 +95,18 @@ func (dt DateTime) ToUniversalTime() time.Time {
 // This function updates both the Ticks field and recalculates the corresponding Time field based on the provided ticks.
 func (dt *DateTime) SetTicks(ticks uint64) {
 	dt.ticks = ticks
-	var nsFromUnixEpoch int64
-	if ticks >= ticksBetween1601AndUnix {
-		diffTicks := ticks - ticksBetween1601AndUnix
-		// diffTicks represents duration since Unix epoch in 100ns units; safe to scale to ns for time.Unix
-		nsFromUnixEpoch = int64(diffTicks) * 100
-	} else {
-		diffTicks := ticksBetween1601AndUnix - ticks
-		nsFromUnixEpoch = -int64(diffTicks) * 100
-	}
-	dt.time = time.Unix(0, nsFromUnixEpoch)
+
+	// The epoch offset is applied in whole seconds with the sub-second remainder
+	// carried separately. Scaling the whole tick count to nanoseconds in one
+	// multiplication exhausts the int64 that time.Unix takes after roughly 922
+	// years past 1601, which a 64-bit FILETIME can express more than sixty times
+	// over, so the arithmetic has to stay in seconds to cover the whole range.
+	secondsSince1601 := ticks / ticksPerSecond
+	remainderTicks := ticks % ticksPerSecond
+
+	secondsFromUnixEpoch := int64(secondsSince1601) - int64(ticksBetween1601AndUnix/ticksPerSecond)
+
+	dt.time = time.Unix(secondsFromUnixEpoch, int64(remainderTicks)*100)
 }
 
 // GetTicks returns the number of 100-nanosecond intervals (ticks) stored in the DateTime instance.

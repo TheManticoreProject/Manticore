@@ -271,3 +271,64 @@ func TestNewDateTimeFromTime(t *testing.T) {
 		})
 	}
 }
+
+// A 64-bit FILETIME can express dates far beyond what a single scaling to
+// nanoseconds can hold, so large tick counts have to decode to their real date
+// instead of a wrapped one. Before the fix the year-9999 value below decoded to
+// 1816, and the largest signed and unsigned values — 9.2 billion seconds apart —
+// decoded to the same instant.
+func TestDateTime_SetTicks_LargeValues(t *testing.T) {
+	testCases := []struct {
+		name         string
+		ticks        uint64
+		expectedYear int
+	}{
+		{name: "1601 epoch", ticks: 0, expectedYear: 1601},
+		{name: "typical value", ticks: 132918192030000000, expectedYear: 2022},
+		{name: "9999-12-31 (the largest date .NET represents)", ticks: 2650467743999999999, expectedYear: 9999},
+		{name: "maximum signed value", ticks: 0x7FFFFFFFFFFFFFFF, expectedYear: 30828},
+		{name: "maximum unsigned value", ticks: 0xFFFFFFFFFFFFFFFF, expectedYear: 60056},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dt := utils.DateTime{}
+			dt.SetTicks(tc.ticks)
+
+			if got := dt.GetTime().UTC().Year(); got != tc.expectedYear {
+				t.Errorf("SetTicks(%d) year = %d, want %d (time %s)", tc.ticks, got, tc.expectedYear, dt.GetTime().UTC())
+			}
+
+			if dt.GetTicks() != tc.ticks {
+				t.Errorf("GetTicks() = %d, want %d", dt.GetTicks(), tc.ticks)
+			}
+		})
+	}
+}
+
+// Distinct tick counts must decode to distinct instants; a wrapped multiplication
+// mapped the largest signed and unsigned values onto the same one.
+func TestDateTime_SetTicks_DistinctValuesStayDistinct(t *testing.T) {
+	first := utils.DateTime{}
+	first.SetTicks(0x7FFFFFFFFFFFFFFF)
+
+	second := utils.DateTime{}
+	second.SetTicks(0xFFFFFFFFFFFFFFFF)
+
+	if first.GetTime().Equal(second.GetTime()) {
+		t.Errorf("two tick counts 9.2e18 apart decoded to the same instant: %s", first.GetTime().UTC())
+	}
+}
+
+// The sub-second remainder is carried separately from the whole seconds, so it has
+// to survive the conversion.
+func TestDateTime_SetTicks_SubSecondPrecision(t *testing.T) {
+	// 2022-03-15 12:00:03 UTC plus 1234567 ticks (0.1234567s)
+	dt := utils.DateTime{}
+	dt.SetTicks(132918192030000000 + 1234567)
+
+	expected := time.Date(2022, 3, 15, 12, 0, 3, 123456700, time.UTC)
+	if !dt.GetTime().UTC().Equal(expected) {
+		t.Errorf("GetTime() = %s, want %s", dt.GetTime().UTC(), expected)
+	}
+}
