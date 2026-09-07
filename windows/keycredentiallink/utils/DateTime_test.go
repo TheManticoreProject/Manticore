@@ -376,3 +376,31 @@ func TestDateTime_SetTicksAndSetTimeAgreeOnZone(t *testing.T) {
 		t.Errorf("SetTicks gave %q, SetTime gave %q for the same instant", viaTicks.String(), viaTime.String())
 	}
 }
+
+// Unmarshal has to leave the DateTime in the same state as SetTicks with the same
+// tick count: assigning only the ticks left the time accessors reporting the zero
+// time for a perfectly valid timestamp.
+func TestDateTime_Unmarshal_SetsTheTime(t *testing.T) {
+	data := []byte{0x80, 0xa3, 0x22, 0x34, 0x64, 0x38, 0xd8, 0x01} // 2022-03-15 12:00:03 UTC
+
+	dt := utils.DateTime{}
+	if err := dt.Unmarshal(data); err != nil {
+		t.Fatalf("Unmarshal() error = %v, want nil", err)
+	}
+
+	expected := time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC)
+	if !dt.GetTime().UTC().Equal(expected) {
+		t.Errorf("GetTime() = %s, want %s", dt.GetTime().UTC(), expected)
+	}
+
+	if dt.GetTicks() != 132918192030000000 {
+		t.Errorf("GetTicks() = %d, want 132918192030000000", dt.GetTicks())
+	}
+
+	// The two fields must describe the same instant, whichever mutator was used.
+	viaSetTicks := utils.DateTime{}
+	viaSetTicks.SetTicks(dt.GetTicks())
+	if !dt.GetTime().Equal(viaSetTicks.GetTime()) {
+		t.Errorf("Unmarshal gave time %s, SetTicks gave %s for the same ticks", dt.GetTime(), viaSetTicks.GetTime())
+	}
+}
