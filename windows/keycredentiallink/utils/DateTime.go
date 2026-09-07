@@ -50,11 +50,13 @@ func NewDateTimeFromTicks(ticks uint64) DateTime {
 		// that can be before a caller-captured timestamp taken immediately
 		// before invoking this function (due to 100ns truncation flooring).
 		now := time.Now().UTC()
-		epoch1601 := time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)
-		// Use signed arithmetic to correctly support times before 1970.
-		nsSince1601 := now.UnixNano() - epoch1601.UnixNano()
+		// The offset is added from the ticksBetween1601AndUnix constant rather than
+		// derived by subtracting the UnixNano() of 1601, which is undefined: 1601 is
+		// 11.6e18 nanoseconds before the Unix epoch, past the int64 that UnixNano()
+		// returns, so that subtraction operated on a wrapped value and produced a
+		// tick count roughly 137 times too large.
 		dt.time = now
-		dt.ticks = uint64(nsSince1601 / 100)
+		dt.ticks = ticksBetween1601AndUnix + uint64(now.UnixNano()/100)
 	} else {
 		dt.SetTicks(ticks)
 	}
