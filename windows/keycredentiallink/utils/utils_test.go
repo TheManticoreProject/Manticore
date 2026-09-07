@@ -228,3 +228,44 @@ func TestBinaryTimeInvolution(t *testing.T) {
 		})
 	}
 }
+
+// A timestamp entry of eight zero bytes is a well-formed FILETIME denoting
+// 1601-01-01, so decoding it must not consult the clock. It used to come back as
+// the moment of the call, because the decoder went through NewDateTimeFromTicks,
+// whose zero argument is overloaded to mean "now".
+func TestConvertFromBinaryTime_ZeroIsTheEpochNotNow(t *testing.T) {
+	raw := make([]byte, 8)
+
+	for _, kcv := range []version.KeyCredentialLinkVersion{
+		{Value: version.KeyCredentialLinkVersion_0},
+		{Value: version.KeyCredentialLinkVersion_1},
+		{Value: version.KeyCredentialLinkVersion_2},
+	} {
+		decoded := utils.ConvertFromBinaryTime(raw, source.KeySource{Value: source.KeySource_AD}, kcv)
+
+		expected := time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)
+		if !decoded.GetTime().UTC().Equal(expected) {
+			t.Errorf("version %d: decoded %s, want %s", kcv.Value, decoded.GetTime().UTC(), expected)
+		}
+
+		if decoded.GetTicks() != 0 {
+			t.Errorf("version %d: ticks = %d, want 0", kcv.Value, decoded.GetTicks())
+		}
+
+		if delta := time.Since(decoded.GetTime()); delta < time.Minute {
+			t.Errorf("version %d: decoded a value %s from now, which means the clock was consulted", kcv.Value, delta)
+		}
+	}
+}
+
+// The constructor keeps its documented overload: callers that build a credential
+// pass zero to mean the current time, and that must stay separate from decoding.
+func TestNewDateTimeFromTicks_ZeroStillMeansNow(t *testing.T) {
+	before := time.Now()
+	dt := utils.NewDateTimeFromTicks(0)
+	after := time.Now()
+
+	if dt.GetTime().Before(before) || dt.GetTime().After(after) {
+		t.Errorf("NewDateTimeFromTicks(0) = %s, want an instant between %s and %s", dt.GetTime(), before, after)
+	}
+}

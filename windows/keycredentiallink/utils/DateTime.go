@@ -64,6 +64,24 @@ func NewDateTimeFromTicks(ticks uint64) DateTime {
 	return dt
 }
 
+// dateTimeFromWireTicks builds a DateTime from a tick count read off the wire.
+//
+// Unlike NewDateTimeFromTicks, a zero tick count is decoded as the epoch it
+// denotes, 1601-01-01, rather than being overloaded to mean the current time: a
+// zero timestamp entry is a well-formed value a blob can legitimately carry, and
+// decoding it must not consult the clock.
+//
+// Parameters:
+// - ticks: A uint64 value representing the number of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC.
+//
+// Returns:
+// - A DateTime object for the given tick count.
+func dateTimeFromWireTicks(ticks uint64) DateTime {
+	dt := DateTime{}
+	dt.SetTicks(ticks)
+	return dt
+}
+
 // NewDateTimeFromTime initializes a new DateTime instance from a time.Time object.
 //
 // Parameters:
