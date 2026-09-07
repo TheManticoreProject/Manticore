@@ -1,6 +1,10 @@
 package ldap_attributes
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 type MSPKIEnrollmentFlag uint32
 
@@ -122,10 +126,57 @@ var MSPKIEnrollmentFlagMap = map[MSPKIEnrollmentFlag]string{
 	MSPKI_ENROLLMENT_FLAG_NO_SECURITY_EXTENSION:                                         "No Security Extension",
 }
 
-// String returns the string representation of the enrollment flag
+// String returns the names of the flags set in the value, sorted alphabetically and
+// separated by a pipe ("|").
+//
+// msPKI-Enrollment-Flag is a bit field and a certificate template almost always sets
+// several flags at once, so each flag is tested with a bitwise AND rather than the
+// whole value being looked up as a single key. Any bits left over that the map does
+// not name are reported as a single trailing UnknownEnrollmentFlag entry, so an
+// unrecognised flag is still visible instead of hiding the recognised ones.
+//
+// A value with no bits set returns an empty string.
+//
+// Returns:
+//   - A string containing the names of the set flags, separated by a pipe ("|").
 func (flag MSPKIEnrollmentFlag) String() string {
-	if val, ok := MSPKIEnrollmentFlagMap[flag]; ok {
-		return val
+	names := []string{}
+	known := MSPKIEnrollmentFlag(0)
+
+	for candidate, name := range MSPKIEnrollmentFlagMap {
+		known |= candidate
+
+		if flag&candidate != 0 {
+			names = append(names, name)
+		}
 	}
-	return fmt.Sprintf("UnknownEnrollmentFlag(%d)", flag)
+
+	sort.Strings(names)
+
+	if residue := flag & ^known; residue != 0 {
+		names = append(names, fmt.Sprintf("UnknownEnrollmentFlag(0x%08x)", uint32(residue)))
+	}
+
+	return strings.Join(names, "|")
+}
+
+// GetFlags returns the flags set in the value, sorted in ascending order.
+//
+// Bits the map does not name are not returned; use String to see those.
+//
+// Returns:
+//   - A slice of MSPKIEnrollmentFlag values representing the set flags.
+func (flag MSPKIEnrollmentFlag) GetFlags() []MSPKIEnrollmentFlag {
+	flags := []MSPKIEnrollmentFlag{}
+	for candidate := range MSPKIEnrollmentFlagMap {
+		if flag&candidate != 0 {
+			flags = append(flags, candidate)
+		}
+	}
+
+	sort.Slice(flags, func(i, j int) bool {
+		return flags[i] < flags[j]
+	})
+
+	return flags
 }
