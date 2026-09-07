@@ -1,6 +1,14 @@
 package ldap_attributes
 
-// We need to check if they are real
+// Extended Key Usage OIDs.
+//
+// Every value below is taken from the Microsoft cryptography OID list and the
+// standard PKIX arc. Note that 1.3.6.1.4.1.311.10.3.4 is EFS itself
+// (szOID_EFS_CRYPTO) and file recovery is the child arc 1.3.6.1.4.1.311.10.3.4.1
+// (szOID_EFS_RECOVERY); the two are one dotted component apart and easy to confuse.
+//
+// Src: https://learn.microsoft.com/en-us/windows/win32/seccrypto/cryptography-functions
+// Src: https://mskb.pkisolutions.com/kb/287547
 const (
 	// Microsoft EKU OIDs
 	EKU_CLIENT_AUTHENTICATION     = "1.3.6.1.5.5.7.3.2"
@@ -17,12 +25,13 @@ const (
 	EKU_SMART_CARD_LOGON          = "1.3.6.1.4.1.311.20.2.2"
 	EKU_DS_EMAIL_REPLICATION      = "1.3.6.1.4.1.311.21.19"
 	EKU_KDC_AUTHENTICATION        = "1.3.6.1.5.2.3.5"
-	EKU_FILE_RECOVERY             = "1.3.6.1.4.1.311.10.3.4"
+	EKU_ENCRYPTING_FILE_SYSTEM    = "1.3.6.1.4.1.311.10.3.4"
+	EKU_FILE_RECOVERY             = "1.3.6.1.4.1.311.10.3.4.1"
 	EKU_QUALIFIED_SUBORDINATION   = "1.3.6.1.4.1.311.10.3.10"
 	EKU_KEY_RECOVERY_AGENT        = "1.3.6.1.4.1.311.21.6"
 	EKU_CA_EXCHANGE               = "1.3.6.1.4.1.311.21.5"
 	EKU_LIFETIME_SIGNING          = "1.3.6.1.4.1.311.10.3.13"
 	EKU_DOCUMENT_SIGNING          = "1.3.6.1.4.1.311.10.3.12"
-	EKU_KEY_PACK_LICENSES         = "1.3.6.1.4.1.311.10.6.2"
-	EKU_KEY_PACK_SILENT_USER      = "1.3.6.1.4.1.311.10.6.1"
+	EKU_KEY_PACK_LICENSES         = "1.3.6.1.4.1.311.10.6.1"
+	EKU_LICENSE_SERVER            = "1.3.6.1.4.1.311.10.6.2"
 )
