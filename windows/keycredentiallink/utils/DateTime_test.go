@@ -404,3 +404,37 @@ func TestDateTime_Unmarshal_SetsTheTime(t *testing.T) {
 		t.Errorf("Unmarshal gave time %s, SetTicks gave %s for the same ticks", dt.GetTime(), viaSetTicks.GetTime())
 	}
 }
+
+// The current-time branch must produce the same tick count SetTime derives for that
+// instant. It used to subtract the UnixNano() of 1601, which is undefined, and the
+// resulting ticks were written into blobs as an invalid FILETIME.
+func TestNewDateTimeFromTicks_NowBranchTicksMatchSetTime(t *testing.T) {
+	dt := utils.NewDateTimeFromTicks(0)
+
+	viaSetTime := utils.NewDateTimeFromTime(dt.GetTime())
+
+	// SetTime truncates to 100ns, so allow the single tick that truncation can drop.
+	diff := int64(dt.GetTicks()) - int64(viaSetTime.GetTicks())
+	if diff < 0 || diff > 1 {
+		t.Errorf("now-branch ticks = %d, SetTime ticks = %d (difference %d, want 0 or 1)",
+			dt.GetTicks(), viaSetTime.GetTicks(), diff)
+	}
+
+	if dt.GetTicks() > 1<<63-1 {
+		t.Errorf("ticks = %d exceeds the int64 range, which indicates an overflowed conversion", dt.GetTicks())
+	}
+}
+
+// The tick count the branch produces has to round-trip as a FILETIME, since
+// ToKeyCredentialLinkBlob writes it into the blob's timestamp entries verbatim.
+func TestNewDateTimeFromTicks_NowBranchRoundTripsAsFiletime(t *testing.T) {
+	dt := utils.NewDateTimeFromTicks(0)
+
+	readBack := utils.DateTime{}
+	readBack.SetTicks(dt.GetTicks())
+
+	if delta := readBack.GetTime().Sub(dt.GetTime()); delta > time.Microsecond || delta < -time.Microsecond {
+		t.Errorf("a FILETIME reader sees %s for a value written at %s (off by %s)",
+			readBack.GetTime().UTC(), dt.GetTime().UTC(), delta)
+	}
+}
