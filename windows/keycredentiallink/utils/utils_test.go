@@ -86,7 +86,10 @@ func TestConvertFromBinaryTime(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := utils.ConvertFromBinaryTime(tc.input, tc.source, tc.version)
+			result, err := utils.ConvertFromBinaryTime(tc.input, tc.source, tc.version)
+			if err != nil {
+				t.Fatalf("ConvertFromBinaryTime() error = %v, want nil", err)
+			}
 			if !result.GetTime().Equal(tc.expected) {
 				t.Errorf("Expected %v, got %v", tc.expected, result.GetTime())
 			}
@@ -134,7 +137,10 @@ func TestConvertToBinaryTime(t *testing.T) {
 			}
 
 			// The two functions are named as inverses and have to behave as such.
-			decoded := utils.ConvertFromBinaryTime(encoded, tc.source, tc.version)
+			decoded, err := utils.ConvertFromBinaryTime(encoded, tc.source, tc.version)
+			if err != nil {
+				t.Fatalf("ConvertFromBinaryTime() error = %v, want nil", err)
+			}
 			if !decoded.GetTime().Equal(testTimeStruct) {
 				t.Errorf("round-trip gave %v, want %v", decoded.GetTime(), testTimeStruct)
 			}
@@ -215,7 +221,10 @@ func TestBinaryTimeInvolution(t *testing.T) {
 			}
 
 			// Convert binary back to time
-			result := utils.ConvertFromBinaryTime(binary, tc.source, tc.version)
+			result, err := utils.ConvertFromBinaryTime(binary, tc.source, tc.version)
+			if err != nil {
+				t.Fatalf("Failed to decode time: %v", err)
+			}
 
 			// Check if the final time matches the original
 			if !result.GetTime().Equal(dt.GetTime()) {
@@ -249,7 +258,10 @@ func TestConvertFromBinaryTime_ZeroIsTheEpochNotNow(t *testing.T) {
 		{Value: version.KeyCredentialLinkVersion_1},
 		{Value: version.KeyCredentialLinkVersion_2},
 	} {
-		decoded := utils.ConvertFromBinaryTime(raw, source.KeySource{Value: source.KeySource_AD}, kcv)
+		decoded, err := utils.ConvertFromBinaryTime(raw, source.KeySource{Value: source.KeySource_AD}, kcv)
+		if err != nil {
+			t.Fatalf("ConvertFromBinaryTime() error = %v, want nil", err)
+		}
 
 		expected := time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)
 		if !decoded.GetTime().UTC().Equal(expected) {
@@ -276,4 +288,42 @@ func TestNewDateTimeFromTicks_ZeroStillMeansNow(t *testing.T) {
 	if dt.GetTime().Before(before) || dt.GetTime().After(after) {
 		t.Errorf("NewDateTimeFromTicks(0) = %s, want an instant between %s and %s", dt.GetTime(), before, after)
 	}
+}
+
+// The value of a timestamp entry is as long as the entry declared, so a blob can
+// parse into one too short to hold the field. Reading it used to index past the end
+// of the slice and panic.
+func TestConvertFromBinaryTime_ShortBuffer(t *testing.T) {
+	adSrc := source.KeySource{Value: source.KeySource_AD}
+	kcv := version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2}
+
+	for _, test := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "nil", data: nil},
+		{name: "empty", data: []byte{}},
+		{name: "one byte", data: []byte{0x01}},
+		{name: "seven bytes", data: []byte{1, 2, 3, 4, 5, 6, 7}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := utils.ConvertFromBinaryTime(test.data, adSrc, kcv); err == nil {
+				t.Errorf("ConvertFromBinaryTime(%d bytes) returned no error, want one", len(test.data))
+			}
+		})
+	}
+
+	t.Run("eight bytes still decodes", func(t *testing.T) {
+		data := []byte{0x80, 0xa3, 0x22, 0x34, 0x64, 0x38, 0xd8, 0x01}
+
+		decoded, err := utils.ConvertFromBinaryTime(data, adSrc, kcv)
+		if err != nil {
+			t.Fatalf("ConvertFromBinaryTime() error = %v, want nil", err)
+		}
+
+		expected := time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC)
+		if !decoded.GetTime().Equal(expected) {
+			t.Errorf("decoded %s, want %s", decoded.GetTime(), expected)
+		}
+	})
 }
