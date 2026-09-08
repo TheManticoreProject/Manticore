@@ -57,12 +57,40 @@
 // locking, seek, the legacy SMB_COM_OPEN_ANDX, and batched AndX chains beyond
 // their first command.
 //
-// NT_TRANSACT_NOTIFY_CHANGE is deliberately absent rather than pending. It needs
-// two things this package does not have: a FileSystem that can be watched, and a
-// connection whose write path can be used from outside the request that is being
-// served — a notification is answered when the change happens, not when it is
-// asked for. Both are architectural additions, and half of either would be worse
-// than the honest refusal.
+// NT_TRANSACT_NOTIFY_CHANGE is still absent, but only one of the two things it
+// needs is now missing. A reply can be sent from outside the request that asked
+// for it — see "Deferred answers" below — so what is left is a FileSystem that can
+// be watched.
+//
+// # Deferred answers
+//
+// A handler that cannot answer yet takes an AsyncResponder from
+// ResponseWriter.Defer, returns success without writing, and completes the
+// exchange from wherever the answer arrives. The responder is safe to use from any
+// goroutine and is the only part of a Connection that is: the open, tree, session
+// and search tables belong to the receive loop and have no locking, so a responder
+// captures what it needs when it is taken rather than reading them when it fires.
+//
+// That constraint is why AsyncResponder is a narrow interface rather than a handle
+// on the connection. What a deferred answer needs is a way to send bytes; giving
+// it more would invite a data race that no test running on one goroutine would
+// find.
+//
+// Deferral is also what makes the receive loop concurrent without a worker pool: a
+// handler that defers returns at once, so the loop goes back to reading while the
+// answer is still owed. SMB_COM_NT_CANCEL cancels a deferred request by the PID
+// and MID it names, and closing the connection cancels everything outstanding — a
+// deferred answer with nowhere to send its reply is told to stop rather than left
+// to discover it on a failed write.
+//
+// A server-initiated message — the oplock break of [MS-CIFS] 2.2.4.32.1, the one
+// place the server sends a request — goes out through Connection.SendUnsolicited.
+// It is refused on a signing connection: a signed message consumes a number from
+// the sequence the two sides keep in step, and a message with no request behind it
+// has none reserved for it. A wrong guess desynchronises signing for the rest of
+// the connection and every later request fails verification, so it is refused
+// rather than guessed at until the numbering can be checked against a reference
+// capture.
 //
 // NT_TRANSACT_CREATE and NT_TRANSACT_RENAME are also absent by choice: they
 // duplicate SMB_COM_NT_CREATE_ANDX and SMB_COM_RENAME, which are served. The
