@@ -6,6 +6,9 @@
 // caller has to write DCE/RPC framing and NDR by hand before a server is
 // browsable.
 //
+// Each open of a pipe gets its own Session, so what one client's bind negotiates
+// belongs to that client.
+//
 //	srv, err := server.NewServer(server.Config{})
 //	srv.AddShare(&server.Share{Name: "PUBLIC", FS: fs, Comment: "Public files"})
 //	srv.AddShare(&server.Share{
@@ -36,13 +39,20 @@
 // rather than a fault, and is what makes a client fall back to a level that is
 // served.
 //
-// # One interface per pipe
+// # Pipes, opens and interfaces
 //
-// A pipe here carries exactly one interface: \srvsvc is srvsvc and \wkssvc is
-// wkssvc. That is how both are used, and it is also the only arrangement this can
-// serve — the PipeHandler contract names a pipe by name and not by open handle,
-// so a handler cannot tell two clients of one pipe apart and cannot hold the
-// per-open bind state that a pipe carrying several interfaces would need. A bind
-// is still checked against the interface the pipe carries, and one naming a
-// different interface is refused with a bind_nak.
+// OpenPipe returns a Session, and the session is where a client's RPC state
+// lives: its bind establishes the presentation contexts and the reply fragment
+// size that its later requests are read against. Two clients of \srvsvc get two
+// sessions and negotiate separately, so neither can see or disturb what the other
+// agreed.
+//
+// \srvsvc carries srvsvc and \wkssvc carries wkssvc, which is how Windows serves
+// them, and a bind naming an interface its pipe does not carry is refused with a
+// bind_nak. That is a property of these two pipes rather than a limit: a pipe may
+// carry several interfaces, and Options.Services adds interfaces to a built-in
+// pipe or adds a pipe of its own, so a caller can serve its own interface over
+// IPC$ without writing a PipeHandler. A request is dispatched by the presentation
+// context its bind negotiated, so which interface answers is what the client
+// asked for and never a guess.
 package rpcpipe

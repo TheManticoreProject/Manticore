@@ -19,29 +19,47 @@ import (
 // PipeHandler serves the named pipes on an IPC share.
 //
 // A pipe is request-response: a client writes a message and reads the answer,
-// which is how MS-RPC travels over SMB. Transact is the operation that does both
-// in one exchange and the one every RPC client uses, so a handler that implements
-// only that is a complete one for the purpose.
+// which is how MS-RPC travels over SMB. A handler's job is to say which pipes
+// exist and to open one; everything the client does afterwards happens on the
+// PipeSession the open returns.
 //
 // A handler is called on the goroutine serving the connection, so an
-// implementation that blocks holds that client up. It may be called concurrently
-// for different connections.
+// implementation that blocks holds that client up. One handler serves every
+// connection to its share, so OpenPipe may be called concurrently.
 type PipeHandler interface {
-	// OpenPipe reports whether a pipe exists under this handler, and prepares
-	// whatever per-open state it needs. The name has no leading separator and no
+	// OpenPipe opens one instance of a pipe and returns the session the
+	// instance's later calls run on. The name has no leading separator and no
 	// "PIPE" prefix: "srvsvc", not "\\PIPE\\srvsvc".
-	OpenPipe(name string) error
+	//
+	// A pipe this handler does not serve is refused with an error: one whose
+	// message contains "not found" is reported to the client as
+	// STATUS_OBJECT_NAME_NOT_FOUND, and anything else as STATUS_UNSUCCESSFUL.
+	OpenPipe(name string) (PipeSession, error)
+}
 
-	// Transact writes a message to a pipe and returns the answer. maxOutput is
-	// the largest answer the server will take in one exchange, which is
-	// maxPipeAnswerSize rather than the client's buffer: fitting the answer to
-	// the client is the server's job, because only the server knows how the
-	// client will read the rest. A handler whose answer would exceed maxOutput
-	// should return what fits and report that more remains.
-	Transact(name string, input []byte, maxOutput int) (output []byte, moreRemains bool, err error)
+// PipeSession is one open of a named pipe: the handle side of a PipeHandler.
+//
+// It exists so that a handler can hold state belonging to one client's open of a
+// pipe rather than to the pipe itself. An RPC endpoint needs exactly that: a bind
+// establishes the presentation contexts and the fragment size that the requests
+// following it are interpreted against, two clients of one pipe bind separately,
+// and a handler keyed only by pipe name has nowhere to keep either.
+//
+// A session belongs to one open on one connection, and the server never uses one
+// from two goroutines at once.
+type PipeSession interface {
+	// Transact writes a message to the pipe and returns the answer.
+	//
+	// maxOutput is the largest answer the server will take in one exchange, which
+	// is maxPipeAnswerSize rather than the client's buffer: fitting the answer to
+	// the client is the server's job, because only the server knows how the client
+	// will read the rest. A session whose answer would exceed maxOutput should
+	// return what fits and report that more remains.
+	Transact(input []byte, maxOutput int) (output []byte, moreRemains bool, err error)
 
-	// ClosePipe releases whatever OpenPipe prepared.
-	ClosePipe(name string) error
+	// Close releases whatever the open prepared. The server calls it once, when
+	// the handle closes.
+	Close() error
 }
 
 // pipeNameOf extracts a pipe's name from the path a client opened.
@@ -173,11 +191,17 @@ func (c *Connection) runTransaction(w ResponseWriter, req *message.Message, reas
 		return c.peekNamedPipe(w, reassembly)
 
 	case subcommands.TRANS_WAIT_NMPIPE:
-		// The pipe is available as soon as the handler knows the name, so waiting
-		// for it succeeds immediately rather than blocking on nothing.
+		// The pipe is available as soon as the handler will open it, so waiting
+		// for it succeeds immediately rather than blocking on nothing. The
+		// session is released at once: the wait asks whether an instance can be
+		// had, not for one to keep.
 		name := pipeNameOf(reassembly.name)
-		if err := tree.Share.Pipes.OpenPipe(name); err != nil {
+		session, err := tree.Share.Pipes.OpenPipe(name)
+		if err != nil {
 			return nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
+		}
+		if err := session.Close(); err != nil {
+			logger.Debugf("SMB1 server: releasing pipe %q after a wait reported %v", name, err)
 		}
 		return c.answerTransaction(w, reassembly, nil, nil)
 
@@ -405,10 +429,31 @@ func (c *Connection) transactNamedPipe(
 		return nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
 	}
 
-	// The handler is asked for the whole answer, not for the part that fits: the
+	// The transaction runs on the handle's own session, which is what makes a
+	// bind and the requests after it one conversation. A client that sent no FID
+	// gets a session of its own for this one exchange, since there is no handle
+	// to have opened one on; an interface that needs a bind will refuse such a
+	// request, which is the honest outcome rather than a silent misdispatch.
+	session := open.pipeSession()
+	if session == nil {
+		transient, err := tree.Share.Pipes.OpenPipe(name)
+		if err != nil {
+			logger.Debugf("SMB1 server: %s transacted pipe %q without a FID and it would not open: %v",
+				c.Remote, name, err)
+			return statusForPipeError(err)
+		}
+		defer func() {
+			if err := transient.Close(); err != nil {
+				logger.Debugf("SMB1 server: releasing the transient session on pipe %q reported %v", name, err)
+			}
+		}()
+		session = transient
+	}
+
+	// The session is asked for the whole answer, not for the part that fits: the
 	// client's buffer bounds what one response may carry, not what the pipe
 	// produced, and the difference is what gets buffered for the client to read.
-	output, moreRemains, err := tree.Share.Pipes.Transact(name, reassembly.data, maxPipeAnswerSize)
+	output, moreRemains, err := session.Transact(reassembly.data, maxPipeAnswerSize)
 	if err != nil {
 		logger.Debugf("SMB1 server: pipe %q refused a transaction from %s: %v", name, c.Remote, err)
 		return statusForPipeError(err)
@@ -574,16 +619,17 @@ func (c *Connection) openPipe(w ResponseWriter, tree *Tree, requested string) nt
 		return nt_status.NT_STATUS_OBJECT_NAME_INVALID
 	}
 
-	if err := tree.Share.Pipes.OpenPipe(name); err != nil {
+	session, err := tree.Share.Pipes.OpenPipe(name)
+	if err != nil {
 		logger.Debugf("SMB1 server: %s could not open pipe %q: %v", c.Remote, name, err)
 		return statusForPipeError(err)
 	}
 
 	fid, err := c.fids.Allocate()
 	if err != nil {
-		// The handler prepared state for a handle that will not exist, so give it
-		// back rather than leaking it for the life of the connection.
-		if closeErr := tree.Share.Pipes.ClosePipe(name); closeErr != nil {
+		// The handler opened an instance for a handle that will not exist, so
+		// give it back rather than leaking it for the life of the connection.
+		if closeErr := session.Close(); closeErr != nil {
 			logger.Debugf("SMB1 server: releasing pipe %q after a failed open reported %v", name, closeErr)
 		}
 		logger.Warnf("SMB1 server: refusing a pipe open from %s: %v", c.Remote, err)
@@ -593,10 +639,11 @@ func (c *Connection) openPipe(w ResponseWriter, tree *Tree, requested string) nt
 	open := &Open{
 		FID:  fid,
 		Tree: tree,
-		// The name is stored as the handler sees it, since that is what every
-		// later call passes back to the handler.
+		// The name is stored as the handler sees it, for the log lines and the
+		// error messages that name the pipe a client is acting on.
 		Path:     name,
 		IsPipe:   true,
+		Pipe:     session,
 		Readable: true,
 		Writable: true,
 		Created:  time.Now().UTC(),

@@ -36,8 +36,8 @@ var ErrUnknownOpnum = errors.New("unknown opnum")
 // ErrBadStub reports a request stub the Service could not decode.
 var ErrBadStub = errors.New("request stub could not be decoded")
 
-// DefaultMaxFragment is the reply fragment size used when a client's bind named
-// none, or named one too small to carry a PDU header.
+// DefaultMaxFragment is the reply fragment size used before a bind has named
+// one, and when a bind names one too small to carry a PDU.
 //
 // 4280 is what Windows offers and what every client is prepared for.
 const DefaultMaxFragment = 4280
@@ -47,30 +47,23 @@ const DefaultMaxFragment = 4280
 // for one is given DefaultMaxFragment instead.
 const minFragmentStub = 8
 
-// Dispatcher answers RPC PDUs for a set of interfaces.
+// responseBodyOverhead is the fixed part of a response PDU behind its header:
+// alloc_hint(4) p_cont_id(2) cancel_count(1) reserved(1).
+const responseBodyOverhead = 8
+
+// defaultAssocGroup is the association group handed out when a client asks for
+// one.
+const defaultAssocGroup = 0x00001234
+
+// Dispatcher is the set of interfaces an endpoint answers for.
 //
-// One Dispatcher serves one endpoint — one named pipe, say — and is safe for
-// concurrent use. It keeps no per-call state; the negotiated fragment size is the
-// only thing a bind changes, and it is guarded, because a transport that cannot
-// tell two opens of an endpoint apart delivers both clients' PDUs to one
-// Dispatcher and may do so from two goroutines at once.
+// It holds no per-call and no per-client state, so one Dispatcher serves every
+// client of its endpoint and is safe for concurrent use. What a bind establishes
+// belongs to an Association, which Open returns one of.
 type Dispatcher struct {
 	// services are the interfaces this endpoint answers for. Written once by New
 	// and only read afterwards.
 	services []Service
-
-	// mutex guards maxFragment.
-	mutex sync.Mutex
-
-	// maxFragment is the largest reply fragment any client of this endpoint has
-	// said it can receive.
-	//
-	// It is the smallest such value seen, not the latest: without per-open state
-	// one size has to serve every client, and a fragment smaller than a client's
-	// maximum is always acceptable to it while a larger one is not. So a client
-	// asking for less shrinks the endpoint's fragments for everyone rather than
-	// risking a reply another client cannot take.
-	maxFragment uint16
 }
 
 // New builds a Dispatcher for a set of interfaces.
@@ -81,7 +74,56 @@ type Dispatcher struct {
 // Returns:
 //   - The dispatcher
 func New(services ...Service) *Dispatcher {
-	return &Dispatcher{services: services, maxFragment: DefaultMaxFragment}
+	return &Dispatcher{services: services}
+}
+
+// Services returns the interfaces this endpoint answers for.
+func (d *Dispatcher) Services() []Service {
+	return append([]Service(nil), d.services...)
+}
+
+// Open starts an association: one client's conversation with this endpoint.
+//
+// Every transport that carries RPC has something an association corresponds to —
+// one open of a named pipe, one TCP connection — and the caller is what knows
+// which. A caller that handed PDUs straight to the Dispatcher would have nowhere
+// to keep what a bind negotiated.
+//
+// Returns:
+//   - A new association, with no presentation context bound yet
+func (d *Dispatcher) Open() *Association {
+	return &Association{
+		dispatcher:  d,
+		contexts:    map[uint16]Service{},
+		maxFragment: DefaultMaxFragment,
+	}
+}
+
+// Association is one client's conversation with an endpoint.
+//
+// It holds what a bind establishes and the requests after it are interpreted
+// against: which interface each presentation context names, and the largest
+// fragment this client will accept. Two clients of one endpoint have separate
+// associations and negotiate separately.
+//
+// An association is guarded, so a transport that lets a client have several calls
+// in flight cannot corrupt the context table with a bind arriving beside a
+// request.
+type Association struct {
+	// dispatcher is the endpoint this association is with.
+	dispatcher *Dispatcher
+
+	// mutex guards contexts and maxFragment.
+	mutex sync.Mutex
+
+	// contexts maps a presentation context identifier to the interface the
+	// client bound it to. It is what makes a request's p_cont_id meaningful:
+	// [C706] 12.6.4.9 has a request name its interface by the context it was
+	// negotiated under, not by the interface's own identifier.
+	contexts map[uint16]Service
+
+	// maxFragment is the largest reply fragment this client said it can receive.
+	maxFragment uint16
 }
 
 // Handle answers one received PDU and returns the reply.
@@ -96,7 +138,7 @@ func New(services ...Service) *Dispatcher {
 //
 // Returns:
 //   - The reply PDUs to send back, and an error only when no reply can be framed
-func (d *Dispatcher) Handle(request []byte) ([]byte, error) {
+func (a *Association) Handle(request []byte) ([]byte, error) {
 	header, err := pdu.PeekHeader(request)
 	if err != nil {
 		return nil, fmt.Errorf("not a DCE/RPC PDU: %w", err)
@@ -104,31 +146,33 @@ func (d *Dispatcher) Handle(request []byte) ([]byte, error) {
 
 	switch header.PacketType {
 	case pdu.PacketTypeBind, pdu.PacketTypeAlterContext:
-		return d.handleBind(request, header)
+		return a.handleBind(request, header)
 
 	case pdu.PacketTypeRequest:
-		return d.handleRequest(request, header)
+		return a.handleRequest(request, header)
 
 	default:
 		// A packet type this endpoint does not answer for. A fault is a reply the
 		// client can act on; silence would leave it waiting.
 		logger.Debugf("rpcserver: refusing packet type %s", header.PacketType)
-		return d.fault(header.CallID, 0, pdu.NCASProtoError)
+		return a.fault(header.CallID, 0, pdu.NCASProtoError)
 	}
 }
 
 // handleBind answers a bind or an alter_context.
 //
-// The two are answered the same way: alter_context re-negotiates presentation
-// contexts on an existing association, and with no authentication to renegotiate
-// there is nothing that makes it differ from a bind here.
-func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, error) {
+// The difference between the two is what happens to the contexts already bound:
+// a bind starts the association's context table afresh, and an alter_context adds
+// to it ([C706] 12.6.3.3, which has alter_context "negotiate a new presentation
+// context ... on an existing association").
+func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, error) {
 	// An alter_context PDU is wire-identical to a bind but for the packet type at
 	// offset 2 of the common header, and Bind.Unmarshal refuses anything else.
 	// Rewriting the type on a copy is how the client sends one; this is the same
 	// move on the receiving side, and the copy leaves the caller's buffer alone.
+	altering := header.PacketType == pdu.PacketTypeAlterContext
 	body := request
-	if header.PacketType == pdu.PacketTypeAlterContext {
+	if altering {
 		body = make([]byte, len(request))
 		copy(body, request)
 		body[2] = byte(pdu.PacketTypeBind)
@@ -137,7 +181,7 @@ func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, err
 	bind := &pdu.Bind{}
 	if _, err := bind.Unmarshal(body); err != nil {
 		logger.Debugf("rpcserver: a bind PDU would not decode: %v", err)
-		return d.bindNak(header.CallID, bindNakProtocolVersionNotSupported)
+		return a.bindNak(header.CallID, bindNakProtocolVersionNotSupported)
 	}
 
 	// An authenticated bind is refused rather than half-answered. See the package
@@ -146,21 +190,21 @@ func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, err
 	// unverifiable.
 	if header.AuthLength > 0 || len(bind.AuthValue) > 0 {
 		logger.Debugf("rpcserver: refusing an authenticated bind (%d bytes of verifier)", header.AuthLength)
-		return d.bindNak(header.CallID, bindNakAuthenticationTypeNotRecognized)
+		return a.bindNak(header.CallID, bindNakAuthenticationTypeNotRecognized)
 	}
 
 	if len(bind.ContextList) == 0 {
-		return d.bindNak(header.CallID, bindNakReasonNotSpecified)
+		return a.bindNak(header.CallID, bindNakReasonNotSpecified)
 	}
 
 	// Each context the client offered gets a result, in order: [C706] 12.6.4.4
 	// pairs them positionally with the contexts of the request.
 	ndrSyntax := syntax.NDRTransferSyntax()
 	results := make([]pdu.PresentationResult, 0, len(bind.ContextList))
-	accepted := 0
+	bound := map[uint16]Service{}
 
 	for _, context := range bind.ContextList {
-		service := d.serviceFor(context.AbstractSyntax)
+		service := a.dispatcher.serviceFor(context.AbstractSyntax)
 		if service == nil {
 			results = append(results, pdu.PresentationResult{
 				Result: contextResultProviderRejection,
@@ -184,15 +228,15 @@ func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, err
 			Result:         contextResultAcceptance,
 			TransferSyntax: ndrSyntax,
 		})
-		accepted++
+		bound[context.ContextID] = service
 	}
 
-	if accepted == 0 {
+	if len(bound) == 0 {
 		logger.Debugf("rpcserver: no presentation context in the bind could be accepted")
-		return d.bindNak(header.CallID, bindNakReasonNotSpecified)
+		return a.bindNak(header.CallID, bindNakReasonNotSpecified)
 	}
 
-	negotiated := d.observeFragment(bind.MaxRecvFrag)
+	negotiated := a.negotiate(bound, bind.MaxRecvFrag, altering)
 
 	ack := &pdu.BindAck{
 		Header:      pdu.NewHeader(pdu.PacketTypeBindAck, pdu.PFCFirstFrag|pdu.PFCLastFrag, header.CallID),
@@ -207,6 +251,7 @@ func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, err
 		SecondaryAddress: "",
 		Results:          results,
 	}
+
 	encoded, err := ack.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal the bind_ack: %w", err)
@@ -215,18 +260,19 @@ func (d *Dispatcher) handleBind(request []byte, header *pdu.Header) ([]byte, err
 	// BindAck.Marshal forces PTYPE=bind_ack, and an alter_context_resp is
 	// wire-identical to it but for the packet type, so the answer to an
 	// alter_context is relabelled the same way the request was read.
-	if header.PacketType == pdu.PacketTypeAlterContext {
+	if altering {
 		encoded[2] = byte(pdu.PacketTypeAlterContextResp)
 	}
 	return encoded, nil
 }
 
-// handleRequest answers a request PDU by calling the interface it names.
-func (d *Dispatcher) handleRequest(request []byte, header *pdu.Header) ([]byte, error) {
+// handleRequest answers a request PDU by calling the interface its presentation
+// context names.
+func (a *Association) handleRequest(request []byte, header *pdu.Header) ([]byte, error) {
 	incoming := &pdu.Request{}
 	if _, err := incoming.Unmarshal(request); err != nil {
 		logger.Debugf("rpcserver: a request PDU would not decode: %v", err)
-		return d.fault(header.CallID, 0, pdu.NCASProtoError)
+		return a.fault(header.CallID, 0, pdu.NCASProtoError)
 	}
 
 	// A request arriving in fragments is refused rather than half-assembled.
@@ -234,19 +280,17 @@ func (d *Dispatcher) handleRequest(request []byte, header *pdu.Header) ([]byte, 
 	// to a Service would be decoded as a whole one.
 	if !header.PacketFlags.Has(pdu.PFCFirstFrag) || !header.PacketFlags.Has(pdu.PFCLastFrag) {
 		logger.Debugf("rpcserver: refusing a fragmented request (flags %s)", header.PacketFlags)
-		return d.fault(header.CallID, incoming.ContextID, pdu.NCASProtoError)
+		return a.fault(header.CallID, incoming.ContextID, pdu.NCASProtoError)
 	}
 
-	// The endpoint decides the interface. A Dispatcher serves one endpoint, and
-	// the context identifier a request carries was assigned by a bind this
-	// Dispatcher may not have seen — a transport that cannot tell two opens apart
-	// cannot keep per-bind state — so a single-interface endpoint dispatches by
-	// what it serves rather than by what the client numbered it.
-	service := d.only()
+	// The context the request names is what says which interface it is for, so a
+	// context this association never negotiated cannot be answered. That is a
+	// request before a bind, or one carrying a context the bind rejected.
+	service := a.serviceForContext(incoming.ContextID)
 	if service == nil {
-		logger.Debugf("rpcserver: request on an endpoint serving %d interfaces, which needs a bind context",
-			len(d.services))
-		return d.fault(header.CallID, incoming.ContextID, pdu.NCASUnkIf)
+		logger.Debugf("rpcserver: request on presentation context %d, which this association has not bound",
+			incoming.ContextID)
+		return a.fault(header.CallID, incoming.ContextID, pdu.NCASFaultContextMismatch)
 	}
 
 	stub, err := service.Call(incoming.Opnum, incoming.Stub)
@@ -260,16 +304,16 @@ func (d *Dispatcher) handleRequest(request []byte, header *pdu.Header) ([]byte, 
 		}
 		logger.Debugf("rpcserver: opnum %d failed (%v), answering %s",
 			incoming.Opnum, err, pdu.FaultStatus(status))
-		return d.fault(header.CallID, incoming.ContextID, status)
+		return a.fault(header.CallID, incoming.ContextID, status)
 	}
 
-	return d.response(header.CallID, incoming.ContextID, stub)
+	return a.response(header.CallID, incoming.ContextID, stub)
 }
 
 // response frames a response stub, splitting it across fragments if it exceeds
 // what the client said it can receive.
-func (d *Dispatcher) response(callID uint32, contextID uint16, stub []byte) ([]byte, error) {
-	budget := int(d.fragment()) - pdu.HeaderSize - responseBodyOverhead
+func (a *Association) response(callID uint32, contextID uint16, stub []byte) ([]byte, error) {
+	budget := int(a.fragment()) - pdu.HeaderSize - responseBodyOverhead
 	if budget < minFragmentStub {
 		budget = DefaultMaxFragment - pdu.HeaderSize - responseBodyOverhead
 	}
@@ -310,12 +354,8 @@ func (d *Dispatcher) response(callID uint32, contextID uint16, stub []byte) ([]b
 	return out, nil
 }
 
-// responseBodyOverhead is the fixed part of a response PDU behind its header:
-// alloc_hint(4) p_cont_id(2) cancel_count(1) reserved(1).
-const responseBodyOverhead = 8
-
 // fault frames a fault PDU.
-func (d *Dispatcher) fault(callID uint32, contextID uint16, status uint32) ([]byte, error) {
+func (a *Association) fault(callID uint32, contextID uint16, status uint32) ([]byte, error) {
 	f := &pdu.Fault{
 		Header:    pdu.NewHeader(pdu.PacketTypeFault, pdu.PFCFirstFrag|pdu.PFCLastFrag, callID),
 		ContextID: contextID,
@@ -329,7 +369,7 @@ func (d *Dispatcher) fault(callID uint32, contextID uint16, status uint32) ([]by
 }
 
 // bindNak frames a bind_nak carrying a reject reason.
-func (d *Dispatcher) bindNak(callID uint32, reason uint16) ([]byte, error) {
+func (a *Association) bindNak(callID uint32, reason uint16) ([]byte, error) {
 	nak := &pdu.BindNak{
 		Header:       pdu.NewHeader(pdu.PacketTypeBindNak, pdu.PFCFirstFrag|pdu.PFCLastFrag, callID),
 		RejectReason: reason,
@@ -344,21 +384,59 @@ func (d *Dispatcher) bindNak(callID uint32, reason uint16) ([]byte, error) {
 	return encoded, nil
 }
 
+// negotiate records what a bind established and returns the fragment size the
+// association will send at.
+//
+// Parameters:
+//   - bound: the contexts the bind accepted, by context identifier
+//   - requested: the client's max_recv_frag
+//   - altering: true for an alter_context, which adds to what is bound rather
+//     than replacing it
+//
+// Returns:
+//   - The fragment size replies will be framed at
+func (a *Association) negotiate(bound map[uint16]Service, requested uint16, altering bool) uint16 {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	if !altering {
+		a.contexts = map[uint16]Service{}
+	}
+	for id, service := range bound {
+		a.contexts[id] = service
+	}
+	a.maxFragment = negotiatedFragment(requested)
+	return a.maxFragment
+}
+
+// serviceForContext returns the interface a presentation context names, or nil
+// when this association has not bound that context.
+func (a *Association) serviceForContext(contextID uint16) Service {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	return a.contexts[contextID]
+}
+
+// fragment returns the size replies are framed at.
+func (a *Association) fragment() uint16 {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	return a.maxFragment
+}
+
+// Bound reports how many presentation contexts this association has negotiated.
+func (a *Association) Bound() int {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	return len(a.contexts)
+}
+
 // serviceFor finds the interface a bind's abstract syntax names.
 func (d *Dispatcher) serviceFor(abstract syntax.SyntaxID) Service {
 	for _, service := range d.services {
 		if service.AbstractSyntax().Equal(abstract) {
 			return service
 		}
-	}
-	return nil
-}
-
-// only returns the single interface this endpoint serves, or nil when it serves
-// more than one and a request cannot be attributed without bind state.
-func (d *Dispatcher) only() Service {
-	if len(d.services) == 1 {
-		return d.services[0]
 	}
 	return nil
 }
@@ -371,32 +449,6 @@ func offersSyntax(offered []syntax.SyntaxID, wanted syntax.SyntaxID) bool {
 		}
 	}
 	return false
-}
-
-// observeFragment records what a binding client can receive and returns the size
-// the endpoint will use for it.
-//
-// Parameters:
-//   - requested: the client's max_recv_frag
-//
-// Returns:
-//   - The fragment size the endpoint will send at
-func (d *Dispatcher) observeFragment(requested uint16) uint16 {
-	usable := negotiatedFragment(requested)
-
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	if usable < d.maxFragment {
-		d.maxFragment = usable
-	}
-	return d.maxFragment
-}
-
-// fragment returns the size replies are fragmented at.
-func (d *Dispatcher) fragment() uint16 {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	return d.maxFragment
 }
 
 // negotiatedFragment bounds the client's requested fragment size.
@@ -422,10 +474,6 @@ func assocGroup(requested uint32) uint32 {
 	}
 	return requested
 }
-
-// defaultAssocGroup is the association group handed out when a client asks for
-// one.
-const defaultAssocGroup = 0x00001234
 
 // The bind_nak reject reasons ([C706] 12.6.4.5).
 const (

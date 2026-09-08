@@ -46,6 +46,15 @@ type Open struct {
 	// pipe by the FID in the request's setup words, not by the name it carries.
 	IsPipe bool
 
+	// Pipe is the handler's session for this open, and is what a transaction on
+	// the handle runs against. It is the pipe counterpart of File.
+	//
+	// The session rather than the pipe's name is what the handle carries, because
+	// state a client builds up on a pipe belongs to its open of it: an RPC bind
+	// establishes the presentation contexts and fragment size the requests after
+	// it are read against, and two clients of one pipe bind separately.
+	Pipe PipeSession
+
 	// Readable and Writable are the access the open was granted, enforced on
 	// every use so a handle opened for reading cannot later be written through.
 	Readable bool
@@ -97,6 +106,15 @@ func (c *Connection) Open(fid uint16) *Open {
 }
 
 // addTree records a connected tree.
+// pipeSession returns the handler session this handle transacts on, which is nil
+// for a handle that does not name a pipe.
+func (o *Open) pipeSession() PipeSession {
+	if o == nil {
+		return nil
+	}
+	return o.Pipe
+}
+
 // drainPipeOutput removes up to limit bytes of the answer buffered on a pipe
 // handle and reports whether any is left after it.
 //
@@ -212,10 +230,10 @@ func (c *Connection) closeOpen(fid uint16) error {
 		}
 	}
 
-	// A pipe handle has no backend file; what it holds is whatever the handler
-	// prepared when the pipe was opened, so closing it is the handler's business.
-	if open.IsPipe && open.Tree != nil && open.Tree.Share.Pipes != nil {
-		if err := open.Tree.Share.Pipes.ClosePipe(open.Path); err != nil && firstErr == nil {
+	// A pipe handle has no backend file; what it holds is the handler's session,
+	// so closing it is the handler's business.
+	if open.Pipe != nil {
+		if err := open.Pipe.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

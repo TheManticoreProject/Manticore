@@ -134,9 +134,10 @@ func splitPDUs(t *testing.T, stream []byte) [][]byte {
 }
 
 func TestBindAcceptsTheServedInterface(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
-	reply, err := dispatcher.Handle(bindRequest(t, 7, 4280, testSyntax()))
+	reply, err := association.Handle(bindRequest(t, 7, 4280, testSyntax()))
 	if err != nil {
 		t.Fatalf("Handle returned an error for a well-formed bind: %v", err)
 	}
@@ -170,11 +171,12 @@ func TestBindAcceptsTheServedInterface(t *testing.T) {
 }
 
 func TestBindRejectsTheContextNamingAnotherInterfaceAndKeepsTheServedOne(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
 	// Two contexts, the second naming an interface this endpoint does not serve.
 	// Both get a result, positionally, per [C706] 12.6.4.4.
-	reply, err := dispatcher.Handle(bindRequest(t, 1, 4280, testSyntax(), otherSyntax()))
+	reply, err := association.Handle(bindRequest(t, 1, 4280, testSyntax(), otherSyntax()))
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -200,9 +202,10 @@ func TestBindRejectsTheContextNamingAnotherInterfaceAndKeepsTheServedOne(t *test
 }
 
 func TestBindNamingOnlyAnotherInterfaceIsRefused(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
-	reply, err := dispatcher.Handle(bindRequest(t, 2, 4280, otherSyntax()))
+	reply, err := association.Handle(bindRequest(t, 2, 4280, otherSyntax()))
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -220,7 +223,8 @@ func TestBindNamingOnlyAnotherInterfaceIsRefused(t *testing.T) {
 }
 
 func TestBindOfferingOnlyNDR64IsRefused(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
 	// NDR64 ([MS-RPCE] 2.2.4.4). Accepting it and then encoding NDR20 would hand
 	// the client a reply it decodes as the wrong shape.
@@ -245,7 +249,7 @@ func TestBindOfferingOnlyNDR64IsRefused(t *testing.T) {
 		t.Fatalf("failed to marshal the bind: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(encoded)
+	reply, err := association.Handle(encoded)
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -256,7 +260,8 @@ func TestBindOfferingOnlyNDR64IsRefused(t *testing.T) {
 }
 
 func TestAuthenticatedBindIsRefused(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
 	bind := &pdu.Bind{
 		Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 4),
@@ -275,7 +280,7 @@ func TestAuthenticatedBindIsRefused(t *testing.T) {
 		t.Fatalf("failed to marshal the bind: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(encoded)
+	reply, err := association.Handle(encoded)
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -291,7 +296,8 @@ func TestAuthenticatedBindIsRefused(t *testing.T) {
 }
 
 func TestAlterContextIsAnsweredWithAnAlterContextResponse(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
 	bind := &pdu.Bind{
 		Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 5),
@@ -311,7 +317,7 @@ func TestAlterContextIsAnsweredWithAnAlterContextResponse(t *testing.T) {
 	// an alter_context has the same body.
 	encoded[2] = byte(pdu.PacketTypeAlterContext)
 
-	reply, err := dispatcher.Handle(encoded)
+	reply, err := association.Handle(encoded)
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -328,13 +334,14 @@ func TestAlterContextIsAnsweredWithAnAlterContextResponse(t *testing.T) {
 
 func TestRequestReturnsTheInterfacesStub(t *testing.T) {
 	service := &stubService{answer: []byte("0123456789abcdef")}
-	dispatcher := New(service)
+	endpoint := New(service)
+	association := endpoint.Open()
 
-	if _, err := dispatcher.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
 		t.Fatalf("the bind failed: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(callRequest(t, 9, 0, []byte("in")))
+	reply, err := association.Handle(callRequest(t, 9, 0, []byte("in")))
 	if err != nil {
 		t.Fatalf("Handle returned an error for a well-formed request: %v", err)
 	}
@@ -368,9 +375,13 @@ func TestRequestFaultStatuses(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			dispatcher := New(&stubService{})
+			endpoint := New(&stubService{})
+			association := endpoint.Open()
+			if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+				t.Fatalf("the bind failed: %v", err)
+			}
 
-			reply, err := dispatcher.Handle(callRequest(t, 1, test.opnum, nil))
+			reply, err := association.Handle(callRequest(t, 1, test.opnum, nil))
 			if err != nil {
 				t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
 			}
@@ -389,7 +400,11 @@ func TestRequestFaultStatuses(t *testing.T) {
 
 func TestFragmentedRequestIsRefusedWithoutReachingTheInterface(t *testing.T) {
 	service := &stubService{answer: []byte("unreachable")}
-	dispatcher := New(service)
+	endpoint := New(service)
+	association := endpoint.Open()
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
 
 	// PFC_FIRST_FRAG without PFC_LAST_FRAG: the first fragment of a request whose
 	// stub is incomplete. Handing it to the interface would decode a fragment as
@@ -404,7 +419,7 @@ func TestFragmentedRequestIsRefusedWithoutReachingTheInterface(t *testing.T) {
 		t.Fatalf("failed to marshal the request: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(encoded)
+	reply, err := association.Handle(encoded)
 	if err != nil {
 		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
 	}
@@ -422,7 +437,8 @@ func TestFragmentedRequestIsRefusedWithoutReachingTheInterface(t *testing.T) {
 }
 
 func TestUnexpectedPacketTypeIsFaulted(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
 	// An auth3 PDU, which only an authenticated association uses and which this
 	// endpoint never negotiates.
@@ -436,7 +452,7 @@ func TestUnexpectedPacketTypeIsFaulted(t *testing.T) {
 		t.Fatalf("failed to marshal the auth3: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(encoded)
+	reply, err := association.Handle(encoded)
 	if err != nil {
 		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
 	}
@@ -451,9 +467,10 @@ func TestUnexpectedPacketTypeIsFaulted(t *testing.T) {
 }
 
 func TestSomethingThatIsNotAPDUIsRejected(t *testing.T) {
-	dispatcher := New(&stubService{})
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
 
-	if _, err := dispatcher.Handle([]byte("not a PDU")); err == nil {
+	if _, err := association.Handle([]byte("not a PDU")); err == nil {
 		t.Error("Handle accepted nine bytes that are not a PDU")
 	}
 }
@@ -468,12 +485,13 @@ func TestLargeResponseIsFragmentedAndReassembles(t *testing.T) {
 	}
 
 	service := &stubService{answer: answer}
-	dispatcher := New(service)
-	if _, err := dispatcher.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+	endpoint := New(service)
+	association := endpoint.Open()
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
 		t.Fatalf("the bind failed: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(callRequest(t, 2, 0, nil))
+	reply, err := association.Handle(callRequest(t, 2, 0, nil))
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
@@ -520,41 +538,61 @@ func TestLargeResponseIsFragmentedAndReassembles(t *testing.T) {
 	}
 }
 
-func TestASmallerFragmentSizeIsHonouredForEveryClientOfTheEndpoint(t *testing.T) {
-	answer := make([]byte, 4096)
-	service := &stubService{answer: answer}
-	dispatcher := New(service)
+func TestEachAssociationNegotiatesItsOwnFragmentSize(t *testing.T) {
+	// Two clients of one endpoint, one with a small receive buffer and one with
+	// the usual size. Each is answered at the size it asked for: what a bind
+	// negotiates belongs to the association, so neither client's buffer bounds
+	// the other's replies.
+	endpoint := New(&stubService{answer: make([]byte, 4096)})
 
-	// One client says it can only take 1024-byte fragments. The endpoint cannot
-	// tell two opens apart, so that bound has to apply to the whole endpoint: a
-	// fragment smaller than a client's maximum is always acceptable, a larger one
-	// is not.
-	if _, err := dispatcher.Handle(bindRequest(t, 1, 1024, testSyntax())); err != nil {
-		t.Fatalf("the first bind failed: %v", err)
+	small := endpoint.Open()
+	if _, err := small.Handle(bindRequest(t, 1, 1024, testSyntax())); err != nil {
+		t.Fatalf("the small client's bind failed: %v", err)
 	}
-	if _, err := dispatcher.Handle(bindRequest(t, 2, 4280, testSyntax())); err != nil {
-		t.Fatalf("the second bind failed: %v", err)
+	large := endpoint.Open()
+	if _, err := large.Handle(bindRequest(t, 2, 4280, testSyntax())); err != nil {
+		t.Fatalf("the large client's bind failed: %v", err)
 	}
 
-	reply, err := dispatcher.Handle(callRequest(t, 3, 0, nil))
+	smallReply, err := small.Handle(callRequest(t, 3, 0, nil))
 	if err != nil {
-		t.Fatalf("Handle returned an error: %v", err)
+		t.Fatalf("the small client's request failed: %v", err)
+	}
+	largeReply, err := large.Handle(callRequest(t, 4, 0, nil))
+	if err != nil {
+		t.Fatalf("the large client's request failed: %v", err)
 	}
 
-	for i, fragment := range splitPDUs(t, reply) {
+	smallFragments := splitPDUs(t, smallReply)
+	for i, fragment := range smallFragments {
 		if len(fragment) > 1024 {
-			t.Errorf("fragment %d is %d bytes, past the 1024 the smaller client asked for", i, len(fragment))
+			t.Errorf("the small client's fragment %d is %d bytes, past the 1024 it asked for", i, len(fragment))
 		}
+	}
+
+	largeFragments := splitPDUs(t, largeReply)
+	for i, fragment := range largeFragments {
+		if len(fragment) > 4280 {
+			t.Errorf("the large client's fragment %d is %d bytes, past the 4280 it asked for", i, len(fragment))
+		}
+	}
+
+	// The point of the test: the small client's bind did not shrink the large
+	// client's replies.
+	if len(largeFragments) >= len(smallFragments) {
+		t.Errorf("the large client's reply came in %d fragments and the small client's in %d, so the two are not negotiating separately",
+			len(largeFragments), len(smallFragments))
 	}
 }
 
 func TestAnAbsurdFragmentSizeFallsBackToTheDefault(t *testing.T) {
-	dispatcher := New(&stubService{answer: make([]byte, 8192)})
+	endpoint := New(&stubService{answer: make([]byte, 8192)})
+	association := endpoint.Open()
 
 	// A max_recv_frag of 4 leaves no room for a PDU header, let alone a stub. It
 	// is a client that filled the field in wrongly, and answering at that size
 	// would make progress impossible.
-	reply, err := dispatcher.Handle(bindRequest(t, 1, 4, testSyntax()))
+	reply, err := association.Handle(bindRequest(t, 1, 4, testSyntax()))
 	if err != nil {
 		t.Fatalf("the bind failed: %v", err)
 	}
@@ -568,59 +606,296 @@ func TestAnAbsurdFragmentSizeFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-func TestMultiInterfaceEndpointRefusesARequest(t *testing.T) {
-	// Two interfaces on one endpoint. A request names its context by an
-	// identifier assigned in a bind, and without per-open state there is no
-	// table to look it up in, so the request cannot be attributed.
-	other := &secondService{}
-	dispatcher := New(&stubService{answer: []byte("x")}, other)
+func TestMultiInterfaceEndpointDispatchesByPresentationContext(t *testing.T) {
+	// Two interfaces on one endpoint, bound in one bind under two context ids.
+	// Which interface answers a request is decided by the context it names, so
+	// both are reachable over the same association and neither is guessed at.
+	first := &stubService{answer: []byte("from the first")}
+	second := &secondService{answer: []byte("from the second")}
+	endpoint := New(first, second)
+	association := endpoint.Open()
 
-	reply, err := dispatcher.Handle(callRequest(t, 1, 0, nil))
+	reply, err := association.Handle(bindRequest(t, 1, 4280, testSyntax(), otherSyntax()))
+	if err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
+	ack := &pdu.BindAck{}
+	if _, err := ack.Unmarshal(reply); err != nil {
+		t.Fatalf("the reply is not a bind_ack: %v", err)
+	}
+	for i, result := range ack.Results {
+		if result.Result != pdu.ResultAcceptance {
+			t.Fatalf("context %d was answered with result %d, want acceptance", i, result.Result)
+		}
+	}
+	if got := association.Bound(); got != 2 {
+		t.Fatalf("the association reports %d bound contexts, want 2", got)
+	}
+
+	// bindRequest numbers the contexts by their position, so context 0 is the
+	// first interface and context 1 the second.
+	for contextID, want := range map[uint16][]byte{0: first.answer, 1: second.answer} {
+		request := &pdu.Request{
+			Header:    pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2),
+			ContextID: contextID,
+			Opnum:     0,
+		}
+		encoded, err := request.Marshal()
+		if err != nil {
+			t.Fatalf("failed to marshal the request on context %d: %v", contextID, err)
+		}
+
+		reply, err := association.Handle(encoded)
+		if err != nil {
+			t.Fatalf("the request on context %d failed: %v", contextID, err)
+		}
+		response := &pdu.Response{}
+		if _, err := response.Unmarshal(reply); err != nil {
+			t.Fatalf("the reply on context %d is not a response: %v", contextID, err)
+		}
+		if !bytes.Equal(response.Stub, want) {
+			t.Errorf("context %d was answered by the wrong interface: stub %q, want %q",
+				contextID, response.Stub, want)
+		}
+		if response.ContextID != contextID {
+			t.Errorf("the response to context %d carries context %d", contextID, response.ContextID)
+		}
+	}
+}
+
+func TestRequestBeforeABindIsFaulted(t *testing.T) {
+	// A request names its interface by a presentation context, and a context is
+	// only meaningful once a bind has negotiated it. Answering one anyway would
+	// mean guessing which interface the client meant.
+	service := &stubService{answer: []byte("unreachable")}
+	endpoint := New(service)
+	association := endpoint.Open()
+
+	if got := association.Bound(); got != 0 {
+		t.Errorf("a fresh association reports %d bound contexts, want 0", got)
+	}
+
+	reply, err := association.Handle(callRequest(t, 1, 0, nil))
 	if err != nil {
 		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
 	}
-
 	fault := &pdu.Fault{}
 	if _, err := fault.Unmarshal(reply); err != nil {
 		t.Fatalf("the reply is not a fault: %v", err)
 	}
-	if fault.Status != pdu.NCASUnkIf {
-		t.Errorf("the fault reports %s, want %s", pdu.FaultStatus(fault.Status), pdu.FaultStatus(pdu.NCASUnkIf))
+	if fault.Status != pdu.NCASFaultContextMismatch {
+		t.Errorf("the fault reports %s, want %s",
+			pdu.FaultStatus(fault.Status), pdu.FaultStatus(pdu.NCASFaultContextMismatch))
+	}
+	if service.callCount() != 0 {
+		t.Errorf("the interface was called %d times before a bind, want 0", service.callCount())
+	}
+}
+
+func TestRequestOnAContextTheBindRejectedIsFaulted(t *testing.T) {
+	// The bind offers two contexts and only the first is accepted, so a request
+	// on the second names a context that was refused.
+	endpoint := New(&stubService{answer: []byte("x")})
+	association := endpoint.Open()
+
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax(), otherSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
+	if got := association.Bound(); got != 1 {
+		t.Fatalf("the association reports %d bound contexts, want only the accepted one", got)
+	}
+
+	request := &pdu.Request{
+		Header:    pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2),
+		ContextID: 1,
+		Opnum:     0,
+	}
+	encoded, err := request.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the request: %v", err)
+	}
+
+	reply, err := association.Handle(encoded)
+	if err != nil {
+		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
+	}
+	fault := &pdu.Fault{}
+	if _, err := fault.Unmarshal(reply); err != nil {
+		t.Fatalf("the reply is not a fault: %v", err)
+	}
+	if fault.Status != pdu.NCASFaultContextMismatch {
+		t.Errorf("the fault reports %s, want %s",
+			pdu.FaultStatus(fault.Status), pdu.FaultStatus(pdu.NCASFaultContextMismatch))
+	}
+}
+
+func TestAlterContextAddsToWhatIsBoundAndABindReplacesIt(t *testing.T) {
+	// [C706] 12.6.3.3: alter_context negotiates a new presentation context on an
+	// existing association, so what was bound stays bound. A bind starts the
+	// association's context table again.
+	first := &stubService{answer: []byte("from the first")}
+	second := &secondService{answer: []byte("from the second")}
+	endpoint := New(first, second)
+	association := endpoint.Open()
+
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
+	if got := association.Bound(); got != 1 {
+		t.Fatalf("after the bind the association reports %d bound contexts, want 1", got)
+	}
+
+	// An alter_context naming the second interface, under context id 1.
+	alter := &pdu.Bind{
+		Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2),
+		MaxXmitFrag: 4280,
+		MaxRecvFrag: 4280,
+		ContextList: []pdu.ContextElement{{
+			ContextID:        1,
+			AbstractSyntax:   otherSyntax(),
+			TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+		}},
+	}
+	encoded, err := alter.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the alter_context: %v", err)
+	}
+	encoded[2] = byte(pdu.PacketTypeAlterContext)
+
+	if _, err := association.Handle(encoded); err != nil {
+		t.Fatalf("the alter_context failed: %v", err)
+	}
+	if got := association.Bound(); got != 2 {
+		t.Errorf("after the alter_context the association reports %d bound contexts, want 2 — the first was dropped",
+			got)
+	}
+
+	// A fresh bind naming only the second interface leaves that one context.
+	rebind := bindRequest(t, 3, 4280, otherSyntax())
+	if _, err := association.Handle(rebind); err != nil {
+		t.Fatalf("the second bind failed: %v", err)
+	}
+	if got := association.Bound(); got != 1 {
+		t.Errorf("after a second bind the association reports %d bound contexts, want 1", got)
+	}
+}
+
+func TestTwoAssociationsOfOneEndpointBindIndependently(t *testing.T) {
+	// The endpoint's interfaces are shared; what a bind establishes is not. One
+	// client binding must not make the other client's requests answerable, which
+	// is the whole reason an association exists.
+	endpoint := New(&stubService{answer: []byte("answer")})
+
+	bound := endpoint.Open()
+	if _, err := bound.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
+	unbound := endpoint.Open()
+
+	if got := unbound.Bound(); got != 0 {
+		t.Errorf("the second association reports %d bound contexts after the first one bound, want 0", got)
+	}
+
+	reply, err := unbound.Handle(callRequest(t, 2, 0, nil))
+	if err != nil {
+		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
+	}
+	fault := &pdu.Fault{}
+	if _, err := fault.Unmarshal(reply); err != nil {
+		t.Fatalf("the second association's request was answered rather than faulted: %v", err)
+	}
+	if fault.Status != pdu.NCASFaultContextMismatch {
+		t.Errorf("the fault reports %s, want %s",
+			pdu.FaultStatus(fault.Status), pdu.FaultStatus(pdu.NCASFaultContextMismatch))
+	}
+
+	// The association that did bind still works.
+	if _, err := bound.Handle(callRequest(t, 3, 0, nil)); err != nil {
+		t.Fatalf("the bound association's request failed: %v", err)
+	}
+}
+
+func TestServicesReportsTheEndpointsInterfaces(t *testing.T) {
+	endpoint := New(&stubService{}, &secondService{})
+
+	services := endpoint.Services()
+	if len(services) != 2 {
+		t.Fatalf("Services reports %d interfaces, want 2", len(services))
+	}
+	// The slice is a copy, so a caller cannot reach into the endpoint's own.
+	services[0] = nil
+	if again := endpoint.Services(); again[0] == nil {
+		t.Error("Services handed out the endpoint's own slice, so a caller can empty it")
 	}
 }
 
 // secondService is a second interface, used to build an endpoint that serves
 // more than one.
-type secondService struct{}
+type secondService struct {
+	answer []byte
+}
 
 func (s *secondService) AbstractSyntax() syntax.SyntaxID { return otherSyntax() }
 func (s *secondService) Call(opnum uint16, stub []byte) ([]byte, error) {
-	return nil, ErrUnknownOpnum
+	if opnum != 0 {
+		return nil, ErrUnknownOpnum
+	}
+	return s.answer, nil
 }
 
 func TestConcurrentClientsOfOneEndpoint(t *testing.T) {
-	// One Dispatcher serves every open of its endpoint, and the SMB server calls
-	// a pipe handler on the goroutine of whichever connection is asking. Binds
-	// and requests therefore overlap, which is what this checks under -race.
-	dispatcher := New(&stubService{answer: make([]byte, 2048)})
+	// One Dispatcher serves every client of its endpoint, and the SMB server
+	// calls a pipe handler on the goroutine of whichever connection is asking.
+	// Each client has its own association; the endpoint's interface table is
+	// shared, which is what this checks under -race.
+	endpoint := New(&stubService{answer: make([]byte, 2048)})
 
 	var waiting sync.WaitGroup
 	for client := 0; client < 8; client++ {
 		waiting.Add(1)
 		go func(client int) {
 			defer waiting.Done()
+
+			association := endpoint.Open()
 			for round := 0; round < 20; round++ {
 				callID := uint32(client*100 + round)
-				if _, err := dispatcher.Handle(bindRequest(t, callID, uint16(1024+client*64), testSyntax())); err != nil {
+				if _, err := association.Handle(bindRequest(t, callID, uint16(1024+client*64), testSyntax())); err != nil {
 					t.Errorf("client %d: the bind failed: %v", client, err)
 					return
 				}
-				if _, err := dispatcher.Handle(callRequest(t, callID, 0, nil)); err != nil {
+				if _, err := association.Handle(callRequest(t, callID, 0, nil)); err != nil {
 					t.Errorf("client %d: the request failed: %v", client, err)
 					return
 				}
 			}
 		}(client)
+	}
+	waiting.Wait()
+}
+
+func TestOneAssociationUsedFromSeveralGoroutines(t *testing.T) {
+	// A transport that let a client have several calls in flight would use one
+	// association from several goroutines. The server does not, but the guard is
+	// what makes that a supported thing to do rather than a corrupted context
+	// table, and this is what checks it under -race.
+	endpoint := New(&stubService{answer: make([]byte, 512)})
+	association := endpoint.Open()
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
+	}
+
+	var waiting sync.WaitGroup
+	for caller := 0; caller < 8; caller++ {
+		waiting.Add(1)
+		go func(caller int) {
+			defer waiting.Done()
+			for round := 0; round < 20; round++ {
+				if _, err := association.Handle(callRequest(t, uint32(caller*100+round), 0, nil)); err != nil {
+					t.Errorf("caller %d: the request failed: %v", caller, err)
+					return
+				}
+			}
+		}(caller)
 	}
 	waiting.Wait()
 }
