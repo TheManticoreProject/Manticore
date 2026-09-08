@@ -66,6 +66,19 @@ type CommandInterface interface {
 	IsUnicode() bool
 }
 
+// ChainPositioned is implemented by a command whose wire format carries an offset
+// measured from the start of the SMB header rather than from the command itself.
+//
+// Such a command is only correct at the front of a message: batched second or
+// later, its own offsets have to account for everything ahead of it.
+// Message.Marshal tells each command where it begins before marshalling it, so a
+// command that needs the number has it, and one that does not is unaffected.
+type ChainPositioned interface {
+	// SetChainOffset records how far past the end of the SMB header this command
+	// begins. Zero means it is the first command in the message.
+	SetChainOffset(offset int)
+}
+
 // Command is a struct that implements the CommandInterface
 type Command struct {
 	// Command code
@@ -201,14 +214,14 @@ func (c *Command) SetData(data *data.Data) {
 // Returns:
 //   - CommandInterface: The next command in the chain
 func (c *Command) GetNextCommand() CommandInterface {
-	// A chained command is present only when an AndX block has been recorded.
-	// (The guard cannot also call c.IsAndX(): from this embedded base method that
-	// call resolves to the base IsAndX, not the concrete command's override, so it
-	// would always be false and hide a linked command.)
-	if c.AndX != nil {
-		return c.NextCommand
-	}
-	return nil
+	// Whatever is linked is returned, with no test for an AndX block.
+	//
+	// Gating this on c.AndX != nil looks like it identifies an AndX command, but
+	// it does not: the block is recorded when a chain is parsed and absent when a
+	// chain is built, so the gate hid a command that had been linked deliberately
+	// and made every walker stop at the first one. Whether a command may be
+	// followed at all is an AndX question, and Message.Marshal asks it there.
+	return c.NextCommand
 }
 
 // SetNextCommand sets the next command in the chain
