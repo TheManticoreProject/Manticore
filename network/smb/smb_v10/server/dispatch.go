@@ -59,6 +59,7 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_CREATE_DIRECTORY: handleCreateDirectory,
 	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
 	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
+	codes.SMB_COM_NT_RENAME:        handleNtRename,
 
 	// Transactions, which carry the directory-enumeration and information
 	// subcommands.

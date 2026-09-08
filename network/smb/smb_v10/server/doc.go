@@ -14,23 +14,46 @@
 // the protocol to look functional while refusing everything that matters.
 //
 // Implemented:
+//
 //   - Listening on Direct TCP (445) and NetBIOS over TCP (139), via
 //     network/smb/common/transport.
+//
 //   - The per-connection receive loop, request decoding, the handler chain, and
 //     response framing with correlated reply headers.
+//
 //   - Error responses in both encodings: the NTSTATUS form, and the legacy
 //     SMBSTATUS class/code form for a client that did not negotiate
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
+//
 //   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
 //     security.
+//
 //   - SMB_COM_SESSION_SETUP_ANDX, including verifying the response against a
 //     credential, establishing a session, and the guest and anonymous policies.
+//
 //   - SMB_COM_LOGOFF_ANDX.
+//
 //   - SMB_COM_ECHO.
+//
 //   - Message signing in both directions, when the policy calls for it.
+//
 //   - Tree connect and disconnect against a registered share.
+//
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//
+//   - SMB_COM_NT_RENAME, which renames an entry at SMB_NT_RENAME_RENAME_FILE and
+//     gives it a second name at SMB_NT_RENAME_SET_LINK_INFO. Linking needs a
+//     backend that implements Linker; one that does not is answered
+//     STATUS_NOT_SUPPORTED rather than given a copy, because a copy is a second
+//     file and not a second name, and the two diverge as soon as either is
+//     written.
+//
+//     SMB_COM_COPY and SMB_COM_MOVE stay refused: [MS-CIFS] sections 2.2.4.37
+//     and 2.2.4.38 record both as obsolete in the NT LAN Manager dialect — the
+//     only dialect this server speaks — and have servers answer
+//     STATUS_NOT_IMPLEMENTED, which is what happens.
+//
 //   - The core-set file information commands, which describe a file without a
 //     transaction: SMB_COM_QUERY_INFORMATION and SMB_COM_SET_INFORMATION by path,
 //     and SMB_COM_QUERY_INFORMATION2 and SMB_COM_SET_INFORMATION2 on a handle.
@@ -38,17 +61,21 @@
 //     or a UTIME in seconds, so a client reading one back sees less precision than
 //     the TRANSACTION2 levels carry — a property of the wire format rather than of
 //     the storage.
+//
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
 //     responses both fragment across as many messages as they need.
+//
 //   - Security descriptors and file-system controls, over NT_TRANSACT:
 //     QUERY_SECURITY_DESC, SET_SECURITY_DESC and IOCTL. SMB_COM_NT_CANCEL is
 //     accepted silently, since nothing here leaves a request outstanding.
+//
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
 //     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//
 //   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
 //     the pass-through information classes above 0x03E8 that carry the native
 //     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
@@ -77,6 +104,11 @@
 // invented for them is a number a client would believe.
 //
 // # Shares
+//
+// A FileSystem may also implement Linker, which lets SMB_COM_NT_RENAME give a
+// file a second name. It is a separate interface so that adding it does not break
+// a backend outside this repository: one that cannot link simply does not
+// implement it.
 //
 // A Share is registered with AddShare and backed by a FileSystem.
 // NewLocalFileSystem serves a directory on the host; NewMemoryFileSystem serves
