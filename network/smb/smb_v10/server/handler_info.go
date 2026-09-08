@@ -131,6 +131,10 @@ func handleSetPathInformation(conn *Connection, req *message.Message, reassembly
 		return nil, nil, nt_status.NT_STATUS_ACCESS_DENIED
 	}
 
+	// A set level can change the file's length, and this one is reached by path,
+	// so nothing has broken the oplocks on it yet.
+	conn.breakOplocksOn(tree.Share, path, nil)
+
 	// A path-based set has no handle, so the levels that are properties of a
 	// handle rather than of a file cannot be applied through it.
 	served, err := applyFileInformation(tree.Share.FS, path, level, reassembly.data, nil)
@@ -166,6 +170,8 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 	if !open.Writable {
 		return nil, nil, nt_status.NT_STATUS_ACCESS_DENIED
 	}
+
+	conn.breakOplocksOn(open.Tree.Share, open.Path, open)
 
 	served, err := applyFileInformation(open.Tree.Share.FS, open.Path, level, reassembly.data, open)
 	if !served {

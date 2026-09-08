@@ -87,6 +87,7 @@ func handleNtRename(conn *Connection, w ResponseWriter, req *message.Message) nt
 	case smbNtRenameRenameFile:
 		// Treated as SMB_COM_RENAME: the target must not already exist, which is
 		// what a rename with replace=false gives.
+		conn.breakOplocksOn(tree.Share, source, nil)
 		if err := tree.Share.FS.Rename(source, target, false); err != nil {
 			logger.Debugf("SMB1 server: %s renamed %q to %q, which failed: %v",
 				conn.Remote, source, target, err)

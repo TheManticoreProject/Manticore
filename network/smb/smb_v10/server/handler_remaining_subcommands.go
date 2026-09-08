@@ -183,6 +183,9 @@ func handleNtTransactCreate(
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 
+	// Flags is the first field of the parameter block ([MS-CIFS] section
+	// 2.2.7.1.1), and carries the oplock request bits.
+	flagsField := binary.LittleEndian.Uint32(reassembly.parameters[0:4])
 	rootDirectoryFID := binary.LittleEndian.Uint32(reassembly.parameters[4:8])
 	desiredAccess := binary.LittleEndian.Uint32(reassembly.parameters[8:12])
 	createDisposition := binary.LittleEndian.Uint32(reassembly.parameters[28:32])
@@ -220,10 +223,15 @@ func handleNtTransactCreate(
 		return nil, nil, statusForFSError(err)
 	}
 
+	// An open that can change the file withdraws everyone else's promise that
+	// nothing will, before this one is granted anything.
+	if open.Writable || flags.Truncate {
+		conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+	}
+
 	// Response parameters are 69 bytes, per [MS-CIFS] section 2.2.7.1.2.
 	parameters := make([]byte, 69)
-	// OpLockLevel stays zero: no oplock is granted, and claiming one the server
-	// cannot break would have the client cache on a promise nothing keeps.
+	parameters[0] = conn.grantOplock(open, uint16(req.Header.UID), flagsField)
 	binary.LittleEndian.PutUint16(parameters[2:4], open.FID)
 	binary.LittleEndian.PutUint32(parameters[4:8], createActionFor(existed, flags))
 	binary.LittleEndian.PutUint64(parameters[12:20], filetimeOf(attr.Created))

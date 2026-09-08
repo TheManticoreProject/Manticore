@@ -52,9 +52,11 @@ func handleSessionSetupAndx(conn *Connection, w ResponseWriter, req *message.Mes
 		return nt_status.NT_STATUS_NOT_IMPLEMENTED
 	}
 
-	// Record what the client says it can handle: it bounds what may be sent back.
+	// Record what the client says it can handle: it bounds what may be sent back,
+	// and MaxMpxCount decides whether an oplock may be granted at all.
 	conn.ClientMaxBufferSize = uint32(request.MaxBufferSize)
 	conn.ClientCapabilities = request.Capabilities
+	conn.ClientMaxMpxCount = uint16(request.MaxMpxCount)
 
 	uid := uint16(req.Header.UID)
 	switch {

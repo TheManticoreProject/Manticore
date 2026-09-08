@@ -106,6 +106,25 @@ func (c *Connection) Open(fid uint16) *Open {
 }
 
 // addTree records a connected tree.
+// OplockLevel reports the oplock this handle holds, as an OplockLevel* constant.
+//
+// It asks the share's table rather than caching the answer on the handle. An
+// oplock is broken by whichever goroutine changes the file, which is not this
+// handle's connection, so a copy kept here would be written from two goroutines
+// at once — and the table is guarded and is the thing that decides who holds one.
+//
+// Returns:
+//   - The level held, or OplockLevelNone
+func (o *Open) OplockLevel() uint8 {
+	if o == nil || o.Tree == nil || o.Tree.Share == nil || o.Tree.Share.oplocks == nil {
+		return OplockLevelNone
+	}
+	if o.Tree.Share.oplocks.Holds(o) {
+		return OplockLevelLevelII
+	}
+	return OplockLevelNone
+}
+
 // pipeSession returns the handler session this handle transacts on, which is nil
 // for a handle that does not name a pipe.
 func (o *Open) pipeSession() PipeSession {
@@ -221,6 +240,13 @@ func (c *Connection) closeOpen(fid uint16) error {
 	// of the share.
 	if open.Tree != nil && open.Tree.Share != nil && open.Tree.Share.locks != nil {
 		open.Tree.Share.locks.ReleaseAll(open)
+	}
+
+	// An oplock goes the same way, and for the same reason: it is a promise made
+	// to a handle, and a handle that no longer exists cannot be told the promise
+	// has been withdrawn.
+	if open.Tree != nil && open.Tree.Share != nil && open.Tree.Share.oplocks != nil {
+		open.Tree.Share.oplocks.Release(open)
 	}
 
 	var firstErr error

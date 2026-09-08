@@ -2,15 +2,18 @@ package server
 
 import (
 	"bytes"
-	"errors"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/TheManticoreProject/Manticore/network/tcp"
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
@@ -237,21 +240,68 @@ func TestClosingTheConnectionCancelsWhatItOwes(t *testing.T) {
 	}
 }
 
-// TestUnsolicitedSendIsRefusedWhileSigning asserts a server-initiated message is
-// refused on a signing connection rather than sent with a guessed sequence number.
+// TestUnsolicitedSendGoesUnsignedOnASigningConnection asserts an oplock break is
+// sent, and sent without a signature, on a connection that is signing.
 //
-// A signed message consumes a number from the pair the two sides keep in step, and
-// one with no request behind it has none reserved. A wrong guess desynchronises
-// signing for the rest of the connection and every later request fails
-// verification — a failure mode far worse than a refused oplock break.
-func TestUnsolicitedSendIsRefusedWhileSigning(t *testing.T) {
-	conn := &Connection{SigningActive: true}
+// [MS-CIFS] section 3.3.4.1 requires exactly that: a message the server sends is
+// signed with the number in ServerSendSequenceNumber[PID,MID], and then "OpLock
+// Break Notification messages are exempt from signing". The exemption is what
+// makes the message possible — that table is keyed by a request's PID and MID,
+// and a message with no request behind it has no entry — and sending it unsigned
+// consumes no number, so the two sides' numbering stays in step.
+func TestUnsolicitedSendGoesUnsignedOnASigningConnection(t *testing.T) {
+	serverSide, clientSide := net.Pipe()
+	t.Cleanup(func() {
+		serverSide.Close()
+		clientSide.Close()
+	})
 
-	err := conn.SendUnsolicited(commands.NewLockingAndxRequest(), 1, 1, 1)
-	if err == nil {
-		t.Fatal("an unsolicited send succeeded on a signing connection")
+	conn := &Connection{
+		Transport: tcp.NewTCPTransportFromConn(serverSide),
+		Remote:    &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1},
+		// Signing active, with a key that would produce a visible signature if
+		// one were applied.
+		SigningActive: true,
+		SigningKey:    bytes.Repeat([]byte{0xAB}, 16),
 	}
-	if !errors.Is(err, ErrUnsolicitedWhileSigning) {
-		t.Errorf("the refusal is %v, want ErrUnsolicitedWhileSigning", err)
+
+	clientTransport := tcp.NewTCPTransportFromConn(clientSide)
+	clientTransport.SetTimeout(5 * time.Second)
+
+	received := make(chan []byte, 1)
+	go func() {
+		frame, err := clientTransport.Receive()
+		if err != nil {
+			received <- nil
+			return
+		}
+		received <- frame
+	}()
+
+	notification := commands.NewLockingAndxRequest()
+	notification.FID = types.USHORT(0x1234)
+	notification.TypeOfLock = types.UCHAR(commands.LockingAndxOplockRelease)
+	if err := conn.SendUnsolicited(notification, 1, 1, conn.nextUnsolicitedMID()); err != nil {
+		t.Fatalf("the break was refused on a signing connection: %v", err)
+	}
+
+	var frame []byte
+	select {
+	case frame = <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the break was never sent")
+	}
+	if frame == nil {
+		t.Fatal("reading the break failed")
+	}
+
+	// The SecuritySignature field is bytes 14 to 22 of the SMB header. An exempt
+	// message leaves it zero.
+	if len(frame) < header.SMB_HEADER_SIZE {
+		t.Fatalf("the frame is %d bytes, shorter than an SMB header", len(frame))
+	}
+	signature := frame[14:22]
+	if !bytes.Equal(signature, make([]byte, 8)) {
+		t.Errorf("the break carries the signature % x, want it left zero as an exempt message", signature)
 	}
 }

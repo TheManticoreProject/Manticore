@@ -195,9 +195,47 @@
 // rather than something the interval can fix, and it is why the poll is documented
 // where a caller will see it.
 //
-// Oplocks are still never granted. Breaking one means sending a message the client
-// did not ask for, and Connection.SendUnsolicited refuses to do that on a signing
-// connection for the reason given below.
+// # Oplocks
+//
+// A level II oplock is granted on an open that asks for one, and broken with an
+// unsolicited SMB_COM_LOCKING_ANDX before anything makes it untrue. Level II is
+// the only level granted: it lets a client cache reads and nothing else, so
+// withdrawing it needs no acknowledgement and the break can go out without
+// holding up the operation that caused it. A request for an exclusive or batch
+// oplock is answered with level II, which [MS-SMB] 3.3.5.1.2 sanctions — an
+// exclusive oplock lets a client cache writes, and breaking one means suspending
+// the operation that broke it until the client has flushed and acknowledged,
+// which needs a request this server can park and resume and it has none.
+//
+// Nothing is granted to a client whose MaxMpxCount is below two: [MS-CIFS]
+// 3.3.5.53 forbids it, because a client with a single command slot could not
+// answer a break while it was waiting for anything else. Nothing is granted on a
+// directory either, per 3.3.5.2.7.
+//
+// The oplock is withdrawn before the change that caused it: the table stops
+// counting the holder first, so nothing after that point can grant or keep one on
+// the strength of it. What breaks an oplock is an open that can write, a write, a
+// set-information level that resizes, a delete, and a rename — the last three
+// because they are reached by path rather than by handle, so no open of theirs
+// has broken anything. A timestamp-only change does not break one: a level II
+// oplock caches data, and a timestamp is not data.
+//
+// The notification itself goes out on a goroutine of its own. Writing to another
+// connection blocks until that client reads, so sending it inline would let a
+// client idling with a full receive buffer stall the unrelated client whose write
+// broke the oplock. Nothing waits on the break, which is what makes that safe.
+//
+// [MS-CIFS] 3.3.5.2.7 would also refuse an oplock on a file another handle holds
+// open for writing. This grants it and withdraws it when that handle actually
+// changes the file, which keeps the same promise — the client is told before any
+// change to its cached data can be seen — without reading every connection's open
+// table, which belongs to those connections' own goroutines.
+//
+// The guarantee is the one level II carries and no more. The break is in flight
+// while the change is applied, so a client that reads from its cache in that
+// window sees data that is about to be replaced. That is inherent to a level
+// nobody acknowledges, and it is why the levels that promise more require an
+// acknowledgement — which is also why they are not granted here.
 //
 // # Deferred answers
 //
@@ -221,13 +259,14 @@
 // to discover it on a failed write.
 //
 // A server-initiated message — the oplock break of [MS-CIFS] 2.2.4.32.1, the one
-// place the server sends a request — goes out through Connection.SendUnsolicited.
-// It is refused on a signing connection: a signed message consumes a number from
-// the sequence the two sides keep in step, and a message with no request behind it
-// has none reserved for it. A wrong guess desynchronises signing for the rest of
-// the connection and every later request fails verification, so it is refused
-// rather than guessed at until the numbering can be checked against a reference
-// capture.
+// place the server sends a request — goes out through Connection.SendUnsolicited,
+// unsigned even on a connection that is signing. That is what [MS-CIFS] 3.3.4.1
+// requires: having said that a message the server sends MUST be signed with the
+// number in ServerSendSequenceNumber[PID,MID], it adds that "OpLock Break
+// Notification messages are exempt from signing". The exemption is what makes the
+// message possible at all, since that table is keyed by a request's PID and MID
+// and a message with no request behind it has no entry in it; sending it unsigned
+// consumes no number, so the two sides' numbering stays in step.
 //
 // NT_TRANSACT_CREATE and TRANS2_OPEN2 are served, as are TRANS2_CREATE_DIRECTORY
 // and the extended attributes those two can carry — except that the attributes
