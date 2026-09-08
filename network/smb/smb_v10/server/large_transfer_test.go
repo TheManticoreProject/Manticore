@@ -14,6 +14,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // countingBytes is a block whose every byte identifies its own position, so a
@@ -293,10 +294,9 @@ func TestLargeReadOnAPipeReadsTheFieldAsATimeout(t *testing.T) {
 // TestLargeWriteExceedsTheNegotiatedBuffer asserts one write may carry more than
 // MaxBufferSize, which is what CAP_LARGE_WRITEX is for.
 //
-// The size is above the negotiated 16644 bytes and below 0x10000, which is the
-// range the capability actually buys: at 0x10000 and above the data block cannot
-// describe itself, because SMB_Data.ByteCount is a USHORT that [MS-SMB] does not
-// widen. DefaultMaxLargeTransfer stays under that for the same reason.
+// The size is above the negotiated 16644 bytes and below 0x10000, so the whole
+// write is described by DataLength alone. The range at and above that is covered
+// by TestWriteAtSixtyFourKiBLandsInFull.
 func TestLargeWriteExceedsTheNegotiatedBuffer(t *testing.T) {
 	const size = 40000
 
@@ -316,11 +316,9 @@ func TestLargeWriteExceedsTheNegotiatedBuffer(t *testing.T) {
 	cmd := commands.NewWriteAndxRequest()
 	cmd.FID = types.USHORT(fid)
 	cmd.Offset = types.ULONG(0)
-	cmd.DataLength = types.USHORT(size & 0xFFFF)
-	// Reserved is DataLengthHigh under CAP_LARGE_WRITEX; zero at this size.
-	cmd.Reserved = types.USHORT(size >> 16)
-	cmd.DataOffset = types.USHORT(header.SMB_HEADER_SIZE + 1 + 24 + 2 + 1)
 	cmd.Pad = types.UCHAR(0)
+	// DataLength, DataLengthHigh and DataOffset are derived from the data when the
+	// request is marshalled, so the test does not restate this command's layout.
 	cmd.Data = []types.UCHAR(payload)
 	request.AddCommand(cmd)
 
@@ -361,19 +359,198 @@ func TestLargeWriteExceedsTheNegotiatedBuffer(t *testing.T) {
 	}
 }
 
-// TestLargeTransferCeilingKeepsByteCountTruthful asserts the ceiling stays inside
-// what SMB_Data.ByteCount can describe.
+// TestLargeTransferCeilingFitsOneTransportFrame asserts the ceiling stays inside
+// what a transport will carry.
 //
-// ByteCount is a USHORT and [MS-SMB] does not widen it for a large transfer, so a
-// data block of 0x10000 bytes or more cannot state its own length. Raising the
-// ceiling past that would emit messages whose ByteCount is wrong, readable only by
-// a client that ignores the field — so the invariant is asserted rather than left
-// to a comment.
-func TestLargeTransferCeilingKeepsByteCountTruthful(t *testing.T) {
-	// One byte of pad precedes a write's data, so the block is the transfer plus
-	// one and must still fit.
-	if DefaultMaxLargeTransfer+1 > 0xFFFF {
-		t.Fatalf("DefaultMaxLargeTransfer is %d, which with its pad byte exceeds what ByteCount can describe",
+// This is the constraint that actually bounds the ceiling. SMB_Data.ByteCount no
+// longer does: a transfer of 0x10000 bytes or more carries its length in
+// DataLength and DataLengthHigh and its position in DataOffset. But a message
+// larger than one frame cannot be sent at all, and NetBIOS over TCP is the
+// tighter of the two transports — RFC 1002 4.3.1 gives its session message a
+// 17-bit length, so 0x1FFFF bytes including the SMB header and framing.
+func TestLargeTransferCeilingFitsOneTransportFrame(t *testing.T) {
+	// A read response is the larger of the two framings, at the SMB header plus
+	// the parameter words and the byte count.
+	const framing = header.SMB_HEADER_SIZE + 1 + 2*12 + 2
+
+	if DefaultMaxLargeTransfer+framing > 0x1FFFF {
+		t.Fatalf("DefaultMaxLargeTransfer is %d, which with %d bytes of framing exceeds the %d a NetBIOS session message carries",
+			DefaultMaxLargeTransfer, framing, 0x1FFFF)
+	}
+
+	// And it is at least the 64 KiB the capability exists to reach, since a
+	// ceiling below that leaves the extension buying nothing a plain
+	// MaxBufferSize increase would not.
+	if DefaultMaxLargeTransfer < 0x10000 {
+		t.Errorf("DefaultMaxLargeTransfer is %d, below the 64 KiB CAP_LARGE_READX and CAP_LARGE_WRITEX are for",
 			DefaultMaxLargeTransfer)
+	}
+}
+
+// TestReadAtSixtyFourKiBIsFramedAcrossBothLengthWords asserts a read of exactly
+// 0x10000 bytes is described and delivered.
+//
+// This is the size that cannot be stated in one USHORT: DataLength wraps to zero
+// and the whole length lives in DataLengthHigh, so a client reading DataLength
+// alone sees an empty reply. It is also where ByteCount stops being usable, which
+// is why the data is located by DataOffset.
+func TestReadAtSixtyFourKiBIsFramedAcrossBothLengthWords(t *testing.T) {
+	const size = 0x10000
+
+	config := conformanceConfig(SigningDisabled)
+	client, fid := openLargeFile(t, config, 200*1024)
+
+	// MaxCountHigh 0x0001 with a zero low word asks for exactly 0x10000 bytes.
+	raw := sendReadAndx(t, client, fid, 0x0000, 0x0001)
+	response := readReplyOf(t, raw)
+
+	if response.DataLength != 0 {
+		t.Errorf("DataLength is 0x%04X, want 0 — a 64 KiB length has nothing in its low word",
+			response.DataLength)
+	}
+	if response.DataLengthHigh != 1 {
+		t.Errorf("DataLengthHigh is 0x%04X, want 1", response.DataLengthHigh)
+	}
+	if length := readReplyLength(t, raw); length != size {
+		t.Fatalf("the read described %d bytes, want %d", length, size)
+	}
+
+	// The bytes are where DataOffset says, and they are the file's.
+	at := int(response.DataOffset)
+	if at+size > len(raw) {
+		t.Fatalf("DataOffset %d plus %d bytes runs past the %d-byte reply", at, size, len(raw))
+	}
+	if !bytes.Equal(raw[at:at+size], countingBytes(200 * 1024)[:size]) {
+		t.Error("the bytes returned are not the file's")
+	}
+
+	// ByteCount holds the low word of the block, which at this size is zero. The
+	// reply is still readable because nothing needs it: asserting the value keeps
+	// it from looking like a defect to the next reader.
+	byteCount := binary.LittleEndian.Uint16(raw[at-2 : at])
+	if byteCount != uint16(size&0xFFFF) {
+		t.Errorf("ByteCount is 0x%04X, want the low word of %d (0x%04X)",
+			byteCount, size, uint16(size&0xFFFF))
+	}
+
+	// And the decoder recovers it, which is what a client does with the reply.
+	if len(response.Data) != size {
+		t.Errorf("the decoded reply carries %d bytes, want %d", len(response.Data), size)
+	}
+}
+
+// TestWriteAtSixtyFourKiBLandsInFull asserts a write of exactly 0x10000 bytes is
+// accepted and every byte reaches the file.
+//
+// Before the data was located by DataOffset this was the request that could not
+// be represented: ByteCount wrapped, the data block was truncated to the wrapped
+// value before the command saw it, and the server answered STATUS_INVALID_SMB.
+func TestWriteAtSixtyFourKiBLandsInFull(t *testing.T) {
+	const size = 0x10000
+
+	config := conformanceConfig(SigningDisabled)
+	client, fid := openLargeFile(t, config, size)
+
+	payload := countingBytes(size)
+	for index := range payload {
+		// Distinguish what is written from what the file already held.
+		payload[index] ^= 0xFF
+	}
+
+	request := newRequest(codes.SMB_COM_WRITE_ANDX)
+	request.Header.UID = client.Session.SessionUID
+	request.Header.TID = client.Session.TreeID
+
+	cmd := commands.NewWriteAndxRequest()
+	cmd.FID = types.USHORT(fid)
+	cmd.Offset = types.ULONG(0)
+	cmd.Data = []types.UCHAR(payload)
+	request.AddCommand(cmd)
+
+	marshalled, err := request.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the write: %v", err)
+	}
+	// The length has to be described across both words for the request to say
+	// what it carries at all.
+	if cmd.DataLength != 0 || cmd.DataLengthHigh() != 1 {
+		t.Fatalf("the request describes its %d bytes as DataLength 0x%04X and DataLengthHigh 0x%04X, want 0x0000 and 0x0001",
+			size, cmd.DataLength, cmd.DataLengthHigh())
+	}
+
+	if _, err := client.Transport.Send(marshalled); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	raw, err := client.Transport.Receive()
+	if err != nil {
+		t.Fatalf("Receive() error = %v", err)
+	}
+	if status := binary.LittleEndian.Uint32(raw[5:9]); status != 0 {
+		t.Fatalf("the write reported 0x%08X, want success", status)
+	}
+
+	response := commands.NewWriteAndxResponse()
+	if _, err := response.Unmarshal(raw[header.SMB_HEADER_SIZE:]); err != nil {
+		t.Fatalf("the reply did not decode: %v", err)
+	}
+	if written := int(response.CountHigh)<<16 | int(response.Count); written != size {
+		t.Fatalf("the reply reports %d bytes written, want %d", written, size)
+	}
+
+	// And every byte is in the file, read back in chunks the client can describe.
+	readBack, err := client.ReadFile(fid, 0, size)
+	if err != nil {
+		t.Fatalf("reading the file back failed: %v", err)
+	}
+	if !bytes.Equal(readBack, payload) {
+		t.Fatalf("the file holds %d bytes that do not match the %d written", len(readBack), len(payload))
+	}
+}
+
+// TestWriteWithADataOffsetInsideItsParametersIsRefused asserts a request whose
+// DataOffset does not describe where its data is gets STATUS_INVALID_SMB.
+//
+// [MS-CIFS] section 3.3.5.37: a DataOffset below the start of
+// SMB_Data.Bytes.Data, or past the end of the data it claims, fails the request.
+// Locating data by an offset the client supplies is only safe if the offset is
+// checked.
+func TestWriteWithADataOffsetInsideItsParametersIsRefused(t *testing.T) {
+	config := conformanceConfig(SigningDisabled)
+	client, fid := openLargeFile(t, config, 4096)
+
+	request := newRequest(codes.SMB_COM_WRITE_ANDX)
+	request.Header.UID = client.Session.SessionUID
+	request.Header.TID = client.Session.TreeID
+
+	cmd := commands.NewWriteAndxRequest()
+	cmd.FID = types.USHORT(fid)
+	cmd.Data = []types.UCHAR(countingBytes(512))
+	request.AddCommand(cmd)
+
+	marshalled, err := request.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the write: %v", err)
+	}
+
+	// Point DataOffset at the FID, inside the parameter words. The offset of the
+	// field itself: the header, WordCount(1), the AndX block(4), FID(2),
+	// Offset(4), Timeout(4), WriteMode(2), Remaining(2), DataLengthHigh(2) and
+	// DataLength(2).
+	const dataOffsetField = header.SMB_HEADER_SIZE + 1 + 4 + 2 + 4 + 4 + 2 + 2 + 2 + 2
+	binary.LittleEndian.PutUint16(marshalled[dataOffsetField:dataOffsetField+2],
+		uint16(header.SMB_HEADER_SIZE+1+4))
+
+	if _, err := client.Transport.Send(marshalled); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	raw, err := client.Transport.Receive()
+	if err != nil {
+		t.Fatalf("Receive() error = %v", err)
+	}
+
+	status := binary.LittleEndian.Uint32(raw[5:9])
+	if status != uint32(nt_status.NT_STATUS_INVALID_SMB) {
+		t.Errorf("the write reported 0x%08X, want STATUS_INVALID_SMB (0x%08X)",
+			status, uint32(nt_status.NT_STATUS_INVALID_SMB))
 	}
 }

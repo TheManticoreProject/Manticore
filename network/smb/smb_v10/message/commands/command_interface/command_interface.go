@@ -70,9 +70,18 @@ type CommandInterface interface {
 // measured from the start of the SMB header rather than from the command itself.
 //
 // Such a command is only correct at the front of a message: batched second or
-// later, its own offsets have to account for everything ahead of it.
-// Message.Marshal tells each command where it begins before marshalling it, so a
-// command that needs the number has it, and one that does not is unaffected.
+// later, its own offsets have to account for everything ahead of it. Both
+// Message.Marshal and Message.Unmarshal tell each command where it begins before
+// handing it its bytes, so a command that needs the number has it and one that
+// does not is unaffected.
+//
+// The number serves both directions. Marshalling, it is what an offset field is
+// measured against when it is written; unmarshalling, it is what turns an offset
+// field back into a position in the slice the command was given. That matters for
+// a field a command cannot find any other way: a read response's data and a large
+// write's data are located by DataOffset, because SMB_Data.ByteCount is a USHORT
+// that cannot describe a block of 0x10000 bytes or more and is not a dependable
+// bound below that either.
 type ChainPositioned interface {
 	// SetChainOffset records how far past the end of the SMB header this command
 	// begins. Zero means it is the first command in the message.

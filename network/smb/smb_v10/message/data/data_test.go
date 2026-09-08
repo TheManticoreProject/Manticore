@@ -127,3 +127,41 @@ func Test_DataUnmarshalOneByteDoesNotPanic(t *testing.T) {
 		t.Fatal("Expected error when unmarshalling 1-byte data, got nil")
 	}
 }
+
+// Test_DataLengthReportsWhatIsHeldPastWhatByteCountCanSay verifies that a block
+// larger than a USHORT can describe reports its true size through Length while
+// ByteCount holds the low 16 bits.
+//
+// A large read or write produces such a block, and the two commands that carry
+// one describe their payload with their own length and offset fields. ByteCount
+// truncating is therefore the intended representation rather than an overflow,
+// which is what this pins down.
+func Test_DataLengthReportsWhatIsHeldPastWhatByteCountCanSay(t *testing.T) {
+	const size = 0x10000 + 37
+
+	d := data.NewData()
+	d.Add(make([]byte, size))
+
+	if got := d.Length(); got != size {
+		t.Errorf("Length() = %d, want %d", got, size)
+	}
+	if want := uint16(size & 0xFFFF); d.Size() != want {
+		t.Errorf("Size() = 0x%04X, want the low word 0x%04X", d.Size(), want)
+	}
+
+	// SetData reports the same way, and the marshalled block carries every byte
+	// however ByteCount describes it.
+	d = data.NewData()
+	d.SetData(make([]byte, size))
+	if got := d.Length(); got != size {
+		t.Errorf("Length() after SetData = %d, want %d", got, size)
+	}
+
+	marshalled, err := d.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if got := len(marshalled); got != 2+size {
+		t.Errorf("the marshalled block is %d bytes, want the ByteCount plus %d", got, size)
+	}
+}
