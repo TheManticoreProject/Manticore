@@ -137,6 +137,11 @@ var servedCommands = map[codes.CommandCode]string{
 
 	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
 
+	codes.SMB_COM_QUERY_INFORMATION:  "reports a file's attributes, write time and size by path",
+	codes.SMB_COM_SET_INFORMATION:    "sets a file's attributes and write time by path",
+	codes.SMB_COM_QUERY_INFORMATION2: "reports an open handle's timestamps, sizes and attributes",
+	codes.SMB_COM_SET_INFORMATION2:   "sets an open handle's timestamps",
+
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
 	codes.SMB_COM_FIND_CLOSE2:            "releases a search handle",

@@ -31,6 +31,13 @@
 //   - Tree connect and disconnect against a registered share.
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//   - The core-set file information commands, which describe a file without a
+//     transaction: SMB_COM_QUERY_INFORMATION and SMB_COM_SET_INFORMATION by path,
+//     and SMB_COM_QUERY_INFORMATION2 and SMB_COM_SET_INFORMATION2 on a handle.
+//     Their timestamps are MS-DOS date and time pairs with two-second resolution,
+//     or a UTIME in seconds, so a client reading one back sees less precision than
+//     the TRANSACTION2 levels carry — a property of the wire format rather than of
+//     the storage.
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and

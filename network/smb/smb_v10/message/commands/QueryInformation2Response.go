@@ -23,19 +23,19 @@ type QueryInformation2Response struct {
 	CreateDate types.SMB_DATE
 
 	// CreateTime (2 bytes): This field is the time on CreateDate when the file was created.
-	CreationTime types.SMB_TIME
+	CreationTime types.SMB_TIME_DOS
 
 	// LastAccessDate (2 bytes): This field is the date when the file was last accessed.
 	LastAccessDate types.SMB_DATE
 
 	// LastAccessTime (2 bytes): This field is the time on LastAccessDate when the file was last accessed.
-	LastAccessTime types.SMB_TIME
+	LastAccessTime types.SMB_TIME_DOS
 
 	// LastWriteDate (2 bytes): This field is the date when data was last written to the file.
 	LastWriteDate types.SMB_DATE
 
 	// LastWriteTime (2 bytes): This field is the time on LastWriteDate when data was last written to the file.
-	LastWriteTime types.SMB_TIME
+	LastWriteTime types.SMB_TIME_DOS
 
 	// FileDataSize (4 bytes): This field contains the number of bytes in the file, in bytes. Because this size
 	// is limited to 32 bits, this command is inappropriate for files whose size is too large.
@@ -58,11 +58,11 @@ func NewQueryInformation2Response() *QueryInformation2Response {
 		// Parameters
 
 		CreateDate:         types.SMB_DATE{},
-		CreationTime:       types.SMB_TIME{},
+		CreationTime:       types.SMB_TIME_DOS{},
 		LastAccessDate:     types.SMB_DATE{},
-		LastAccessTime:     types.SMB_TIME{},
+		LastAccessTime:     types.SMB_TIME_DOS{},
 		LastWriteDate:      types.SMB_DATE{},
-		LastWriteTime:      types.SMB_TIME{},
+		LastWriteTime:      types.SMB_TIME_DOS{},
 		FileDataSize:       types.ULONG(0),
 		FileAllocationSize: types.ULONG(0),
 		FileAttributes:     types.SMB_FILE_ATTRIBUTES{},
