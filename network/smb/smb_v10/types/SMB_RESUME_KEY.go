@@ -19,9 +19,12 @@ import (
 // to a previous SMB_COM_SEARCH request. The ResumeKey contains data used by both
 // the client and the server to maintain the state of the search. The structure of the
 // ResumeKey follows:
+// The BufferFormat2 and ResumeKeyLength fields described above are part of the
+// SMB_COM_SEARCH *request's* data block, not of this structure. Inside an
+// SMB_DIRECTORY_INFORMATION entry the resume key is a bare 21-byte field with no
+// format byte and no length ahead of it, so this structure marshals only its own
+// three fields and the request writes its own wrapper.
 type SMB_RESUME_KEY struct {
-	SMB_STRING
-
 	// Reserved (1 byte): This field is reserved and MUST NOT be modified by the client.
 	// Older documentation is contradictory as to whether this field is reserved for
 	// client side or server side use. New server implementations SHOULD avoid using or
@@ -45,12 +48,6 @@ type SMB_RESUME_KEY struct {
 // - A pointer to the new SMB_RESUME_KEY structure
 func NewSMB_RESUME_KEY() *SMB_RESUME_KEY {
 	return &SMB_RESUME_KEY{
-		SMB_STRING: SMB_STRING{
-			// This field MUST be 0x05, which indicates that a variable block is to follow.
-			BufferFormat: SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK,
-			Length:       0,
-			Buffer:       []byte{},
-		},
 		Reserved:    0,
 		ServerState: [16]UCHAR{},
 		ClientState: [4]UCHAR{},
@@ -63,18 +60,11 @@ func NewSMB_RESUME_KEY() *SMB_RESUME_KEY {
 // - A byte array representing the SMB_RESUME_KEY structure
 // - An error if the marshaling fails
 func (r *SMB_RESUME_KEY) Marshal() ([]byte, error) {
-	// This field MUST be 0x05, which indicates that a variable block is to follow.
-	r.SMB_STRING.BufferFormat = SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK
-
-	byteStream := []byte{}
+	byteStream := make([]byte, 0, SMB_RESUME_KEY_SIZE)
 	byteStream = append(byteStream, r.Reserved)
 	byteStream = append(byteStream, r.ServerState[:]...)
 	byteStream = append(byteStream, r.ClientState[:]...)
-	r.SMB_STRING.Buffer = byteStream
-
-	r.SMB_STRING.Length = uint16(len(byteStream))
-
-	return r.SMB_STRING.Marshal()
+	return byteStream, nil
 }
 
 // Unmarshal unmarshals the SMB_RESUME_KEY structure
@@ -86,24 +76,18 @@ func (r *SMB_RESUME_KEY) Marshal() ([]byte, error) {
 // - The number of bytes unmarshalled
 // - An error if the unmarshaling fails
 func (r *SMB_RESUME_KEY) Unmarshal(data []byte) (int, error) {
-	offset := 0
-
-	bytesRead, err := r.SMB_STRING.Unmarshal(data)
-	if err != nil {
-		return 0, err
-	}
-	if len(r.SMB_STRING.Buffer) < 21 {
-		return 0, fmt.Errorf("SMB_STRING.Buffer length is not 21")
+	if len(data) < SMB_RESUME_KEY_SIZE {
+		return 0, fmt.Errorf("data too short for SMB_RESUME_KEY (need %d bytes, have %d)",
+			SMB_RESUME_KEY_SIZE, len(data))
 	}
 
-	r.Reserved = r.SMB_STRING.Buffer[0]
-	offset++
+	r.Reserved = data[0]
+	copy(r.ServerState[:], data[1:17])
+	copy(r.ClientState[:], data[17:SMB_RESUME_KEY_SIZE])
 
-	copy(r.ServerState[:], r.SMB_STRING.Buffer[1:17])
-	offset += 16
-
-	copy(r.ClientState[:], r.SMB_STRING.Buffer[17:21])
-	offset += 4
-
-	return bytesRead, nil
+	return SMB_RESUME_KEY_SIZE, nil
 }
+
+// SMB_RESUME_KEY_SIZE is the size of the structure on the wire: Reserved(1)
+// ServerState(16) ClientState(4), per [MS-CIFS] section 2.2.4.58.1.
+const SMB_RESUME_KEY_SIZE = 21
