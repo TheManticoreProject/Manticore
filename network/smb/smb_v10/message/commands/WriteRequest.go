@@ -105,12 +105,17 @@ func (c *WriteRequest) Marshal() ([]byte, error) {
 	rawDataContent := []byte{}
 
 	// Marshalling data Data
+	//
+	// This goes into rawDataContent, which becomes the SMB_Data block below. It
+	// once went into marshalledCommand, which is the whole command: that emitted
+	// the payload ahead of WordCount and left the data block empty, so the
+	// message could not be decoded at all.
 	c.Data.SetBufferFormat(types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK_16BIT)
 	marshalledDataField, err := c.Data.Marshal()
 	if err != nil {
 		return nil, err
 	}
-	marshalledCommand = append(marshalledCommand, marshalledDataField...)
+	rawDataContent = append(rawDataContent, marshalledDataField...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
