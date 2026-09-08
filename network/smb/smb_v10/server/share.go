@@ -205,6 +205,45 @@ type FileSystem interface {
 	VolumeInfo() (VolumeInfo, error)
 }
 
+// ChangeNotification is one change a Watcher reports.
+type ChangeNotification struct {
+	// Action is what happened, as an [MS-FSCC] FILE_ACTION_* value.
+	Action uint32
+
+	// Name is the entry that changed, relative to the watched directory and
+	// separated by backslashes, which is how FILE_NOTIFY_INFORMATION carries it.
+	Name string
+}
+
+// Watcher is implemented by a FileSystem that can report changes under a
+// directory.
+//
+// Like Linker it is a separate interface rather than a method on FileSystem, so
+// that adding it does not break a backend outside this repository: one that cannot
+// be watched simply does not implement it, and NT_TRANSACT_NOTIFY_CHANGE is
+// refused for its shares.
+type Watcher interface {
+	// Watch begins watching a directory and returns a channel of changes and a
+	// function that stops the watch.
+	//
+	// The channel is buffered and lossy by design: a watch that fell behind and
+	// blocked would hold up whatever made the change. A caller that misses a
+	// notification is expected to re-enumerate, which is exactly what the
+	// protocol tells a client to do when more changed than would fit in a
+	// response.
+	//
+	// The stop function must be called, and is safe to call more than once.
+	//
+	// Parameters:
+	//   - path: the share-relative directory to watch, empty for the share root
+	//   - recursive: whether to report changes below the directory as well
+	//
+	// Returns:
+	//   - A channel of changes, a stop function, and an error if the path cannot
+	//     be watched
+	Watch(path string, recursive bool) (<-chan ChangeNotification, func(), error)
+}
+
 // Sentinel errors a FileSystem returns so the server can answer with the right
 // protocol status. A backend may wrap them.
 var (

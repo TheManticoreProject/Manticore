@@ -599,10 +599,12 @@ func TestNtTransactUnimplementedFunctions(t *testing.T) {
 	fs := NewMemoryFileSystem("FILES")
 	_, client := fileServer(t, fs, false)
 
+	// NT_TRANSACT_NOTIFY_CHANGE is served now, through the deferred response
+	// path, and is asserted in notify_test.go. What is left here is the set that
+	// answers the generic refusal.
 	unimplemented := []subcommands.NtTransactSubcommand{
 		subcommands.NT_TRANSACT_CREATE,
 		subcommands.NT_TRANSACT_RENAME,
-		subcommands.NT_TRANSACT_NOTIFY_CHANGE,
 		subcommands.NT_TRANSACT_QUERY_QUOTA,
 		subcommands.NT_TRANSACT_SET_QUOTA,
 	}
