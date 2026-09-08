@@ -41,7 +41,9 @@
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
-//     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//     PipeHandler is all an RPC service needs to be reachable over SMB1. An answer
+//     too large for one response is collected with TRANS_READ_NMPIPE,
+//     TRANS_PEEK_NMPIPE or SMB_COM_READ_ANDX on the same handle.
 //   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
 //     the pass-through information classes above 0x03E8 that carry the native
 //     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
@@ -53,6 +55,12 @@
 // displacement, with the subcommand selected by a setup word, a Function field or
 // a name.
 //
+//   - Batched ("AndX") requests: every command in a chain runs, in order, and all
+//     the answers return in one message. A command sees the identifiers as they
+//     stand when it runs rather than as the client sent them, which is what makes
+//     a session setup batched with a tree connect work — the client had no UID to
+//     send. A failure ends the chain and the error response closes it, per
+//     [MS-CIFS] 3.3.4.1, so the answers already produced still come back.
 //   - Byte-range locking, over SMB_COM_LOCKING_ANDX: locks and unlocks in one
 //     atomic request, in both range formats, exclusive and shared. Overlapping
 //     locks are refused, an unlock of a range the handle does not hold is
@@ -132,6 +140,19 @@
 // STATUS_BUFFER_OVERFLOW, which is what tells the client to read again. Reporting
 // plain success would leave an RPC client parsing a truncated response as a whole
 // one.
+//
+// The part that did not fit is kept on the handle, and reading again is how the
+// client collects it: SMB_COM_READ_ANDX on the pipe FID, TRANS_READ_NMPIPE, or
+// TRANS_PEEK_NMPIPE to size the read first. A read once the answer is exhausted
+// returns no data rather than an error, because a client reads a pipe only after
+// being told more remains, so an empty read is the end of the answer rather than a
+// failure. Writing a pipe handle with SMB_COM_WRITE_ANDX is still refused: a
+// handler answers a transaction rather than accepting a stream, so there is
+// nowhere for the write to go.
+//
+// The handler is asked for the whole answer rather than for the part that fits,
+// bounded by maxPipeAnswerSize, because only the server knows how the client will
+// read the rest.
 //
 // # Character encoding
 //

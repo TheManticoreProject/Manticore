@@ -61,6 +61,22 @@ type ReadAndxResponse struct {
 	// located at DataOffset (measured from the start of the SMB header) and are
 	// DataLength bytes long.
 	Data []types.UCHAR
+
+	// chainOffset is how far past the SMB header this response begins, which is
+	// non-zero only when it is batched behind another command. DataOffset is
+	// measured from the header, so it has to include everything ahead of this
+	// response or the client reads its data from the wrong place.
+	chainOffset int
+}
+
+// SetChainOffset records where this response begins, so DataOffset describes where
+// the data actually is when the response is batched behind another command.
+//
+// Parameters:
+//   - offset: bytes between the end of the SMB header and the start of this
+//     response
+func (c *ReadAndxResponse) SetChainOffset(offset int) {
+	c.chainOffset = offset
 }
 
 // NewReadAndxResponse creates a new ReadAndxResponse structure
@@ -128,7 +144,7 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	// and advertise its length and its absolute offset from the start of the SMB
 	// header so the parameter fields below carry the matching values.
 	c.DataLength = types.USHORT(len(c.Data))
-	c.DataOffset = types.USHORT(readAndxResponseDataOffset)
+	c.DataOffset = types.USHORT(readAndxResponseDataOffset + c.chainOffset)
 
 	rawDataContent := []byte{}
 	rawDataContent = append(rawDataContent, c.Data...)

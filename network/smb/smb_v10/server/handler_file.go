@@ -353,6 +353,18 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 		length = 0
 	}
 
+	// A pipe handle is a stream of the answer a transaction produced, not a file:
+	// there is nothing at an offset, and reading is how a client collects an
+	// answer that did not fit in one response. An RPC client does exactly this
+	// after STATUS_BUFFER_OVERFLOW, so refusing it strands the conversation.
+	//
+	// Checked before the lock table, because a pipe has no byte ranges to lock:
+	// consulting the table for one would look up a pipe name among file paths and
+	// answer a question nobody asked.
+	if open.IsPipe {
+		return conn.readPipeHandle(w, open, length)
+	}
+
 	if status := lockedAgainst(open, uint64(offset), uint64(length), false); status != nt_status.NT_STATUS_SUCCESS {
 		logger.Debugf("SMB1 server: %s read %d bytes of %q at %d, which another handle has locked",
 			conn.Remote, length, open.Path, offset)
@@ -385,6 +397,41 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 // 32-byte header, the parameter words and the byte count. Reserving it keeps a
 // full-size read inside the negotiated buffer.
 const readResponseOverhead = 64
+
+// readPipeHandle answers SMB_COM_READ_ANDX against a pipe handle, from the answer
+// buffered on it.
+//
+// The request's offset is ignored, because a pipe has no addressable content: the
+// buffer is consumed from the front, which is what makes repeated reads collect
+// successive parts of one answer.
+//
+// A read with nothing buffered returns no data rather than an error. A client
+// reads a pipe only after being told more remains, so an empty read means the
+// answer is finished, and reporting an error for it would turn a completed
+// exchange into a failed one.
+//
+// Parameters:
+//   - w: where the response is written
+//   - open: the pipe handle being read
+//   - length: the most bytes the response may carry
+//
+// Returns:
+//   - The status to report, which is success once the response is sent
+func (c *Connection) readPipeHandle(w ResponseWriter, open *Open, length int) nt_status.NT_STATUS {
+	chunk, moreRemains := open.drainPipeOutput(length)
+
+	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, more remains=%t",
+		len(chunk), open.Path, c.Remote, moreRemains)
+
+	response := commands.NewReadAndxResponse()
+	response.Data = chunk
+	response.DataLength = types.USHORT(len(chunk))
+
+	if err := w.WriteResponse(response); err != nil {
+		logger.Debugf("SMB1 server: failed to answer the pipe read for %s: %v", c.Remote, err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
 
 // lockedAgainst reports whether a byte-range lock held by another handle refuses
 // this access.
@@ -530,9 +577,10 @@ func handleFlush(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 func fileFor(open *Open) (File, nt_status.NT_STATUS) {
 	switch {
 	case open.IsPipe:
-		// The pipe handler serves a transacted exchange rather than a stream. A
-		// client that reads or writes a pipe handle directly is told so, rather
-		// than given an empty read it would take for an answer.
+		// A pipe handle has a handler behind it rather than a file. Reading one is
+		// served by readPipeHandle before reaching here; writing one is a request
+		// the handler has no way to receive, since a handler answers a transaction
+		// rather than accepting a stream, so it is refused.
 		return nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	case open.File == nil:
 		// What a read or a write on a directory is answered with.
