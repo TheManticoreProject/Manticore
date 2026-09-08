@@ -50,6 +50,21 @@
 //     the TRANSACTION2 levels carry — a property of the wire format rather than of
 //     the storage.
 //
+//   - The core-set directory search: SMB_COM_SEARCH, SMB_COM_FIND,
+//     SMB_COM_FIND_UNIQUE and SMB_COM_FIND_CLOSE. These keep no state on the
+//     server — the position travels in the resume key and the directory is read
+//     again each call, which is what a command with no close needs, since a
+//     client that walks away mid-listing would otherwise leak an allocation. The
+//     cost is that the listing is a fresh view rather than a snapshot, so an
+//     entry created or removed between calls may be seen twice or missed;
+//     TRANS2_FIND_FIRST2 is the level that keeps a snapshot.
+//
+//     An entry's name field is a fixed thirteen bytes, so a name that does not
+//     fit an 8.3 field is omitted from these listings. There is no 8.3 alias to
+//     substitute: truncating would name a different file, and inventing an alias
+//     would hand the client a name no subsequent open could resolve. A client
+//     that needs those names has to use TRANS2_FIND_FIRST2.
+//
 //   - The pre-NT information levels, so a client that did not negotiate
 //     CAP_NT_FIND can still work: SMB_INFO_STANDARD and SMB_INFO_QUERY_EA_SIZE
 //     for find and for query, SMB_INFO_IS_NAME_VALID, SMB_QUERY_FILE_STREAM_INFO,
