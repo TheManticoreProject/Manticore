@@ -380,7 +380,18 @@ func fsctlHandleIsPathnameValid(conn *Connection, open *Open, input []byte) ([]b
 // command is accepted silently — which is what it is defined to do, since a cancel
 // carries no response of its own.
 func handleNtCancel(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
-	logger.Debugf("SMB1 server: %s cancelled PID 0x%08X MID 0x%04X, which has nothing outstanding",
-		conn.Remote, req.Header.GetPID(), uint16(req.Header.MID))
+	pid := req.Header.GetPID()
+	mid := uint16(req.Header.MID)
+
+	// The command names the request to cancel by the PID and MID in its own
+	// header, which is how a client refers to something it has had no answer for.
+	cancelled := conn.cancelResponders(pid, mid)
+
+	logger.Debugf("SMB1 server: %s cancelled PID 0x%08X MID 0x%04X, matching %d outstanding request(s)",
+		conn.Remote, pid, mid, cancelled)
+
+	// SMB_COM_NT_CANCEL is answered with silence whether or not it matched: the
+	// cancelled request produces the response, and a reply to the cancel itself
+	// would leave an extra message on the connection.
 	return nt_status.NT_STATUS_SUCCESS
 }

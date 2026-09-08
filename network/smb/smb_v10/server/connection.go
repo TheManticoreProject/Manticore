@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
@@ -98,6 +99,23 @@ type Connection struct {
 	searches map[uint16]*Search
 	sids     *identifierAllocator
 
+	// writeMutex serialises every write to the transport.
+	//
+	// The receive loop is not the only writer any more: a deferred answer sends
+	// from whatever goroutine produced it. The transport is not safe for
+	// concurrent use, and signing writes a signature into the buffer being sent,
+	// so both happen under this lock.
+	writeMutex sync.Mutex
+
+	// responders are the deferred answers this connection still owes, and
+	// responderMutex guards them.
+	//
+	// They are the one piece of per-connection state reachable from another
+	// goroutine, which is why they have a lock and the rest of the tables here do
+	// not.
+	responderMutex sync.Mutex
+	responders     map[*asyncResponder]struct{}
+
 	// pendingAuth holds the authentication exchanges part-way through, keyed by
 	// the UID assigned when the challenge was issued.
 	//
@@ -157,6 +175,11 @@ func (c *Connection) serve() {
 		}
 	}()
 	defer c.Close()
+
+	// A deferred answer still waiting has nowhere to send its reply once the
+	// transport is gone, so every outstanding request is told to stop rather
+	// than left to discover it on a failed write.
+	defer c.cancelAllResponders()
 
 	logger.Debugf("SMB1 server: serving %s", c.Remote)
 

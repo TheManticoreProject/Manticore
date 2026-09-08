@@ -7,7 +7,6 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
@@ -76,6 +75,14 @@ type ResponseWriter interface {
 	// exchange that establishes signing has to arm it itself, because the key
 	// does not exist until that exchange has been verified.
 	SignResponse(macKey []byte, sequenceNumber uint32)
+
+	// Defer takes an AsyncResponder for this request and returns it, so the
+	// handler can answer after it has returned.
+	//
+	// A handler that defers must return NT_STATUS_SUCCESS without writing a
+	// response, or the client receives two. The responder must be released with
+	// Done if it never answers.
+	Defer() AsyncResponder
 }
 
 // responseWriter is the ResponseWriter bound to one request on one connection.
@@ -145,6 +152,20 @@ func (w *responseWriter) WriteError(status nt_status.NT_STATUS) error {
 	return w.write(newErrorResponse(w.request.Header.Command), status)
 }
 
+// Defer takes an AsyncResponder for the request being handled.
+//
+// The signing state passes to the responder as it stands now: the sequence number
+// this response will sign at was reserved when the request arrived, so a deferred
+// answer signs at exactly the number an immediate one would have.
+func (w *responseWriter) Defer() AsyncResponder {
+	return w.conn.deferResponse(
+		w.request.Header,
+		w.signKey, w.signSequence,
+		w.uid, w.uidSet,
+		w.tid, w.tidSet,
+	)
+}
+
 // write builds the reply, marshals it and frames it on the transport.
 //
 // While a chain is being collected the response is kept instead of sent, and the
@@ -181,21 +202,10 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 	// returning a mismatched command cannot desynchronize the client.
 	reply.Header.Command = w.request.Header.Command
 
-	marshalled, err := reply.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to marshal the response: %v", err)
-	}
-
-	// Signing happens after marshalling and over the whole message, because the
-	// signature occupies a field inside the header it covers.
-	if len(w.signKey) > 0 {
-		signing.Sign(w.signKey, marshalled, w.signSequence)
-	}
-
-	if _, err := w.conn.Transport.Send(marshalled); err != nil {
-		return fmt.Errorf("failed to send the response: %v", err)
-	}
-	return nil
+	// Framed through the connection so that this write and a deferred answer's
+	// cannot interleave: signing writes into the buffer being sent, so the two
+	// have to be serialised together rather than each locking on its own.
+	return w.conn.frame(reply, w.signKey, w.signSequence)
 }
 
 // beginChain puts the writer into chain mode, so responses are collected rather
@@ -249,6 +259,8 @@ func (w *responseWriter) flushChain() error {
 	// given, and the reply must echo the request's code regardless.
 	reply.Header.Command = w.request.Header.Command
 
+	// The size has to be known before sending, so the chain is marshalled here
+	// and framed below rather than handed straight to Connection.frame.
 	marshalled, err := reply.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal the response chain: %v", err)
@@ -262,16 +274,10 @@ func (w *responseWriter) flushChain() error {
 		return errChainTooLarge
 	}
 
-	// Signing happens after marshalling and over the whole message, because the
-	// signature occupies a field inside the header it covers.
-	if len(w.signKey) > 0 {
-		signing.Sign(w.signKey, marshalled, w.signSequence)
-	}
-
-	if _, err := w.conn.Transport.Send(marshalled); err != nil {
-		return fmt.Errorf("failed to send the response chain: %v", err)
-	}
-	return nil
+	// Signed and sent through the connection, like every other write: signing
+	// puts a signature inside the buffer being sent, so the two have to happen
+	// under one lock or a deferred answer's write could interleave with this one.
+	return w.conn.send(marshalled, w.signKey, w.signSequence)
 }
 
 // errChainTooLarge reports a batched response that does not fit in the negotiated
