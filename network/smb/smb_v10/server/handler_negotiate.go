@@ -24,10 +24,16 @@ const noDialectSelected = 0xFFFF
 // serverCapabilities are the capabilities advertised in the NEGOTIATE response.
 //
 // Each one is a promise, so the set is deliberately limited to what the server
-// actually honours. CAP_RAW_MODE, CAP_LOCK_AND_READ and CAP_LEVEL_II_OPLOCKS are
-// absent because raw transfers, the combined lock-and-read command and oplocks are
-// not implemented; advertising them would have clients issue commands that are
-// then refused.
+// actually honours. CAP_RAW_MODE and CAP_LOCK_AND_READ are absent because raw
+// transfers and the combined lock-and-read command are not implemented;
+// advertising them would have clients issue commands that are then refused.
+//
+// CAP_LEVEL_II_OPLOCKS says a client may be granted a level II oplock and told
+// when it is broken. Level II is the only level granted: it permits a client to
+// cache reads and nothing else, so withdrawing it needs no acknowledgement, and
+// the break can be sent without holding up the operation that caused it. A
+// request for an exclusive or batch oplock is answered with level II, which
+// [MS-SMB] section 3.3.5.1.2 sanctions.
 //
 // CAP_LARGE_READX and CAP_LARGE_WRITEX let one read or write exceed the
 // negotiated MaxBufferSize, bounded by Config.MaxLargeTransfer. Both are a
@@ -46,6 +52,7 @@ const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_NT_FIND |
 	capabilities.CAP_LARGE_READX |
 	capabilities.CAP_LARGE_WRITEX |
+	capabilities.CAP_LEVEL_II_OPLOCKS |
 	capabilities.CAP_INFOLEVEL_PASSTHROUGH |
 	capabilities.CAP_EXTENDED_SECURITY
 

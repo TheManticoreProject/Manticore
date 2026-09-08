@@ -49,6 +49,10 @@ func handleDelete(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 
 	// No wildcard: one named file.
 	if pattern == "" {
+		// A delete is reached by path rather than by handle, so nothing has
+		// broken the oplocks on it yet. A holder has to be told before the file
+		// it is caching stops existing.
+		conn.breakOplocksOn(tree.Share, directory, nil)
 		if err := tree.Share.FS.Remove(directory); err != nil {
 			logger.Debugf("SMB1 server: deleting %q for %s failed: %v", directory, conn.Remote, err)
 			return statusForFSError(err)
@@ -66,6 +70,7 @@ func handleDelete(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 		if entry.Attr.IsDir {
 			continue
 		}
+		conn.breakOplocksOn(tree.Share, joinPath(directory, entry.Attr.Name), nil)
 		if err := tree.Share.FS.Remove(joinPath(directory, entry.Attr.Name)); err != nil {
 			logger.Debugf("SMB1 server: deleting %q for %s failed: %v",
 				joinPath(directory, entry.Attr.Name), conn.Remote, err)
@@ -108,6 +113,10 @@ func handleRename(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 		// Renaming the share root is not a thing.
 		return nt_status.NT_STATUS_ACCESS_DENIED
 	}
+
+	// A rename is reached by path too, and it moves the file out from under
+	// whatever was caching it.
+	conn.breakOplocksOn(tree.Share, oldPath, nil)
 
 	// SMB_COM_RENAME does not replace: a destination that exists is a collision.
 	// The NT_RENAME variant is what a client uses when it means to overwrite.

@@ -231,8 +231,15 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 
 	logger.Debugf("SMB1 server: %s opened %q on %q as FID 0x%04X", conn.Remote, path, tree.Share.Name, fid)
 
+	// An open that can change the file withdraws everyone else's promise that
+	// nothing will. This handle keeps whatever it is granted below.
+	if open.Writable || flags.Truncate {
+		conn.breakOplocksOn(tree.Share, path, open)
+	}
+
 	response := commands.NewNtCreateAndxResponse()
 	response.FID = types.USHORT(fid)
+	response.OpLockLevel = types.UCHAR(conn.grantOplock(open, uint16(req.Header.UID), uint32(request.Flags)))
 	response.CreateDisposition = types.ULONG(createActionFor(existed, flags))
 	response.CreateTime = *msdtyp.NewFILETIMEFromTime(attr.Created)
 	response.LastAccessTime = *msdtyp.NewFILETIMEFromTime(attr.Accessed)
@@ -570,6 +577,12 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return status
 	}
+
+	// The break goes out before the bytes land. A client holding a level II
+	// oplock is caching reads on the promise that nothing is writing, and telling
+	// it afterwards would leave a window in which it could serve data this write
+	// has already replaced.
+	conn.breakOplocksOn(open.Tree.Share, open.Path, open)
 
 	written, err := file.WriteAt(data, offset)
 	if err != nil {

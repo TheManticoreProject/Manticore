@@ -57,6 +57,11 @@ type Share struct {
 	// handles it excludes may be on other connections. AddShare creates it, so a
 	// share reached through the server always has one.
 	locks *lockTable
+
+	// oplocks holds the level II oplocks granted on this share's files, for the
+	// same reason: the handles a break has to notify are on other connections as
+	// much as this one. AddShare creates it too.
+	oplocks *oplockTable
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's
@@ -321,10 +326,13 @@ func (s *Server) AddShare(share *Share) error {
 		return fmt.Errorf("disk share %q has no file system", share.Name)
 	}
 
-	// Every share gets a lock table, so a handler never has to ask whether the
-	// share it was given can hold a lock.
+	// Every share gets a lock table and an oplock table, so a handler never has
+	// to ask whether the share it was given can hold either.
 	if share.locks == nil {
 		share.locks = newLockTable()
+	}
+	if share.oplocks == nil {
+		share.oplocks = newOplockTable()
 	}
 
 	key := strings.ToUpper(share.Name)

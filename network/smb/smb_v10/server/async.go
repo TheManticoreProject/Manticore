@@ -70,17 +70,6 @@ type AsyncResponder interface {
 // no request accounts for.
 var ErrResponderDone = errors.New("the asynchronous responder has already been released")
 
-// ErrUnsolicitedWhileSigning reports an attempt to send a server-initiated message
-// on a signing connection.
-//
-// A signed message consumes a sequence number from the pair the two sides keep in
-// step, and a message the client never asked for has no request whose number it
-// can use. Getting that wrong desynchronises signing for the rest of the
-// connection, and every subsequent request fails verification — so it is refused
-// here rather than guessed at, until the numbering can be checked against a
-// reference capture.
-var ErrUnsolicitedWhileSigning = errors.New("cannot send a server-initiated message on a signing connection")
-
 // asyncResponder is the AsyncResponder bound to one deferred request.
 type asyncResponder struct {
 	conn *Connection
@@ -335,28 +324,27 @@ func (c *Connection) OutstandingResponses() int {
 // SMB_COM_LOCKING_ANDX with SMB_FLAGS_REPLY clear to break an oplock. The message
 // carries a fresh MID, because there is no request to correlate it with.
 //
-// It is refused on a signing connection. A signed message consumes a sequence
-// number from the pair the two sides keep in step, and a message with no request
-// behind it has no number reserved for it; a wrong guess desynchronises signing
-// for the rest of the connection and every later request fails verification.
-// Refusing is better than a guess that cannot be checked here against a real
-// client.
+// It goes unsigned even on a signing connection, which is what [MS-CIFS] section
+// 3.3.4.1 requires: after saying that a message the server sends MUST be signed
+// with the sequence number in ServerSendSequenceNumber[PID,MID], it adds that
+// "OpLock Break Notification messages are exempt from signing". The exemption is
+// what makes the message possible at all — that table is keyed by the PID and MID
+// of a request, and a message with no request behind it has no entry in it, so
+// there is no number to sign with. Sending it unsigned consumes none, which
+// leaves the two sides' numbering in step.
 //
 // Parameters:
 //   - cmd: the command to send
 //   - uid, tid, mid: the identifiers to carry
 //
 // Returns:
-//   - ErrUnsolicitedWhileSigning on a signing connection, or the send error
+//   - The send error, if any
 func (c *Connection) SendUnsolicited(
 	cmd command_interface.CommandInterface,
 	uid, tid, mid uint16,
 ) error {
 	if cmd == nil {
 		return fmt.Errorf("cannot send no command")
-	}
-	if c.SigningActive {
-		return ErrUnsolicitedWhileSigning
 	}
 
 	request := message.NewMessage()
@@ -375,6 +363,8 @@ func (c *Connection) SendUnsolicited(
 
 	logger.Debugf("SMB1 server: sending unsolicited command 0x%02X to %s",
 		uint8(cmd.GetCommandCode()), c.Remote)
+	// No key and no sequence number: see above, the message is exempt from
+	// signing whatever the connection has agreed.
 	return c.frame(request, nil, 0)
 }
 

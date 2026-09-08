@@ -527,6 +527,11 @@ func (c *Connection) coreWrite(open *Open, offset int64, data []byte, declared i
 		return 0, status
 	}
 
+	// The break goes out before the file changes, for both of the changes this
+	// path makes: a client caching reads on the promise that nothing is writing
+	// has to be told before the data under its cache moves.
+	c.breakOplocksOn(open.Tree.Share, open.Path, open)
+
 	// A count of zero sets the length rather than writing nothing.
 	if declared == 0 {
 		if err := file.Truncate(offset); err != nil {

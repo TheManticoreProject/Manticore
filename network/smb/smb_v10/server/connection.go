@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
@@ -53,6 +54,12 @@ type Connection struct {
 	// in its session setup, bounding what the server may send back.
 	ClientMaxBufferSize uint32
 	ClientCapabilities  capabilities.Capabilities
+
+	// ClientMaxMpxCount is how many commands the client said it can have
+	// outstanding. It decides whether an oplock may be granted: [MS-CIFS] section
+	// 3.3.5.53 forbids one below two, because a client with a single command slot
+	// could not answer a break while it was waiting for anything else.
+	ClientMaxMpxCount uint16
 
 	// UseUnicode and UseNTStatus record what the client negotiated, so a handler
 	// does not have to re-derive them from each request header.
@@ -116,6 +123,13 @@ type Connection struct {
 	responderMutex sync.Mutex
 	responders     map[*asyncResponder]struct{}
 
+	// unsolicitedMID numbers the messages the server originates.
+	//
+	// A break notification has no request to correlate it with, so it carries a
+	// MID of its own ([MS-CIFS] section 3.3.4.2). It is atomic because a break is
+	// sent from whichever goroutine caused it, which is not this connection's.
+	unsolicitedMID atomic.Uint32
+
 	// pendingAuth holds the authentication exchanges part-way through, keyed by
 	// the UID assigned when the challenge was issued.
 	//
@@ -142,6 +156,22 @@ func newConnection(srv *Server, t transport.Transport, remote net.Addr) *Connect
 		sids:        newIdentifierAllocator(srv.config.MaxSearchesPerConnection),
 		pendingAuth: make(map[uint16]*spnego.AcceptContext),
 	}
+}
+
+// nextUnsolicitedMID returns a MID for a message the server originates.
+//
+// The numbers only have to be distinct from each other: a client matches a
+// response to a request by MID, and an unsolicited request is not a response to
+// anything. Zero is skipped because a client may read it as "no MID".
+//
+// Returns:
+//   - The next MID
+func (c *Connection) nextUnsolicitedMID() uint16 {
+	next := uint16(c.unsolicitedMID.Add(1))
+	if next == 0 {
+		next = uint16(c.unsolicitedMID.Add(1))
+	}
+	return next
 }
 
 // PendingAuth returns the authentication exchange a UID names while it is still

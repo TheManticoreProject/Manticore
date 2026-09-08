@@ -75,12 +75,21 @@ func handleLockingAndx(conn *Connection, w ResponseWriter, req *message.Message)
 	// An OpLock Break Request carries no ranges, and [MS-CIFS] section 3.3.5.30
 	// is explicit that it is answered with silence: "If NumberOfRequestedUnlocks
 	// and NumberOfRequestedLocks are both zero (0x0000) [...] the server MUST NOT
-	// send an SMB_COM_LOCKING_ANDX Response". No OpLock is ever granted here, so
-	// there is none to release, and the same section says that is not an error.
+	// send an SMB_COM_LOCKING_ANDX Response".
 	if len(unlocks) == 0 && len(locks) == 0 {
+		if typeOfLock&commands.LockingAndxOplockRelease != 0 {
+			conn.releaseOplock(open)
+		}
 		logger.Debugf("SMB1 server: %s sent a lock request with no ranges on FID 0x%04X, which is answered with silence",
 			conn.Remote, uint16(request.FID))
 		return nt_status.NT_STATUS_SUCCESS
+	}
+
+	// The release bit can also arrive alongside ranges, since [MS-CIFS] section
+	// 3.3.5.30 has all three parts of the request executed. It is applied first,
+	// because it is what the client is acknowledging rather than asking for.
+	if typeOfLock&commands.LockingAndxOplockRelease != 0 {
+		conn.releaseOplock(open)
 	}
 
 	locksTable := open.Tree.Share.locks
