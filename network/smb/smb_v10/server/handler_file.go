@@ -353,6 +353,12 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 		length = 0
 	}
 
+	if status := lockedAgainst(open, uint64(offset), uint64(length), false); status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: %s read %d bytes of %q at %d, which another handle has locked",
+			conn.Remote, length, open.Path, offset)
+		return status
+	}
+
 	file, status := fileFor(open)
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return status
@@ -379,6 +385,32 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 // 32-byte header, the parameter words and the byte count. Reserving it keeps a
 // full-size read inside the negotiated buffer.
 const readResponseOverhead = 64
+
+// lockedAgainst reports whether a byte-range lock held by another handle refuses
+// this access.
+//
+// A lock is only worth granting if it is honoured, so every read and write goes
+// through here. The owning handle is never refused by its own lock; an exclusive
+// lock refuses everyone else both ways, and a shared lock refuses only writes
+// ([MS-CIFS] section 3.3.5.30).
+//
+// Parameters:
+//   - open: the handle doing the access
+//   - offset, length: the range being accessed
+//   - writing: whether the access is a write
+//
+// Returns:
+//   - NT_STATUS_SUCCESS when the access may proceed, otherwise the status to
+//     report
+func lockedAgainst(open *Open, offset, length uint64, writing bool) nt_status.NT_STATUS {
+	if open == nil || open.Tree == nil || open.Tree.Share == nil || open.Tree.Share.locks == nil {
+		return nt_status.NT_STATUS_SUCCESS
+	}
+	if open.Tree.Share.locks.Blocks(open.Path, open, offset, length, writing) {
+		return nt_status.NT_STATUS_FILE_LOCK_CONFLICT
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
 
 // handleWriteAndx answers SMB_COM_WRITE_ANDX.
 func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
@@ -408,6 +440,12 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	data := []byte(request.Data)
 	if declared := int(request.DataLength); declared < len(data) {
 		data = data[:declared]
+	}
+
+	if status := lockedAgainst(open, uint64(offset), uint64(len(data)), true); status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: %s wrote %d bytes of %q at %d, which another handle has locked",
+			conn.Remote, len(data), open.Path, offset)
+		return status
 	}
 
 	file, status := fileFor(open)

@@ -42,6 +42,7 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_READ_ANDX:      handleReadAndx,
 	codes.SMB_COM_WRITE_ANDX:     handleWriteAndx,
 	codes.SMB_COM_FLUSH:          handleFlush,
+	codes.SMB_COM_LOCKING_ANDX:   handleLockingAndx,
 
 	// Volume.
 	codes.SMB_COM_QUERY_INFORMATION_DISK: handleQueryInformationDisk,

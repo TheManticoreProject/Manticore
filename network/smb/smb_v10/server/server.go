@@ -84,6 +84,15 @@ type Config struct {
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
 	Timeout time.Duration
 
+	// MaxLockWait bounds how long a blocked SMB_COM_LOCKING_ANDX request waits
+	// for a range to become free. Zero applies the default.
+	//
+	// A client may ask to wait forever, and the connection serves nothing else
+	// while it does, so an unbounded wait would let a client stall itself with no
+	// way back — the cancel it would send arrives behind the request it wanted to
+	// cancel. The ceiling turns that into a refusal the client can act on.
+	MaxLockWait time.Duration
+
 	// MaxConnections bounds the number of connections served at once. A
 	// connection arriving while the server is at the limit is closed
 	// immediately. Zero means unbounded.
@@ -114,6 +123,12 @@ const (
 	DefaultMaxTreesPerConnection    = 64
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxSearchesPerConnection = 128
+
+	// DefaultMaxLockWait is how long a blocked lock request waits before it is
+	// refused. It is long enough for a lock held across a short read or write to
+	// be released, and short enough that a client that asked to wait forever gets
+	// an answer.
+	DefaultMaxLockWait = 30 * time.Second
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
