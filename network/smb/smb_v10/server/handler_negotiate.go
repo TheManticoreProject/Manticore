@@ -28,11 +28,25 @@ const noDialectSelected = 0xFFFF
 // absent because raw transfers, the combined lock-and-read command and oplocks are
 // not implemented; advertising them would have clients issue commands that are
 // then refused.
+//
+// CAP_LARGE_READX and CAP_LARGE_WRITEX let one read or write exceed the
+// negotiated MaxBufferSize, bounded by Config.MaxLargeTransfer. Both are a
+// two-sided agreement: [MS-SMB] section 2.2.4.5.2.1 has the capability take
+// effect only when the client sets it in its session setup too, so a client that
+// does not ask keeps the old bound.
+// CAP_INFOLEVEL_PASSTHROUGH is advertised because the pass-through information
+// range is served for both files and volumes. A client may ask in that range
+// without being told it can, so advertising it changes nothing about what is
+// answered — but a client that checks first would otherwise take the long way
+// round to information the server already has.
 const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_LARGE_FILES |
 	capabilities.CAP_NT_SMBS |
 	capabilities.CAP_NT_STATUS |
 	capabilities.CAP_NT_FIND |
+	capabilities.CAP_LARGE_READX |
+	capabilities.CAP_LARGE_WRITEX |
+	capabilities.CAP_INFOLEVEL_PASSTHROUGH |
 	capabilities.CAP_EXTENDED_SECURITY
 
 // handleNegotiate answers SMB_COM_NEGOTIATE: it selects a dialect from the list

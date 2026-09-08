@@ -128,6 +128,7 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_READ_ANDX:      "reads from a handle",
 	codes.SMB_COM_WRITE_ANDX:     "writes through a handle",
 	codes.SMB_COM_FLUSH:          "commits a handle, or the whole tree",
+	codes.SMB_COM_LOCKING_ANDX:   "acquires and releases byte-range locks",
 
 	codes.SMB_COM_DELETE:           "deletes a file, wildcards included",
 	codes.SMB_COM_RENAME:           "renames or moves an entry",
@@ -362,6 +363,10 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	// into TestConformanceServedCommandsAreServed — so a floor on `exercised`
 	// falls as the server grows and has to be edited downwards to keep passing,
 	// which makes it a record of past progress rather than a guard. A floor on
+	// this walk exercised. Every command that gains a handler moves out of this
+	// walk and into TestConformanceServedCommandsAreServed, so a floor on
+	// `exercised` falls as the server grows and has to be edited downwards to
+	// keep passing — a record of past progress rather than a guard. A floor on
 	// `known` says what the guard was for and stays true.
 	if known < 70 {
 		t.Fatalf("the message layer recognizes only %d commands; it is no longer covering the command space", known)
