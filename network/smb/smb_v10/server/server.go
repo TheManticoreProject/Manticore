@@ -93,6 +93,14 @@ type Config struct {
 	// stay inside what the transport will carry, since a response larger than a
 	// frame cannot be sent at all.
 	MaxLargeTransfer int
+	// MaxLockWait bounds how long a blocked SMB_COM_LOCKING_ANDX request waits
+	// for a range to become free. Zero applies the default.
+	//
+	// A client may ask to wait forever, and the connection serves nothing else
+	// while it does, so an unbounded wait would let a client stall itself with no
+	// way back — the cancel it would send arrives behind the request it wanted to
+	// cancel. The ceiling turns that into a refusal the client can act on.
+	MaxLockWait time.Duration
 
 	// MaxConnections bounds the number of connections served at once. A
 	// connection arriving while the server is at the limit is closed
@@ -140,6 +148,11 @@ const (
 	// negotiated 16644 bytes to 65280, and escaping MaxBufferSize is what matters
 	// rather than the last kilobyte.
 	DefaultMaxLargeTransfer = 0xFF00
+	// DefaultMaxLockWait is how long a blocked lock request waits before it is
+	// refused. It is long enough for a lock held across a short read or write to
+	// be released, and short enough that a client that asked to wait forever gets
+	// an answer.
+	DefaultMaxLockWait = 30 * time.Second
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
