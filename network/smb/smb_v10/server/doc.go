@@ -50,6 +50,18 @@
 //     the TRANSACTION2 levels carry — a property of the wire format rather than of
 //     the storage.
 //
+//   - The pre-NT information levels, so a client that did not negotiate
+//     CAP_NT_FIND can still work: SMB_INFO_STANDARD and SMB_INFO_QUERY_EA_SIZE
+//     for find and for query, SMB_INFO_IS_NAME_VALID, SMB_QUERY_FILE_STREAM_INFO,
+//     SMB_QUERY_FILE_COMRESSION_INFO, and the SMB_INFO_ALLOCATION and
+//     SMB_INFO_VOLUME volume levels.
+//
+//     Their entries are packed rather than linked: the NT levels begin each entry
+//     with the offset of the next, and these begin with a date, so the buffer
+//     assembly has to know which model a level uses. Writing a chain terminator
+//     into a pre-NT buffer would overwrite the first entry's timestamps and
+//     produce a listing that looks valid.
+//
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
@@ -62,6 +74,7 @@
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
+//     PipeHandler is all an RPC service needs to be reachable over SMB1.
 //     PipeHandler is all an RPC service needs to be reachable over SMB1. An answer
 //     too large for one response is collected with TRANS_READ_NMPIPE,
 //     TRANS_PEEK_NMPIPE or SMB_COM_READ_ANDX on the same handle.
