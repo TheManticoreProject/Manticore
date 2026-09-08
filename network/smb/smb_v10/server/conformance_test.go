@@ -138,6 +138,11 @@ var servedCommands = map[codes.CommandCode]string{
 
 	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
 
+	codes.SMB_COM_QUERY_INFORMATION:  "reports a file's attributes, write time and size by path",
+	codes.SMB_COM_SET_INFORMATION:    "sets a file's attributes and write time by path",
+	codes.SMB_COM_QUERY_INFORMATION2: "reports an open handle's timestamps, sizes and attributes",
+	codes.SMB_COM_SET_INFORMATION2:   "sets an open handle's timestamps",
+
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
 	codes.SMB_COM_FIND_CLOSE2:            "releases a search handle",
@@ -346,9 +351,15 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	}
 	// A floor as well, so a message layer that stopped recognizing commands at all
 	// would not make the accounting trivially true.
-	if exercised < 40 {
-		t.Fatalf("only %d commands were exercised of %d known; the walk is no longer covering the command space",
-			exercised, known)
+	//
+	// The floor is on how many commands the message layer knows, not on how many
+	// this walk exercised. Every command that gains a handler moves out of this
+	// walk and into TestConformanceServedCommandsAreServed, so a floor on
+	// `exercised` falls as the server grows and has to be edited downwards to
+	// keep passing — a record of past progress rather than a guard. A floor on
+	// `known` says what the guard was for and stays true.
+	if known < 70 {
+		t.Fatalf("the message layer recognizes only %d commands; it is no longer covering the command space", known)
 	}
 	t.Logf("exercised %d of %d known commands (%d served, %d whose zero value cannot be marshalled)",
 		exercised, known, skippedServed, skippedUnmarshalable)

@@ -50,6 +50,13 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	// Volume.
 	codes.SMB_COM_QUERY_INFORMATION_DISK: handleQueryInformationDisk,
 
+	// The core-set file information commands, which describe a file by path or by
+	// handle without a transaction.
+	codes.SMB_COM_QUERY_INFORMATION:  handleQueryInformation,
+	codes.SMB_COM_SET_INFORMATION:    handleSetInformation,
+	codes.SMB_COM_QUERY_INFORMATION2: handleQueryInformation2,
+	codes.SMB_COM_SET_INFORMATION2:   handleSetInformation2,
+
 	// File management.
 	codes.SMB_COM_DELETE:           handleDelete,
 	codes.SMB_COM_RENAME:           handleRename,
