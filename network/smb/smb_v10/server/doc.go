@@ -55,9 +55,15 @@
 // displacement, with the subcommand selected by a setup word, a Function field or
 // a name.
 //
+//   - Batched ("AndX") requests: every command in a chain runs, in order, and all
+//     the answers return in one message. A command sees the identifiers as they
+//     stand when it runs rather than as the client sent them, which is what makes
+//     a session setup batched with a tree connect work — the client had no UID to
+//     send. A failure ends the chain and the error response closes it, per
+//     [MS-CIFS] 3.3.4.1, so the answers already produced still come back.
+//
 // Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: byte-range
-// locking, seek, the legacy SMB_COM_OPEN_ANDX, and batched AndX chains beyond
-// their first command.
+// locking, seek, and the legacy SMB_COM_OPEN_ANDX.
 //
 // NT_TRANSACT_NOTIFY_CHANGE is deliberately absent rather than pending. It needs
 // two things this package does not have: a FileSystem that can be watched, and a
