@@ -315,6 +315,11 @@
 // bounded by maxPipeAnswerSize, because only the server knows how the client will
 // read the rest.
 //
+// Package rpcpipe, in the subdirectory of the same name, is a PipeHandler that
+// answers the srvsvc and wkssvc RPC interfaces, which is what a client calls to
+// list a host's shares and to identify it. A caller that wants a browsable server
+// registers an IPC$ share carrying one rather than writing DCE/RPC by hand.
+//
 // # Character encoding
 //
 // Unicode is a per-message property, not a per-connection one: SMB_FLAGS2_UNICODE
