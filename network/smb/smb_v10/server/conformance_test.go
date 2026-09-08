@@ -184,6 +184,7 @@ var servedNtTransactFunctions = map[subcommands.NtTransactSubcommand]string{
 	subcommands.NT_TRANSACT_QUERY_SECURITY_DESC: "returns a share's security descriptor",
 	subcommands.NT_TRANSACT_SET_SECURITY_DESC:   "applies one, if the share can store it",
 	subcommands.NT_TRANSACT_IOCTL:               "carries the file-system control codes",
+	subcommands.NT_TRANSACT_NOTIFY_CHANGE:       "answers when a watched directory changes",
 	subcommands.NT_TRANSACT_CREATE:              "opens or creates a file through a transaction",
 	subcommands.NT_TRANSACT_RENAME:              "reserved and never implemented; refused with the mandated status",
 }
@@ -209,7 +210,18 @@ var servedPipeSubcommands = map[subcommands.TransactionSubcommand]string{
 // TestConformanceServedNtTransactFunctionsAreServed asserts the NT_TRANSACT table
 // and the handler table agree, in both directions.
 func TestConformanceServedNtTransactFunctionsAreServed(t *testing.T) {
+	// NT_TRANSACT_NOTIFY_CHANGE is dispatched before the table rather than from
+	// it: it answers through the deferred response path, so it has nothing to
+	// hand back to runNtTransact and cannot have the table's handler shape. It is
+	// still listed as served, because it is.
+	dispatchedOutsideTheTable := map[subcommands.NtTransactSubcommand]bool{
+		subcommands.NT_TRANSACT_NOTIFY_CHANGE: true,
+	}
+
 	for function := range servedNtTransactFunctions {
+		if dispatchedOutsideTheTable[function] {
+			continue
+		}
 		if _, ok := ntTransactHandlers[function]; !ok {
 			t.Errorf("NT_TRANSACT function 0x%04X is listed as served but has no handler", uint16(function))
 		}

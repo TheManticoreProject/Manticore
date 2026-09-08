@@ -117,6 +117,13 @@ func handleNtTransactSecondary(conn *Connection, w ResponseWriter, req *message.
 
 // runNtTransact dispatches an assembled NT_TRANSACT to its subcommand.
 func (c *Connection) runNtTransact(w ResponseWriter, req *message.Message, reassembly *transactionReassembly) nt_status.NT_STATUS {
+	// NOTIFY_CHANGE answers later rather than returning a block now, so it is
+	// dispatched before the table: a handler that defers has nothing to give
+	// runNtTransact to send.
+	if subcommands.NtTransactSubcommand(reassembly.subcommand) == subcommands.NT_TRANSACT_NOTIFY_CHANGE {
+		return handleNotifyChange(c, w, req, reassembly)
+	}
+
 	handler, ok := ntTransactHandlers[subcommands.NtTransactSubcommand(reassembly.subcommand)]
 	if !ok {
 		logger.Debugf("SMB1 server: %s sent unimplemented NT_TRANSACT function 0x%04X",

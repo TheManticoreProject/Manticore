@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TheManticoreProject/Manticore/windows/filesystem"
 )
 
 // MemoryFileSystem is a FileSystem held entirely in memory.
@@ -26,6 +28,15 @@ type MemoryFileSystem struct {
 
 	// volume describes the storage reported to a client.
 	volume VolumeInfo
+
+	// watches are the change notifications registered on this file system, for
+	// NT_TRANSACT_NOTIFY_CHANGE.
+	//
+	// A publish happens while a mutation still holds the lock above. That is
+	// deliberate: the registry has its own lock and its sends never block, so the
+	// order is always this lock then the registry's, and there is no inversion to
+	// deadlock on.
+	watches watchRegistry
 }
 
 // memoryEntry is one file or directory.
@@ -99,6 +110,11 @@ func (fs *MemoryFileSystem) AddFile(path string, contents []byte) error {
 		name: name, data: stored,
 		created: now, accessed: now, modified: now, changed: now,
 	}
+	// Published like any other addition. This is a setup helper, but a caller
+	// that adds a file to a share a client is already watching has changed the
+	// share, and a watch that heard about a create through Open but not through
+	// here would be reporting on how the file arrived rather than on the file.
+	fs.watches.publish(resolved, changeAdded)
 	return nil
 }
 
@@ -153,6 +169,7 @@ func (fs *MemoryFileSystem) makeDirectory(path string) error {
 		name: name, isDir: true,
 		created: now, accessed: now, modified: now, changed: now,
 	}
+	fs.watches.publish(path, changeAdded)
 	return nil
 }
 
@@ -202,7 +219,9 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		return &memoryFile{fs: fs, path: path}, nil
 	}
 
-	// Creating. The parent has to exist: a create does not build a tree.
+	// Creating: published below, once the entry is in place.
+	//
+	// The parent has to exist: a create does not build a tree.
 	parent, name := splitPath(path)
 	if parent != "" {
 		holder, ok := fs.entries[parent]
@@ -219,6 +238,7 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		name: name, isDir: flags.Directory,
 		created: now, accessed: now, modified: now, changed: now,
 	}
+	fs.watches.publish(path, changeAdded)
 	return &memoryFile{fs: fs, path: path}, nil
 }
 
@@ -306,6 +326,7 @@ func (fs *MemoryFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) e
 	if mask.Changed {
 		entry.changed = attr.Changed
 	}
+	fs.watches.publish(path, changeModified)
 	return nil
 }
 
@@ -340,6 +361,7 @@ func (fs *MemoryFileSystem) Remove(path string) error {
 		return ErrReadOnly
 	}
 	delete(fs.entries, path)
+	fs.watches.publish(path, changeRemoved)
 	return nil
 }
 
@@ -376,6 +398,11 @@ func (fs *MemoryFileSystem) Rename(oldPath, newPath string, replace bool) error 
 	entry.name = newName
 	fs.entries[newPath] = entry
 	delete(fs.entries, oldPath)
+
+	// A rename is two notifications, and the pair is what tells a client the
+	// entry moved rather than that one vanished and an unrelated one appeared.
+	fs.watches.publish(oldPath, uint32(filesystem.FileActionRenamedOldName))
+	fs.watches.publish(newPath, uint32(filesystem.FileActionRenamedNewName))
 
 	if !entry.isDir {
 		return nil
@@ -415,6 +442,7 @@ func (fs *MemoryFileSystem) Mkdir(path string) error {
 			return ErrNotDirectory
 		}
 	}
+	// makeDirectory publishes the addition, so nothing more is needed here.
 	return fs.makeDirectory(path)
 }
 
@@ -441,6 +469,7 @@ func (fs *MemoryFileSystem) Rmdir(path string) error {
 		}
 	}
 	delete(fs.entries, path)
+	fs.watches.publish(path, changeRemoved)
 	return nil
 }
 
@@ -557,6 +586,7 @@ func (f *memoryFile) WriteAt(p []byte, off int64) (int, error) {
 	}
 	written := copy(entry.data[off:], p)
 	entry.modified = time.Now().UTC()
+	f.fs.watches.publish(f.path, changeModified)
 	return written, nil
 }
 

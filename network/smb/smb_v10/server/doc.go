@@ -173,10 +173,26 @@
 // Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: seek and the
 // legacy SMB_COM_OPEN_ANDX.
 //
-// NT_TRANSACT_NOTIFY_CHANGE is still absent, but only one of the two things it
-// needs is now missing. A reply can be sent from outside the request that asked
-// for it — see "Deferred answers" below — so what is left is a FileSystem that can
-// be watched.
+// NT_TRANSACT_NOTIFY_CHANGE is served, through the deferred answers described
+// below and a FileSystem that implements Watcher. It is single-shot, as the
+// protocol defines it: the client reissues it to hear about the next change.
+//
+// A change that will not fit in the client's buffer is answered with
+// STATUS_NOTIFY_ENUM_DIR and no data, which tells the client to list the directory
+// again. That is a complete answer rather than a failure, and it is what makes a
+// small client buffer safe to honour instead of something to work around.
+//
+// MemoryFileSystem reports changes as it makes them. LocalFileSystem polls,
+// because asking the host to report changes portably needs a per-platform
+// notification API and this package is standard library only: the interval is
+// LocalWatchInterval, and a change that leaves an entry's name, size and
+// modification time alone is not visible to it. That is a property of polling
+// rather than something the interval can fix, and it is why the poll is documented
+// where a caller will see it.
+//
+// Oplocks are still never granted. Breaking one means sending a message the client
+// did not ask for, and Connection.SendUnsolicited refuses to do that on a signing
+// connection for the reason given below.
 //
 // # Deferred answers
 //
