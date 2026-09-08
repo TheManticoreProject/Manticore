@@ -200,7 +200,24 @@ func (c *Connection) frame(reply *message.Message, signKey []byte, signSequence 
 	if err != nil {
 		return fmt.Errorf("failed to marshal the response: %v", err)
 	}
+	return c.send(marshalled, signKey, signSequence)
+}
 
+// send signs and writes one already-marshalled message, serialised against every
+// other write on the connection.
+//
+// It is separate from frame because a batched response has to know its own size
+// before it is sent — [MS-CIFS] section 2.2.3.4 caps a batch at the negotiated
+// buffer — so that path marshals first and sends through here.
+//
+// Parameters:
+//   - marshalled: the message as it will go on the wire
+//   - signKey: the MAC key, or nil for an unsigned message
+//   - signSequence: the sequence number to sign at
+//
+// Returns:
+//   - The error from sending
+func (c *Connection) send(marshalled []byte, signKey []byte, signSequence uint32) error {
 	// The lock covers signing as well as sending: a signature is written into the
 	// buffer being sent, so two goroutines signing and sending independently could
 	// interleave a partial write.

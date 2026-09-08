@@ -259,6 +259,8 @@ func (w *responseWriter) flushChain() error {
 	// given, and the reply must echo the request's code regardless.
 	reply.Header.Command = w.request.Header.Command
 
+	// The size has to be known before sending, so the chain is marshalled here
+	// and framed below rather than handed straight to Connection.frame.
 	marshalled, err := reply.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal the response chain: %v", err)
@@ -272,16 +274,10 @@ func (w *responseWriter) flushChain() error {
 		return errChainTooLarge
 	}
 
-	// Signing happens after marshalling and over the whole message, because the
-	// signature occupies a field inside the header it covers.
-	if len(w.signKey) > 0 {
-		signing.Sign(w.signKey, marshalled, w.signSequence)
-	}
-
-	if _, err := w.conn.Transport.Send(marshalled); err != nil {
-		return fmt.Errorf("failed to send the response chain: %v", err)
-	}
-	return nil
+	// Signed and sent through the connection, like every other write: signing
+	// puts a signature inside the buffer being sent, so the two have to happen
+	// under one lock or a deferred answer's write could interleave with this one.
+	return w.conn.send(marshalled, w.signKey, w.signSequence)
 }
 
 // errChainTooLarge reports a batched response that does not fit in the negotiated
