@@ -60,6 +60,13 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
 	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
 
+	// The core-set directory search, which a client that does not use
+	// TRANSACTION2 enumerates with.
+	codes.SMB_COM_SEARCH:      handleSearch,
+	codes.SMB_COM_FIND:        handleFind,
+	codes.SMB_COM_FIND_UNIQUE: handleFindUnique,
+	codes.SMB_COM_FIND_CLOSE:  handleFindClose,
+
 	// Transactions, which carry the directory-enumeration and information
 	// subcommands.
 	codes.SMB_COM_TRANSACTION2:           handleTransaction2,

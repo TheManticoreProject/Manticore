@@ -14,23 +14,34 @@
 // the protocol to look functional while refusing everything that matters.
 //
 // Implemented:
+//
 //   - Listening on Direct TCP (445) and NetBIOS over TCP (139), via
 //     network/smb/common/transport.
+//
 //   - The per-connection receive loop, request decoding, the handler chain, and
 //     response framing with correlated reply headers.
+//
 //   - Error responses in both encodings: the NTSTATUS form, and the legacy
 //     SMBSTATUS class/code form for a client that did not negotiate
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
+//
 //   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
 //     security.
+//
 //   - SMB_COM_SESSION_SETUP_ANDX, including verifying the response against a
 //     credential, establishing a session, and the guest and anonymous policies.
+//
 //   - SMB_COM_LOGOFF_ANDX.
+//
 //   - SMB_COM_ECHO.
+//
 //   - Message signing in both directions, when the policy calls for it.
+//
 //   - Tree connect and disconnect against a registered share.
+//
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//
 //   - The core-set file information commands, which describe a file without a
 //     transaction: SMB_COM_QUERY_INFORMATION and SMB_COM_SET_INFORMATION by path,
 //     and SMB_COM_QUERY_INFORMATION2 and SMB_COM_SET_INFORMATION2 on a handle.
@@ -38,17 +49,36 @@
 //     or a UTIME in seconds, so a client reading one back sees less precision than
 //     the TRANSACTION2 levels carry — a property of the wire format rather than of
 //     the storage.
+//
+//   - The core-set directory search: SMB_COM_SEARCH, SMB_COM_FIND,
+//     SMB_COM_FIND_UNIQUE and SMB_COM_FIND_CLOSE. These keep no state on the
+//     server — the position travels in the resume key and the directory is read
+//     again each call, which is what a command with no close needs, since a
+//     client that walks away mid-listing would otherwise leak an allocation. The
+//     cost is that the listing is a fresh view rather than a snapshot, so an
+//     entry created or removed between calls may be seen twice or missed;
+//     TRANS2_FIND_FIRST2 is the level that keeps a snapshot.
+//
+//     An entry's name field is a fixed thirteen bytes, so a name that does not
+//     fit an 8.3 field is omitted from these listings. There is no 8.3 alias to
+//     substitute: truncating would name a different file, and inventing an alias
+//     would hand the client a name no subsequent open could resolve. A client
+//     that needs those names has to use TRANS2_FIND_FIRST2.
+//
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
 //     responses both fragment across as many messages as they need.
+//
 //   - Security descriptors and file-system controls, over NT_TRANSACT:
 //     QUERY_SECURITY_DESC, SET_SECURITY_DESC and IOCTL. SMB_COM_NT_CANCEL is
 //     accepted silently, since nothing here leaves a request outstanding.
+//
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
 //     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//
 //   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
 //     the pass-through information classes above 0x03E8 that carry the native
 //     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
