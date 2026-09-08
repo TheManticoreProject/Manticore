@@ -215,6 +215,19 @@ func (c *WriteAndxRequest) Marshal() ([]byte, error) {
 	return marshalledCommand, nil
 }
 
+// DataLengthHigh is the high 16 bits of the write's length.
+//
+// [MS-SMB] section 2.2.4.3.1 allocates the CIFS Reserved field for it under
+// CAP_LARGE_WRITEX. The field keeps its CIFS name on the struct because that is
+// what it is called when the capability is not in force, and this accessor names
+// what it means when it is.
+//
+// Returns:
+//   - The high 16 bits of the number of data bytes the request carries
+func (c *WriteAndxRequest) DataLengthHigh() types.USHORT {
+	return c.Reserved
+}
+
 // Unmarshal unmarshals a byte array into the command structure
 //
 // Parameters:
@@ -334,11 +347,21 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	offset++
 
 	// Unmarshalling data Data
-	if len(rawDataContent) < offset+int(c.DataLength) {
-		return offset, fmt.Errorf("rawDataContent too short for Data")
+	//
+	// The length spans two fields. [MS-SMB] section 2.2.4.3.1 allocates the CIFS
+	// Reserved field as DataLengthHigh, which is the only way a write above
+	// 0xFFFF bytes can describe itself, and [MS-CIFS] section 2.2.4.43.1 requires
+	// Reserved to be zero, so a non-zero value is a length rather than a client
+	// leaving a field dirty. Reading DataLength alone would silently truncate
+	// every large write to its low word: the server would write 4464 of 70000
+	// bytes and report success.
+	declared := int(c.DataLengthHigh())<<16 | int(c.DataLength)
+	if len(rawDataContent) < offset+declared {
+		return offset, fmt.Errorf("rawDataContent too short for Data: need %d bytes from %d, have %d",
+			declared, offset, len(rawDataContent))
 	}
-	c.Data = rawDataContent[offset : offset+int(c.DataLength)]
-	offset += int(c.DataLength)
+	c.Data = rawDataContent[offset : offset+declared]
+	offset += declared
 
 	return offset, nil
 }
