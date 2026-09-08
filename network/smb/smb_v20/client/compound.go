@@ -144,7 +144,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 			}
 		}
 		if resp.Header.Credit > 0 {
-			c.Connection.Credits = resp.Header.Credit
+			c.grantCredits(resp.Header.Credit)
 		}
 
 		if uint64(resp.Header.MessageId) != unsolicitedMessageId && !requestIds[uint64(resp.Header.MessageId)] {
