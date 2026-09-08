@@ -599,9 +599,11 @@ func TestNtTransactUnimplementedFunctions(t *testing.T) {
 	fs := NewMemoryFileSystem("FILES")
 	_, client := fileServer(t, fs, false)
 
+	// NT_TRANSACT_CREATE is served, and NT_TRANSACT_RENAME is refused with
+	// STATUS_SMB_BAD_COMMAND rather than STATUS_NOT_IMPLEMENTED because
+	// [MS-CIFS] section 2.2.7.5 names that status for it; both are asserted
+	// elsewhere. What is left here is the set that answers the generic refusal.
 	unimplemented := []subcommands.NtTransactSubcommand{
-		subcommands.NT_TRANSACT_CREATE,
-		subcommands.NT_TRANSACT_RENAME,
 		subcommands.NT_TRANSACT_NOTIFY_CHANGE,
 		subcommands.NT_TRANSACT_QUERY_QUOTA,
 		subcommands.NT_TRANSACT_SET_QUOTA,

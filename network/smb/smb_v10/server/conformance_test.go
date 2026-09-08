@@ -177,6 +177,8 @@ var servedNtTransactFunctions = map[subcommands.NtTransactSubcommand]string{
 	subcommands.NT_TRANSACT_QUERY_SECURITY_DESC: "returns a share's security descriptor",
 	subcommands.NT_TRANSACT_SET_SECURITY_DESC:   "applies one, if the share can store it",
 	subcommands.NT_TRANSACT_IOCTL:               "carries the file-system control codes",
+	subcommands.NT_TRANSACT_CREATE:              "opens or creates a file through a transaction",
+	subcommands.NT_TRANSACT_RENAME:              "reserved and never implemented; refused with the mandated status",
 }
 
 // servedFsctlCodes are the file-system control codes NT_TRANSACT_IOCTL answers.
@@ -239,6 +241,9 @@ var servedTrans2Subcommands = map[subcommands.Transaction2Subcommand]string{
 	subcommands.TRANS2_SET_PATH_INFORMATION:   "changes a path",
 	subcommands.TRANS2_SET_FILE_INFORMATION:   "changes an open handle",
 	subcommands.TRANS2_QUERY_FS_INFORMATION:   "describes the volume",
+	subcommands.TRANS2_OPEN2:                  "opens or creates a file through a transaction",
+	subcommands.TRANS2_CREATE_DIRECTORY:       "creates a directory",
+	subcommands.TRANS2_SET_FS_INFORMATION:     "reserved and never implemented; refused with the mandated status",
 }
 
 // TestConformanceServedTrans2SubcommandsAreServed asserts the subcommand table and

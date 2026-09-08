@@ -103,10 +103,21 @@
 // asked for. Both are architectural additions, and half of either would be worse
 // than the honest refusal.
 //
-// NT_TRANSACT_CREATE and NT_TRANSACT_RENAME are also absent by choice: they
-// duplicate SMB_COM_NT_CREATE_ANDX and SMB_COM_RENAME, which are served. The
-// quota subcommands are absent because nothing here tracks a quota, and a number
-// invented for them is a number a client would believe.
+// NT_TRANSACT_CREATE and TRANS2_OPEN2 are served, as are TRANS2_CREATE_DIRECTORY
+// and the extended attributes those two can carry — except that the attributes
+// themselves are not stored, and the responses report a length of zero, which is
+// how the format says a file has none.
+//
+// TRANS2_SET_FS_INFORMATION and NT_TRANSACT_RENAME are reserved and were never
+// implemented, and each is refused with the status its own section names rather
+// than with the tables' generic STATUS_NOT_IMPLEMENTED: [MS-CIFS] 2.2.6.5 requires
+// STATUS_SMB_NO_SUPPORT for the first and 2.2.7.5 requires STATUS_SMB_BAD_COMMAND
+// for the second.
+//
+// The quota subcommands are absent because nothing here tracks a quota, and a
+// number invented for them is a number a client would believe. TRANS2_FSCTL,
+// TRANS2_IOCTL2 and TRANS2_SESSION_SETUP are reserved and take the generic
+// refusal, which is what their sections require.
 //
 // # Shares
 //

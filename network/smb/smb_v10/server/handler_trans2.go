@@ -320,6 +320,13 @@ var trans2Handlers = map[subcommands.Transaction2Subcommand]trans2Handler{
 	subcommands.TRANS2_SET_PATH_INFORMATION:   handleSetPathInformation,
 	subcommands.TRANS2_SET_FILE_INFORMATION:   handleSetFileInformation,
 	subcommands.TRANS2_QUERY_FS_INFORMATION:   handleQueryFsInformation,
+	subcommands.TRANS2_OPEN2:                  handleOpen2,
+	subcommands.TRANS2_CREATE_DIRECTORY:       handleTrans2CreateDirectory,
+
+	// Reserved and never implemented, but with a status of its own rather than
+	// the table's default: [MS-CIFS] section 2.2.6.5 requires
+	// STATUS_SMB_NO_SUPPORT for this one specifically.
+	subcommands.TRANS2_SET_FS_INFORMATION: handleTrans2SetFsInformation,
 }
 
 // sendTransaction2Response sends a transaction result, splitting it across as many
