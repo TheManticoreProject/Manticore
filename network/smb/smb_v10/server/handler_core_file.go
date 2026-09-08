@@ -75,6 +75,43 @@ func coreOpenFlagsFor(accessMode uint16) (OpenFlags, nt_status.NT_STATUS) {
 	return OpenFlags{}, nt_status.NT_STATUS_OS2_INVALID_ACCESS
 }
 
+// applyOpenMode folds an OpenMode field into backend flags.
+//
+// OpenMode is the create-disposition of the NT commands expressed in two bits
+// ([MS-CIFS] section 2.2.4.41.1): what to do about a file that exists, and
+// whether to create one that does not. It is shared by SMB_COM_OPEN_ANDX and
+// TRANS2_OPEN2, which carry the same field.
+//
+// Parameters:
+//   - flags: the flags to fold into, already carrying the access mode
+//   - openMode: the request's OpenMode field
+func applyOpenMode(flags *OpenFlags, openMode uint16) {
+	if openMode&openModeCreateIfMissing != 0 {
+		flags.Create = true
+	}
+
+	switch openMode & openModeFileExistsMask {
+	case openModeTruncate:
+		flags.Truncate = true
+		// Truncating is a write, whatever access the client named.
+		flags.Write = true
+	case openModeFailIfExists:
+		// Fail if it exists and create if it does not is a create-new; without
+		// the create bit it is a plain open that must find the file, which the
+		// backend already reports.
+		if flags.Create {
+			// Both bits, which is the convention openFlagsFor established: the
+			// backend reads CreateNew as "refuse an existing file" and Create as
+			// "make a missing one", and a create-new needs to say both.
+			flags.CreateNew = true
+		}
+	case openModeAppendIfExsts:
+		// Appending needs write access; the offset is the client's business,
+		// since every core-set write carries one.
+		flags.Write = true
+	}
+}
+
 // coreOpen opens a path for one of the core-set commands and registers the handle.
 //
 // It is the shared body of SMB_COM_OPEN, SMB_COM_CREATE, SMB_COM_CREATE_NEW,
@@ -210,31 +247,7 @@ func handleOpenAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 		return status
 	}
 
-	openMode := uint16(request.OpenMode)
-	if openMode&openModeCreateIfMissing != 0 {
-		flags.Create = true
-	}
-
-	switch openMode & openModeFileExistsMask {
-	case openModeTruncate:
-		flags.Truncate = true
-		// Truncating is a write, whatever access the client named.
-		flags.Write = true
-	case openModeFailIfExists:
-		// Fail if it exists and create if it does not is a create-new; without
-		// the create bit it is a plain open that must find the file, which the
-		// backend already reports.
-		if flags.Create {
-			// Both bits, which is the convention openFlagsFor established: the
-			// backend reads CreateNew as "refuse an existing file" and Create as
-			// "make a missing one", and a create-new needs to say both.
-			flags.CreateNew = true
-		}
-	case openModeAppendIfExsts:
-		// Appending needs write access; the offset is the client's business,
-		// since every core-set write carries one.
-		flags.Write = true
-	}
+	applyOpenMode(&flags, uint16(request.OpenMode))
 
 	name := decodeWireString(request.FileName.Buffer, req.Header.Flags2.IsUnicode())
 	open, existed, status := conn.coreOpen(req, name, flags)
