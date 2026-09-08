@@ -242,6 +242,50 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 	return &memoryFile{fs: fs, path: path}, nil
 }
 
+// Link gives an existing entry a second name.
+//
+// The two names share one *memoryEntry, which is what makes this a link rather
+// than a copy: a write through either name is visible through both, and removing
+// one leaves the other working.
+//
+// Parameters:
+//   - existing: the entry to link to
+//   - target: the new name
+//
+// Returns:
+//   - An error if either path is unusable
+func (fs *MemoryFileSystem) Link(existing, target string) error {
+	fs.mutex.Lock()
+	defer fs.mutex.Unlock()
+
+	entry, present := fs.entries[existing]
+	if !present {
+		return ErrNotFound
+	}
+	if entry.isDir {
+		return ErrIsDirectory
+	}
+	if _, taken := fs.entries[target]; taken {
+		return ErrExists
+	}
+
+	// The parent has to exist, as it does for a create: a link does not build a
+	// tree.
+	parent, _ := splitPath(target)
+	if parent != "" {
+		holder, ok := fs.entries[parent]
+		if !ok {
+			return ErrNotFound
+		}
+		if !holder.isDir {
+			return ErrNotDirectory
+		}
+	}
+
+	fs.entries[target] = entry
+	return nil
+}
+
 // Stat describes a path.
 func (fs *MemoryFileSystem) Stat(path string) (FileAttr, error) {
 	fs.mutex.RLock()

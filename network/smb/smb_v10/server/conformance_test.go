@@ -123,19 +123,43 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_TREE_CONNECT_ANDX: "connects a tree to a share",
 	codes.SMB_COM_TREE_DISCONNECT:   "drops the tree and its handles",
 
+	codes.SMB_COM_OPEN:             "opens an existing file by path, core set",
+	codes.SMB_COM_OPEN_ANDX:        "opens, creates or truncates by path, core set",
+	codes.SMB_COM_CREATE:           "creates or truncates a file and opens it",
+	codes.SMB_COM_CREATE_NEW:       "creates a file, refusing one that exists",
+	codes.SMB_COM_CREATE_TEMPORARY: "creates a file under a name the server chooses",
+	codes.SMB_COM_READ:             "reads from a handle, core set",
+	codes.SMB_COM_WRITE:            "writes through a handle, core set; a zero count truncates",
+	codes.SMB_COM_WRITE_AND_CLOSE:  "writes through a handle and closes it",
+	codes.SMB_COM_SEEK:             "moves a handle's file pointer",
+	codes.SMB_COM_TREE_CONNECT:     "connects a tree to a share, deprecated form",
+	codes.SMB_COM_PROCESS_EXIT:     "releases the handles a client process still held",
+
 	codes.SMB_COM_NT_CREATE_ANDX: "opens or creates a file or directory",
 	codes.SMB_COM_CLOSE:          "releases a handle",
 	codes.SMB_COM_READ_ANDX:      "reads from a handle",
 	codes.SMB_COM_WRITE_ANDX:     "writes through a handle",
 	codes.SMB_COM_FLUSH:          "commits a handle, or the whole tree",
+	codes.SMB_COM_LOCKING_ANDX:   "acquires and releases byte-range locks",
 
 	codes.SMB_COM_DELETE:           "deletes a file, wildcards included",
 	codes.SMB_COM_RENAME:           "renames or moves an entry",
 	codes.SMB_COM_CREATE_DIRECTORY: "creates a directory",
 	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
 	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
+	codes.SMB_COM_NT_RENAME:        "renames an entry, or gives it a second name",
 
 	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
+
+	codes.SMB_COM_QUERY_INFORMATION:  "reports a file's attributes, write time and size by path",
+	codes.SMB_COM_SET_INFORMATION:    "sets a file's attributes and write time by path",
+	codes.SMB_COM_QUERY_INFORMATION2: "reports an open handle's timestamps, sizes and attributes",
+	codes.SMB_COM_SET_INFORMATION2:   "sets an open handle's timestamps",
+
+	codes.SMB_COM_SEARCH:      "enumerates a directory in the core-set form",
+	codes.SMB_COM_FIND:        "enumerates a directory in the core-set form, closable",
+	codes.SMB_COM_FIND_UNIQUE: "enumerates one name with no continuation",
+	codes.SMB_COM_FIND_CLOSE:  "closes a core-set search, which holds nothing to release",
 
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
@@ -161,6 +185,8 @@ var servedNtTransactFunctions = map[subcommands.NtTransactSubcommand]string{
 	subcommands.NT_TRANSACT_SET_SECURITY_DESC:   "applies one, if the share can store it",
 	subcommands.NT_TRANSACT_IOCTL:               "carries the file-system control codes",
 	subcommands.NT_TRANSACT_NOTIFY_CHANGE:       "answers when a watched directory changes",
+	subcommands.NT_TRANSACT_CREATE:              "opens or creates a file through a transaction",
+	subcommands.NT_TRANSACT_RENAME:              "reserved and never implemented; refused with the mandated status",
 }
 
 // servedFsctlCodes are the file-system control codes NT_TRANSACT_IOCTL answers.
@@ -234,6 +260,9 @@ var servedTrans2Subcommands = map[subcommands.Transaction2Subcommand]string{
 	subcommands.TRANS2_SET_PATH_INFORMATION:   "changes a path",
 	subcommands.TRANS2_SET_FILE_INFORMATION:   "changes an open handle",
 	subcommands.TRANS2_QUERY_FS_INFORMATION:   "describes the volume",
+	subcommands.TRANS2_OPEN2:                  "opens or creates a file through a transaction",
+	subcommands.TRANS2_CREATE_DIRECTORY:       "creates a directory",
+	subcommands.TRANS2_SET_FS_INFORMATION:     "reserved and never implemented; refused with the mandated status",
 }
 
 // TestConformanceServedTrans2SubcommandsAreServed asserts the subcommand table and
@@ -357,9 +386,26 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	}
 	// A floor as well, so a message layer that stopped recognizing commands at all
 	// would not make the accounting trivially true.
-	if exercised < 40 {
-		t.Fatalf("only %d commands were exercised of %d known; the walk is no longer covering the command space",
-			exercised, known)
+	//
+	// The floor is on how many commands the message layer knows, not on how many
+	// this walk exercised. Those were the same number when little was served, but
+	// every command that gains a handler moves out of this walk and into
+	// TestConformanceServedCommandsAreServed — so a floor on `exercised` falls as
+	// the server grows and has to be edited downwards to keep passing, which
+	// makes it a record of past progress rather than a guard. A floor on `known`
+	// says what the guard was for and stays true.
+	// this walk exercised. Those were the same number when nothing much was
+	// served, but every command that gains a handler moves out of this walk and
+	// into TestConformanceServedCommandsAreServed — so a floor on `exercised`
+	// falls as the server grows and has to be edited downwards to keep passing,
+	// which makes it a record of past progress rather than a guard. A floor on
+	// this walk exercised. Every command that gains a handler moves out of this
+	// walk and into TestConformanceServedCommandsAreServed, so a floor on
+	// `exercised` falls as the server grows and has to be edited downwards to
+	// keep passing — a record of past progress rather than a guard. A floor on
+	// `known` says what the guard was for and stays true.
+	if known < 70 {
+		t.Fatalf("the message layer recognizes only %d commands; it is no longer covering the command space", known)
 	}
 	t.Logf("exercised %d of %d known commands (%d served, %d whose zero value cannot be marshalled)",
 		exercised, known, skippedServed, skippedUnmarshalable)

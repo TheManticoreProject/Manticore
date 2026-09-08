@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -98,6 +99,18 @@ type responseWriter struct {
 	// signKey and signSequence, when set, sign responses to this request.
 	signKey      []byte
 	signSequence uint32
+
+	// chaining collects responses instead of sending them, for a batched request
+	// whose answers all travel in one message. A handler is unaware of it: it
+	// writes its response as it always does, and the dispatcher decides whether
+	// that response leaves on its own or as one link of a chain.
+	chaining  bool
+	collected []command_interface.CommandInterface
+
+	// chainStatus is the status the assembled chain reports. A chain carries one
+	// header and so one status: it stays success until a command reports
+	// otherwise, and that command's status is the message's.
+	chainStatus nt_status.NT_STATUS
 }
 
 // RemoteAddr returns the address of the client being answered.
@@ -154,9 +167,20 @@ func (w *responseWriter) Defer() AsyncResponder {
 }
 
 // write builds the reply, marshals it and frames it on the transport.
+//
+// While a chain is being collected the response is kept instead of sent, and the
+// whole chain is framed once by flushChain.
 func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt_status.NT_STATUS) error {
 	if cmd == nil {
 		return fmt.Errorf("cannot write a response with no command")
+	}
+
+	if w.chaining {
+		w.collected = append(w.collected, cmd)
+		if status != nt_status.NT_STATUS_SUCCESS && w.chainStatus == nt_status.NT_STATUS_SUCCESS {
+			w.chainStatus = status
+		}
+		return nil
 	}
 
 	reply := message.NewMessage()
@@ -183,6 +207,82 @@ func (w *responseWriter) write(cmd command_interface.CommandInterface, status nt
 	// have to be serialised together rather than each locking on its own.
 	return w.conn.frame(reply, w.signKey, w.signSequence)
 }
+
+// beginChain puts the writer into chain mode, so responses are collected rather
+// than sent.
+func (w *responseWriter) beginChain() {
+	w.chaining = true
+	w.collected = nil
+	w.chainStatus = nt_status.NT_STATUS_SUCCESS
+}
+
+// flushChain leaves chain mode and sends everything collected as one message.
+//
+// The responses go out in the order they were produced. Message.Marshal writes
+// each AndX block — the code of the command that follows and the offset it begins
+// at — and terminates the chain, and it refuses a chain in which a non-AndX
+// response is followed by another, which is the rule that ends a chain in
+// [MS-CIFS] section 2.2.3.4. The header carries the first command's code and the
+// chain's status.
+//
+// Returns:
+//   - The error from framing the message, or nil
+func (w *responseWriter) flushChain() error {
+	collected := w.collected
+	status := w.chainStatus
+
+	w.chaining = false
+	w.collected = nil
+	w.chainStatus = nt_status.NT_STATUS_SUCCESS
+
+	if len(collected) == 0 {
+		// Every command in the chain produced no response, which is legitimate:
+		// SMB_COM_ECHO with a count of zero is defined that way. Nothing to send.
+		return nil
+	}
+
+	reply := message.NewMessage()
+	reply.Header = replyHeader(w.request.Header, status, len(w.signKey) > 0)
+	if w.uidSet {
+		reply.Header.UID = types.USHORT(w.uid)
+	}
+	if w.tidSet {
+		reply.Header.TID = types.USHORT(w.tid)
+	}
+
+	for _, cmd := range collected {
+		cmd.SetUnicode(w.request.Header.Flags2.IsUnicode())
+		reply.AddCommand(cmd)
+	}
+
+	// AddCommand takes the header's command code from the first command it is
+	// given, and the reply must echo the request's code regardless.
+	reply.Header.Command = w.request.Header.Command
+
+	// The size has to be known before sending, so the chain is marshalled here
+	// and framed below rather than handed straight to Connection.frame.
+	marshalled, err := reply.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal the response chain: %v", err)
+	}
+
+	// [MS-CIFS] section 2.2.3.4: the total size of a batched message MUST NOT
+	// exceed the negotiated MaxBufferSize. A chain that does cannot be trimmed
+	// after the fact — the commands have already run — so it is refused rather
+	// than sent as a message the client cannot receive.
+	if limit := int(w.conn.Server.config.MaxBufferSize); limit > 0 && len(marshalled) > limit {
+		return errChainTooLarge
+	}
+
+	// Signed and sent through the connection, like every other write: signing
+	// puts a signature inside the buffer being sent, so the two have to happen
+	// under one lock or a deferred answer's write could interleave with this one.
+	return w.conn.send(marshalled, w.signKey, w.signSequence)
+}
+
+// errChainTooLarge reports a batched response that does not fit in the negotiated
+// buffer, which the dispatcher answers with a status rather than a partial chain.
+var errChainTooLarge = errors.New("the batched response exceeds the negotiated buffer size")
 
 // Compile-time assurance that responseWriter satisfies the contract.
 var _ ResponseWriter = (*responseWriter)(nil)

@@ -15,8 +15,15 @@ func dosTime(h, m, twoSec uint8) types.SMB_TIME_DOS {
 	return types.SMB_TIME_DOS{Hours: h, Minutes: m, TwoSeconds: twoSec}
 }
 
-// TestInfoStandardRoundTrip verifies SMB_INFO_STANDARD is 12 bytes (six 2-byte DOS
-// date/time fields) and round-trips, confirming the 2-byte SMB_TIME_DOS layout.
+// TestInfoStandardRoundTrip verifies SMB_INFO_STANDARD is the 22 bytes [MS-CIFS]
+// section 2.2.8.3.1 specifies — six 2-byte DOS date and time fields, two 4-byte
+// sizes and a 2-byte attribute word — and that it round-trips.
+//
+// The size assertion previously read 12, which was the six date and time fields
+// alone: the three trailing fields were missing from the structure, so a client
+// reading the level found no size and no attributes. The neighbouring
+// SMB_INFO_QUERY_EA_SIZE is defined as this structure plus EaSize and always
+// carried all three, which is what showed the two disagreed.
 func TestInfoStandardRoundTrip(t *testing.T) {
 	in := &informationlevels.SMB_INFO_STANDARD{
 		Creationdate:   dosDate(2021, 6, 15),
@@ -25,20 +32,37 @@ func TestInfoStandardRoundTrip(t *testing.T) {
 		Lastaccesstime: dosTime(1, 2, 3),
 		Lastwritedate:  dosDate(2023, 12, 31),
 		Lastwritetime:  dosTime(23, 59, 29),
+		Filedatasize:   0x1000,
+		Allocationsize: 0x200,
 	}
+	in.Attributes.SetAttributes(0x0020)
+
 	raw, err := in.Marshal()
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if len(raw) != 12 {
-		t.Fatalf("expected 12 bytes, got %d", len(raw))
+	if len(raw) != informationlevels.SMB_INFO_STANDARD_SIZE {
+		t.Fatalf("expected %d bytes, got %d", informationlevels.SMB_INFO_STANDARD_SIZE, len(raw))
 	}
 	out := &informationlevels.SMB_INFO_STANDARD{}
-	if n, err := out.Unmarshal(raw); err != nil || n != 12 {
+	n, err := out.Unmarshal(raw)
+	if err != nil || n != informationlevels.SMB_INFO_STANDARD_SIZE {
 		t.Fatalf("Unmarshal: n=%d err=%v", n, err)
 	}
 	if *out != *in {
 		t.Errorf("mismatch:\n in  %+v\n out %+v", in, out)
+	}
+
+	// The level is a prefix of SMB_INFO_QUERY_EA_SIZE, which is that structure
+	// plus a 4-byte EaSize, so their sizes have to differ by exactly that.
+	eaSize := &informationlevels.SMB_INFO_QUERY_EA_SIZE{}
+	withEa, err := eaSize.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal SMB_INFO_QUERY_EA_SIZE: %v", err)
+	}
+	if len(withEa)-len(raw) != 4 {
+		t.Errorf("SMB_INFO_QUERY_EA_SIZE is %d bytes and SMB_INFO_STANDARD %d; they must differ by the 4-byte EaSize",
+			len(withEa), len(raw))
 	}
 }
 

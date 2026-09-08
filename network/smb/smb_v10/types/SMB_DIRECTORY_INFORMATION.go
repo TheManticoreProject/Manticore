@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -18,7 +19,11 @@ type SMB_DIRECTORY_INFORMATION struct {
 	FileAttributes UCHAR
 
 	// LastWriteTime (2 bytes): The time at which the file was last modified.
-	LastWriteTime SMB_TIME
+	//
+	// This is the 2-byte MS-DOS time, not the 8-byte FILETIME that the SMB_TIME
+	// alias resolves to — the two share a name across [MS-CIFS] and [MS-DTYP] and
+	// only one of them fits this field.
+	LastWriteTime SMB_TIME_DOS
 
 	// LastWriteDate (2 bytes): The date when the file was last modified.
 	LastWriteDate SMB_DATE
@@ -41,7 +46,7 @@ func NewSMB_DIRECTORY_INFORMATION() *SMB_DIRECTORY_INFORMATION {
 	return &SMB_DIRECTORY_INFORMATION{
 		ResumeKey:      SMB_RESUME_KEY{},
 		FileAttributes: UCHAR(0),
-		LastWriteTime:  SMB_TIME{},
+		LastWriteTime:  SMB_TIME_DOS{},
 		LastWriteDate:  SMB_DATE{},
 		FileSize:       ULONG(0),
 		FileName:       OEM_STRING{},
@@ -85,20 +90,26 @@ func (d *SMB_DIRECTORY_INFORMATION) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint32(fileSizeBytes, uint32(d.FileSize))
 	marshalled = append(marshalled, fileSizeBytes...)
 
-	// Marshal the FileName
+	// Marshal the FileName as the fixed 13-byte field.
+	//
+	// [MS-CIFS] section 2.2.8.1.4: the 8.3 name is left-justified, padded with
+	// spaces to 12 bytes, and the thirteenth byte is the terminating null. The
+	// bytes are written directly rather than through OEM_STRING.Marshal, which
+	// prefixes a buffer-format byte — correct where an SMB_STRING is expected and
+	// one byte too many here, which is enough to desynchronise the whole array.
 	fileName := d.FileName.GetString()
-	if len(fileName) > 12 {
-		return nil, fmt.Errorf("file name is too long")
+	if len(fileName) > smbDirectoryInformationNameLength {
+		return nil, fmt.Errorf("file name %q is longer than the %d bytes an 8.3 name field holds",
+			fileName, smbDirectoryInformationNameLength)
 	}
-	if len(fileName) < 12 {
-		fileName = fileName + strings.Repeat(" ", 12-len(fileName))
+
+	nameField := make([]byte, smbDirectoryInformationNameLength+1)
+	copy(nameField, fileName)
+	for index := len(fileName); index < smbDirectoryInformationNameLength; index++ {
+		nameField[index] = ' '
 	}
-	d.FileName.SetString(fileName)
-	fileNameBytes, err := d.FileName.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	marshalled = append(marshalled, fileNameBytes...)
+	// The final byte stays zero: the terminating null.
+	marshalled = append(marshalled, nameField...)
 
 	return marshalled, nil
 }
@@ -151,15 +162,30 @@ func (d *SMB_DIRECTORY_INFORMATION) Unmarshal(data []byte) (int, error) {
 	d.FileSize = ULONG(binary.LittleEndian.Uint32(data[offset : offset+4]))
 	offset += 4
 
-	// Unmarshal the FileName
-	if offset+13 > len(data) {
+	// Unmarshal the FileName from the fixed 13-byte field, trimming the padding
+	// and the terminator that the format requires.
+	if offset+smbDirectoryInformationNameLength+1 > len(data) {
 		return offset, fmt.Errorf("data too short for FileName")
 	}
-	bytesRead, err = d.FileName.Unmarshal(data[offset : offset+13])
-	if err != nil {
-		return offset, err
+	nameField := data[offset : offset+smbDirectoryInformationNameLength+1]
+	if terminator := bytes.IndexByte(nameField, 0x00); terminator >= 0 {
+		nameField = nameField[:terminator]
 	}
-	offset += bytesRead
+	d.FileName.SetString(strings.TrimRight(string(nameField), " "))
+	offset += smbDirectoryInformationNameLength + 1
 
 	return offset, nil
 }
+
+// smbDirectoryInformationNameLength is the number of name bytes in the entry's
+// FileName field, which is followed by a single terminating null to make 13.
+const smbDirectoryInformationNameLength = 12
+
+// SMB_DIRECTORY_INFORMATION_SIZE is the size of the structure on the wire:
+// ResumeKey(21) FileAttributes(1) LastWriteTime(2) LastWriteDate(2) FileSize(4)
+// FileName(13), per [MS-CIFS] section 2.2.8.1.4.
+//
+// The entries are fixed-size and packed with no offset linking them, so a client
+// walks the array by this stride. An entry of any other length desynchronises
+// everything after it.
+const SMB_DIRECTORY_INFORMATION_SIZE = 43
