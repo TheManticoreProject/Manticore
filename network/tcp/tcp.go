@@ -13,6 +13,13 @@ import (
 // generous upper bound that rejects DoS-scale frames without blocking legitimate traffic.
 const MaxDirectTCPPayloadSize = 1 * 1024 * 1024
 
+// MaxDirectTCPFrameLength is the largest payload the Direct TCP session service can
+// describe: [MS-SMB2] 2.1 gives the header as a zero byte followed by a 3-byte
+// big-endian length, so a longer payload has no representable length and MUST NOT be
+// sent. This bounds what Send will encode; MaxDirectTCPPayloadSize is the separate,
+// stricter policy applied to what Receive will accept.
+const MaxDirectTCPFrameLength = 0xFFFFFF
+
 // TCPTransport implements the Transport interface for Direct TCP transport
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/f906c680-330c-43ae-9a71-f854e24aeee6
 type TCPTransport struct {
@@ -83,10 +90,17 @@ func (t *TCPTransport) Send(data []byte) (int, error) {
 		return 0, fmt.Errorf("not connected")
 	}
 
+	// The length field is 3 bytes wide, so a longer payload cannot be described.
+	// Truncating it would leave the peer framing the rest of the stream at the wrong
+	// offset, with nothing at the sender to indicate it happened.
+	length := len(data)
+	if length > MaxDirectTCPFrameLength {
+		return 0, fmt.Errorf("Direct TCP message too large: %d bytes (max %d)", length, MaxDirectTCPFrameLength)
+	}
+
 	// Create Direct TCP header
 	header := []byte{0x00} // First byte must be 0
 	// Set length in big-endian format (3 bytes)
-	length := len(data)
 	header = append(header, byte((length>>16)&0xFF))
 	header = append(header, byte((length>>8)&0xFF))
 	header = append(header, byte(length&0xFF))

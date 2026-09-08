@@ -1,6 +1,8 @@
 package tcp_test
 
 import (
+	"bytes"
+	"io"
 	"net"
 	"strconv"
 	"testing"
@@ -181,5 +183,95 @@ func TestTCPTransport_ReceiveTimesOutOnSilentServer(t *testing.T) {
 	}
 	if elapsed > 5*time.Second {
 		t.Fatalf("TCPTransport.Receive() took %v to fail, want a bounded timeout", elapsed)
+	}
+}
+
+// dialLoopback starts a listener, hands the accepted connection back on a channel,
+// and returns a transport already connected to it.
+func dialLoopback(t *testing.T) (*tcp.TCPTransport, <-chan net.Conn) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start test server: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			close(accepted)
+			return
+		}
+		accepted <- c
+	}()
+
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to parse listener address: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	tr := tcp.NewTCPTransport()
+	tr.SetTimeout(2 * time.Second)
+	if err := tr.Connect(net.ParseIP(host), port); err != nil {
+		t.Fatalf("TCPTransport.Connect() error = %v", err)
+	}
+	t.Cleanup(func() { tr.Close() })
+
+	return tr, accepted
+}
+
+// TestTCPTransport_SendWritesDirectTCPHeader pins the framing Send emits: a zero
+// byte followed by the 3-byte big-endian payload length ([MS-SMB2] 2.1).
+func TestTCPTransport_SendWritesDirectTCPHeader(t *testing.T) {
+	tr, accepted := dialLoopback(t)
+
+	payload := []byte{0xFE, 'S', 'M', 'B'}
+	if _, err := tr.Send(payload); err != nil {
+		t.Fatalf("TCPTransport.Send() error = %v", err)
+	}
+
+	conn := <-accepted
+	defer conn.Close()
+
+	got := make([]byte, 4+len(payload))
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("failed to set read deadline: %v", err)
+	}
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("failed to read frame: %v", err)
+	}
+
+	want := []byte{0x00, 0x00, 0x00, 0x04, 0xFE, 'S', 'M', 'B'}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Send() wrote % x, want % x", got, want)
+	}
+}
+
+// TestTCPTransport_SendRejectsOversizedPayload guards the length-truncation bug: a
+// payload above the 24-bit field must be refused, not encoded modulo 2^24. At
+// exactly MaxDirectTCPFrameLength+1 the truncated length would be 0, so the peer
+// would frame the remainder of the stream at the wrong offset.
+func TestTCPTransport_SendRejectsOversizedPayload(t *testing.T) {
+	tr, accepted := dialLoopback(t)
+
+	// Drain the peer for the duration of the test. Without this the unguarded code
+	// path blocks forever on TCP backpressure partway through the 16 MiB write, so a
+	// regression would hang the suite instead of failing it.
+	conn := <-accepted
+	defer conn.Close()
+	go io.Copy(io.Discard, conn)
+
+	n, err := tr.Send(make([]byte, tcp.MaxDirectTCPFrameLength+1))
+	if err == nil {
+		t.Fatalf("TCPTransport.Send() accepted a payload larger than the 24-bit length field, wrote %d bytes", n)
+	}
+	if n != 0 {
+		t.Errorf("TCPTransport.Send() wrote %d byte(s) for a rejected message, want 0", n)
 	}
 }
