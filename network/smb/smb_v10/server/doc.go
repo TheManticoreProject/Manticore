@@ -14,41 +14,67 @@
 // the protocol to look functional while refusing everything that matters.
 //
 // Implemented:
+//
 //   - Listening on Direct TCP (445) and NetBIOS over TCP (139), via
 //     network/smb/common/transport.
+//
 //   - The per-connection receive loop, request decoding, the handler chain, and
 //     response framing with correlated reply headers.
+//
 //   - Error responses in both encodings: the NTSTATUS form, and the legacy
 //     SMBSTATUS class/code form for a client that did not negotiate
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
+//
 //   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
 //     security.
+//
 //   - SMB_COM_SESSION_SETUP_ANDX, including verifying the response against a
 //     credential, establishing a session, and the guest and anonymous policies.
+//
 //   - SMB_COM_LOGOFF_ANDX.
+//
 //   - SMB_COM_ECHO.
+//
 //   - Message signing in both directions, when the policy calls for it.
+//
 //   - Tree connect and disconnect against a registered share.
+//
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
 //     responses both fragment across as many messages as they need.
+//
 //   - Security descriptors and file-system controls, over NT_TRANSACT:
 //     QUERY_SECURITY_DESC, SET_SECURITY_DESC and IOCTL. SMB_COM_NT_CANCEL is
 //     accepted silently, since nothing here leaves a request outstanding.
+//
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
 //     PipeHandler is all an RPC service needs to be reachable over SMB1. An answer
 //     too large for one response is collected with TRANS_READ_NMPIPE,
 //     TRANS_PEEK_NMPIPE or SMB_COM_READ_ANDX on the same handle.
+//
 //   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
 //     the pass-through information classes above 0x03E8 that carry the native
 //     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
 //     free space after a listing whether or not anything wanted it, so leaving
 //     these unanswered puts an error in every session.
+//
+//   - The pass-through information classes for files, in both directions: the
+//     basic, standard, internal, EA, access, position, name, alternate-name,
+//     network-open and all classes for a query, and the basic, disposition,
+//     allocation, end-of-file and rename classes for a set. Those structures come
+//     from windows/filesystem rather than being assembled here, so their layouts
+//     are the ones the rest of the repository agrees on.
+//
+//     A pass-through structure's strings are UTF-16LE whatever the message
+//     declared, which is the one place in this package where a name's encoding
+//     does not follow SMB_FLAGS2_UNICODE: an SMB level carries an SMB string, but
+//     a pass-through level carries the [MS-FSCC] structure verbatim.
 //
 // All three transaction families share one reassembly, since they are the same
 // shape at different field widths: totals, a per-message count and a
