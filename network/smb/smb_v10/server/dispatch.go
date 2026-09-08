@@ -77,6 +77,7 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_CREATE_DIRECTORY: handleCreateDirectory,
 	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
 	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
+	codes.SMB_COM_NT_RENAME:        handleNtRename,
 
 	// The core-set directory search, which a client that does not use
 	// TRANSACTION2 enumerates with.

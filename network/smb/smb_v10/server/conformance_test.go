@@ -147,6 +147,7 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_CREATE_DIRECTORY: "creates a directory",
 	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
 	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
+	codes.SMB_COM_NT_RENAME:        "renames an entry, or gives it a second name",
 
 	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
 

@@ -42,6 +42,18 @@
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
 //
+//   - SMB_COM_NT_RENAME, which renames an entry at SMB_NT_RENAME_RENAME_FILE and
+//     gives it a second name at SMB_NT_RENAME_SET_LINK_INFO. Linking needs a
+//     backend that implements Linker; one that does not is answered
+//     STATUS_NOT_SUPPORTED rather than given a copy, because a copy is a second
+//     file and not a second name, and the two diverge as soon as either is
+//     written.
+//
+//     SMB_COM_COPY and SMB_COM_MOVE stay refused: [MS-CIFS] sections 2.2.4.37
+//     and 2.2.4.38 record both as obsolete in the NT LAN Manager dialect — the
+//     only dialect this server speaks — and have servers answer
+//     STATUS_NOT_IMPLEMENTED, which is what happens.
+//
 //   - The core-set file access commands, which a client that does not use the NT
 //     commands opens and transfers with: SMB_COM_OPEN, SMB_COM_OPEN_ANDX,
 //     SMB_COM_CREATE, SMB_COM_CREATE_NEW, SMB_COM_CREATE_TEMPORARY,
@@ -174,6 +186,11 @@
 // invented for them is a number a client would believe.
 //
 // # Shares
+//
+// A FileSystem may also implement Linker, which lets SMB_COM_NT_RENAME give a
+// file a second name. It is a separate interface so that adding it does not break
+// a backend outside this repository: one that cannot link simply does not
+// implement it.
 //
 // A Share is registered with AddShare and backed by a FileSystem.
 // NewLocalFileSystem serves a directory on the host; NewMemoryFileSystem serves
