@@ -28,11 +28,19 @@ const noDialectSelected = 0xFFFF
 // absent because raw transfers, the combined lock-and-read command and oplocks are
 // not implemented; advertising them would have clients issue commands that are
 // then refused.
+//
+// CAP_LARGE_READX and CAP_LARGE_WRITEX let one read or write exceed the
+// negotiated MaxBufferSize, bounded by Config.MaxLargeTransfer. Both are a
+// two-sided agreement: [MS-SMB] section 2.2.4.5.2.1 has the capability take
+// effect only when the client sets it in its session setup too, so a client that
+// does not ask keeps the old bound.
 const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_LARGE_FILES |
 	capabilities.CAP_NT_SMBS |
 	capabilities.CAP_NT_STATUS |
 	capabilities.CAP_NT_FIND |
+	capabilities.CAP_LARGE_READX |
+	capabilities.CAP_LARGE_WRITEX |
 	capabilities.CAP_EXTENDED_SECURITY
 
 // handleNegotiate answers SMB_COM_NEGOTIATE: it selects a dialect from the list

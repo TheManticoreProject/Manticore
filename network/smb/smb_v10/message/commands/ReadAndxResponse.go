@@ -15,7 +15,8 @@ import (
 
 // readAndxResponseParameterWords is the fixed number of 2-byte parameter words in
 // an SMB_COM_READ_ANDX response: the 2-word AndX block plus Available,
-// DataCompactionMode, Reserved1, DataLength, DataOffset, and the 5-word Reserved2.
+// DataCompactionMode, Reserved1, DataLength, DataOffset, DataLengthHigh, and the
+// 4-word Reserved2.
 const readAndxResponseParameterWords = 12
 
 // readAndxResponseDataOffset is the offset, in bytes from the start of the SMB
@@ -50,10 +51,21 @@ type ReadAndxResponse struct {
 	// DataOffset (2 bytes): The offset in bytes from the header of the read data.
 	DataOffset types.USHORT
 
-	// Reserved2 (10 bytes): Reserved. All entries MUST be 0x0000. The last 5 words are
+	// DataLengthHigh (2 bytes): The high 16 bits of the number of bytes returned,
+	// which is how a read of more than 0xFFFF bytes describes its length.
+	//
+	// [MS-CIFS] section 2.2.4.42.2 has this as the first word of a 5-word
+	// Reserved2; [MS-SMB] section 2.2.4.2.2 extends "the first two bytes of the
+	// SMB_Parameters.Words.Reserved2[] field [...] for use as the new
+	// DataLengthHigh field", leaving four reserved words behind it. Naming it
+	// here rather than writing into Reserved2[0] keeps a server that answers a
+	// large read from looking like it is filling in a reserved field.
+	DataLengthHigh types.USHORT
+
+	// Reserved2 (8 bytes): Reserved. All entries MUST be 0x0000. These words are
 	// reserved in order to make the SMB_COM_READ_ANDX Response the same size as the
 	// SMB_COM_WRITE_ANDX Response.
-	Reserved2 [5]types.USHORT
+	Reserved2 [4]types.USHORT
 
 	// Data
 
@@ -161,6 +173,11 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf2, uint16(c.DataOffset))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
+	// Marshalling parameter DataLengthHigh
+	buf2 = make([]byte, 2)
+	binary.LittleEndian.PutUint16(buf2, uint16(c.DataLengthHigh))
+	rawParametersContent = append(rawParametersContent, buf2...)
+
 	// Marshalling parameter Reserved2
 	for _, reserved := range c.Reserved2 {
 		buf2 = make([]byte, 2)
@@ -263,6 +280,13 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 		return offset, fmt.Errorf("rawParametersContent too short for DataOffset")
 	}
 	c.DataOffset = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+	offset += 2
+
+	// Unmarshalling parameter DataLengthHigh
+	if len(rawParametersContent) < offset+2 {
+		return offset, fmt.Errorf("rawParametersContent too short for DataLengthHigh")
+	}
+	c.DataLengthHigh = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
 
 	// Unmarshalling parameter Reserved2
