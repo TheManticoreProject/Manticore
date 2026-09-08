@@ -14,6 +14,14 @@ import (
 
 // LockingAndxRequest
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/b5c6eae7-976b-4444-b52e-c76c68c861ad
+// LockingAndxLargeFiles is the TypeOfLock bit that selects the wire format of the
+// Locks and Unlocks arrays: set, they are 20-byte LOCKING_ANDX_RANGE64 entries;
+// clear, they are 10-byte LOCKING_ANDX_RANGE32 entries ([MS-CIFS] 2.2.4.32.1).
+//
+// Both are held in memory as LOCKING_ANDX_RANGE64, which is the wider of the two,
+// so a caller works with one shape and this bit decides only what goes on the wire.
+const LockingAndxLargeFiles = 0x10
+
 type LockingAndxRequest struct {
 	command_interface.Command
 
@@ -135,20 +143,21 @@ func (c *LockingAndxRequest) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshal Unlocks
-	for _, unlock := range c.Unlocks {
-		unlockBytes, err := unlock.Marshal()
+	// Marshal Unlocks and Locks in whichever range format TypeOfLock declares.
+	largeFiles := c.UsesLargeFileRanges()
+
+	for index, unlock := range c.Unlocks {
+		unlockBytes, err := marshalLockingRange(unlock, largeFiles)
 		if err != nil {
-			return nil, fmt.Errorf("error marshalling unlock: %v", err)
+			return nil, fmt.Errorf("error marshalling unlock %d: %v", index, err)
 		}
 		rawDataContent = append(rawDataContent, unlockBytes...)
 	}
 
-	// Marshal Locks
-	for _, lock := range c.Locks {
-		lockBytes, err := lock.Marshal()
+	for index, lock := range c.Locks {
+		lockBytes, err := marshalLockingRange(lock, largeFiles)
 		if err != nil {
-			return nil, fmt.Errorf("error marshalling lock: %v", err)
+			return nil, fmt.Errorf("error marshalling lock %d: %v", index, err)
 		}
 		rawDataContent = append(rawDataContent, lockBytes...)
 	}
@@ -289,29 +298,24 @@ func (c *LockingAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	// Then unmarshal the data
 	offset = 0
 
-	// Unmarshal Unlocks
+	// Unmarshal Unlocks and Locks from whichever range format TypeOfLock declares.
+	// Reading the wrong one does not fail cleanly: the two differ in width, so a
+	// 32-bit array read as 64-bit yields ranges assembled from adjacent entries.
+	largeFiles := c.UsesLargeFileRanges()
+
 	for i := 0; i < int(c.NumberOfRequestedUnlocks); i++ {
-		if len(rawDataContent) < offset+20 {
-			return offset, fmt.Errorf("rawDataContent too short for Unlocks[%d]", i)
-		}
-		unlock := types.LOCKING_ANDX_RANGE64{}
-		bytesRead, err := unlock.Unmarshal(rawDataContent[offset : offset+20])
+		unlock, bytesRead, err := unmarshalLockingRange(rawDataContent[offset:], largeFiles)
 		if err != nil {
-			return offset, fmt.Errorf("error unmarshalling unlock: %v", err)
+			return offset, fmt.Errorf("error unmarshalling unlock %d: %v", i, err)
 		}
 		c.Unlocks = append(c.Unlocks, unlock)
 		offset += bytesRead
 	}
 
-	// Unmarshal Locks
 	for i := 0; i < int(c.NumberOfRequestedLocks); i++ {
-		if len(rawDataContent) < offset+20 {
-			return offset, fmt.Errorf("rawDataContent too short for Locks[%d]", i)
-		}
-		lock := types.LOCKING_ANDX_RANGE64{}
-		bytesRead, err := lock.Unmarshal(rawDataContent[offset : offset+20])
+		lock, bytesRead, err := unmarshalLockingRange(rawDataContent[offset:], largeFiles)
 		if err != nil {
-			return offset, fmt.Errorf("error unmarshalling lock: %v", err)
+			return offset, fmt.Errorf("error unmarshalling lock %d: %v", i, err)
 		}
 		c.Locks = append(c.Locks, lock)
 		offset += bytesRead
@@ -319,3 +323,96 @@ func (c *LockingAndxRequest) Unmarshal(rawData []byte) (int, error) {
 
 	return offset, nil
 }
+
+// UsesLargeFileRanges reports whether this request's Locks and Unlocks arrays are
+// in the 64-bit LOCKING_ANDX_RANGE64 wire format, which the LARGE_FILES bit of
+// TypeOfLock selects.
+//
+// Returns:
+//   - true when the arrays are 20-byte 64-bit entries, false for 10-byte 32-bit ones
+func (c *LockingAndxRequest) UsesLargeFileRanges() bool {
+	return uint8(c.TypeOfLock)&LockingAndxLargeFiles != 0
+}
+
+// marshalLockingRange emits one byte range in the requested wire format.
+//
+// A range whose offset or length needs more than 32 bits cannot be expressed in
+// the 32-bit format. That is refused rather than truncated: a truncated offset
+// names a different part of the file, so the lock would be taken somewhere the
+// caller did not ask for and the caller would be told it succeeded.
+//
+// Parameters:
+//   - lockingRange: the range to emit, held in the wider of the two forms
+//   - largeFiles: whether to emit the 64-bit form
+//
+// Returns:
+//   - The marshalled range, or an error
+func marshalLockingRange(lockingRange types.LOCKING_ANDX_RANGE64, largeFiles bool) ([]byte, error) {
+	if largeFiles {
+		return lockingRange.Marshal()
+	}
+
+	if lockingRange.ByteOffsetHigh != 0 || lockingRange.LengthInBytesHigh != 0 {
+		return nil, fmt.Errorf(
+			"range at offset 0x%08X%08X for 0x%08X%08X bytes does not fit the 32-bit format; set the LARGE_FILES bit of TypeOfLock",
+			uint32(lockingRange.ByteOffsetHigh), uint32(lockingRange.ByteOffsetLow),
+			uint32(lockingRange.LengthInBytesHigh), uint32(lockingRange.LengthInBytesLow))
+	}
+
+	narrow := types.LOCKING_ANDX_RANGE32{
+		PID:           lockingRange.PID,
+		ByteOffset:    lockingRange.ByteOffsetLow,
+		LengthInBytes: lockingRange.LengthInBytesLow,
+	}
+	return narrow.Marshal()
+}
+
+// unmarshalLockingRange reads one byte range in the given wire format and returns
+// it in the wider of the two forms, so a caller has one shape to work with.
+//
+// Parameters:
+//   - data: the bytes at the start of the range
+//   - largeFiles: whether the range is in the 64-bit form
+//
+// Returns:
+//   - The range, the number of bytes it occupied, or an error
+func unmarshalLockingRange(data []byte, largeFiles bool) (types.LOCKING_ANDX_RANGE64, int, error) {
+	if largeFiles {
+		wide := types.LOCKING_ANDX_RANGE64{}
+		if len(data) < lockingRange64Size {
+			return wide, 0, fmt.Errorf("data too short for a 64-bit range: got %d bytes, need %d",
+				len(data), lockingRange64Size)
+		}
+		bytesRead, err := wide.Unmarshal(data[:lockingRange64Size])
+		return wide, bytesRead, err
+	}
+
+	narrow := types.LOCKING_ANDX_RANGE32{}
+	if len(data) < lockingRange32Size {
+		return types.LOCKING_ANDX_RANGE64{}, 0, fmt.Errorf(
+			"data too short for a 32-bit range: got %d bytes, need %d", len(data), lockingRange32Size)
+	}
+	bytesRead, err := narrow.Unmarshal(data[:lockingRange32Size])
+	if err != nil {
+		return types.LOCKING_ANDX_RANGE64{}, 0, err
+	}
+
+	// Widened, not reinterpreted: the 32-bit form has no high words, so they are
+	// zero rather than unknown.
+	return types.LOCKING_ANDX_RANGE64{
+		PID:               narrow.PID,
+		Pad:               0,
+		ByteOffsetHigh:    0,
+		ByteOffsetLow:     narrow.ByteOffset,
+		LengthInBytesHigh: 0,
+		LengthInBytesLow:  narrow.LengthInBytes,
+	}, bytesRead, nil
+}
+
+// The two range formats' sizes on the wire, from [MS-CIFS] 2.2.4.32.1:
+// LOCKING_ANDX_RANGE32 is PID(2) ByteOffset(4) LengthInBytes(4), and
+// LOCKING_ANDX_RANGE64 is PID(2) Pad(2) then four 4-byte words.
+const (
+	lockingRange32Size = 10
+	lockingRange64Size = 20
+)
