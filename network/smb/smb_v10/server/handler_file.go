@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/logger"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -345,8 +346,8 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 	// Bounded by what the client asked for and by what the connection agreed a
 	// message may carry, so a client cannot ask for a response it could not
 	// receive.
-	length := int(request.MaxCountOfBytesToReturn)
-	if limit := int(conn.Server.config.MaxBufferSize) - readResponseOverhead; length > limit {
+	length := readLengthOf(conn, open, request)
+	if limit := conn.readLimit(); length > limit {
 		length = limit
 	}
 	if length < 0 {
@@ -385,7 +386,11 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 
 	response := commands.NewReadAndxResponse()
 	response.Data = buffer[:read]
-	response.DataLength = types.USHORT(read)
+	// DataLength is 16 bits, so a read of 0x10000 bytes or more describes its
+	// length across DataLength and DataLengthHigh ([MS-SMB] section 2.2.4.2.2).
+	// Reporting only the low word would tell the client it received nothing.
+	response.DataLength = types.USHORT(read & 0xFFFF)
+	response.DataLengthHigh = types.USHORT(read >> 16)
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the read for %s: %v", conn.Remote, err)
@@ -397,6 +402,74 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 // 32-byte header, the parameter words and the byte count. Reserving it keeps a
 // full-size read inside the negotiated buffer.
 const readResponseOverhead = 64
+
+// largeTransfersAgreed reports whether a capability that both sides have to set
+// is in force on this connection.
+//
+// [MS-SMB] section 2.2.4.5.2.1 makes CAP_LARGE_READX and CAP_LARGE_WRITEX
+// two-sided: the server advertises them in its negotiate response and the
+// capability takes effect only when the client sets it in its session setup as
+// well. A server that acted on its own advertisement alone would answer a client
+// that never agreed with a message that client cannot receive.
+func largeTransfersAgreed(conn *Connection, capability capabilities.Capabilities) bool {
+	return serverCapabilities&capability != 0 && conn.ClientCapabilities&capability != 0
+}
+
+// readLimit is the largest read this connection may be answered with.
+//
+// Signing overrides the large-read capability entirely. [MS-SMB] section
+// 2.2.4.5.2.1: "When signing is active on a connection, then clients MUST limit
+// read lengths to the MaxBufferSize value negotiated by the server irrespective
+// of the value of the CAP_LARGE_READX flag." A signed response is verified over
+// the bytes as sent, so a client that sized its buffer to MaxBufferSize and
+// received more would fail the signature rather than merely truncate.
+func (c *Connection) readLimit() int {
+	if c.SigningActive || !largeTransfersAgreed(c, capabilities.CAP_LARGE_READX) {
+		return int(c.Server.config.MaxBufferSize) - readResponseOverhead
+	}
+
+	limit := c.Server.config.MaxLargeTransfer
+	if limit <= 0 {
+		limit = DefaultMaxLargeTransfer
+	}
+	return limit
+}
+
+// readLengthOf is how many bytes a read request asked for.
+//
+// Under CAP_LARGE_READX the Timeout field is overloaded: [MS-SMB] section
+// 2.2.4.2.1 defines it as "a union of a 32-bit Timeout field and a 16-bit
+// MaxCountHigh field", read as MaxCountHigh for a regular file and as Timeout for
+// a named pipe or an I/O device. So the handle decides how the field is read, and
+// treating a pipe's timeout as a length would ask the backend for gigabytes
+// because the client asked it to wait a while.
+func readLengthOf(conn *Connection, open *Open, request *commands.ReadAndxRequest) int {
+	length := int(request.MaxCountOfBytesToReturn)
+	if open.IsPipe || !largeTransfersAgreed(conn, capabilities.CAP_LARGE_READX) {
+		return length
+	}
+
+	// MaxCountHigh is the first word of the union and the second is Reserved,
+	// which the server must ignore: [MS-SMB] section 2.2.4.2.1 says the client
+	// "SHOULD be set to 0xFFFF [...] if MaxCountHigh is 0xFFFF" and that "For all
+	// values, this field MUST be ignored by the server". Rejecting a request that
+	// set it would refuse the largest read a client is told to ask for.
+	return int(uint32(request.Timeout)&0xFFFF)<<16 | length
+}
+
+// writeLengthOf is how many bytes a write request says it carries.
+//
+// Under CAP_LARGE_WRITEX the CIFS Reserved field becomes DataLengthHigh
+// ([MS-SMB] section 2.2.4.3.1), which is the only way to describe a write above
+// 0xFFFF bytes. Reading it when the capability was not agreed would turn a
+// reserved field a client left non-zero into a length.
+func writeLengthOf(conn *Connection, request *commands.WriteAndxRequest) int {
+	declared := int(request.DataLength)
+	if !largeTransfersAgreed(conn, capabilities.CAP_LARGE_WRITEX) {
+		return declared
+	}
+	return int(request.DataLengthHigh())<<16 | declared
+}
 
 // readPipeHandle answers SMB_COM_READ_ANDX against a pipe handle, from the answer
 // buffered on it.
@@ -485,7 +558,7 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	// The declared length governs, but never past what actually arrived: the two
 	// disagreeing is a malformed request, not licence to read past the buffer.
 	data := []byte(request.Data)
-	if declared := int(request.DataLength); declared < len(data) {
+	if declared := writeLengthOf(conn, request); declared < len(data) {
 		data = data[:declared]
 	}
 
@@ -515,7 +588,12 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	}
 
 	response := commands.NewWriteAndxResponse()
-	response.Count = types.USHORT(written)
+	// Count is 16 bits, so a write of 0x10000 bytes or more reports what it wrote
+	// across Count and CountHigh ([MS-SMB] section 2.2.4.3.2). Reporting only the
+	// low word would tell the client that a 64 KiB write wrote nothing, and a
+	// client that retried from there would write the same bytes twice.
+	response.Count = types.USHORT(written & 0xFFFF)
+	response.CountHigh = types.USHORT(written >> 16)
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the write for %s: %v", conn.Remote, err)

@@ -29,6 +29,11 @@ const noDialectSelected = 0xFFFF
 // not implemented; advertising them would have clients issue commands that are
 // then refused.
 //
+// CAP_LARGE_READX and CAP_LARGE_WRITEX let one read or write exceed the
+// negotiated MaxBufferSize, bounded by Config.MaxLargeTransfer. Both are a
+// two-sided agreement: [MS-SMB] section 2.2.4.5.2.1 has the capability take
+// effect only when the client sets it in its session setup too, so a client that
+// does not ask keeps the old bound.
 // CAP_INFOLEVEL_PASSTHROUGH is advertised because the pass-through information
 // range is served for both files and volumes. A client may ask in that range
 // without being told it can, so advertising it changes nothing about what is
@@ -39,6 +44,8 @@ const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_NT_SMBS |
 	capabilities.CAP_NT_STATUS |
 	capabilities.CAP_NT_FIND |
+	capabilities.CAP_LARGE_READX |
+	capabilities.CAP_LARGE_WRITEX |
 	capabilities.CAP_INFOLEVEL_PASSTHROUGH |
 	capabilities.CAP_EXTENDED_SECURITY
 

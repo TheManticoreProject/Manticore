@@ -64,6 +64,16 @@
 //     free space after a listing whether or not anything wanted it, so leaving
 //     these unanswered puts an error in every session.
 //
+// A read or a write may exceed the negotiated MaxBufferSize once both sides have
+// agreed CAP_LARGE_READX or CAP_LARGE_WRITEX, bounded by Config.MaxLargeTransfer.
+// Signing overrides that: a signed response is verified over the bytes as sent, so
+// a client that sized its buffer to MaxBufferSize and received more would fail the
+// signature rather than merely truncate, and [MS-SMB] has clients hold to
+// MaxBufferSize whenever signing is active.
+//
+// The ceiling stays under 0x10000 because SMB_Data.ByteCount is a USHORT that no
+// extension widens, so a larger data block could not describe its own length.
+//
 //   - The pass-through information classes for files, in both directions: the
 //     basic, standard, internal, EA, access, position, name, alternate-name,
 //     network-open and all classes for a query, and the basic, disposition,
