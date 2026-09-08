@@ -81,7 +81,15 @@ func (s *Session) SessionSetup() error {
 	requestStep1Msg.Header.TID = 65535
 	requestStep1Msg.Header.UID = 0
 
-	sessionSetupCmd.MaxBufferSize = types.USHORT(s.Client.Connection.Server.MaxBufferSize)
+	// The client declares its own receive buffer here. Narrowing the server's
+	// 32-bit advertised value into this 16-bit field discards its high half, and a
+	// server advertising an exact multiple of 65536 — 65536 itself is common —
+	// would be told the client can receive nothing.
+	maxBufferSize := s.Client.MaxBufferSize
+	if maxBufferSize == 0 {
+		maxBufferSize = DefaultMaxBufferSize
+	}
+	sessionSetupCmd.MaxBufferSize = types.USHORT(maxBufferSize)
 	sessionSetupCmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
 	sessionSetupCmd.Capabilities = s.Client.Connection.Server.Capabilities
 
