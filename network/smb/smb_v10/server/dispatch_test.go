@@ -270,10 +270,15 @@ func TestUnimplementedCommandIsRefused(t *testing.T) {
 	_, addr := serverWithAccount(t, SigningDisabled, nil)
 	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
-	// SMB_COM_SEEK is a recognized command that no handler serves yet.
-	request := newRequest(codes.SMB_COM_SEEK)
+	// SMB_COM_CLOSE_AND_TREE_DISC is recognized and will never be served:
+	// [MS-CIFS] section 2.2.4.45 records it as "reserved but not implemented" and
+	// has servers "return STATUS_NOT_IMPLEMENTED", so it is a durable stand-in
+	// for an unserved command. SMB_COM_SEEK stood here until it was served, at
+	// which point this test failed for a reason that had nothing to do with what
+	// it is checking.
+	request := newRequest(codes.SMB_COM_CLOSE_AND_TREE_DISC)
 	request.Header.UID = session.uid
-	request.AddCommand(commands.NewSeekRequest())
+	request.AddCommand(commands.NewCloseAndTreeDiscRequest())
 	sendRequest(t, session.client, request)
 
 	response, raw := receiveResponse(t, session.client)
@@ -303,11 +308,11 @@ func TestUnimplementedCommandUsesLegacyStatusEncoding(t *testing.T) {
 	_, addr := serverWithAccount(t, SigningDisabled, nil)
 	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, false)
 
-	request := newRequest(codes.SMB_COM_SEEK)
+	request := newRequest(codes.SMB_COM_CLOSE_AND_TREE_DISC)
 	request.Header.UID = session.uid
 	// Clear the NT-status bit, leaving an old-style client.
 	request.Header.Flags2 &= ^flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES)
-	request.AddCommand(commands.NewSeekRequest())
+	request.AddCommand(commands.NewCloseAndTreeDiscRequest())
 	sendRequest(t, session.client, request)
 
 	response, _ := receiveResponse(t, session.client)

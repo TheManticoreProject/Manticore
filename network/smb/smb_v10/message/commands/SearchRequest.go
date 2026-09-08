@@ -56,6 +56,14 @@ type SearchRequest struct {
 	// the client and the server to maintain the state of the search. The structure of the
 	// ResumeKey follows:
 	ResumeKey types.SMB_RESUME_KEY
+
+	// ResumeKeyPresent records whether a ResumeKey accompanies the request.
+	//
+	// It is not a wire field: ResumeKeyLength being zero rather than 21 is how a
+	// client says "this is an initial search", and that distinction would
+	// otherwise be lost, since a zero-valued key and an absent one are different
+	// requests.
+	ResumeKeyPresent bool
 }
 
 // NewSearchRequest creates a new SearchRequest structure
@@ -120,12 +128,31 @@ func (c *SearchRequest) Marshal() ([]byte, error) {
 	}
 	rawDataContent = append(rawDataContent, bytesStream...)
 
-	// Marshalling data ResumeKey
-	bytesStream, err = c.ResumeKey.MarshalWithEncoding(c.IsUnicode())
-	if err != nil {
-		return nil, err
+	// Marshalling data BufferFormat2, ResumeKeyLength and ResumeKey.
+	//
+	// [MS-CIFS] section 2.2.4.58.1 puts the format byte and the length in the
+	// request's own data block, ahead of the fixed 21-byte key. They are written
+	// here rather than by SMB_RESUME_KEY.Marshal because the same key appears
+	// bare inside an SMB_DIRECTORY_INFORMATION entry, where neither field is
+	// present — one marshaller cannot produce both shapes.
+	//
+	// A ResumeKeyLength of zero means an initial search and no key follows; 21
+	// means this request continues a previous one.
+	rawDataContent = append(rawDataContent, types.SMB_STRING_BUFFER_FORMAT_VARIABLE_BLOCK)
+
+	if c.ResumeKeyPresent {
+		bytesStream, err = c.ResumeKey.Marshal()
+		if err != nil {
+			return nil, err
+		}
+
+		resumeKeyLength := make([]byte, 2)
+		binary.LittleEndian.PutUint16(resumeKeyLength, uint16(len(bytesStream)))
+		rawDataContent = append(rawDataContent, resumeKeyLength...)
+		rawDataContent = append(rawDataContent, bytesStream...)
+	} else {
+		rawDataContent = append(rawDataContent, 0x00, 0x00)
 	}
-	rawDataContent = append(rawDataContent, bytesStream...)
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -225,12 +252,27 @@ func (c *SearchRequest) Unmarshal(rawData []byte) (int, error) {
 	}
 	offset += bytesRead
 
-	// Unmarshalling data ResumeKey
-	bytesRead, err = c.ResumeKey.UnmarshalWithEncoding(rawDataContent[offset:], c.IsUnicode())
-	if err != nil {
-		return offset, err
+	// Unmarshalling data BufferFormat2, ResumeKeyLength and ResumeKey.
+	if len(rawDataContent) < offset+3 {
+		return offset, fmt.Errorf("rawDataContent too short for BufferFormat2 and ResumeKeyLength")
 	}
-	offset += bytesRead
+	offset++ // BufferFormat2
+
+	resumeKeyLength := int(binary.LittleEndian.Uint16(rawDataContent[offset : offset+2]))
+	offset += 2
+
+	// Zero length is an initial search and carries no key, which is not an error.
+	c.ResumeKeyPresent = resumeKeyLength > 0
+	if c.ResumeKeyPresent {
+		if len(rawDataContent) < offset+resumeKeyLength {
+			return offset, fmt.Errorf("rawDataContent too short for a %d-byte ResumeKey", resumeKeyLength)
+		}
+		bytesRead, err = c.ResumeKey.Unmarshal(rawDataContent[offset : offset+resumeKeyLength])
+		if err != nil {
+			return offset, err
+		}
+		offset += bytesRead
+	}
 
 	return offset, nil
 }

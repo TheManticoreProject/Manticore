@@ -1,6 +1,7 @@
 package informationlevels
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -25,7 +26,26 @@ type SMB_INFO_STANDARD struct {
 	// LastWriteTime: (2 bytes): This field contains the time when data was last
 	// written to the file.
 	Lastwritetime types.SMB_TIME_DOS
+	// FileDataSize: (4 bytes): This field contains the file size.
+	//
+	// [MS-CIFS] describes this as the size "in filesystem allocation units" and
+	// AllocationSize as "the size of the filesystem allocation unit, in bytes",
+	// but every implementation puts a byte count in both, and the neighbouring
+	// SMB_QUERY_FILE_STANDARD_INFO says bytes outright for the same quantities. A
+	// client reads bytes, so bytes is what belongs here.
+	Filedatasize types.ULONG
+	// AllocationSize: (4 bytes): This field contains the allocated size of the
+	// file, in bytes. See the note on FileDataSize about the specification's
+	// wording.
+	Allocationsize types.ULONG
+	// Attributes: (2 bytes): This field contains the file attributes.
+	Attributes types.SMB_FILE_ATTRIBUTES
 }
+
+// SMB_INFO_STANDARD_SIZE is the size of the structure on the wire: six 2-byte
+// date and time fields, two 4-byte sizes and a 2-byte attribute word, per
+// [MS-CIFS] section 2.2.8.3.1.
+const SMB_INFO_STANDARD_SIZE = 22
 
 // marshaler is the common 2-byte (de)serialization interface implemented by
 // SMB_DATE and SMB_TIME_DOS.
@@ -34,7 +54,8 @@ type infoStandardField interface {
 	Unmarshal([]byte) (int, error)
 }
 
-// Marshal serializes the SMB_INFO_STANDARD into a byte slice (12 bytes).
+// Marshal serializes the SMB_INFO_STANDARD into a byte slice
+// (SMB_INFO_STANDARD_SIZE bytes).
 //
 // Returns:
 // - A byte slice containing the marshalled information level structure
@@ -56,6 +77,18 @@ func (s *SMB_INFO_STANDARD) Marshal() ([]byte, error) {
 		marshalled_struct = append(marshalled_struct, b...)
 	}
 
+	// Then the two sizes and the attribute word.
+	sizes := make([]byte, 8)
+	binary.LittleEndian.PutUint32(sizes[0:4], uint32(s.Filedatasize))
+	binary.LittleEndian.PutUint32(sizes[4:8], uint32(s.Allocationsize))
+	marshalled_struct = append(marshalled_struct, sizes...)
+
+	attributes, err := s.Attributes.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	marshalled_struct = append(marshalled_struct, attributes...)
+
 	return marshalled_struct, nil
 }
 
@@ -68,9 +101,9 @@ func (s *SMB_INFO_STANDARD) Marshal() ([]byte, error) {
 // - The number of bytes consumed
 // - An error if unmarshalling any component fails or if the data format is invalid
 func (s *SMB_INFO_STANDARD) Unmarshal(data []byte) (int, error) {
-	// Six 2-byte DOS date/time fields = 12 bytes.
-	if len(data) < 12 {
-		return 0, fmt.Errorf("data too short for SMB_INFO_STANDARD (need 12 bytes, have %d)", len(data))
+	if len(data) < SMB_INFO_STANDARD_SIZE {
+		return 0, fmt.Errorf("data too short for SMB_INFO_STANDARD (need %d bytes, have %d)",
+			SMB_INFO_STANDARD_SIZE, len(data))
 	}
 
 	fields := []infoStandardField{
@@ -86,6 +119,17 @@ func (s *SMB_INFO_STANDARD) Unmarshal(data []byte) (int, error) {
 		}
 		offset += n
 	}
+
+	s.Filedatasize = types.ULONG(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+	s.Allocationsize = types.ULONG(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	offset += 4
+
+	read, err := s.Attributes.Unmarshal(data[offset:])
+	if err != nil {
+		return offset, err
+	}
+	offset += read
 
 	return offset, nil
 }

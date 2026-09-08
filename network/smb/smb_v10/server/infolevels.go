@@ -65,6 +65,10 @@ func supportedFindLevel(level uint16) bool {
 	case smbFindFileDirectoryInfo, smbFindFileFullDirectoryInfo,
 		smbFindFileNamesInfo, smbFindFileBothDirectoryInfo:
 		return true
+	case smbInfoStandard, smbInfoQueryEaSize, smbInfoQueryEasFromLst:
+		// The pre-NT levels, which a client without CAP_NT_FIND uses. Refusing
+		// them left such a client unable to list a directory at all.
+		return true
 	}
 	return false
 }
@@ -102,6 +106,14 @@ func encodeFindEntries(search *Search, count, budget int, unicode bool) ([]byte,
 		encoded = append(encoded, rendered...)
 		search.Position++
 		returned++
+	}
+
+	// Only the NT levels are linked by a leading NextEntryOffset; the pre-NT ones
+	// are packed back to back and counted by SearchCount. Clearing a "final
+	// NextEntryOffset" in a buffer of pre-NT entries would write zeroes over the
+	// first entry's creation and access dates.
+	if returned > 0 && !findLevelChains(search.InformationLevel) {
+		return encoded, returned
 	}
 
 	// The last entry's NextEntryOffset is zero, which is how a client knows to
@@ -150,6 +162,10 @@ func zeroLastNextEntryOffset(encoded []byte) {
 // whatever the server put there, so an OEM name comes out as half as many
 // characters of nonsense.
 func encodeFindEntry(level uint16, attr FileAttr, unicode bool) []byte {
+	if entry, served := encodeLegacyFindEntry(level, attr, unicode); served {
+		return entry
+	}
+
 	name := encodeWireString(attr.Name, unicode)
 
 	switch level {
@@ -222,6 +238,19 @@ func padTo4(buffer []byte) []byte {
 // encodeFileInformation renders a file in a query level, or reports that the level
 // is not served.
 func encodeFileInformation(level uint16, attr FileAttr, path string, unicode bool) ([]byte, bool) {
+	// A level at or above the pass-through base names a native information class
+	// rather than an SMB one ([MS-SMB] section 2.2.2.3.5), exactly as the volume
+	// levels already do. A Windows client asks for several of its file
+	// information this way, so refusing the range refuses the questions it asks.
+	if level >= smbInfoPassthrough {
+		return encodeNativeFileInformation(level-smbInfoPassthrough, attr, path)
+	}
+
+	// Then the pre-NT levels, which sit below the SMB range the switch covers.
+	if encoded, served := encodeLegacyFileInformation(level, attr); served {
+		return encoded, true
+	}
+
 	switch level {
 	case smbQueryFileBasicInfo:
 		// Four timestamps(8 each) ExtFileAttributes(4) Reserved(4).
@@ -298,6 +327,9 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 	if level >= smbInfoPassthrough {
 		return encodeNativeVolumeInformation(level-smbInfoPassthrough, volume, unicode)
 	}
+	if encoded, served := encodeLegacyVolumeInformation(level, volume, unicode); served {
+		return encoded, true
+	}
 
 	switch level {
 	case smbQueryFsVolumeInfo:
@@ -351,6 +383,10 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 // applyFileInformation applies a set level to a path, reporting whether the level
 // is served and what the backend made of it.
 func applyFileInformation(fs FileSystem, path string, level uint16, data []byte, open *Open) (bool, error) {
+	if level >= smbInfoPassthrough {
+		return applyNativeFileInformation(fs, path, level-smbInfoPassthrough, data, open)
+	}
+
 	switch level {
 	case smbSetFileBasicInfo:
 		if len(data) < 36 {

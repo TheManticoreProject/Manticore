@@ -324,13 +324,19 @@ func TestFindPatternAcceptsAnExactName(t *testing.T) {
 	}
 }
 
-// TestFileCommandsOnAPipeHandleAreRefused asserts a read or a write through a pipe
-// handle is answered rather than crashing.
+// TestFileCommandsOnAPipeHandle asserts a read through a pipe handle is served and
+// a write through one is refused, and that neither crashes the connection.
 //
-// A pipe handle has no file behind it. An RPC client reads one directly when its
-// transaction did not return a whole response, which reached an unguarded
-// dereference and took the connection down.
-func TestFileCommandsOnAPipeHandleAreRefused(t *testing.T) {
+// An RPC client reads a pipe handle directly when its transaction did not return a
+// whole response, so the read has to work: it is how the rest of the answer is
+// collected. Reading with nothing buffered is not an error — it means the answer
+// is finished. Writing has nowhere to go, because a handler answers a transaction
+// rather than accepting a stream.
+//
+// A pipe handle has no file behind it, and reaching one through a file command
+// once found an unguarded dereference that took the connection down, so the
+// survival assertion below stays.
+func TestFileCommandsOnAPipeHandle(t *testing.T) {
 	pipes := newEchoPipe("srvsvc")
 	_, client := pipeServer(t, pipes)
 
@@ -339,8 +345,12 @@ func TestFileCommandsOnAPipeHandleAreRefused(t *testing.T) {
 		t.Fatalf("opening the pipe failed: %v", err)
 	}
 
-	if _, err := client.ReadFile(fid, 0, 16); err == nil {
-		t.Error("reading a pipe handle as a file succeeded")
+	data, err := client.ReadFile(fid, 0, 16)
+	if err != nil {
+		t.Errorf("reading a pipe handle with nothing buffered failed: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("reading a pipe handle with nothing buffered returned %q, want no data", data)
 	}
 	if _, err := client.WriteFile(fid, 0, []byte("x")); err == nil {
 		t.Error("writing a pipe handle as a file succeeded")

@@ -50,6 +50,13 @@ type Share struct {
 	// Pipes serves the named pipes on an IPC share. Nil refuses every pipe
 	// operation.
 	Pipes PipeHandler
+
+	// locks holds the byte-range locks granted on this share's files.
+	//
+	// It belongs to the share because a lock is a statement about a file and the
+	// handles it excludes may be on other connections. AddShare creates it, so a
+	// share reached through the server always has one.
+	locks *lockTable
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's
@@ -273,6 +280,12 @@ func (s *Server) AddShare(share *Share) error {
 	}
 	if share.Type == ShareTypeDisk && share.FS == nil {
 		return fmt.Errorf("disk share %q has no file system", share.Name)
+	}
+
+	// Every share gets a lock table, so a handler never has to ask whether the
+	// share it was given can hold a lock.
+	if share.locks == nil {
+		share.locks = newLockTable()
 	}
 
 	key := strings.ToUpper(share.Name)

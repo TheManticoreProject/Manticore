@@ -1,6 +1,8 @@
 package server
 
 import (
+	"errors"
+
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -9,6 +11,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
@@ -36,12 +39,27 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_TREE_CONNECT_ANDX: handleTreeConnectAndx,
 	codes.SMB_COM_TREE_DISCONNECT:   handleTreeDisconnect,
 
+	// The core-set file access commands, which a client that does not use the NT
+	// commands opens and transfers with.
+	codes.SMB_COM_OPEN:             handleOpen,
+	codes.SMB_COM_OPEN_ANDX:        handleOpenAndx,
+	codes.SMB_COM_CREATE:           handleCreate,
+	codes.SMB_COM_CREATE_NEW:       handleCreateNew,
+	codes.SMB_COM_CREATE_TEMPORARY: handleCreateTemporary,
+	codes.SMB_COM_READ:             handleRead,
+	codes.SMB_COM_WRITE:            handleWrite,
+	codes.SMB_COM_WRITE_AND_CLOSE:  handleWriteAndClose,
+	codes.SMB_COM_SEEK:             handleSeek,
+	codes.SMB_COM_TREE_CONNECT:     handleTreeConnect,
+	codes.SMB_COM_PROCESS_EXIT:     handleProcessExit,
+
 	// File handles.
 	codes.SMB_COM_NT_CREATE_ANDX: handleNtCreateAndx,
 	codes.SMB_COM_CLOSE:          handleClose,
 	codes.SMB_COM_READ_ANDX:      handleReadAndx,
 	codes.SMB_COM_WRITE_ANDX:     handleWriteAndx,
 	codes.SMB_COM_FLUSH:          handleFlush,
+	codes.SMB_COM_LOCKING_ANDX:   handleLockingAndx,
 
 	// Volume.
 	codes.SMB_COM_QUERY_INFORMATION_DISK: handleQueryInformationDisk,
@@ -60,6 +78,13 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_DELETE_DIRECTORY: handleDeleteDirectory,
 	codes.SMB_COM_CHECK_DIRECTORY:  handleCheckDirectory,
 	codes.SMB_COM_NT_RENAME:        handleNtRename,
+
+	// The core-set directory search, which a client that does not use
+	// TRANSACTION2 enumerates with.
+	codes.SMB_COM_SEARCH:      handleSearch,
+	codes.SMB_COM_FIND:        handleFind,
+	codes.SMB_COM_FIND_UNIQUE: handleFindUnique,
+	codes.SMB_COM_FIND_CLOSE:  handleFindClose,
 
 	// Transactions, which carry the directory-enumeration and information
 	// subcommands.
@@ -171,32 +196,132 @@ func isKnownCommand(command codes.CommandCode) bool {
 
 // dispatch runs the built-in handler for a decoded request, or answers with the
 // status that says why it could not.
+//
+// A batched request is run as a chain: every command in it executes, in order,
+// and all the answers travel back in one message.
 func (s *Server) dispatch(conn *Connection, w ResponseWriter, req *message.Message) {
-	// A command that acts within a session must name one that exists. Checking
-	// here rather than in each handler means a command added later cannot forget
-	// to.
-	if !sessionlessCommands[req.Header.Command] {
-		if conn.Session(uint16(req.Header.UID)) == nil {
-			logger.Debugf("SMB1 server: %s sent command 0x%02X on UID 0x%04X, which names no session",
-				conn.Remote, uint8(req.Header.Command), uint16(req.Header.UID))
-			s.writeError(conn, w, nt_status.NT_STATUS_SMB_BAD_UID)
-			return
-		}
-	}
-
-	handler, ok := dispatchTable[req.Header.Command]
-	if !ok {
-		logger.Debugf("SMB1 server: %s sent unimplemented command 0x%02X (%s)",
-			conn.Remote, uint8(req.Header.Command), req.Header.Command)
-		s.writeError(conn, w, nt_status.NT_STATUS_NOT_IMPLEMENTED)
+	// A batch is only a batch if a second command is actually linked, and only the
+	// concrete writer can collect a chain — a caller-supplied ResponseWriter has
+	// no way to. A chain reaching a writer that cannot collect one is answered
+	// command by command, which is what happened to every batch before chains
+	// were executed at all.
+	writer, collectable := w.(*responseWriter)
+	if collectable && req.Command != nil && req.Command.GetNextCommand() != nil {
+		s.dispatchChain(conn, writer, req)
 		return
 	}
 
-	if status := handler(conn, w, req); status != nt_status.NT_STATUS_SUCCESS {
-		logger.Debugf("SMB1 server: command 0x%02X from %s failed with %s",
-			uint8(req.Header.Command), conn.Remote, statusName(status))
+	if status := s.runCommand(conn, w, req, req.Header.Command); status != nt_status.NT_STATUS_SUCCESS {
 		s.writeError(conn, w, status)
 	}
+}
+
+// dispatchChain runs every command of a batched request and answers with one
+// message carrying every response.
+//
+// [MS-CIFS] section 3.3.4.1: "If the client request is part of an AndX chain,
+// processing of the AndX request chain terminates with the request that generated
+// the error. The error response MUST be the last response in the returned AndX
+// chain." So a failure stops the chain, the answers already produced are still
+// returned, and the error response closes it.
+func (s *Server) dispatchChain(conn *Connection, writer *responseWriter, req *message.Message) {
+	writer.beginChain()
+
+	for command := req.Command; command != nil; command = command.GetNextCommand() {
+		code := command.GetCommandCode()
+
+		// Each command in the chain sees the identifiers as they stand when it
+		// runs, not as the client sent them. That is what makes a session setup
+		// batched with a tree connect work: the client sent UID 0 because it had
+		// no session yet, and the setup assigned one that the tree connect has to
+		// act on.
+		view := &message.Message{Header: req.Header, Command: command}
+		if writer.uidSet || writer.tidSet {
+			amended := *req.Header
+			if writer.uidSet {
+				amended.UID = types.USHORT(writer.uid)
+			}
+			if writer.tidSet {
+				amended.TID = types.USHORT(writer.tid)
+			}
+			view.Header = &amended
+		}
+
+		status := s.runCommand(conn, writer, view, code)
+		if status != nt_status.NT_STATUS_SUCCESS {
+			// The error response terminates the chain and carries the status.
+			if err := writer.WriteResponseWithStatus(newErrorResponse(code), status); err != nil {
+				logger.Debugf("SMB1 server: failed to collect the chain error for %s: %v", conn.Remote, err)
+			}
+			break
+		}
+
+		// A response written with a status of its own ends the chain too. An
+		// interim status such as STATUS_MORE_PROCESSING_REQUIRED describes the
+		// message, and a message carries one status, so nothing after it could be
+		// reported.
+		if writer.chainStatus != nt_status.NT_STATUS_SUCCESS {
+			logger.Debugf("SMB1 server: chain from %s stops after 0x%02X, which reported %s",
+				conn.Remote, uint8(code), statusName(writer.chainStatus))
+			break
+		}
+	}
+
+	if err := writer.flushChain(); err != nil {
+		if errors.Is(err, errChainTooLarge) {
+			logger.Debugf("SMB1 server: the batched answer for %s does not fit the negotiated buffer", conn.Remote)
+			s.writeError(conn, writer, nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES)
+			return
+		}
+		logger.Debugf("SMB1 server: failed to answer the batch from %s: %v", conn.Remote, err)
+	}
+}
+
+// runCommand applies the session requirement and the dispatch table to one
+// command, and returns the status to report for it.
+//
+// It is shared by the single-command and the batched paths so a command cannot
+// behave differently depending on whether it arrived on its own.
+//
+// Parameters:
+//   - conn: the connection being served
+//   - w: where the command writes its response
+//   - req: the request as this command should see it
+//   - code: the command being run, which for a chained command is not the
+//     header's
+//
+// Returns:
+//   - NT_STATUS_SUCCESS once the command has answered, or the status to report
+func (s *Server) runCommand(
+	conn *Connection,
+	w ResponseWriter,
+	req *message.Message,
+	code codes.CommandCode,
+) nt_status.NT_STATUS {
+	// A command that acts within a session must name one that exists. Checking
+	// here rather than in each handler means a command added later cannot forget
+	// to.
+	if !sessionlessCommands[code] {
+		if conn.Session(uint16(req.Header.UID)) == nil {
+			logger.Debugf("SMB1 server: %s sent command 0x%02X on UID 0x%04X, which names no session",
+				conn.Remote, uint8(code), uint16(req.Header.UID))
+			return nt_status.NT_STATUS_SMB_BAD_UID
+		}
+	}
+
+	handler, ok := dispatchTable[code]
+	if !ok {
+		logger.Debugf("SMB1 server: %s sent unimplemented command 0x%02X (%s)",
+			conn.Remote, uint8(code), code)
+		return nt_status.NT_STATUS_NOT_IMPLEMENTED
+	}
+
+	status := handler(conn, w, req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: command 0x%02X from %s failed with %s",
+			uint8(code), conn.Remote, statusName(status))
+	}
+	return status
 }
 
 // writeError sends an error response and logs a write failure, which is only
