@@ -56,28 +56,98 @@ func (m *Message) AddCommand(command command_interface.CommandInterface) {
 // - A byte slice containing the marshalled message
 // - An error if marshalling any component fails
 func (m *Message) Marshal() ([]byte, error) {
-	marshalled_message := []byte{}
-
 	// Marshal the header
 	marshalled_header, err := m.Header.Marshal()
 	if err != nil {
 		return nil, err
 	}
-	marshalled_message = append(marshalled_message, marshalled_header...)
 
 	// Check if there is a command to marshal
-	if m.Command != nil {
-		marshalled_command, err := m.Command.Marshal()
+	if m.Command == nil {
+		return nil, fmt.Errorf("no command added to message")
+	}
+
+	// Marshal every command in the chain, in order.
+	//
+	// Each one is marshalled exactly once: a command's Marshal appends to its own
+	// parameter and data blocks, so marshalling it twice would emit those fields
+	// twice. The AndX offsets are therefore patched into the marshalled bytes
+	// below rather than filled in and re-marshalled.
+	chain := []command_interface.CommandInterface{}
+	blocks := [][]byte{}
+	written := 0
+	for command := m.Command; command != nil; command = command.GetNextCommand() {
+		if command.GetNextCommand() != nil && !command.IsAndX() {
+			return nil, fmt.Errorf(
+				"command 0x%02X is followed in an AndX chain but is not an AndX command",
+				uint8(command.GetCommandCode()))
+		}
+
+		// A command that describes its own fields by an offset from the SMB header
+		// needs to know how far into the message it sits. Batched second or later,
+		// a response that assumed the front of the message points its client at
+		// the wrong bytes.
+		if positioned, ok := command.(command_interface.ChainPositioned); ok {
+			positioned.SetChainOffset(written)
+		}
+
+		block, err := command.Marshal()
 		if err != nil {
 			return nil, err
 		}
-		marshalled_message = append(marshalled_message, marshalled_command...)
-	} else {
-		return nil, fmt.Errorf("no command added to message")
+		if command.IsAndX() && len(block) < andxBlockEnd {
+			return nil, fmt.Errorf(
+				"AndX command 0x%02X marshalled to %d bytes, too few to hold its AndX block",
+				uint8(command.GetCommandCode()), len(block))
+		}
+
+		chain = append(chain, command)
+		blocks = append(blocks, block)
+		written += len(block)
+	}
+
+	// AndXOffset is measured from the start of the SMB header, so where a command
+	// begins is known only once everything ahead of it has been marshalled. Walk
+	// the blocks accumulating that position and patch each command's AndX block
+	// with the command code and the offset of the one that follows it.
+	position := len(marshalled_header)
+	for index, block := range blocks {
+		if index > 0 && chain[index-1].IsAndX() {
+			previous := blocks[index-1]
+			previous[andxCommandOffset] = uint8(chain[index].GetCommandCode())
+			previous[andxReservedOffset] = 0x00
+			binary.LittleEndian.PutUint16(previous[andxOffsetField:andxBlockEnd], uint16(position))
+		}
+		position += len(block)
+	}
+
+	// The chain is terminated explicitly. A command's own Marshal writes the
+	// terminator when it was given no AndX block, but a command that was linked
+	// and then turned out to be last would otherwise name a successor that is not
+	// there, which a client would follow off the end of the message.
+	if last := len(blocks) - 1; last >= 0 && chain[last].IsAndX() {
+		blocks[last][andxCommandOffset] = uint8(codes.SMB_COM_NO_ANDX_COMMAND)
+		blocks[last][andxReservedOffset] = 0x00
+		binary.LittleEndian.PutUint16(blocks[last][andxOffsetField:andxBlockEnd], 0)
+	}
+
+	marshalled_message := append([]byte{}, marshalled_header...)
+	for _, block := range blocks {
+		marshalled_message = append(marshalled_message, block...)
 	}
 
 	return marshalled_message, nil
 }
+
+// The AndX block sits at the start of an AndX command's parameter words, which
+// follow the one-byte WordCount: AndXCommand(1) AndXReserved(1) AndXOffset(2).
+// Message.Unmarshal reads the same positions when it follows a chain.
+const (
+	andxCommandOffset  = 1
+	andxReservedOffset = 2
+	andxOffsetField    = 3
+	andxBlockEnd       = 5
+)
 
 // Unmarshal deserializes a byte slice into the Message structure.
 //

@@ -140,14 +140,21 @@ type ntTransactHandler func(*Connection, *message.Message, *transactionReassembl
 
 // ntTransactHandlers maps a function code to its handler.
 //
-// NT_TRANSACT_CREATE, RENAME and the quota subcommands are absent deliberately.
-// Create and rename duplicate commands that already exist in their own right, and
-// nothing here tracks a quota, so answering them would mean inventing a number a
-// client would then believe.
+// The quota subcommands are absent deliberately: nothing here tracks a quota, so
+// answering them would mean inventing a number a client would then believe.
+//
+// NT_TRANSACT_NOTIFY_CHANGE is absent because it needs a reply sent after the
+// request that asked for it has been answered.
 var ntTransactHandlers = map[subcommands.NtTransactSubcommand]ntTransactHandler{
 	subcommands.NT_TRANSACT_QUERY_SECURITY_DESC: handleQuerySecurityDescriptor,
 	subcommands.NT_TRANSACT_SET_SECURITY_DESC:   handleSetSecurityDescriptor,
 	subcommands.NT_TRANSACT_IOCTL:               handleNtTransactIoctl,
+	subcommands.NT_TRANSACT_CREATE:              handleNtTransactCreate,
+
+	// Reserved and never implemented, with a status of its own: [MS-CIFS]
+	// section 2.2.7.5 requires STATUS_SMB_BAD_COMMAND rather than the table's
+	// default of STATUS_NOT_IMPLEMENTED.
+	subcommands.NT_TRANSACT_RENAME: handleNtTransactRename,
 }
 
 // sendNtTransactResponse sends an NT_TRANSACT result, splitting it across as many

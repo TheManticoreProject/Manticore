@@ -51,9 +51,34 @@ type Open struct {
 	Readable bool
 	Writable bool
 
+	// pipeOutput is the part of a pipe answer that has not been delivered yet.
+	//
+	// A transaction returns only as much as the client's buffer takes, and the
+	// rest has to live somewhere until the client reads it: the client is told
+	// more remains, and reading again is how it collects it. The handle is the
+	// right owner because [MS-CIFS] section 3.3.5.57.9 identifies the pipe a read
+	// acts on by its FID, and because closing the handle is what makes an
+	// undrained answer collectable.
+	pipeOutput []byte
+
 	// DeleteOnClose removes the file when the handle closes, which is how a
 	// client deletes something it holds open.
 	DeleteOnClose bool
+
+	// PID is the process identifier that opened the handle.
+	//
+	// It is recorded so SMB_COM_PROCESS_EXIT can release what a client process
+	// still held when it died: [MS-CIFS] section 2.2.4.18 has the server close
+	// "any resources owned by the Process ID (PID) listed in the request header",
+	// and without this the command would have nothing to select on.
+	PID uint32
+
+	// Position is the handle's file pointer, which SMB_COM_SEEK moves.
+	//
+	// Nothing else consults it, because every read and write this server serves
+	// carries its own offset. It is kept because seeking from the current
+	// position is only meaningful if the position persists between calls.
+	Position int64
 
 	// Created is when the handle was opened.
 	Created time.Time
@@ -72,6 +97,48 @@ func (c *Connection) Open(fid uint16) *Open {
 }
 
 // addTree records a connected tree.
+// drainPipeOutput removes up to limit bytes of the answer buffered on a pipe
+// handle and reports whether any is left after it.
+//
+// The bytes are returned with the capacity clipped, so a caller that appends to
+// the returned slice cannot write into what is still buffered.
+//
+// Parameters:
+//   - limit: the most bytes to remove
+//
+// Returns:
+//   - The bytes removed, and whether more remain buffered
+func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(o.pipeOutput) {
+		limit = len(o.pipeOutput)
+	}
+
+	chunk := o.pipeOutput[:limit:limit]
+	o.pipeOutput = o.pipeOutput[limit:]
+	return chunk, len(o.pipeOutput) > 0
+}
+
+// peekPipeOutput returns up to limit bytes of the answer buffered on a pipe
+// handle without removing any of it, along with how much is buffered in total.
+//
+// Parameters:
+//   - limit: the most bytes to return
+//
+// Returns:
+//   - The bytes at the front of the buffer, and the total buffered length
+func (o *Open) peekPipeOutput(limit int) ([]byte, int) {
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(o.pipeOutput) {
+		limit = len(o.pipeOutput)
+	}
+	return o.pipeOutput[:limit:limit], len(o.pipeOutput)
+}
+
 func (c *Connection) addTree(tree *Tree) {
 	c.trees[tree.TID] = tree
 }
@@ -128,6 +195,15 @@ func (c *Connection) closeOpen(fid uint16) error {
 	}
 	delete(c.opens, fid)
 	c.fids.Release(fid)
+
+	// Locks go first, and unconditionally. [MS-CIFS] section 2.2.4.32.1: "Closing
+	// a file with locks still in force causes the locks to be released". A lock
+	// left behind here would be owned by a handle that no longer exists, so
+	// nothing could ever release it and the range would stay locked for the life
+	// of the share.
+	if open.Tree != nil && open.Tree.Share != nil && open.Tree.Share.locks != nil {
+		open.Tree.Share.locks.ReleaseAll(open)
+	}
 
 	var firstErr error
 	if open.File != nil {

@@ -276,6 +276,48 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 	return &localFile{file: file, path: host}, nil
 }
 
+// Link gives an existing file a second name.
+//
+// Both paths go through hostPathNoFollow, so neither the source nor the target
+// can be placed outside the share by way of a symbolic link — the same rule the
+// name operations follow, and for the same reason: a link is created by name, and
+// a name that resolves through a link out of the share would put a file where the
+// share does not reach.
+//
+// Parameters:
+//   - existing: the file to link to, share-relative
+//   - target: the new name, share-relative
+//
+// Returns:
+//   - An error if either path is unusable or the host refuses the link
+func (fs *LocalFileSystem) Link(existing, target string) error {
+	if fs.readOnly {
+		return ErrReadOnly
+	}
+
+	source, err := fs.hostPathNoFollow(existing)
+	if err != nil {
+		return err
+	}
+	destination, err := fs.hostPathNoFollow(target)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Lstat(source)
+	if err != nil {
+		return translate(err)
+	}
+	if info.IsDir() {
+		return ErrIsDirectory
+	}
+
+	if err := os.Link(source, destination); err != nil {
+		return translate(err)
+	}
+	return nil
+}
+
 // Stat describes a path.
 func (fs *LocalFileSystem) Stat(path string) (FileAttr, error) {
 	host, err := fs.hostPath(path)
