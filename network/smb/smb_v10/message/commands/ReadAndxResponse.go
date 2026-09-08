@@ -155,7 +155,13 @@ func (c *ReadAndxResponse) Marshal() ([]byte, error) {
 	// Place the file data immediately after the data block's ByteCount (no pad)
 	// and advertise its length and its absolute offset from the start of the SMB
 	// header so the parameter fields below carry the matching values.
-	c.DataLength = types.USHORT(len(c.Data))
+	// The length spans two words: [MS-SMB] section 2.2.4.2.2 requires a read of
+	// 0x10000 bytes or more to put the low half in DataLength and the high half
+	// in DataLengthHigh, and "otherwise, this field MUST be set to zero". Both
+	// are derived from the data rather than taken from the caller, since they are
+	// the only description of it a receiver gets.
+	c.DataLength = types.USHORT(len(c.Data) & 0xFFFF)
+	c.DataLengthHigh = types.USHORT(len(c.Data) >> 16)
 	c.DataOffset = types.USHORT(readAndxResponseDataOffset + c.chainOffset)
 
 	rawDataContent := []byte{}
@@ -314,18 +320,44 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 		offset += 2
 	}
 
-	// Then unmarshal the data. The file bytes are the trailing DataLength bytes of
-	// the data block; any pad inserted to align the data to DataOffset precedes them.
-	offset = 0
-	if c.DataLength > 0 {
-		if int(c.DataLength) > len(rawDataContent) {
-			return offset, fmt.Errorf("ReadAndx DataLength %d exceeds data block size %d", c.DataLength, len(rawDataContent))
-		}
-		c.Data = append([]types.UCHAR{}, rawDataContent[len(rawDataContent)-int(c.DataLength):]...)
-		offset = int(c.DataLength)
-	} else {
+	// Then locate the data.
+	//
+	// Its length spans two words, and reading DataLength alone would report a
+	// 64 KiB read as having returned nothing ([MS-SMB] section 2.2.4.2.2).
+	declared := int(c.DataLengthHigh)<<16 | int(c.DataLength)
+	if declared == 0 {
 		c.Data = []types.UCHAR{}
+		return 0, nil
 	}
 
-	return offset, nil
+	// The position comes from DataOffset, "the offset in bytes from the header of
+	// the read data" ([MS-CIFS] section 2.2.4.42.2). rawData begins at this
+	// command, so the header and everything batched ahead of it come off first.
+	//
+	// ByteCount is not usable for this: it cannot describe a block of 0x10000
+	// bytes or more, so a large read has to be found by its offset. A sender that
+	// leaves DataOffset unset is still understood — the bytes are then the tail of
+	// the data block, which is where an unrelocated read puts them — because
+	// refusing a reply this decoder could read would be a worse answer than
+	// reading it.
+	commandStart := header.SMB_HEADER_SIZE + c.chainOffset
+	start := int(c.DataOffset) - commandStart
+	minimumDataStart := bytesRead + 2
+
+	if start >= minimumDataStart {
+		if start+declared > len(rawData) {
+			return 0, fmt.Errorf(
+				"ReadAndx declares %d bytes of data at offset %d, which runs past the %d bytes of the message that remain",
+				declared, c.DataOffset, len(rawData))
+		}
+		c.Data = append([]types.UCHAR{}, rawData[start:start+declared]...)
+		return declared, nil
+	}
+
+	if declared > len(rawDataContent) {
+		return 0, fmt.Errorf("ReadAndx declares %d bytes of data but its data block holds %d",
+			declared, len(rawDataContent))
+	}
+	c.Data = append([]types.UCHAR{}, rawDataContent[len(rawDataContent)-declared:]...)
+	return declared, nil
 }

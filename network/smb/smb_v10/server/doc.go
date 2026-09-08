@@ -136,8 +136,13 @@
 // signature rather than merely truncate, and [MS-SMB] has clients hold to
 // MaxBufferSize whenever signing is active.
 //
-// The ceiling stays under 0x10000 because SMB_Data.ByteCount is a USHORT that no
-// extension widens, so a larger data block could not describe its own length.
+// The ceiling is 64 KiB, which the capabilities exist to reach. A transfer that
+// large cannot be described by SMB_Data.ByteCount, a USHORT no extension widens,
+// and does not need to be: it carries its length across DataLength and
+// DataLengthHigh and its position in DataOffset, which is what both directions
+// read and write. Reading at that size is a choice [MS-SMB] section 3.3.5.7
+// leaves to the server and Windows declines; it is safe here because only a
+// client that set MaxCountHigh, a field the capability defines, can ask for one.
 //
 //   - The pass-through information classes for files, in both directions: the
 //     basic, standard, internal, EA, access, position, name, alternate-name,

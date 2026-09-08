@@ -133,21 +133,30 @@ const (
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxSearchesPerConnection = 128
 
-	// DefaultMaxLargeTransfer is the ceiling on one large read or write.
+	// DefaultMaxLargeTransfer is the ceiling on one large read or write: 64 KiB,
+	// which is what CAP_LARGE_READX and CAP_LARGE_WRITEX exist to reach and what
+	// Windows uses.
 	//
-	// It is 0xFF00 rather than the 64 KiB Windows uses, and the difference is not
-	// arbitrary. SMB_Data.ByteCount is a USHORT, and neither [MS-SMB] section
-	// 2.2.4.2.2 nor 2.2.4.3.1 widens it for a large transfer, so a data block of
-	// 0x10000 bytes or more cannot describe itself — its length has to be taken
-	// from DataLength and DataLengthHigh instead, and a data block here is parsed
-	// by its ByteCount. Staying under 0x10000 keeps ByteCount truthful, which
-	// keeps the message readable by any client rather than only by one that
-	// ignores it.
+	// A transfer of 0x10000 bytes or more cannot be described by
+	// SMB_Data.ByteCount, which is a USHORT that neither [MS-SMB] section
+	// 2.2.4.2.2 nor 2.2.4.3.1 widens. It does not have to be: such a transfer
+	// carries its length in DataLength and DataLengthHigh and its position in
+	// DataOffset, and both directions of this server read and write it that way.
 	//
-	// The point of the capability survives intact: a transfer goes from the
-	// negotiated 16644 bytes to 65280, and escaping MaxBufferSize is what matters
-	// rather than the last kilobyte.
-	DefaultMaxLargeTransfer = 0xFF00
+	// Reading at this size is a choice the specification leaves open. [MS-SMB]
+	// section 3.3.5.7 says a server "MAY" return a read of 0x10000 bytes or more,
+	// and Windows declines — it answers STATUS_SUCCESS with both length words
+	// zero and no data at all. Returning the bytes is safe here because the size
+	// is the client's own: a client only reaches this range by setting
+	// MaxCountHigh, a field CAP_LARGE_READX defines, so a client that does not
+	// implement the extension never asks for a reply it could not read. A
+	// deployment that would rather match Windows sets Config.MaxLargeTransfer to
+	// 0xFF00.
+	//
+	// The ceiling also has to fit one transport frame, since a message larger
+	// than a frame cannot be sent: NetBIOS over TCP carries at most 0x1FFFF bytes
+	// (RFC 1002 4.3.1's 17-bit length), which this leaves ample room inside.
+	DefaultMaxLargeTransfer = 0x10000
 	// DefaultMaxLockWait is how long a blocked lock request waits before it is
 	// refused. It is long enough for a lock held across a short read or write to
 	// be released, and short enough that a client that asked to wait forever gets

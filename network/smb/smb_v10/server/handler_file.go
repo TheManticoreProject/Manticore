@@ -385,12 +385,11 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 	}
 
 	response := commands.NewReadAndxResponse()
+	// The length and offset fields are derived from the data when the response is
+	// marshalled, across DataLength and DataLengthHigh for a read of 0x10000
+	// bytes or more ([MS-SMB] section 2.2.4.2.2). Setting them here as well would
+	// be a second place for them to be wrong.
 	response.Data = buffer[:read]
-	// DataLength is 16 bits, so a read of 0x10000 bytes or more describes its
-	// length across DataLength and DataLengthHigh ([MS-SMB] section 2.2.4.2.2).
-	// Reporting only the low word would tell the client it received nothing.
-	response.DataLength = types.USHORT(read & 0xFFFF)
-	response.DataLengthHigh = types.USHORT(read >> 16)
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the read for %s: %v", conn.Remote, err)
@@ -498,7 +497,6 @@ func (c *Connection) readPipeHandle(w ResponseWriter, open *Open, length int) nt
 
 	response := commands.NewReadAndxResponse()
 	response.Data = chunk
-	response.DataLength = types.USHORT(len(chunk))
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe read for %s: %v", c.Remote, err)

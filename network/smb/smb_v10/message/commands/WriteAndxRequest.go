@@ -8,8 +8,28 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+)
+
+// The parameter block sizes of the two forms of the request. WordCount is 0x0C
+// without OffsetHigh and 0x0E with it, and the four extra bytes move the data
+// four bytes further from the header ([MS-CIFS] section 2.2.4.43.1).
+const (
+	writeAndxWordsSize   = 2 * 0x0C
+	writeAndxWordsSize64 = 2 * 0x0E
+)
+
+// writeAndxDataOffset and writeAndxDataOffset64 are where this request's data
+// begins, in bytes from the start of the SMB header, for a request at the front
+// of the message: header + WordCount(1) + words + ByteCount(2) + Pad(1).
+//
+// A request batched later in an AndX chain adds its chain offset, which is what
+// SetChainOffset records.
+const (
+	writeAndxDataOffset   = header.SMB_HEADER_SIZE + 1 + writeAndxWordsSize + 2 + 1
+	writeAndxDataOffset64 = header.SMB_HEADER_SIZE + 1 + writeAndxWordsSize64 + 2 + 1
 )
 
 // WriteAndxRequest
@@ -72,6 +92,34 @@ type WriteAndxRequest struct {
 
 	// Data (variable): The raw bytes to be written to the file.
 	Data []types.UCHAR
+
+	// chainOffset is how far past the SMB header this request begins, which is
+	// non-zero only when it is batched behind another command. DataOffset is
+	// measured from the header rather than from the request, so the two have to
+	// be added.
+	chainOffset int
+}
+
+// SetChainOffset records where this request begins, so DataOffset describes where
+// its data actually is.
+//
+// Parameters:
+//   - offset: bytes from the end of the SMB header to the start of this request
+func (c *WriteAndxRequest) SetChainOffset(offset int) {
+	c.chainOffset = offset
+}
+
+// dataOffset is the offset this request's data sits at, from the start of the SMB
+// header.
+//
+// The 64-bit-offset form carries OffsetHigh in its parameter block, which pushes
+// the data four bytes further out. Marshal emits that word only for a non-zero
+// OffsetHigh, so the same condition decides the offset.
+func (c *WriteAndxRequest) dataOffset() int {
+	if c.OffsetHigh != 0 {
+		return writeAndxDataOffset64 + c.chainOffset
+	}
+	return writeAndxDataOffset + c.chainOffset
 }
 
 // NewWriteAndxRequest creates a new WriteAndxRequest structure
@@ -145,6 +193,20 @@ func (c *WriteAndxRequest) Marshal() ([]byte, error) {
 
 	// Marshalling data Data
 	rawDataContent = append(rawDataContent, c.Data...)
+
+	// The three fields that describe the data are derived from the data, not
+	// taken from the caller: they are the only way a receiver can find and size
+	// it, and a caller computing them by hand has to know this command's own
+	// wire layout to do it.
+	//
+	// The length spans two words. [MS-SMB] section 2.2.4.3.1 allocates the CIFS
+	// Reserved field as DataLengthHigh, and requires a write of 0x10000 bytes or
+	// more to put the low half in DataLength and the high half there. Below that
+	// the high half is zero, which is also what [MS-CIFS] section 2.2.4.43.1
+	// requires of Reserved, so writing it unconditionally is right either way.
+	c.DataLength = types.USHORT(len(c.Data) & 0xFFFF)
+	c.Reserved = types.USHORT(len(c.Data) >> 16)
+	c.DataOffset = types.USHORT(c.dataOffset())
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
@@ -247,21 +309,30 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	}
 	offset := 0
 
-	// First unmarshal the two structures
+	// First unmarshal the parameters
 	bytesRead, err := c.GetParameters().Unmarshal(rawData)
 	if err != nil {
 		return 0, err
 	}
 	rawParametersContent := c.GetParameters().GetBytes()
-	_, err = c.GetData().Unmarshal(rawData[bytesRead:])
-	if err != nil {
-		return 0, err
-	}
-	rawDataContent := c.GetData().GetBytes()
 
-	// If the parameters and data are empty, this is a response containing an error code in
+	// Then the data block, for the ByteCount the sender put on the wire — but not
+	// for the data itself, and not fatally.
+	//
+	// ByteCount cannot be trusted to bound this command's data. [MS-CIFS] section
+	// 2.2.4.43.1 describes relocating the data to the end of an AndX chain and
+	// keeps ByteCount at "1 + SMB_Parameters.Words.DataLength", counting bytes
+	// that are not in the block at all; and a write of 0x10000 bytes or more
+	// cannot state its length in a USHORT. Windows servers "ignore the ByteCount
+	// field, and calculate the number of bytes to be written as DataLength |
+	// DataLengthHigh <<16" ([MS-SMB] section 3.3.5.8), which is what happens
+	// below. So a ByteCount that overruns the buffer is the sender describing a
+	// relocated block, not a truncated message.
+	_, _ = c.GetData().Unmarshal(rawData[bytesRead:])
+
+	// If the parameters are empty, this is a response containing an error code in
 	// the SMB Header Status field
-	if len(rawParametersContent) == 0 && len(rawDataContent) == 0 {
+	if len(rawParametersContent) == 0 {
 		return 0, nil
 	}
 
@@ -336,17 +407,7 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 		offset += 4
 	}
 
-	// Then unmarshal the data
-	offset = 0
-
-	// Unmarshalling data Pad
-	if len(rawDataContent) < offset+1 {
-		return offset, fmt.Errorf("rawParametersContent too short for Pad")
-	}
-	c.Pad = types.UCHAR(rawDataContent[offset])
-	offset++
-
-	// Unmarshalling data Data
+	// Then locate the data.
 	//
 	// The length spans two fields. [MS-SMB] section 2.2.4.3.1 allocates the CIFS
 	// Reserved field as DataLengthHigh, which is the only way a write above
@@ -356,12 +417,44 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	// every large write to its low word: the server would write 4464 of 70000
 	// bytes and report success.
 	declared := int(c.DataLengthHigh())<<16 | int(c.DataLength)
-	if len(rawDataContent) < offset+declared {
-		return offset, fmt.Errorf("rawDataContent too short for Data: need %d bytes from %d, have %d",
-			declared, offset, len(rawDataContent))
+	if declared == 0 {
+		c.Data = []types.UCHAR{}
+		return 0, nil
 	}
-	c.Data = rawDataContent[offset : offset+declared]
-	offset += declared
 
-	return offset, nil
+	// The position comes from DataOffset, measured from the start of the SMB
+	// header "regardless of the command request's position in an AndX chain"
+	// ([MS-CIFS] section 2.2.4.43.1). rawData begins at this command, so the
+	// header and everything batched ahead of it come off the offset first.
+	//
+	// This is the only way to find data the sender relocated, and the only way to
+	// find data at all once the block is too large for ByteCount to describe.
+	commandStart := header.SMB_HEADER_SIZE + c.chainOffset
+	start := int(c.DataOffset) - commandStart
+
+	// A DataOffset that lands inside this command's own parameter block, or that
+	// would run the data past the end of the message, is not a relocation but a
+	// malformed request: [MS-CIFS] section 3.3.5.37 has the server fail such a
+	// request with STATUS_INVALID_SMB, which is what an error here becomes.
+	minimumDataStart := bytesRead + 2
+	if start < minimumDataStart {
+		return 0, fmt.Errorf(
+			"WriteAndx DataOffset %d places the data %d bytes into a command whose data block starts at %d",
+			c.DataOffset, start, minimumDataStart)
+	}
+	if start+declared > len(rawData) {
+		return 0, fmt.Errorf(
+			"WriteAndx declares %d bytes of data at offset %d, which runs past the %d bytes of the message that remain",
+			declared, c.DataOffset, len(rawData))
+	}
+
+	// The pad, if the sender inserted one, is the byte before the data. Reading it
+	// from the front of the data block instead would pick up a data byte for a
+	// sender that padded with nothing.
+	if start > minimumDataStart {
+		c.Pad = types.UCHAR(rawData[start-1])
+	}
+
+	c.Data = rawData[start : start+declared]
+	return declared, nil
 }

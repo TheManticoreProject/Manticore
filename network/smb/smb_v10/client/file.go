@@ -13,25 +13,11 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
-const (
-	// writeAndxWordsSize is the size in bytes of the WriteAndx request Words block
-	// for the 32-bit-offset form (WordCount 0x0C, no OffsetHigh): AndX(4) + FID(2) +
-	// Offset(4) + Timeout(4) + WriteMode(2) + Remaining(2) + Reserved(2) + DataLength(2)
-	// + DataOffset(2).
-	writeAndxWordsSize = 24
-
-	// writeAndxDataOffset is the byte offset, measured from the start of the SMB
-	// header, at which the Data block begins in our single (non-chained) WriteAndx
-	// request when the 32-bit-offset form (WordCount 0x0C, no OffsetHigh) is used:
-	// SMB header + WordCount(1) + Words + ByteCount(2) + Pad(1).
-	writeAndxDataOffset = header.SMB_HEADER_SIZE + 1 + writeAndxWordsSize + 2 + 1
-
-	// writeAndxDataOffset64 is the equivalent Data block offset when the 64-bit-offset
-	// form (WordCount 0x0E) is used. WriteAndxRequest.Marshal appends the 4-byte
-	// OffsetHigh word to the parameter block when OffsetHigh is non-zero, which shifts
-	// the Data block 4 bytes further from the start of the header.
-	writeAndxDataOffset64 = writeAndxDataOffset + 4
-)
+// writeAndxOverhead is the space a WriteAndx request needs beyond its data: the
+// SMB header, the 24-byte parameter words of the 32-bit-offset form with their
+// WordCount, the ByteCount and the pad byte. Reserving it keeps a chunk inside the
+// negotiated buffer.
+const writeAndxOverhead = header.SMB_HEADER_SIZE + 1 + 24 + 2 + 1
 
 // FID is an opaque file handle returned by the server for an open file or directory.
 type FID uint16
@@ -240,7 +226,12 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 			return result, fmt.Errorf("unexpected response command: 0x%02x", response.Header.Command)
 		}
 
-		dataLen := int(readResponse.DataLength)
+		// The length spans two words. [MS-SMB] section 2.2.4.2.2 has a read of
+		// 0x10000 bytes or more put its low half in DataLength and its high half in
+		// DataLengthHigh, so reading DataLength alone decodes a 64 KiB response as
+		// zero bytes — which the loop below treats as end of file, silently
+		// truncating the read.
+		dataLen := int(readResponse.DataLengthHigh)<<16 | int(readResponse.DataLength)
 		dataOff := int(readResponse.DataOffset)
 		if dataLen == 0 {
 			// End of file reached.
@@ -276,7 +267,7 @@ func (c *Client) WriteFile(fid FID, offset uint64, data []byte) (int, error) {
 	// whole message within the negotiated buffer by reserving the fixed overhead.
 	chunkSize := 0xFF00
 	if c.Connection.Server != nil && c.Connection.Server.MaxBufferSize > 0 {
-		budget := int(c.Connection.Server.MaxBufferSize) - writeAndxDataOffset
+		budget := int(c.Connection.Server.MaxBufferSize) - writeAndxOverhead
 		if budget <= 0 {
 			return 0, fmt.Errorf("negotiated MaxBufferSize (%d) too small to write", c.Connection.Server.MaxBufferSize)
 		}
@@ -306,18 +297,10 @@ func (c *Client) WriteFile(fid FID, offset uint64, data []byte) (int, error) {
 		cmd.Timeout = types.ULONG(0)
 		cmd.WriteMode = types.USHORT(0)
 		cmd.Remaining = types.USHORT(0)
-		cmd.Reserved = types.USHORT(0)
-		cmd.DataLength = types.USHORT(len(chunk))
-		// DataOffset is measured from the start of the SMB header (not from the AndX
-		// command's position). When OffsetHigh is non-zero, WriteAndxRequest.Marshal
-		// appends the 4-byte OffsetHigh word to the parameter block, which moves the
-		// Data block 4 bytes further out; use the matching offset so the server reads
-		// the data from where it is actually placed.
-		if cmd.OffsetHigh != 0 {
-			cmd.DataOffset = types.USHORT(writeAndxDataOffset64)
-		} else {
-			cmd.DataOffset = types.USHORT(writeAndxDataOffset)
-		}
+		// DataLength, DataLengthHigh and DataOffset are derived from the data when
+		// the request is marshalled. Setting them here as well would mean keeping a
+		// copy of the command's own wire layout in the client, which is where the
+		// two would eventually disagree.
 		cmd.Pad = types.UCHAR(0)
 		cmd.Data = []types.UCHAR(chunk)
 

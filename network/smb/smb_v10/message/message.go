@@ -205,6 +205,12 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 	// Propagate the message's Unicode setting (SMB_FLAGS2_UNICODE) so the command
 	// decodes string fields with the correct character encoding.
 	c.SetUnicode(m.Header.Flags2.IsUnicode())
+	// A command that locates one of its own fields by an offset from the SMB
+	// header needs to know where it begins, the same way Marshal tells it. First
+	// in the message, that is zero.
+	if positioned, ok := c.(command_interface.ChainPositioned); ok {
+		positioned.SetChainOffset(0)
+	}
 	if _, err = c.Unmarshal(fullData[headerSize:]); err != nil {
 		return err
 	}
@@ -248,6 +254,11 @@ func (m *Message) Unmarshal(marshalledData []byte) error {
 		}
 		next.Init()
 		next.SetUnicode(m.Header.Flags2.IsUnicode())
+		// Batched behind another command, so its offset fields are measured
+		// against a position further into the message than its own slice begins.
+		if positioned, ok := next.(command_interface.ChainPositioned); ok {
+			positioned.SetChainOffset(andxOffset - headerSize)
+		}
 		if _, err = next.Unmarshal(fullData[andxOffset:]); err != nil {
 			return err
 		}
