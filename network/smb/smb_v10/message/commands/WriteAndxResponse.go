@@ -28,8 +28,17 @@ type WriteAndxResponse struct {
 	// field MUST be set to 0xFFFF.
 	Available types.USHORT
 
-	// Reserved (4 bytes): This field MUST be 0x00000000.
-	Reserved types.ULONG
+	// CountHigh (2 bytes): The high 16 bits of the number of bytes written, which
+	// is how a write of more than 0xFFFF bytes reports what it wrote.
+	//
+	// [MS-CIFS] section 2.2.4.43.2 has this as part of a 4-byte Reserved;
+	// [MS-SMB] section 2.2.4.3.2 allocates "the first two bytes of the
+	// SMB_Parameters.Words.Reserved field for use as the CountHigh field",
+	// leaving two reserved bytes behind it.
+	CountHigh types.USHORT
+
+	// Reserved (2 bytes): This field MUST be 0x0000.
+	Reserved types.USHORT
 }
 
 // NewWriteAndxResponse creates a new WriteAndxResponse structure
@@ -41,7 +50,8 @@ func NewWriteAndxResponse() *WriteAndxResponse {
 		// Parameters
 		Count:     types.USHORT(0),
 		Available: types.USHORT(0),
-		Reserved:  types.ULONG(0),
+		CountHigh: types.USHORT(0),
+		Reserved:  types.USHORT(0),
 	}
 
 	c.Command.SetCommandCode(codes.SMB_COM_WRITE_ANDX)
@@ -103,7 +113,8 @@ func (c *WriteAndxResponse) Marshal() ([]byte, error) {
 
 	// Marshalling parameter Reserved
 	buf4 := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf4, uint32(c.Reserved))
+	binary.LittleEndian.PutUint16(buf4[0:2], uint16(c.CountHigh))
+	binary.LittleEndian.PutUint16(buf4[2:4], uint16(c.Reserved))
 	rawParametersContent = append(rawParametersContent, buf4...)
 
 	// Marshalling parameters
@@ -186,7 +197,8 @@ func (c *WriteAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	if len(rawParametersContent) < offset+4 {
 		return offset, fmt.Errorf("rawParametersContent too short for Reserved")
 	}
-	c.Reserved = types.ULONG(binary.LittleEndian.Uint32(rawParametersContent[offset : offset+4]))
+	c.CountHigh = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
+	c.Reserved = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset+2 : offset+4]))
 	offset += 4
 
 	// Then unmarshal the data

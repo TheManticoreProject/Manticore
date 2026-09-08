@@ -14,23 +14,34 @@
 // the protocol to look functional while refusing everything that matters.
 //
 // Implemented:
+//
 //   - Listening on Direct TCP (445) and NetBIOS over TCP (139), via
 //     network/smb/common/transport.
+//
 //   - The per-connection receive loop, request decoding, the handler chain, and
 //     response framing with correlated reply headers.
+//
 //   - Error responses in both encodings: the NTSTATUS form, and the legacy
 //     SMBSTATUS class/code form for a client that did not negotiate
 //     SMB_FLAGS2_NT_STATUS_ERROR_CODES.
+//
 //   - SMB_COM_NEGOTIATE, selecting the NT LM 0.12 dialect under extended
 //     security.
+//
 //   - SMB_COM_SESSION_SETUP_ANDX, including verifying the response against a
 //     credential, establishing a session, and the guest and anonymous policies.
+//
 //   - SMB_COM_LOGOFF_ANDX.
+//
 //   - SMB_COM_ECHO.
+//
 //   - Message signing in both directions, when the policy calls for it.
+//
 //   - Tree connect and disconnect against a registered share.
+//
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
+//
 //   - The core-set file information commands, which describe a file without a
 //     transaction: SMB_COM_QUERY_INFORMATION and SMB_COM_SET_INFORMATION by path,
 //     and SMB_COM_QUERY_INFORMATION2 and SMB_COM_SET_INFORMATION2 on a handle.
@@ -38,31 +49,72 @@
 //     or a UTIME in seconds, so a client reading one back sees less precision than
 //     the TRANSACTION2 levels carry — a property of the wire format rather than of
 //     the storage.
+//
 //   - Directory enumeration and the information levels, over TRANSACTION2:
 //     FIND_FIRST2 and FIND_NEXT2 with search handles, the query and set levels
 //     for a path and for an open handle, and the volume levels. Requests and
 //     responses both fragment across as many messages as they need.
+//
 //   - Security descriptors and file-system controls, over NT_TRANSACT:
 //     QUERY_SECURITY_DESC, SET_SECURITY_DESC and IOCTL. SMB_COM_NT_CANCEL is
 //     accepted silently, since nothing here leaves a request outstanding.
+//
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
-//     PipeHandler is all an RPC service needs to be reachable over SMB1.
+//     PipeHandler is all an RPC service needs to be reachable over SMB1. An answer
+//     too large for one response is collected with TRANS_READ_NMPIPE,
+//     TRANS_PEEK_NMPIPE or SMB_COM_READ_ANDX on the same handle.
+//
 //   - The volume queries a client actually asks: the TRANSACTION2 volume levels,
 //     the pass-through information classes above 0x03E8 that carry the native
 //     ones, and the legacy SMB_COM_QUERY_INFORMATION_DISK. A client asks about
 //     free space after a listing whether or not anything wanted it, so leaving
 //     these unanswered puts an error in every session.
 //
+// A read or a write may exceed the negotiated MaxBufferSize once both sides have
+// agreed CAP_LARGE_READX or CAP_LARGE_WRITEX, bounded by Config.MaxLargeTransfer.
+// Signing overrides that: a signed response is verified over the bytes as sent, so
+// a client that sized its buffer to MaxBufferSize and received more would fail the
+// signature rather than merely truncate, and [MS-SMB] has clients hold to
+// MaxBufferSize whenever signing is active.
+//
+// The ceiling stays under 0x10000 because SMB_Data.ByteCount is a USHORT that no
+// extension widens, so a larger data block could not describe its own length.
+//
+//   - The pass-through information classes for files, in both directions: the
+//     basic, standard, internal, EA, access, position, name, alternate-name,
+//     network-open and all classes for a query, and the basic, disposition,
+//     allocation, end-of-file and rename classes for a set. Those structures come
+//     from windows/filesystem rather than being assembled here, so their layouts
+//     are the ones the rest of the repository agrees on.
+//
+//     A pass-through structure's strings are UTF-16LE whatever the message
+//     declared, which is the one place in this package where a name's encoding
+//     does not follow SMB_FLAGS2_UNICODE: an SMB level carries an SMB string, but
+//     a pass-through level carries the [MS-FSCC] structure verbatim.
+//
 // All three transaction families share one reassembly, since they are the same
 // shape at different field widths: totals, a per-message count and a
 // displacement, with the subcommand selected by a setup word, a Function field or
 // a name.
 //
-// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: byte-range
-// locking, seek, the legacy SMB_COM_OPEN_ANDX, and batched AndX chains beyond
-// their first command.
+//   - Batched ("AndX") requests: every command in a chain runs, in order, and all
+//     the answers return in one message. A command sees the identifiers as they
+//     stand when it runs rather than as the client sent them, which is what makes
+//     a session setup batched with a tree connect work — the client had no UID to
+//     send. A failure ends the chain and the error response closes it, per
+//     [MS-CIFS] 3.3.4.1, so the answers already produced still come back.
+//   - Byte-range locking, over SMB_COM_LOCKING_ANDX: locks and unlocks in one
+//     atomic request, in both range formats, exclusive and shared. Overlapping
+//     locks are refused, an unlock of a range the handle does not hold is
+//     refused, and closing a handle releases what it held. The locks are
+//     enforced: a read or a write through another handle onto an exclusively
+//     locked range is refused, and a shared lock refuses only writes. A request
+//     that offers to wait waits, bounded by Config.MaxLockWait.
+//
+// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: seek and the
+// legacy SMB_COM_OPEN_ANDX.
 //
 // NT_TRANSACT_NOTIFY_CHANGE is deliberately absent rather than pending. It needs
 // two things this package does not have: a FileSystem that can be watched, and a
@@ -101,6 +153,25 @@
 // A share with no provider answers STATUS_NOT_SUPPORTED rather than inventing a
 // descriptor.
 //
+// # Byte-range locks
+//
+// Locks are held by the server, in a table on the Share, rather than delegated to
+// the FileSystem. That is deliberate. SMB lock semantics are not the host's: a
+// lock is held on a FID and excludes every other FID onto the same file, whoever
+// opened it, and a MemoryFileSystem has no host locks to delegate to while a
+// LocalFileSystem's would carry the platform's rules rather than the protocol's.
+// Holding them here means every backend gets the same, correct semantics and none
+// of them can forget to.
+//
+// The table belongs to the Share because a lock is a statement about a file, and
+// the handles it has to exclude are on other connections as much as on the one
+// that took it.
+//
+// A blocked request waits by polling, and Config.MaxLockWait bounds how long. A
+// client may ask to wait forever, and the connection serves nothing else while it
+// does, so an unbounded wait would let a client stall itself with no way out — the
+// cancel it would send arrives behind the request it wanted to cancel.
+//
 // # Named pipes
 //
 // A Share of type ShareTypeNamedPipe carries a PipeHandler instead of a
@@ -113,6 +184,19 @@
 // STATUS_BUFFER_OVERFLOW, which is what tells the client to read again. Reporting
 // plain success would leave an RPC client parsing a truncated response as a whole
 // one.
+//
+// The part that did not fit is kept on the handle, and reading again is how the
+// client collects it: SMB_COM_READ_ANDX on the pipe FID, TRANS_READ_NMPIPE, or
+// TRANS_PEEK_NMPIPE to size the read first. A read once the answer is exhausted
+// returns no data rather than an error, because a client reads a pipe only after
+// being told more remains, so an empty read is the end of the answer rather than a
+// failure. Writing a pipe handle with SMB_COM_WRITE_ANDX is still refused: a
+// handler answers a transaction rather than accepting a stream, so there is
+// nowhere for the write to go.
+//
+// The handler is asked for the whole answer rather than for the part that fits,
+// bounded by maxPipeAnswerSize, because only the server knows how the client will
+// read the rest.
 //
 // # Character encoding
 //

@@ -222,6 +222,14 @@ func padTo4(buffer []byte) []byte {
 // encodeFileInformation renders a file in a query level, or reports that the level
 // is not served.
 func encodeFileInformation(level uint16, attr FileAttr, path string, unicode bool) ([]byte, bool) {
+	// A level at or above the pass-through base names a native information class
+	// rather than an SMB one ([MS-SMB] section 2.2.2.3.5), exactly as the volume
+	// levels already do. A Windows client asks for several of its file
+	// information this way, so refusing the range refuses the questions it asks.
+	if level >= smbInfoPassthrough {
+		return encodeNativeFileInformation(level-smbInfoPassthrough, attr, path)
+	}
+
 	switch level {
 	case smbQueryFileBasicInfo:
 		// Four timestamps(8 each) ExtFileAttributes(4) Reserved(4).
@@ -351,6 +359,10 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 // applyFileInformation applies a set level to a path, reporting whether the level
 // is served and what the backend made of it.
 func applyFileInformation(fs FileSystem, path string, level uint16, data []byte, open *Open) (bool, error) {
+	if level >= smbInfoPassthrough {
+		return applyNativeFileInformation(fs, path, level-smbInfoPassthrough, data, open)
+	}
+
 	switch level {
 	case smbSetFileBasicInfo:
 		if len(data) < 36 {

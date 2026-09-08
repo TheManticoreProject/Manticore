@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/logger"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -345,12 +346,30 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 	// Bounded by what the client asked for and by what the connection agreed a
 	// message may carry, so a client cannot ask for a response it could not
 	// receive.
-	length := int(request.MaxCountOfBytesToReturn)
-	if limit := int(conn.Server.config.MaxBufferSize) - readResponseOverhead; length > limit {
+	length := readLengthOf(conn, open, request)
+	if limit := conn.readLimit(); length > limit {
 		length = limit
 	}
 	if length < 0 {
 		length = 0
+	}
+
+	// A pipe handle is a stream of the answer a transaction produced, not a file:
+	// there is nothing at an offset, and reading is how a client collects an
+	// answer that did not fit in one response. An RPC client does exactly this
+	// after STATUS_BUFFER_OVERFLOW, so refusing it strands the conversation.
+	//
+	// Checked before the lock table, because a pipe has no byte ranges to lock:
+	// consulting the table for one would look up a pipe name among file paths and
+	// answer a question nobody asked.
+	if open.IsPipe {
+		return conn.readPipeHandle(w, open, length)
+	}
+
+	if status := lockedAgainst(open, uint64(offset), uint64(length), false); status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: %s read %d bytes of %q at %d, which another handle has locked",
+			conn.Remote, length, open.Path, offset)
+		return status
 	}
 
 	file, status := fileFor(open)
@@ -367,7 +386,11 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 
 	response := commands.NewReadAndxResponse()
 	response.Data = buffer[:read]
-	response.DataLength = types.USHORT(read)
+	// DataLength is 16 bits, so a read of 0x10000 bytes or more describes its
+	// length across DataLength and DataLengthHigh ([MS-SMB] section 2.2.4.2.2).
+	// Reporting only the low word would tell the client it received nothing.
+	response.DataLength = types.USHORT(read & 0xFFFF)
+	response.DataLengthHigh = types.USHORT(read >> 16)
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the read for %s: %v", conn.Remote, err)
@@ -379,6 +402,135 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 // 32-byte header, the parameter words and the byte count. Reserving it keeps a
 // full-size read inside the negotiated buffer.
 const readResponseOverhead = 64
+
+// largeTransfersAgreed reports whether a capability that both sides have to set
+// is in force on this connection.
+//
+// [MS-SMB] section 2.2.4.5.2.1 makes CAP_LARGE_READX and CAP_LARGE_WRITEX
+// two-sided: the server advertises them in its negotiate response and the
+// capability takes effect only when the client sets it in its session setup as
+// well. A server that acted on its own advertisement alone would answer a client
+// that never agreed with a message that client cannot receive.
+func largeTransfersAgreed(conn *Connection, capability capabilities.Capabilities) bool {
+	return serverCapabilities&capability != 0 && conn.ClientCapabilities&capability != 0
+}
+
+// readLimit is the largest read this connection may be answered with.
+//
+// Signing overrides the large-read capability entirely. [MS-SMB] section
+// 2.2.4.5.2.1: "When signing is active on a connection, then clients MUST limit
+// read lengths to the MaxBufferSize value negotiated by the server irrespective
+// of the value of the CAP_LARGE_READX flag." A signed response is verified over
+// the bytes as sent, so a client that sized its buffer to MaxBufferSize and
+// received more would fail the signature rather than merely truncate.
+func (c *Connection) readLimit() int {
+	if c.SigningActive || !largeTransfersAgreed(c, capabilities.CAP_LARGE_READX) {
+		return int(c.Server.config.MaxBufferSize) - readResponseOverhead
+	}
+
+	limit := c.Server.config.MaxLargeTransfer
+	if limit <= 0 {
+		limit = DefaultMaxLargeTransfer
+	}
+	return limit
+}
+
+// readLengthOf is how many bytes a read request asked for.
+//
+// Under CAP_LARGE_READX the Timeout field is overloaded: [MS-SMB] section
+// 2.2.4.2.1 defines it as "a union of a 32-bit Timeout field and a 16-bit
+// MaxCountHigh field", read as MaxCountHigh for a regular file and as Timeout for
+// a named pipe or an I/O device. So the handle decides how the field is read, and
+// treating a pipe's timeout as a length would ask the backend for gigabytes
+// because the client asked it to wait a while.
+func readLengthOf(conn *Connection, open *Open, request *commands.ReadAndxRequest) int {
+	length := int(request.MaxCountOfBytesToReturn)
+	if open.IsPipe || !largeTransfersAgreed(conn, capabilities.CAP_LARGE_READX) {
+		return length
+	}
+
+	// MaxCountHigh is the first word of the union and the second is Reserved,
+	// which the server must ignore: [MS-SMB] section 2.2.4.2.1 says the client
+	// "SHOULD be set to 0xFFFF [...] if MaxCountHigh is 0xFFFF" and that "For all
+	// values, this field MUST be ignored by the server". Rejecting a request that
+	// set it would refuse the largest read a client is told to ask for.
+	return int(uint32(request.Timeout)&0xFFFF)<<16 | length
+}
+
+// writeLengthOf is how many bytes a write request says it carries.
+//
+// Under CAP_LARGE_WRITEX the CIFS Reserved field becomes DataLengthHigh
+// ([MS-SMB] section 2.2.4.3.1), which is the only way to describe a write above
+// 0xFFFF bytes. Reading it when the capability was not agreed would turn a
+// reserved field a client left non-zero into a length.
+func writeLengthOf(conn *Connection, request *commands.WriteAndxRequest) int {
+	declared := int(request.DataLength)
+	if !largeTransfersAgreed(conn, capabilities.CAP_LARGE_WRITEX) {
+		return declared
+	}
+	return int(request.DataLengthHigh())<<16 | declared
+}
+
+// readPipeHandle answers SMB_COM_READ_ANDX against a pipe handle, from the answer
+// buffered on it.
+//
+// The request's offset is ignored, because a pipe has no addressable content: the
+// buffer is consumed from the front, which is what makes repeated reads collect
+// successive parts of one answer.
+//
+// A read with nothing buffered returns no data rather than an error. A client
+// reads a pipe only after being told more remains, so an empty read means the
+// answer is finished, and reporting an error for it would turn a completed
+// exchange into a failed one.
+//
+// Parameters:
+//   - w: where the response is written
+//   - open: the pipe handle being read
+//   - length: the most bytes the response may carry
+//
+// Returns:
+//   - The status to report, which is success once the response is sent
+func (c *Connection) readPipeHandle(w ResponseWriter, open *Open, length int) nt_status.NT_STATUS {
+	chunk, moreRemains := open.drainPipeOutput(length)
+
+	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, more remains=%t",
+		len(chunk), open.Path, c.Remote, moreRemains)
+
+	response := commands.NewReadAndxResponse()
+	response.Data = chunk
+	response.DataLength = types.USHORT(len(chunk))
+
+	if err := w.WriteResponse(response); err != nil {
+		logger.Debugf("SMB1 server: failed to answer the pipe read for %s: %v", c.Remote, err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
+// lockedAgainst reports whether a byte-range lock held by another handle refuses
+// this access.
+//
+// A lock is only worth granting if it is honoured, so every read and write goes
+// through here. The owning handle is never refused by its own lock; an exclusive
+// lock refuses everyone else both ways, and a shared lock refuses only writes
+// ([MS-CIFS] section 3.3.5.30).
+//
+// Parameters:
+//   - open: the handle doing the access
+//   - offset, length: the range being accessed
+//   - writing: whether the access is a write
+//
+// Returns:
+//   - NT_STATUS_SUCCESS when the access may proceed, otherwise the status to
+//     report
+func lockedAgainst(open *Open, offset, length uint64, writing bool) nt_status.NT_STATUS {
+	if open == nil || open.Tree == nil || open.Tree.Share == nil || open.Tree.Share.locks == nil {
+		return nt_status.NT_STATUS_SUCCESS
+	}
+	if open.Tree.Share.locks.Blocks(open.Path, open, offset, length, writing) {
+		return nt_status.NT_STATUS_FILE_LOCK_CONFLICT
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
 
 // handleWriteAndx answers SMB_COM_WRITE_ANDX.
 func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
@@ -406,8 +558,14 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	// The declared length governs, but never past what actually arrived: the two
 	// disagreeing is a malformed request, not licence to read past the buffer.
 	data := []byte(request.Data)
-	if declared := int(request.DataLength); declared < len(data) {
+	if declared := writeLengthOf(conn, request); declared < len(data) {
 		data = data[:declared]
+	}
+
+	if status := lockedAgainst(open, uint64(offset), uint64(len(data)), true); status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: %s wrote %d bytes of %q at %d, which another handle has locked",
+			conn.Remote, len(data), open.Path, offset)
+		return status
 	}
 
 	file, status := fileFor(open)
@@ -430,7 +588,12 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	}
 
 	response := commands.NewWriteAndxResponse()
-	response.Count = types.USHORT(written)
+	// Count is 16 bits, so a write of 0x10000 bytes or more reports what it wrote
+	// across Count and CountHigh ([MS-SMB] section 2.2.4.3.2). Reporting only the
+	// low word would tell the client that a 64 KiB write wrote nothing, and a
+	// client that retried from there would write the same bytes twice.
+	response.Count = types.USHORT(written & 0xFFFF)
+	response.CountHigh = types.USHORT(written >> 16)
 
 	if err := w.WriteResponse(response); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the write for %s: %v", conn.Remote, err)
@@ -492,9 +655,10 @@ func handleFlush(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 func fileFor(open *Open) (File, nt_status.NT_STATUS) {
 	switch {
 	case open.IsPipe:
-		// The pipe handler serves a transacted exchange rather than a stream. A
-		// client that reads or writes a pipe handle directly is told so, rather
-		// than given an empty read it would take for an answer.
+		// A pipe handle has a handler behind it rather than a file. Reading one is
+		// served by readPipeHandle before reaching here; writing one is a request
+		// the handler has no way to receive, since a handler answers a transaction
+		// rather than accepting a stream, so it is refused.
 		return nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	case open.File == nil:
 		// What a read or a write on a directory is answered with.
