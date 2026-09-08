@@ -7,17 +7,46 @@ import (
 	"time"
 )
 
-// MaxDirectTCPPayloadSize caps the payload size accepted from a single Direct TCP frame.
-// The Direct TCP session service length field is 24 bits wide (up to ~16 MiB), but SMB1
-// negotiates a MaxBufferSize of at most a few tens of kilobytes in practice. 1 MiB is a
-// generous upper bound that rejects DoS-scale frames without blocking legitimate traffic.
-const MaxDirectTCPPayloadSize = 1 * 1024 * 1024
+// MaxDirectTCPPayloadSize is the default cap on the payload accepted from a single
+// Direct TCP frame, and is the largest the session service can describe: the length
+// field is 24 bits wide ([MS-SMB2] 2.1).
+//
+// The transport carries SMB1, SMB2 and SMB3, whose negotiated limits differ by more
+// than an order of magnitude — a Windows server advertises an 8 MiB MaxReadSize —
+// so a smaller default here would refuse frames the peer was entitled to send after
+// a successful negotiation. Bounding what a peer can induce this side to allocate is
+// a policy the accepting side sets with SetMaxPayloadSize, not something a constant
+// shared with the client can express.
+const MaxDirectTCPPayloadSize = 0xFFFFFF
 
 // TCPTransport implements the Transport interface for Direct TCP transport
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/f906c680-330c-43ae-9a71-f854e24aeee6
 type TCPTransport struct {
 	conn    net.Conn
 	timeout time.Duration
+
+	// maxPayload caps the payload accepted from a single frame. Zero means
+	// MaxDirectTCPPayloadSize.
+	maxPayload uint32
+}
+
+// SetMaxPayloadSize caps the payload this transport will accept from a single
+// Direct TCP frame, so a listener can bound the allocation an unauthenticated peer
+// can induce. A value of 0, or one above what the 24-bit length field can describe,
+// restores the MaxDirectTCPPayloadSize default.
+func (t *TCPTransport) SetMaxPayloadSize(n uint32) {
+	if n == 0 || n > MaxDirectTCPPayloadSize {
+		n = MaxDirectTCPPayloadSize
+	}
+	t.maxPayload = n
+}
+
+// maxPayloadSize returns the cap in effect for this transport.
+func (t *TCPTransport) maxPayloadSize() uint32 {
+	if t.maxPayload == 0 {
+		return MaxDirectTCPPayloadSize
+	}
+	return t.maxPayload
 }
 
 // NewTCPTransport creates a new Direct TCP transport
@@ -127,8 +156,8 @@ func (t *TCPTransport) Receive() ([]byte, error) {
 	// Parse length from 3 bytes
 	length := (int(header[1]) << 16) | (int(header[2]) << 8) | int(header[3])
 
-	if length > MaxDirectTCPPayloadSize {
-		return nil, fmt.Errorf("Direct TCP payload length %d exceeds maximum %d", length, MaxDirectTCPPayloadSize)
+	if cap := t.maxPayloadSize(); uint32(length) > cap {
+		return nil, fmt.Errorf("Direct TCP payload length %d exceeds maximum %d", length, cap)
 	}
 
 	buffer := make([]byte, length)
