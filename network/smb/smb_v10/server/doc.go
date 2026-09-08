@@ -42,6 +42,23 @@
 //   - File service: open and create, read, write, close, flush, delete, rename,
 //     and the directory create, remove and check commands.
 //
+//   - The core-set file access commands, which a client that does not use the NT
+//     commands opens and transfers with: SMB_COM_OPEN, SMB_COM_OPEN_ANDX,
+//     SMB_COM_CREATE, SMB_COM_CREATE_NEW, SMB_COM_CREATE_TEMPORARY,
+//     SMB_COM_READ, SMB_COM_WRITE, SMB_COM_WRITE_AND_CLOSE, SMB_COM_SEEK, the
+//     deprecated SMB_COM_TREE_CONNECT, and SMB_COM_PROCESS_EXIT.
+//
+//     Two of these behave in ways worth knowing. A write of zero bytes sets the
+//     file's length rather than writing nothing, which is what [MS-CIFS] defines
+//     it as. And SMB_COM_PROCESS_EXIT releases the handles held by the PID in the
+//     request header, which is why an open records the PID that made it — the
+//     command exists to clean up after one failed client process on a connection
+//     that may be serving several.
+//
+//     SMB_COM_CLOSE_AND_TREE_DISC stays refused on purpose: [MS-CIFS] section
+//     2.2.4.45 records it as reserved but never implemented and has servers
+//     answer STATUS_NOT_IMPLEMENTED, which is what happens.
+//
 //   - The core-set file information commands, which describe a file without a
 //     transaction: SMB_COM_QUERY_INFORMATION and SMB_COM_SET_INFORMATION by path,
 //     and SMB_COM_QUERY_INFORMATION2 and SMB_COM_SET_INFORMATION2 on a handle.

@@ -39,6 +39,20 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_TREE_CONNECT_ANDX: handleTreeConnectAndx,
 	codes.SMB_COM_TREE_DISCONNECT:   handleTreeDisconnect,
 
+	// The core-set file access commands, which a client that does not use the NT
+	// commands opens and transfers with.
+	codes.SMB_COM_OPEN:             handleOpen,
+	codes.SMB_COM_OPEN_ANDX:        handleOpenAndx,
+	codes.SMB_COM_CREATE:           handleCreate,
+	codes.SMB_COM_CREATE_NEW:       handleCreateNew,
+	codes.SMB_COM_CREATE_TEMPORARY: handleCreateTemporary,
+	codes.SMB_COM_READ:             handleRead,
+	codes.SMB_COM_WRITE:            handleWrite,
+	codes.SMB_COM_WRITE_AND_CLOSE:  handleWriteAndClose,
+	codes.SMB_COM_SEEK:             handleSeek,
+	codes.SMB_COM_TREE_CONNECT:     handleTreeConnect,
+	codes.SMB_COM_PROCESS_EXIT:     handleProcessExit,
+
 	// File handles.
 	codes.SMB_COM_NT_CREATE_ANDX: handleNtCreateAndx,
 	codes.SMB_COM_CLOSE:          handleClose,

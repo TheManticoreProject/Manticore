@@ -123,6 +123,18 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_TREE_CONNECT_ANDX: "connects a tree to a share",
 	codes.SMB_COM_TREE_DISCONNECT:   "drops the tree and its handles",
 
+	codes.SMB_COM_OPEN:             "opens an existing file by path, core set",
+	codes.SMB_COM_OPEN_ANDX:        "opens, creates or truncates by path, core set",
+	codes.SMB_COM_CREATE:           "creates or truncates a file and opens it",
+	codes.SMB_COM_CREATE_NEW:       "creates a file, refusing one that exists",
+	codes.SMB_COM_CREATE_TEMPORARY: "creates a file under a name the server chooses",
+	codes.SMB_COM_READ:             "reads from a handle, core set",
+	codes.SMB_COM_WRITE:            "writes through a handle, core set; a zero count truncates",
+	codes.SMB_COM_WRITE_AND_CLOSE:  "writes through a handle and closes it",
+	codes.SMB_COM_SEEK:             "moves a handle's file pointer",
+	codes.SMB_COM_TREE_CONNECT:     "connects a tree to a share, deprecated form",
+	codes.SMB_COM_PROCESS_EXIT:     "releases the handles a client process still held",
+
 	codes.SMB_COM_NT_CREATE_ANDX: "opens or creates a file or directory",
 	codes.SMB_COM_CLOSE:          "releases a handle",
 	codes.SMB_COM_READ_ANDX:      "reads from a handle",
@@ -358,6 +370,12 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	// would not make the accounting trivially true.
 	//
 	// The floor is on how many commands the message layer knows, not on how many
+	// this walk exercised. Those were the same number when little was served, but
+	// every command that gains a handler moves out of this walk and into
+	// TestConformanceServedCommandsAreServed — so a floor on `exercised` falls as
+	// the server grows and has to be edited downwards to keep passing, which
+	// makes it a record of past progress rather than a guard. A floor on `known`
+	// says what the guard was for and stays true.
 	// this walk exercised. Those were the same number when nothing much was
 	// served, but every command that gains a handler moves out of this walk and
 	// into TestConformanceServedCommandsAreServed — so a floor on `exercised`
