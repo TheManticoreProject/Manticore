@@ -39,43 +39,15 @@ func handleTreeConnectAndx(conn *Connection, w ResponseWriter, req *message.Mess
 	// negotiates it on the connection but sends its tree connect in OEM, so
 	// taking the connection's setting here decodes the path as garbage.
 	unicode := req.Header.Flags2.IsUnicode()
-	path := decodeWireString(request.Path, unicode)
-	name := shareNameFromPath(path)
-	if name == "" {
-		logger.Debugf("SMB1 server: %s sent a tree connect to %q, which is not a UNC path", conn.Remote, path)
-		return nt_status.NT_STATUS_BAD_NETWORK_NAME
-	}
 
-	share := conn.Server.Share(name)
-	if share == nil {
-		logger.Debugf("SMB1 server: %s asked for share %q, which is not served", conn.Remote, name)
-		return nt_status.NT_STATUS_BAD_NETWORK_NAME
+	tree, status := conn.connectTree(req,
+		decodeWireString(request.Path, unicode),
+		decodeOEMString(request.Service))
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return status
 	}
-
-	// A client may say what kind of resource it expects. Answering a mismatch
-	// here is better than letting it discover the difference through a command
-	// that makes no sense on the resource it actually got.
-	if wanted := ShareType(decodeOEMString(request.Service)); wanted != "" && wanted != ShareTypeAny && wanted != share.Type {
-		logger.Debugf("SMB1 server: %s asked for share %q as %q, but it is %q",
-			conn.Remote, name, wanted, share.Type)
-		return nt_status.NT_STATUS_BAD_DEVICE_TYPE
-	}
-
-	tid, err := conn.tids.Allocate()
-	if err != nil {
-		logger.Warnf("SMB1 server: refusing a tree connect from %s: %v", conn.Remote, err)
-		return nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES
-	}
-
-	tree := &Tree{
-		TID:        tid,
-		Share:      share,
-		SessionUID: session.UID,
-		Created:    time.Now().UTC(),
-	}
-	conn.addTree(tree)
-
-	logger.Debugf("SMB1 server: %s connected share %q as TID 0x%04X", conn.Remote, share.Name, tid)
+	share := tree.Share
+	tid := tree.TID
 
 	response := commands.NewTreeConnectAndxResponse()
 	// The Service string is OEM even when the connection negotiated Unicode,
@@ -93,6 +65,68 @@ func handleTreeConnectAndx(conn *Connection, w ResponseWriter, req *message.Mess
 		logger.Debugf("SMB1 server: failed to answer the tree connect for %s: %v", conn.Remote, err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
+}
+
+// connectTree resolves a UNC path to a registered share and allocates a tree on
+// it.
+//
+// It is shared by SMB_COM_TREE_CONNECT_ANDX and the deprecated
+// SMB_COM_TREE_CONNECT, which differ only in what their responses carry — so
+// sharing this keeps the two from disagreeing about which shares exist or what a
+// client is allowed to connect.
+//
+// Parameters:
+//   - req: the request, for its UID
+//   - path: the UNC path the client sent, already decoded
+//   - service: the resource type the client expects, or empty
+//
+// Returns:
+//   - The tree, or the status that says why there is none
+func (c *Connection) connectTree(req *message.Message, path, service string) (*Tree, nt_status.NT_STATUS) {
+	session := c.Session(uint16(req.Header.UID))
+	if session == nil {
+		// The dispatcher checks this, so reaching here means the tables
+		// disagree; refusing is still the right answer.
+		return nil, nt_status.NT_STATUS_SMB_BAD_UID
+	}
+
+	name := shareNameFromPath(path)
+	if name == "" {
+		logger.Debugf("SMB1 server: %s sent a tree connect to %q, which is not a UNC path", c.Remote, path)
+		return nil, nt_status.NT_STATUS_BAD_NETWORK_NAME
+	}
+
+	share := c.Server.Share(name)
+	if share == nil {
+		logger.Debugf("SMB1 server: %s asked for share %q, which is not served", c.Remote, name)
+		return nil, nt_status.NT_STATUS_BAD_NETWORK_NAME
+	}
+
+	// A client may say what kind of resource it expects. Answering a mismatch
+	// here is better than letting it discover the difference through a command
+	// that makes no sense on the resource it actually got.
+	if wanted := ShareType(service); wanted != "" && wanted != ShareTypeAny && wanted != share.Type {
+		logger.Debugf("SMB1 server: %s asked for share %q as %q, but it is %q",
+			c.Remote, name, wanted, share.Type)
+		return nil, nt_status.NT_STATUS_BAD_DEVICE_TYPE
+	}
+
+	tid, err := c.tids.Allocate()
+	if err != nil {
+		logger.Warnf("SMB1 server: refusing a tree connect from %s: %v", c.Remote, err)
+		return nil, nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES
+	}
+
+	tree := &Tree{
+		TID:        tid,
+		Share:      share,
+		SessionUID: session.UID,
+		Created:    time.Now().UTC(),
+	}
+	c.addTree(tree)
+
+	logger.Debugf("SMB1 server: %s connected share %q as TID 0x%04X", c.Remote, share.Name, tid)
+	return tree, nt_status.NT_STATUS_SUCCESS
 }
 
 // handleTreeDisconnect answers SMB_COM_TREE_DISCONNECT: it drops the tree and

@@ -225,8 +225,12 @@ func TestSessionEstablishedWithValidCredential(t *testing.T) {
 	waitFor(t, func() bool { return srv.Connections() == 1 }, "the connection was not registered")
 
 	// The session is usable: a command that requires one is now dispatched
-	// rather than refused.
-	response := sendOnSession(t, session, codes.SMB_COM_TREE_CONNECT_ANDX, commands.NewSeekRequest())
+	// rather than refused by the UID check. SMB_COM_CLOSE_AND_TREE_DISC is
+	// recognized and never served — [MS-CIFS] section 2.2.4.45 has it "reserved
+	// but not implemented" — so reaching STATUS_NOT_IMPLEMENTED means the
+	// dispatch table was consulted, which is the point.
+	response := sendOnSession(t, session, codes.SMB_COM_CLOSE_AND_TREE_DISC,
+		commands.NewCloseAndTreeDiscRequest())
 	if response.Header.Status != uint32(nt_status.NT_STATUS_NOT_IMPLEMENTED) {
 		t.Fatalf("Status = 0x%08X, want NT_STATUS_NOT_IMPLEMENTED on an established session", response.Header.Status)
 	}

@@ -55,6 +55,21 @@ type Open struct {
 	// client deletes something it holds open.
 	DeleteOnClose bool
 
+	// PID is the process identifier that opened the handle.
+	//
+	// It is recorded so SMB_COM_PROCESS_EXIT can release what a client process
+	// still held when it died: [MS-CIFS] section 2.2.4.18 has the server close
+	// "any resources owned by the Process ID (PID) listed in the request header",
+	// and without this the command would have nothing to select on.
+	PID uint32
+
+	// Position is the handle's file pointer, which SMB_COM_SEEK moves.
+	//
+	// Nothing else consults it, because every read and write this server serves
+	// carries its own offset. It is kept because seeking from the current
+	// position is only meaningful if the position persists between calls.
+	Position int64
+
 	// Created is when the handle was opened.
 	Created time.Time
 }
