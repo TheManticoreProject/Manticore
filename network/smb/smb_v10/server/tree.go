@@ -181,6 +181,15 @@ func (c *Connection) closeOpen(fid uint16) error {
 	delete(c.opens, fid)
 	c.fids.Release(fid)
 
+	// Locks go first, and unconditionally. [MS-CIFS] section 2.2.4.32.1: "Closing
+	// a file with locks still in force causes the locks to be released". A lock
+	// left behind here would be owned by a handle that no longer exists, so
+	// nothing could ever release it and the range would stay locked for the life
+	// of the share.
+	if open.Tree != nil && open.Tree.Share != nil && open.Tree.Share.locks != nil {
+		open.Tree.Share.locks.ReleaseAll(open)
+	}
+
 	var firstErr error
 	if open.File != nil {
 		if err := open.File.Close(); err != nil {

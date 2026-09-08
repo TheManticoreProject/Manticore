@@ -14,13 +14,23 @@ import (
 
 // LockingAndxRequest
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/b5c6eae7-976b-4444-b52e-c76c68c861ad
-// LockingAndxLargeFiles is the TypeOfLock bit that selects the wire format of the
-// Locks and Unlocks arrays: set, they are 20-byte LOCKING_ANDX_RANGE64 entries;
-// clear, they are 10-byte LOCKING_ANDX_RANGE32 entries ([MS-CIFS] 2.2.4.32.1).
+// The TypeOfLock bits of an SMB_COM_LOCKING_ANDX request ([MS-CIFS] 2.2.4.32.1).
 //
-// Both are held in memory as LOCKING_ANDX_RANGE64, which is the wider of the two,
-// so a caller works with one shape and this bit decides only what goes on the wire.
-const LockingAndxLargeFiles = 0x10
+// LockingAndxLargeFiles selects the wire format of the Locks and Unlocks arrays:
+// set, they are 20-byte LOCKING_ANDX_RANGE64 entries; clear, they are 10-byte
+// LOCKING_ANDX_RANGE32 entries. Both are held in memory as LOCKING_ANDX_RANGE64,
+// which is the wider of the two, so a caller works with one shape and this bit
+// decides only what goes on the wire.
+//
+// An exclusive read-and-write lock is the absence of LockingAndxSharedLock rather
+// than a bit of its own, which is why READ_WRITE_LOCK is documented as 0x00.
+const (
+	LockingAndxSharedLock     = 0x01
+	LockingAndxOplockRelease  = 0x02
+	LockingAndxChangeLockType = 0x04
+	LockingAndxCancelLock     = 0x08
+	LockingAndxLargeFiles     = 0x10
+)
 
 type LockingAndxRequest struct {
 	command_interface.Command

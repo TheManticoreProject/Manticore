@@ -128,6 +128,7 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_READ_ANDX:      "reads from a handle",
 	codes.SMB_COM_WRITE_ANDX:     "writes through a handle",
 	codes.SMB_COM_FLUSH:          "commits a handle, or the whole tree",
+	codes.SMB_COM_LOCKING_ANDX:   "acquires and releases byte-range locks",
 
 	codes.SMB_COM_DELETE:           "deletes a file, wildcards included",
 	codes.SMB_COM_RENAME:           "renames or moves an entry",

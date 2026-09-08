@@ -61,9 +61,16 @@
 //     a session setup batched with a tree connect work — the client had no UID to
 //     send. A failure ends the chain and the error response closes it, per
 //     [MS-CIFS] 3.3.4.1, so the answers already produced still come back.
+//   - Byte-range locking, over SMB_COM_LOCKING_ANDX: locks and unlocks in one
+//     atomic request, in both range formats, exclusive and shared. Overlapping
+//     locks are refused, an unlock of a range the handle does not hold is
+//     refused, and closing a handle releases what it held. The locks are
+//     enforced: a read or a write through another handle onto an exclusively
+//     locked range is refused, and a shared lock refuses only writes. A request
+//     that offers to wait waits, bounded by Config.MaxLockWait.
 //
-// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: byte-range
-// locking, seek, and the legacy SMB_COM_OPEN_ANDX.
+// Not yet implemented, and answered with STATUS_NOT_IMPLEMENTED: seek and the
+// legacy SMB_COM_OPEN_ANDX.
 //
 // NT_TRANSACT_NOTIFY_CHANGE is deliberately absent rather than pending. It needs
 // two things this package does not have: a FileSystem that can be watched, and a
@@ -101,6 +108,25 @@
 //
 // A share with no provider answers STATUS_NOT_SUPPORTED rather than inventing a
 // descriptor.
+//
+// # Byte-range locks
+//
+// Locks are held by the server, in a table on the Share, rather than delegated to
+// the FileSystem. That is deliberate. SMB lock semantics are not the host's: a
+// lock is held on a FID and excludes every other FID onto the same file, whoever
+// opened it, and a MemoryFileSystem has no host locks to delegate to while a
+// LocalFileSystem's would carry the platform's rules rather than the protocol's.
+// Holding them here means every backend gets the same, correct semantics and none
+// of them can forget to.
+//
+// The table belongs to the Share because a lock is a statement about a file, and
+// the handles it has to exclude are on other connections as much as on the one
+// that took it.
+//
+// A blocked request waits by polling, and Config.MaxLockWait bounds how long. A
+// client may ask to wait forever, and the connection serves nothing else while it
+// does, so an unbounded wait would let a client stall itself with no way out — the
+// cancel it would send arrives behind the request it wanted to cancel.
 //
 // # Named pipes
 //
