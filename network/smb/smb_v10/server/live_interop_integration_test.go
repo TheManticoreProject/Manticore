@@ -109,20 +109,27 @@ func (p *livePipe) Calls() []string {
 	return append([]string(nil), p.calls...)
 }
 
-func (p *livePipe) OpenPipe(name string) error {
+func (p *livePipe) OpenPipe(name string) (PipeSession, error) {
 	p.record("open:" + name)
 	if strings.ToLower(name) != "srvsvc" {
-		return fmt.Errorf("pipe %q not found", name)
+		return nil, fmt.Errorf("pipe %q not found", name)
 	}
+	return &livePipeSession{handler: p, name: name}, nil
+}
+
+// livePipeSession is one open of a livePipe.
+type livePipeSession struct {
+	handler *livePipe
+	name    string
+}
+
+func (s *livePipeSession) Close() error {
+	s.handler.record("close:" + s.name)
 	return nil
 }
 
-func (p *livePipe) ClosePipe(name string) error {
-	p.record("close:" + name)
-	return nil
-}
-
-func (p *livePipe) Transact(name string, input []byte, maxOutput int) ([]byte, bool, error) {
+func (s *livePipeSession) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
+	p, name := s.handler, s.name
 	if answer := rpcBindAck(input); answer != nil {
 		p.record("bind:" + name)
 		if len(answer) > maxOutput {

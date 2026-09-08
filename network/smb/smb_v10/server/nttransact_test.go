@@ -24,6 +24,9 @@ import (
 
 // echoPipe is a PipeHandler that returns whatever is written to it, which is the
 // smallest handler that exercises the whole path a request-response pipe takes.
+//
+// It records the sessions it hands out so a test can assert that each open gets
+// its own and that closing a handle closes it.
 type echoPipe struct {
 	mutex sync.Mutex
 
@@ -33,6 +36,9 @@ type echoPipe struct {
 	// opened and closed record the calls, so a test can assert the lifecycle.
 	opened []string
 	closed []string
+
+	// sessions are the opens handed out, newest last.
+	sessions []*echoPipeSession
 
 	// prefix is prepended to every answer, so a test can tell the handler's
 	// output from its input.
@@ -50,22 +56,53 @@ func newEchoPipe(names ...string) *echoPipe {
 	return &echoPipe{names: served, prefix: "echo:"}
 }
 
-func (p *echoPipe) OpenPipe(name string) error {
+func (p *echoPipe) OpenPipe(name string) (PipeSession, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if !p.names[strings.ToLower(name)] {
-		return fmt.Errorf("pipe %q not found", name)
+		return nil, fmt.Errorf("pipe %q not found", name)
 	}
 	p.opened = append(p.opened, name)
-	return nil
+
+	session := &echoPipeSession{handler: p, name: name}
+	p.sessions = append(p.sessions, session)
+	return session, nil
 }
 
-func (p *echoPipe) Transact(name string, input []byte, maxOutput int) ([]byte, bool, error) {
+// sessionCount reports how many sessions the handler has handed out, and
+// sessionAt returns one of them.
+func (p *echoPipe) sessionCount() int {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	if !p.names[strings.ToLower(name)] {
-		return nil, false, fmt.Errorf("pipe %q not found", name)
+	return len(p.sessions)
+}
+
+func (p *echoPipe) sessionAt(index int) *echoPipeSession {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	return p.sessions[index]
+}
+
+// echoPipeSession is one open of an echoPipe.
+type echoPipeSession struct {
+	handler *echoPipe
+	name    string
+
+	// transacts counts the exchanges on this open, so a test can tell that two
+	// handles are two conversations.
+	transacts int
+	closed    bool
+}
+
+func (s *echoPipeSession) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
+	p := s.handler
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if s.closed {
+		return nil, false, fmt.Errorf("pipe %q: the session is closed", s.name)
 	}
+	s.transacts++
 
 	answer := append([]byte(p.prefix), input...)
 	if p.truncateAt > 0 && len(answer) > p.truncateAt {
@@ -77,10 +114,26 @@ func (p *echoPipe) Transact(name string, input []byte, maxOutput int) ([]byte, b
 	return answer, false, nil
 }
 
-func (p *echoPipe) ClosePipe(name string) error {
+// transactCount and isClosed read the session's state under the handler's lock,
+// since the goroutine serving the connection is what wrote it.
+func (s *echoPipeSession) transactCount() int {
+	s.handler.mutex.Lock()
+	defer s.handler.mutex.Unlock()
+	return s.transacts
+}
+
+func (s *echoPipeSession) isClosed() bool {
+	s.handler.mutex.Lock()
+	defer s.handler.mutex.Unlock()
+	return s.closed
+}
+
+func (s *echoPipeSession) Close() error {
+	p := s.handler
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	p.closed = append(p.closed, name)
+	s.closed = true
+	p.closed = append(p.closed, s.name)
 	return nil
 }
 
@@ -279,6 +332,81 @@ func TestNamedPipeTransact(t *testing.T) {
 	}
 	if got := pipes.closedNames(); len(got) != 1 || got[0] != "srvsvc" {
 		t.Errorf("the handler was asked to close %v, want [srvsvc]", got)
+	}
+}
+
+// TestNamedPipeEachHandleGetsItsOwnSession asserts that two opens of one pipe are
+// two conversations: each handle carries its own session, a transaction runs on
+// the session of the handle it names, and closing one handle closes only that
+// one.
+//
+// This is what an RPC endpoint depends on. A bind establishes the presentation
+// contexts and fragment size the requests after it are read against, so two
+// clients sharing a session would read each other's negotiation.
+func TestNamedPipeEachHandleGetsItsOwnSession(t *testing.T) {
+	pipes := newEchoPipe("srvsvc")
+	_, client := pipeServer(t, pipes)
+
+	first, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the first handle failed: %v", err)
+	}
+	second, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the second handle failed: %v", err)
+	}
+	if first == second {
+		t.Fatalf("both opens returned FID 0x%04X", first)
+	}
+
+	if got := pipes.sessionCount(); got != 2 {
+		t.Fatalf("two opens of one pipe produced %d sessions, want 2", got)
+	}
+	firstSession, secondSession := pipes.sessionAt(0), pipes.sessionAt(1)
+
+	// Two transactions on the first handle and one on the second, so the counts
+	// tell the sessions apart rather than merely proving both work.
+	for _, payload := range []string{"one", "two"} {
+		if _, status := transactPipe(t, client, first, []byte(payload)); status != 0 {
+			t.Fatalf("the transaction on the first handle answered 0x%08X", status)
+		}
+	}
+	if _, status := transactPipe(t, client, second, []byte("three")); status != 0 {
+		t.Fatalf("the transaction on the second handle answered 0x%08X", status)
+	}
+
+	if got := firstSession.transactCount(); got != 2 {
+		t.Errorf("the first handle's session saw %d transactions, want 2", got)
+	}
+	if got := secondSession.transactCount(); got != 1 {
+		t.Errorf("the second handle's session saw %d transactions, want 1", got)
+	}
+
+	// Closing one handle closes its session and leaves the other's alone, which
+	// is what lets a client keep a bound handle open while it closes another.
+	if err := client.CloseFile(first); err != nil {
+		t.Fatalf("closing the first handle failed: %v", err)
+	}
+	if !firstSession.isClosed() {
+		t.Error("closing the first handle did not close its session")
+	}
+	if secondSession.isClosed() {
+		t.Error("closing the first handle closed the second handle's session")
+	}
+
+	// The surviving handle still works.
+	if _, status := transactPipe(t, client, second, []byte("four")); status != 0 {
+		t.Errorf("the transaction on the surviving handle answered 0x%08X", status)
+	}
+	if got := secondSession.transactCount(); got != 2 {
+		t.Errorf("the surviving handle's session saw %d transactions, want 2", got)
+	}
+
+	if err := client.CloseFile(second); err != nil {
+		t.Fatalf("closing the second handle failed: %v", err)
+	}
+	if !secondSession.isClosed() {
+		t.Error("closing the second handle did not close its session")
 	}
 }
 
@@ -811,26 +939,28 @@ type oversizedAnswerPipe struct {
 	answer []byte
 }
 
-func (p *oversizedAnswerPipe) OpenPipe(name string) error {
+func (p *oversizedAnswerPipe) OpenPipe(name string) (PipeSession, error) {
 	if !strings.EqualFold(name, p.name) {
-		return fmt.Errorf("pipe %q not found", name)
+		return nil, fmt.Errorf("pipe %q not found", name)
 	}
-	return nil
+	return &oversizedAnswerSession{answer: p.answer}, nil
 }
 
-func (p *oversizedAnswerPipe) Transact(name string, input []byte, maxOutput int) ([]byte, bool, error) {
-	if !strings.EqualFold(name, p.name) {
-		return nil, false, fmt.Errorf("pipe %q not found", name)
-	}
-	if len(p.answer) > maxOutput {
-		return p.answer[:maxOutput], true, nil
+// oversizedAnswerSession is one open of an oversizedAnswerPipe.
+type oversizedAnswerSession struct {
+	answer []byte
+}
+
+func (s *oversizedAnswerSession) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
+	if len(s.answer) > maxOutput {
+		return s.answer[:maxOutput], true, nil
 	}
 	// The whole answer is handed over: cutting it to the client's buffer is the
 	// server's job, and asserting that is the point of these tests.
-	return p.answer, false, nil
+	return s.answer, false, nil
 }
 
-func (p *oversizedAnswerPipe) ClosePipe(string) error { return nil }
+func (s *oversizedAnswerSession) Close() error { return nil }
 
 // countingAnswer is a block whose every byte identifies its own position, so a
 // reassembled answer that is right in length but wrong in order still fails.

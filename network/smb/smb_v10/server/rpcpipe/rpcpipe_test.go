@@ -12,7 +12,9 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/rpcserver"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
+	"github.com/TheManticoreProject/Manticore/windows/guid"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -31,9 +33,28 @@ const maxPipeAnswer = 64 * 1024
 // would fail here rather than only against a real client.
 type pipeInvoker struct {
 	t       *testing.T
-	handler *Handler
 	pipe    string
+	session server.PipeSession
 	callID  uint32
+}
+
+// openInvoker opens a pipe on a handler and returns a client for that open.
+//
+// The session is what the invoker drives, because that is what a client holds: an
+// open of the pipe, not the pipe.
+func openInvoker(t *testing.T, handler *Handler, pipe string) *pipeInvoker {
+	t.Helper()
+
+	session, err := handler.OpenPipe(pipe)
+	if err != nil {
+		t.Fatalf("OpenPipe(%q) failed: %v", pipe, err)
+	}
+	t.Cleanup(func() {
+		if err := session.Close(); err != nil {
+			t.Errorf("closing the session on %q failed: %v", pipe, err)
+		}
+	})
+	return &pipeInvoker{t: t, pipe: pipe, session: session}
 }
 
 // bind performs the association's bind and returns the bind_ack.
@@ -56,7 +77,7 @@ func (p *pipeInvoker) bind(abstract syntax.SyntaxID) *pdu.BindAck {
 		p.t.Fatalf("failed to marshal the bind: %v", err)
 	}
 
-	reply, more, err := p.handler.Transact(p.pipe, request, maxPipeAnswer)
+	reply, more, err := p.session.Transact(request, maxPipeAnswer)
 	if err != nil {
 		p.t.Fatalf("Transact refused the bind on %q: %v", p.pipe, err)
 	}
@@ -97,7 +118,7 @@ func (p *pipeInvoker) Invoke(in ndr.Call, out any) error {
 		return fmt.Errorf("marshal the request PDU: %w", err)
 	}
 
-	reply, more, err := p.handler.Transact(p.pipe, framed, maxPipeAnswer)
+	reply, more, err := p.session.Transact(framed, maxPipeAnswer)
 	if err != nil {
 		return fmt.Errorf("transact on %q: %w", p.pipe, err)
 	}
@@ -113,6 +134,69 @@ func (p *pipeInvoker) Invoke(in ndr.Call, out any) error {
 		return fmt.Errorf("unmarshal the response stub: %w", err)
 	}
 	return nil
+}
+
+// callRaw sends one request with a stub of its own choosing and reports what came
+// back, so a test can drive an opnum or a stub no client stub would produce.
+//
+// Parameters:
+//   - opnum: the method to call
+//   - stub: the request stub, byte for byte
+//
+// Returns:
+//   - nil when a response came back, or the fault or transport error
+func (p *pipeInvoker) callRaw(opnum uint16, stub []byte) error {
+	p.t.Helper()
+
+	p.callID++
+	request := &pdu.Request{
+		Header: pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag|pdu.PFCLastFrag, p.callID),
+		Opnum:  opnum,
+		Stub:   stub,
+	}
+	framed, err := request.Marshal()
+	if err != nil {
+		p.t.Fatalf("failed to marshal the request: %v", err)
+	}
+
+	reply, _, err := p.session.Transact(framed, maxPipeAnswer)
+	if err != nil {
+		return fmt.Errorf("transact on %q: %w", p.pipe, err)
+	}
+	_, err = reassemble(reply)
+	return err
+}
+
+// callOnContext sends one request under a chosen presentation context and returns
+// the reassembled response stub.
+//
+// Parameters:
+//   - contextID: the presentation context to send under
+//   - opnum: the method to call
+//   - stub: the request stub
+//
+// Returns:
+//   - The response stub, or the fault the call produced
+func (p *pipeInvoker) callOnContext(contextID uint16, opnum uint16, stub []byte) ([]byte, error) {
+	p.t.Helper()
+
+	p.callID++
+	request := &pdu.Request{
+		Header:    pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag|pdu.PFCLastFrag, p.callID),
+		ContextID: contextID,
+		Opnum:     opnum,
+		Stub:      stub,
+	}
+	framed, err := request.Marshal()
+	if err != nil {
+		p.t.Fatalf("failed to marshal the request: %v", err)
+	}
+
+	reply, _, err := p.session.Transact(framed, maxPipeAnswer)
+	if err != nil {
+		return nil, fmt.Errorf("transact on %q: %w", p.pipe, err)
+	}
+	return reassemble(reply)
 }
 
 // reassemble joins the response fragments of a reply, and reports a fault as an
@@ -184,18 +268,81 @@ func TestHandlerSatisfiesThePipeContract(t *testing.T) {
 	handler := testHandler()
 
 	for _, name := range []string{"srvsvc", "wkssvc", `\PIPE\srvsvc`, "PIPE/wkssvc", "SrvSvc"} {
-		if err := handler.OpenPipe(name); err != nil {
+		session, err := handler.OpenPipe(name)
+		if err != nil {
 			t.Errorf("OpenPipe(%q) failed: %v", name, err)
 			continue
 		}
-		if err := handler.ClosePipe(name); err != nil {
-			t.Errorf("ClosePipe(%q) failed: %v", name, err)
+		if session == nil {
+			t.Errorf("OpenPipe(%q) returned no session and no error", name)
+			continue
+		}
+		if err := session.Close(); err != nil {
+			t.Errorf("closing the session on %q failed: %v", name, err)
+		}
+		// Closing twice is what happens when a handle is released along two
+		// paths, so it has to be harmless rather than an error the server logs.
+		if err := session.Close(); err != nil {
+			t.Errorf("closing the session on %q a second time failed: %v", name, err)
 		}
 	}
 
 	for _, name := range []string{"lsarpc", "samr", "", "srvsvc2"} {
-		if err := handler.OpenPipe(name); err == nil {
+		session, err := handler.OpenPipe(name)
+		if err == nil {
 			t.Errorf("OpenPipe(%q) succeeded for a pipe this handler does not serve", name)
+			continue
+		}
+		if session != nil {
+			t.Errorf("OpenPipe(%q) returned a session alongside its error", name)
+		}
+		// The server turns an error whose message says "not found" into
+		// STATUS_OBJECT_NAME_NOT_FOUND, which is what a client asking for a pipe
+		// that does not exist has to be told.
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("OpenPipe(%q) failed with %v, which the server cannot map to STATUS_OBJECT_NAME_NOT_FOUND", name, err)
+		}
+	}
+}
+
+func TestTransactAfterCloseIsRefused(t *testing.T) {
+	session, err := testHandler().OpenPipe("srvsvc")
+	if err != nil {
+		t.Fatalf("OpenPipe failed: %v", err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("closing the session failed: %v", err)
+	}
+
+	if _, _, err := session.Transact([]byte{0}, maxPipeAnswer); err == nil {
+		t.Error("a closed session answered a transaction")
+	}
+}
+
+func TestNormalisePipeName(t *testing.T) {
+	// The server strips the leading separator and the PIPE element before it
+	// calls a handler, but Options.Services and a caller handing over a raw path
+	// both come through here, so every form a client names a pipe in has to
+	// reduce to the endpoint name.
+	cases := map[string]string{
+		"srvsvc":        "srvsvc",
+		"SrvSvc":        "srvsvc",
+		`\srvsvc`:       "srvsvc",
+		`\PIPE\srvsvc`:  "srvsvc",
+		`\pipe\srvsvc`:  "srvsvc",
+		"PIPE/srvsvc":   "srvsvc",
+		"/pipe/srvsvc/": "srvsvc",
+		// The pipe directory itself names no pipe, and neither does nothing.
+		`\PIPE\`: "",
+		"PIPE":   "",
+		"pipe":   "",
+		`\`:      "",
+		"":       "",
+	}
+
+	for given, want := range cases {
+		if got := normalisePipeName(given); got != want {
+			t.Errorf("normalisePipeName(%q) is %q, want %q", given, got, want)
 		}
 	}
 }
@@ -209,11 +356,11 @@ func TestPipesServed(t *testing.T) {
 	}
 }
 
-func TestTransactOnAnUnservedPipeFails(t *testing.T) {
-	handler := testHandler()
+func TestSomethingThatIsNotAPDUIsRefused(t *testing.T) {
+	rpc := openInvoker(t, testHandler(), "srvsvc")
 
-	if _, _, err := handler.Transact("lsarpc", []byte{0}, maxPipeAnswer); err == nil {
-		t.Error("Transact answered on a pipe the handler does not serve")
+	if _, _, err := rpc.session.Transact([]byte("not a PDU"), maxPipeAnswer); err == nil {
+		t.Error("the session accepted nine bytes that are not a PDU")
 	}
 }
 
@@ -221,8 +368,8 @@ func TestBindOnEachPipeNamesItsOwnInterface(t *testing.T) {
 	handler := testHandler(sampleShares()...)
 
 	// The srvsvc pipe accepts srvsvc and refuses wkssvc, and the other way
-	// round. That is the whole of what one-interface-per-pipe means, and it is
-	// what a client relies on to discover it opened the wrong pipe.
+	// round. Each pipe carries the interface it is named for, which is what a
+	// client relies on to discover it opened the wrong pipe.
 	cases := []struct {
 		pipe     string
 		abstract syntax.SyntaxID
@@ -251,7 +398,8 @@ func TestBindOnEachPipeNamesItsOwnInterface(t *testing.T) {
 				t.Fatalf("failed to marshal the bind: %v", err)
 			}
 
-			reply, _, err := handler.Transact(test.pipe, request, maxPipeAnswer)
+			rpc := openInvoker(t, handler, test.pipe)
+			reply, _, err := rpc.session.Transact(request, maxPipeAnswer)
 			if err != nil {
 				t.Fatalf("Transact failed: %v", err)
 			}
@@ -281,7 +429,7 @@ func TestNetrShareEnumLevel1ReportsEveryShare(t *testing.T) {
 	shares := sampleShares()
 	handler := testHandler(shares...)
 
-	rpc := &pipeInvoker{t: t, handler: handler, pipe: "srvsvc"}
+	rpc := openInvoker(t, handler, "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	info, total, resume, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -326,7 +474,7 @@ func TestNetrShareEnumLevel1ReportsEveryShare(t *testing.T) {
 
 func TestNetrShareEnumLevel0ReportsNamesOnly(t *testing.T) {
 	shares := sampleShares()
-	rpc := &pipeInvoker{t: t, handler: testHandler(shares...), pipe: "srvsvc"}
+	rpc := openInvoker(t, testHandler(shares...), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	info, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -359,7 +507,7 @@ func TestNetrShareEnumLevel0ReportsNamesOnly(t *testing.T) {
 func TestNetrShareEnumOnAnEmptyServer(t *testing.T) {
 	// A server with no shares answers an empty list, not a failure: that is how
 	// a client learns there is nothing to browse.
-	rpc := &pipeInvoker{t: t, handler: testHandler(), pipe: "srvsvc"}
+	rpc := openInvoker(t, testHandler(), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	info, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -383,7 +531,7 @@ func TestNetrShareEnumWithNoShareSourceReportsNone(t *testing.T) {
 	// Options.Shares left nil. Reporting nothing is the honest answer for an
 	// endpoint with no share source, and a nil call would panic on the
 	// connection's goroutine.
-	rpc := &pipeInvoker{t: t, handler: New(Options{}), pipe: "srvsvc"}
+	rpc := openInvoker(t, New(Options{}), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	_, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -398,7 +546,7 @@ func TestNetrShareEnumWithNoShareSourceReportsNone(t *testing.T) {
 }
 
 func TestNetrShareEnumRefusesAnUnservedLevel(t *testing.T) {
-	rpc := &pipeInvoker{t: t, handler: testHandler(sampleShares()...), pipe: "srvsvc"}
+	rpc := openInvoker(t, testHandler(sampleShares()...), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	// Level 2 has a union arm this does not fill, and level 99 has none at all.
@@ -420,32 +568,68 @@ func TestNetrShareEnumRefusesAnUnservedLevel(t *testing.T) {
 }
 
 func TestNetrShareEnumUnknownOpnumFaults(t *testing.T) {
-	handler := testHandler(sampleShares()...)
+	rpc := openInvoker(t, testHandler(sampleShares()...), "srvsvc")
+	rpc.bind(srvsvcSyntax())
 
 	// NetrShareAdd, opnum 14, which this does not implement.
-	request := &pdu.Request{
-		Header: pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag|pdu.PFCLastFrag, 1),
-		Opnum:  srvsvc.OpnumNetrShareAdd,
-		Stub:   make([]byte, 16),
-	}
-	framed, err := request.Marshal()
-	if err != nil {
-		t.Fatalf("failed to marshal the request: %v", err)
-	}
-
-	reply, _, err := handler.Transact("srvsvc", framed, maxPipeAnswer)
-	if err != nil {
-		t.Fatalf("Transact failed: %v", err)
-	}
-	if _, err := reassemble(reply); err == nil {
+	if err := rpc.callRaw(srvsvc.OpnumNetrShareAdd, make([]byte, 16)); err == nil {
 		t.Fatal("an opnum the interface does not implement was answered with a response")
 	} else if !strings.Contains(err.Error(), "nca_s_op_rng_error") {
 		t.Errorf("the call failed with %v, want a fault of nca_s_op_rng_error", err)
 	}
 }
 
-func TestNetrShareEnumUndecodableStubFaults(t *testing.T) {
+func TestRequestBeforeABindFaults(t *testing.T) {
+	// A request names its interface by the presentation context its bind
+	// negotiated, so one that arrives before any bind names nothing.
+	rpc := openInvoker(t, testHandler(sampleShares()...), "srvsvc")
+
+	if err := rpc.callRaw(srvsvc.OpnumNetrShareEnum, make([]byte, 32)); err == nil {
+		t.Fatal("a request before a bind was answered with a response")
+	} else if !strings.Contains(err.Error(), "nca_s_fault_context_mismatch") {
+		t.Errorf("the call failed with %v, want a fault of nca_s_fault_context_mismatch", err)
+	}
+}
+
+func TestTwoOpensOfOnePipeBindSeparately(t *testing.T) {
+	// The point of a session. Two clients open \srvsvc; one binds and the other
+	// does not, and only the one that bound can call. A handler keyed by pipe
+	// name would have let the second client ride on the first one's bind.
 	handler := testHandler(sampleShares()...)
+
+	bound := openInvoker(t, handler, "srvsvc")
+	bound.bind(srvsvcSyntax())
+	unbound := openInvoker(t, handler, "srvsvc")
+
+	if _, _, _, err := srvsvcfunctions.NetrShareEnum(bound, "",
+		mssrvs.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 1}},
+		maxPreferredLength, nil); err != nil {
+		t.Fatalf("the bound client's enumeration failed: %v", err)
+	}
+
+	if err := unbound.callRaw(srvsvc.OpnumNetrShareEnum, make([]byte, 32)); err == nil {
+		t.Fatal("the client that never bound was answered with a response")
+	} else if !strings.Contains(err.Error(), "nca_s_fault_context_mismatch") {
+		t.Errorf("the unbound client's call failed with %v, want nca_s_fault_context_mismatch", err)
+	}
+
+	// Bound counts what each open negotiated, which is the state a session
+	// exists to hold.
+	if session, ok := bound.session.(*Session); ok {
+		if got := session.Bound(); got != 1 {
+			t.Errorf("the bound open reports %d presentation contexts, want 1", got)
+		}
+	}
+	if session, ok := unbound.session.(*Session); ok {
+		if got := session.Bound(); got != 0 {
+			t.Errorf("the open that never bound reports %d presentation contexts, want 0", got)
+		}
+	}
+}
+
+func TestNetrShareEnumUndecodableStubFaults(t *testing.T) {
+	rpc := openInvoker(t, testHandler(sampleShares()...), "srvsvc")
+	rpc.bind(srvsvcSyntax())
 
 	// Three bytes where a SHARE_ENUM_STRUCT and three more parameters belong.
 	request := &pdu.Request{
@@ -458,7 +642,7 @@ func TestNetrShareEnumUndecodableStubFaults(t *testing.T) {
 		t.Fatalf("failed to marshal the request: %v", err)
 	}
 
-	reply, _, err := handler.Transact("srvsvc", framed, maxPipeAnswer)
+	reply, _, err := rpc.session.Transact(framed, maxPipeAnswer)
 	if err != nil {
 		t.Fatalf("Transact failed: %v", err)
 	}
@@ -474,7 +658,7 @@ func TestNetrShareEnumResumesWhereItStopped(t *testing.T) {
 	// it with ERROR_MORE_DATA and a resume handle, which the client sends back to
 	// continue. Walking it to the end has to yield every share exactly once.
 	shares := sampleShares()
-	rpc := &pipeInvoker{t: t, handler: testHandler(shares...), pipe: "srvsvc"}
+	rpc := openInvoker(t, testHandler(shares...), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	handle := ndr.DWORD(0)
@@ -521,7 +705,7 @@ func TestNetrShareEnumResumesWhereItStopped(t *testing.T) {
 func TestNetrShareEnumResumeHandlePastTheEndFinishes(t *testing.T) {
 	// A share removed between two calls can leave a handle past the end. The
 	// enumeration is over, and saying so is what lets the client stop.
-	rpc := &pipeInvoker{t: t, handler: testHandler(sampleShares()...), pipe: "srvsvc"}
+	rpc := openInvoker(t, testHandler(sampleShares()...), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	handle := ndr.DWORD(9999)
@@ -557,7 +741,7 @@ func TestNetrShareEnumFragmentsALongList(t *testing.T) {
 	}
 
 	handler := testHandler(shares...)
-	rpc := &pipeInvoker{t: t, handler: handler, pipe: "srvsvc"}
+	rpc := openInvoker(t, handler, "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	info, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -586,7 +770,7 @@ func TestNetrShareEnumFragmentsALongList(t *testing.T) {
 }
 
 func TestNetrWkstaGetInfoLevel100(t *testing.T) {
-	rpc := &pipeInvoker{t: t, handler: testHandler(), pipe: "wkssvc"}
+	rpc := openInvoker(t, testHandler(), "wkssvc")
 	rpc.bind(wkssvcSyntax())
 
 	info, err := wkssvcfunctions.NetrWkstaGetInfo(rpc, nil, 100)
@@ -618,7 +802,7 @@ func TestNetrWkstaGetInfoLevel100(t *testing.T) {
 
 func TestNetrWkstaGetInfoLevel101(t *testing.T) {
 	handler := New(Options{ServerName: "HOST", DomainName: "LAB", VersionMajor: 10, VersionMinor: 0})
-	rpc := &pipeInvoker{t: t, handler: handler, pipe: "wkssvc"}
+	rpc := openInvoker(t, handler, "wkssvc")
 	rpc.bind(wkssvcSyntax())
 
 	info, err := wkssvcfunctions.NetrWkstaGetInfo(rpc, nil, 101)
@@ -648,7 +832,7 @@ func TestNetrWkstaGetInfoLevel101(t *testing.T) {
 }
 
 func TestNetrWkstaGetInfoWithNoNamesConfigured(t *testing.T) {
-	rpc := &pipeInvoker{t: t, handler: New(Options{}), pipe: "wkssvc"}
+	rpc := openInvoker(t, New(Options{}), "wkssvc")
 	rpc.bind(wkssvcSyntax())
 
 	info, err := wkssvcfunctions.NetrWkstaGetInfo(rpc, nil, 100)
@@ -665,7 +849,7 @@ func TestNetrWkstaGetInfoWithNoNamesConfigured(t *testing.T) {
 }
 
 func TestNetrWkstaGetInfoRefusesAnUnservedLevel(t *testing.T) {
-	rpc := &pipeInvoker{t: t, handler: testHandler(), pipe: "wkssvc"}
+	rpc := openInvoker(t, testHandler(), "wkssvc")
 	rpc.bind(wkssvcSyntax())
 
 	for _, level := range []ndr.DWORD{102, 502, 1013, 0} {
@@ -704,7 +888,7 @@ func TestForServerReportsTheServersOwnShares(t *testing.T) {
 		t.Fatalf("failed to add PUBLIC: %v", err)
 	}
 
-	rpc := &pipeInvoker{t: t, handler: pipes, pipe: "srvsvc"}
+	rpc := openInvoker(t, pipes, "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	info, _, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -765,7 +949,7 @@ func TestForServerReportsTheServersOwnShares(t *testing.T) {
 }
 
 func TestForServerWithoutAServerReportsNoShares(t *testing.T) {
-	rpc := &pipeInvoker{t: t, handler: ForServer(nil, Options{}), pipe: "srvsvc"}
+	rpc := openInvoker(t, ForServer(nil, Options{}), "srvsvc")
 	rpc.bind(srvsvcSyntax())
 
 	_, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
@@ -807,38 +991,34 @@ func TestShareTypeOf(t *testing.T) {
 func TestConcurrentClientsOfOnePipe(t *testing.T) {
 	// The SMB server calls a pipe handler on the goroutine of whichever
 	// connection is asking, and one handler serves every connection. Under -race
-	// this is what proves the handler can be shared.
+	// this is what proves the handler and its endpoints can be shared while each
+	// client keeps its own association.
 	handler := testHandler(sampleShares()...)
 
-	var waiting sync.WaitGroup
+	// The opens and binds happen on the test's own goroutine, because the
+	// helpers report failure with t.Fatalf and only that goroutine may. What runs
+	// concurrently below is the calls.
+	clients := make([]*pipeInvoker, 0, 8)
 	for client := 0; client < 8; client++ {
+		pipe := "srvsvc"
+		abstract := srvsvcSyntax()
+		if client%2 == 1 {
+			pipe, abstract = "wkssvc", wkssvcSyntax()
+		}
+
+		rpc := openInvoker(t, handler, pipe)
+		rpc.callID = uint32(client) * 1000
+		rpc.bind(abstract)
+		clients = append(clients, rpc)
+	}
+
+	var waiting sync.WaitGroup
+	for client, rpc := range clients {
 		waiting.Add(1)
-		go func(client int) {
+		go func(client int, rpc *pipeInvoker) {
 			defer waiting.Done()
-
-			pipe := "srvsvc"
-			if client%2 == 1 {
-				pipe = "wkssvc"
-			}
-			if err := handler.OpenPipe(pipe); err != nil {
-				t.Errorf("client %d: OpenPipe failed: %v", client, err)
-				return
-			}
-			defer func() {
-				if err := handler.ClosePipe(pipe); err != nil {
-					t.Errorf("client %d: ClosePipe failed: %v", client, err)
-				}
-			}()
-
-			rpc := &pipeInvoker{t: t, handler: handler, pipe: pipe, callID: uint32(client) * 1000}
-			if pipe == "srvsvc" {
-				rpc.bind(srvsvcSyntax())
-			} else {
-				rpc.bind(wkssvcSyntax())
-			}
-
 			for round := 0; round < 10; round++ {
-				if pipe == "srvsvc" {
+				if rpc.pipe == "srvsvc" {
 					if _, _, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
 						mssrvs.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 1}},
 						maxPreferredLength, nil); err != nil {
@@ -852,7 +1032,181 @@ func TestConcurrentClientsOfOnePipe(t *testing.T) {
 					return
 				}
 			}
-		}(client)
+		}(client, rpc)
 	}
 	waiting.Wait()
+}
+
+func TestConcurrentOpensOfOnePipe(t *testing.T) {
+	// A handler is reachable from every connection the server accepts, so opens
+	// of one pipe overlap. Each has to come back with a session of its own.
+	handler := testHandler(sampleShares()...)
+
+	sessions := make([]server.PipeSession, 16)
+	var waiting sync.WaitGroup
+	for index := range sessions {
+		waiting.Add(1)
+		go func(index int) {
+			defer waiting.Done()
+			session, err := handler.OpenPipe("srvsvc")
+			if err != nil {
+				t.Errorf("open %d failed: %v", index, err)
+				return
+			}
+			sessions[index] = session
+		}(index)
+	}
+	waiting.Wait()
+
+	distinct := map[server.PipeSession]bool{}
+	for index, session := range sessions {
+		if session == nil {
+			t.Fatalf("open %d produced no session", index)
+		}
+		if distinct[session] {
+			t.Errorf("open %d was handed a session another open already holds", index)
+		}
+		distinct[session] = true
+	}
+
+	for index, session := range sessions {
+		if err := session.Close(); err != nil {
+			t.Errorf("closing session %d failed: %v", index, err)
+		}
+	}
+}
+
+func TestServicesOptionAddsAnInterfaceToAPipe(t *testing.T) {
+	// A pipe may carry more than one interface. Here srvsvc and a caller's own
+	// interface share \srvsvc: a bind offering both is accepted under two
+	// presentation contexts, and each request is answered by the interface its
+	// context names.
+	extra := &countingService{answer: []byte("from the caller's interface")}
+	handler := New(Options{
+		Shares:   func() []ShareEntry { return sampleShares() },
+		Services: map[string][]rpcserver.Service{`\PIPE\srvsvc`: {extra}},
+	})
+
+	rpc := openInvoker(t, handler, "srvsvc")
+	bind := &pdu.Bind{
+		Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 1),
+		MaxXmitFrag: 4280,
+		MaxRecvFrag: 4280,
+		ContextList: []pdu.ContextElement{
+			{
+				ContextID:        0,
+				AbstractSyntax:   srvsvcSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+			},
+			{
+				ContextID:        1,
+				AbstractSyntax:   extra.AbstractSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+			},
+		},
+	}
+	request, err := bind.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the bind: %v", err)
+	}
+
+	reply, _, err := rpc.session.Transact(request, maxPipeAnswer)
+	if err != nil {
+		t.Fatalf("Transact failed: %v", err)
+	}
+	ack := &pdu.BindAck{}
+	if _, err := ack.Unmarshal(reply); err != nil {
+		t.Fatalf("the bind was not accepted: %v", err)
+	}
+	for index, result := range ack.Results {
+		if result.Result != pdu.ResultAcceptance {
+			t.Fatalf("context %d was answered with result %d, want acceptance", index, result.Result)
+		}
+	}
+
+	// The share enumeration still works, on context 0.
+	if _, _, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
+		mssrvs.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 1}},
+		maxPreferredLength, nil); err != nil {
+		t.Fatalf("NetrShareEnum on the shared pipe failed: %v", err)
+	}
+
+	// And the caller's interface answers on context 1.
+	answer, err := rpc.callOnContext(1, 0, nil)
+	if err != nil {
+		t.Fatalf("the caller's interface failed: %v", err)
+	}
+	if string(answer) != string(extra.answer) {
+		t.Errorf("the caller's interface returned %q, want %q", answer, extra.answer)
+	}
+	if extra.callCount() != 1 {
+		t.Errorf("the caller's interface was called %d times, want 1", extra.callCount())
+	}
+}
+
+func TestServicesOptionAddsAPipe(t *testing.T) {
+	extra := &countingService{answer: []byte("answered")}
+	handler := New(Options{Services: map[string][]rpcserver.Service{"lsarpc": {extra}}})
+
+	if got := handler.Pipes(); strings.Join(got, ",") != "lsarpc,srvsvc,wkssvc" {
+		t.Errorf("Pipes reports %v, want the built-in two plus lsarpc", got)
+	}
+
+	rpc := openInvoker(t, handler, `\PIPE\lsarpc`)
+	rpc.bind(extra.AbstractSyntax())
+
+	answer, err := rpc.callOnContext(0, 0, nil)
+	if err != nil {
+		t.Fatalf("the call on the added pipe failed: %v", err)
+	}
+	if string(answer) != string(extra.answer) {
+		t.Errorf("the added pipe returned %q, want %q", answer, extra.answer)
+	}
+}
+
+func TestServicesOptionIgnoresEmptyEntries(t *testing.T) {
+	// A nil or empty service list, and a name that normalises to nothing, add no
+	// pipe rather than an endpoint that serves nothing.
+	handler := New(Options{Services: map[string][]rpcserver.Service{
+		"lsarpc": nil,
+		"":       {&countingService{}},
+		`\PIPE\`: {&countingService{}},
+	}})
+
+	if got := handler.Pipes(); strings.Join(got, ",") != "srvsvc,wkssvc" {
+		t.Errorf("Pipes reports %v, want only the built-in two", got)
+	}
+}
+
+// countingService is a caller-supplied RPC interface, used to check that a pipe
+// can carry more than the built-in one.
+type countingService struct {
+	answer []byte
+
+	mutex sync.Mutex
+	calls int
+}
+
+func (s *countingService) AbstractSyntax() syntax.SyntaxID {
+	return syntax.SyntaxID{
+		UUID:         guid.GUID{A: 0x0a0b0c0d, B: 0x1112, C: 0x2122, D: 0x3132, E: 0x414243444546},
+		MajorVersion: 1,
+		MinorVersion: 0,
+	}
+}
+
+func (s *countingService) Call(opnum uint16, stub []byte) ([]byte, error) {
+	if opnum != 0 {
+		return nil, rpcserver.ErrUnknownOpnum
+	}
+	s.mutex.Lock()
+	s.calls++
+	s.mutex.Unlock()
+	return s.answer, nil
+}
+
+func (s *countingService) callCount() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.calls
 }

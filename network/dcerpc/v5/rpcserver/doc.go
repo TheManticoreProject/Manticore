@@ -6,6 +6,22 @@
 // serves an interface over an SMB named pipe, over TCP, or over anything else that
 // can hand it one PDU and take one back.
 //
+// # Dispatchers and associations
+//
+// A Dispatcher is the set of interfaces an endpoint answers for, and holds nothing
+// that belongs to a client. Dispatcher.Open starts an Association, which is one
+// client's conversation with the endpoint and holds what a bind establishes: which
+// interface each presentation context names, and the largest fragment that client
+// will accept. Association.Handle is what answers a PDU.
+//
+// The split is what the transport dictates. A caller knows what one client is —
+// one open of a named pipe, one TCP connection — and the Dispatcher does not, so
+// the caller opens an association per client and the endpoint's interface table is
+// shared between them. A bind and the requests after it therefore land on the same
+// association, which is what makes them one conversation; a request naming a
+// context its association never negotiated is faulted with
+// nca_s_fault_context_mismatch rather than guessed at.
+//
 // # What a Service is
 //
 // A Service is one RPC interface: an abstract syntax that identifies it, and a
@@ -31,14 +47,6 @@
 // counts — do not approach a fragment's worth of bytes. Replies are fragmented,
 // which is the direction that matters: a share enumeration easily exceeds one
 // fragment.
-//
-// A Dispatcher serves one endpoint, and a request is dispatched to the single
-// interface that endpoint serves rather than by the presentation context the
-// request names. A transport that cannot tell two opens of an endpoint apart —
-// an SMB named pipe reached through a PipeHandler is one — cannot hold the
-// per-bind context table that dispatching by context id would need, so an
-// endpoint registered with more than one interface faults a request instead of
-// guessing. One interface per endpoint is how \srvsvc and \wkssvc are used.
 //
 // Only the NDR (little-endian, version 2) transfer syntax is accepted. NDR64 is
 // declined at bind time rather than accepted and then misencoded, which is the

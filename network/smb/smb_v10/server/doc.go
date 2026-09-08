@@ -297,6 +297,13 @@
 // the FID in the request's setup words, not by the name the request carries, so
 // the handle is what matters and the name is boilerplate.
 //
+// The handle is what the handler sees too. OpenPipe returns a PipeSession, the
+// Open keeps it, and every transaction on that handle runs against it, so a
+// handler can hold state belonging to one client's open rather than to the pipe.
+// An RPC endpoint needs precisely that: a bind establishes the presentation
+// contexts and the fragment size the requests after it are read against, and two
+// clients of one pipe bind separately. Closing the handle closes the session.
+//
 // An answer larger than the client's buffer is cut to fit and reported with
 // STATUS_BUFFER_OVERFLOW, which is what tells the client to read again. Reporting
 // plain success would leave an RPC client parsing a truncated response as a whole

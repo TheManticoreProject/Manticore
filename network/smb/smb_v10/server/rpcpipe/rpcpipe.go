@@ -48,6 +48,15 @@ type Options struct {
 	// Nil reports an empty list, which is what an endpoint with no share source
 	// should say rather than failing.
 	Shares func() []ShareEntry
+
+	// Services are further RPC interfaces to serve, keyed by pipe name.
+	//
+	// A name that is one of the built-in pipes adds its interfaces to that pipe,
+	// and any other name adds a pipe. A pipe may carry several interfaces: a bind
+	// picks one of them and the requests after it are dispatched by the
+	// presentation context it negotiated, so a caller can serve its own interface
+	// over IPC$ without writing a PipeHandler.
+	Services map[string][]rpcserver.Service
 }
 
 // defaultVersionMajor and defaultVersionMinor are the version reported when the
@@ -57,10 +66,13 @@ const (
 	defaultVersionMinor = 1
 )
 
-// Handler must satisfy the server's pipe contract, which is the whole point of
-// the package: a mismatch is a compile error here rather than a share that
-// refuses every pipe at run time.
-var _ server.PipeHandler = (*Handler)(nil)
+// Handler and Session must satisfy the server's pipe contract, which is the whole
+// point of the package: a mismatch is a compile error here rather than a share
+// that refuses every pipe at run time.
+var (
+	_ server.PipeHandler = (*Handler)(nil)
+	_ server.PipeSession = (*Session)(nil)
+)
 
 // Handler answers RPC calls on the pipes of an IPC$ share.
 //
@@ -77,12 +89,10 @@ var _ server.PipeHandler = (*Handler)(nil)
 // every connection the server accepts.
 type Handler struct {
 	// endpoints maps a normalised pipe name to the dispatcher answering it. It is
-	// written once by New and only read afterwards.
+	// written once by New and only read afterwards, which is what makes a Handler
+	// safe to share: everything a client establishes lives on the Session its
+	// open returns.
 	endpoints map[string]*rpcserver.Dispatcher
-
-	// mutex guards opened, the count of opens outstanding per pipe.
-	mutex  sync.Mutex
-	opened map[string]int
 }
 
 // New builds a Handler serving srvsvc and wkssvc.
@@ -103,18 +113,28 @@ func New(options Options) *Handler {
 		versionMajor, versionMinor = defaultVersionMajor, defaultVersionMinor
 	}
 
-	return &Handler{
-		endpoints: map[string]*rpcserver.Dispatcher{
-			"srvsvc": rpcserver.New(&srvsvcService{shares: shares}),
-			"wkssvc": rpcserver.New(&wkssvcService{
-				serverName:   options.ServerName,
-				domainName:   options.DomainName,
-				versionMajor: versionMajor,
-				versionMinor: versionMinor,
-			}),
-		},
-		opened: map[string]int{},
+	served := map[string][]rpcserver.Service{
+		"srvsvc": {&srvsvcService{shares: shares}},
+		"wkssvc": {&wkssvcService{
+			serverName:   options.ServerName,
+			domainName:   options.DomainName,
+			versionMajor: versionMajor,
+			versionMinor: versionMinor,
+		}},
 	}
+	for name, services := range options.Services {
+		endpoint := normalisePipeName(name)
+		if endpoint == "" || len(services) == 0 {
+			continue
+		}
+		served[endpoint] = append(served[endpoint], services...)
+	}
+
+	endpoints := make(map[string]*rpcserver.Dispatcher, len(served))
+	for endpoint, services := range served {
+		endpoints[endpoint] = rpcserver.New(services...)
+	}
+	return &Handler{endpoints: endpoints}
 }
 
 // ForServer builds a Handler whose share enumeration reports a server's own
@@ -154,41 +174,70 @@ func sharesOf(srv *server.Server) []ShareEntry {
 	return entries
 }
 
-// OpenPipe reports whether a pipe exists under this handler.
-func (h *Handler) OpenPipe(name string) error {
-	endpoint := normalisePipeName(name)
-	if _, served := h.endpoints[endpoint]; !served {
-		return fmt.Errorf("pipe %q is not served", name)
-	}
-
-	h.mutex.Lock()
-	h.opened[endpoint]++
-	h.mutex.Unlock()
-
-	logger.Debugf("rpcpipe: opened %q", endpoint)
-	return nil
-}
-
-// Transact answers one RPC exchange on a pipe.
+// OpenPipe opens one instance of a pipe.
+//
+// The session it returns owns this client's RPC association: what its bind
+// negotiates is remembered for the requests that follow, and two opens of the
+// same pipe negotiate independently.
 //
 // Parameters:
-//   - name: the pipe, without its leading separator or "PIPE" element
+//   - name: the pipe, in any of the forms a client names one
+//
+// Returns:
+//   - The session, or an error naming the pipe when this handler does not serve
+//     it
+func (h *Handler) OpenPipe(name string) (server.PipeSession, error) {
+	endpoint := normalisePipeName(name)
+	dispatcher, served := h.endpoints[endpoint]
+	if !served {
+		// "not found" is the wording the server maps to
+		// STATUS_OBJECT_NAME_NOT_FOUND, which is what a client asking for a pipe
+		// that does not exist should be told.
+		return nil, fmt.Errorf("pipe %q not found", name)
+	}
+
+	logger.Debugf("rpcpipe: opened %q", endpoint)
+	return &Session{name: endpoint, association: dispatcher.Open()}, nil
+}
+
+// Session is one open of a pipe served by a Handler.
+//
+// It holds the RPC association for that open, which is the whole reason a session
+// exists: a bind establishes the presentation contexts and the fragment size the
+// requests after it are read against, and those belong to one client's open rather
+// than to the pipe.
+type Session struct {
+	// name is the pipe this session is an open of, for the log lines and errors
+	// that name it.
+	name string
+
+	// association is this open's RPC conversation with the endpoint.
+	association *rpcserver.Association
+
+	// mutex guards closed. A session belongs to one open on one connection, so
+	// the server does not use one from two goroutines; the guard is here so a
+	// caller that does still gets an error rather than a race.
+	mutex  sync.Mutex
+	closed bool
+}
+
+// Transact answers one RPC exchange on this open.
+//
+// Parameters:
 //   - input: the request PDU the client wrote
 //   - maxOutput: the largest answer the caller will take in one exchange
 //
 // Returns:
 //   - The reply PDUs, whether more of the answer remains, and an error only when
-//     the pipe is not served or the request is not a PDU at all
-func (h *Handler) Transact(name string, input []byte, maxOutput int) ([]byte, bool, error) {
-	endpoint := normalisePipeName(name)
-	dispatcher, served := h.endpoints[endpoint]
-	if !served {
-		return nil, false, fmt.Errorf("pipe %q is not served", name)
+//     the session is closed or the request is not a PDU at all
+func (s *Session) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
+	if s.isClosed() {
+		return nil, false, fmt.Errorf("pipe %q: the session is closed", s.name)
 	}
 
-	reply, err := dispatcher.Handle(input)
+	reply, err := s.association.Handle(input)
 	if err != nil {
-		return nil, false, fmt.Errorf("pipe %q: %w", endpoint, err)
+		return nil, false, fmt.Errorf("pipe %q: %w", s.name, err)
 	}
 
 	// An answer past the caller's ceiling is cut and reported as incomplete,
@@ -196,24 +245,33 @@ func (h *Handler) Transact(name string, input []byte, maxOutput int) ([]byte, bo
 	// client reads the rest off the handle.
 	if maxOutput > 0 && len(reply) > maxOutput {
 		logger.Debugf("rpcpipe: %q answered with %d bytes, cut to the %d the caller allows",
-			endpoint, len(reply), maxOutput)
+			s.name, len(reply), maxOutput)
 		return reply[:maxOutput], true, nil
 	}
 
-	logger.Debugf("rpcpipe: %q answered %d request bytes with %d", endpoint, len(input), len(reply))
+	logger.Debugf("rpcpipe: %q answered %d request bytes with %d", s.name, len(input), len(reply))
 	return reply, false, nil
 }
 
-// ClosePipe releases what OpenPipe recorded.
-func (h *Handler) ClosePipe(name string) error {
-	endpoint := normalisePipeName(name)
-
-	h.mutex.Lock()
-	if h.opened[endpoint] > 0 {
-		h.opened[endpoint]--
-	}
-	h.mutex.Unlock()
+// Close releases the session. It is safe to call more than once.
+func (s *Session) Close() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.closed = true
 	return nil
+}
+
+// Bound reports how many presentation contexts this open has negotiated, which is
+// zero until its client binds.
+func (s *Session) Bound() int {
+	return s.association.Bound()
+}
+
+// isClosed reports whether Close has been called.
+func (s *Session) isClosed() bool {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.closed
 }
 
 // Pipes returns the pipe names this handler serves, sorted for a stable listing.
@@ -244,7 +302,14 @@ func sortStrings(values []string) {
 // case-insensitive because pipe names are.
 func normalisePipeName(name string) string {
 	trimmed := strings.Trim(strings.ReplaceAll(name, `\`, "/"), "/")
-	if upper := strings.ToUpper(trimmed); strings.HasPrefix(upper, "PIPE/") {
+
+	upper := strings.ToUpper(trimmed)
+	switch {
+	case upper == "PIPE":
+		// The pipe directory itself, which names no pipe. Without this it would
+		// normalise to "pipe" and a caller could register an endpoint under it.
+		return ""
+	case strings.HasPrefix(upper, "PIPE/"):
 		trimmed = trimmed[len("PIPE/"):]
 	}
 	return strings.ToLower(strings.Trim(trimmed, "/"))
