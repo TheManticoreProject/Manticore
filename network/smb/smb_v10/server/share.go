@@ -50,6 +50,13 @@ type Share struct {
 	// Pipes serves the named pipes on an IPC share. Nil refuses every pipe
 	// operation.
 	Pipes PipeHandler
+
+	// locks holds the byte-range locks granted on this share's files.
+	//
+	// It belongs to the share because a lock is a statement about a file and the
+	// handles it excludes may be on other connections. AddShare creates it, so a
+	// share reached through the server always has one.
+	locks *lockTable
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's
@@ -205,6 +212,25 @@ type FileSystem interface {
 	VolumeInfo() (VolumeInfo, error)
 }
 
+// Linker is implemented by a FileSystem that can give an existing file a second
+// name.
+//
+// It is a separate interface rather than a method on FileSystem so that adding it
+// does not break a backend outside this repository: a FileSystem that cannot link
+// simply does not implement it, and the server answers STATUS_NOT_SUPPORTED. A
+// hard link is also the one operation here with no sensible approximation —
+// copying the bytes instead would produce a second file rather than a second name,
+// and the two diverge the moment either is written.
+type Linker interface {
+	// Link gives the file at existing a second name at target.
+	//
+	// It fails with ErrExists if target is taken, and with ErrNotFound if
+	// existing is not there. Linking a directory is refused with
+	// ErrIsDirectory: a directory hard link is not something the protocol asks
+	// for and not something most storage allows.
+	Link(existing, target string) error
+}
+
 // Sentinel errors a FileSystem returns so the server can answer with the right
 // protocol status. A backend may wrap them.
 var (
@@ -254,6 +280,12 @@ func (s *Server) AddShare(share *Share) error {
 	}
 	if share.Type == ShareTypeDisk && share.FS == nil {
 		return fmt.Errorf("disk share %q has no file system", share.Name)
+	}
+
+	// Every share gets a lock table, so a handler never has to ask whether the
+	// share it was given can hold a lock.
+	if share.locks == nil {
+		share.locks = newLockTable()
 	}
 
 	key := strings.ToUpper(share.Name)

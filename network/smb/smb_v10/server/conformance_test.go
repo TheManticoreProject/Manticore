@@ -140,12 +140,14 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_READ_ANDX:      "reads from a handle",
 	codes.SMB_COM_WRITE_ANDX:     "writes through a handle",
 	codes.SMB_COM_FLUSH:          "commits a handle, or the whole tree",
+	codes.SMB_COM_LOCKING_ANDX:   "acquires and releases byte-range locks",
 
 	codes.SMB_COM_DELETE:           "deletes a file, wildcards included",
 	codes.SMB_COM_RENAME:           "renames or moves an entry",
 	codes.SMB_COM_CREATE_DIRECTORY: "creates a directory",
 	codes.SMB_COM_DELETE_DIRECTORY: "removes an empty directory",
 	codes.SMB_COM_CHECK_DIRECTORY:  "reports whether a path is a directory",
+	codes.SMB_COM_NT_RENAME:        "renames an entry, or gives it a second name",
 
 	codes.SMB_COM_QUERY_INFORMATION_DISK: "reports the volume's capacity in the legacy fields",
 
@@ -153,6 +155,11 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_SET_INFORMATION:    "sets a file's attributes and write time by path",
 	codes.SMB_COM_QUERY_INFORMATION2: "reports an open handle's timestamps, sizes and attributes",
 	codes.SMB_COM_SET_INFORMATION2:   "sets an open handle's timestamps",
+
+	codes.SMB_COM_SEARCH:      "enumerates a directory in the core-set form",
+	codes.SMB_COM_FIND:        "enumerates a directory in the core-set form, closable",
+	codes.SMB_COM_FIND_UNIQUE: "enumerates one name with no continuation",
+	codes.SMB_COM_FIND_CLOSE:  "closes a core-set search, which holds nothing to release",
 
 	codes.SMB_COM_TRANSACTION2:           "carries the find and information subcommands",
 	codes.SMB_COM_TRANSACTION2_SECONDARY: "continues a fragmented transaction",
@@ -375,6 +382,16 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 	// the server grows and has to be edited downwards to keep passing, which
 	// makes it a record of past progress rather than a guard. A floor on `known`
 	// says what the guard was for and stays true.
+	// this walk exercised. Those were the same number when nothing much was
+	// served, but every command that gains a handler moves out of this walk and
+	// into TestConformanceServedCommandsAreServed — so a floor on `exercised`
+	// falls as the server grows and has to be edited downwards to keep passing,
+	// which makes it a record of past progress rather than a guard. A floor on
+	// this walk exercised. Every command that gains a handler moves out of this
+	// walk and into TestConformanceServedCommandsAreServed, so a floor on
+	// `exercised` falls as the server grows and has to be edited downwards to
+	// keep passing — a record of past progress rather than a guard. A floor on
+	// `known` says what the guard was for and stays true.
 	if known < 70 {
 		t.Fatalf("the message layer recognizes only %d commands; it is no longer covering the command space", known)
 	}

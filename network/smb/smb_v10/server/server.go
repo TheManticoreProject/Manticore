@@ -84,6 +84,24 @@ type Config struct {
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
 	Timeout time.Duration
 
+	// MaxLargeTransfer bounds one read or write that exceeds the negotiated
+	// MaxBufferSize under CAP_LARGE_READX or CAP_LARGE_WRITEX. Zero applies the
+	// default.
+	//
+	// The capabilities say a transfer may exceed MaxBufferSize, not that it is
+	// unbounded, and [MS-SMB] leaves the ceiling to the implementation. It has to
+	// stay inside what the transport will carry, since a response larger than a
+	// frame cannot be sent at all.
+	MaxLargeTransfer int
+	// MaxLockWait bounds how long a blocked SMB_COM_LOCKING_ANDX request waits
+	// for a range to become free. Zero applies the default.
+	//
+	// A client may ask to wait forever, and the connection serves nothing else
+	// while it does, so an unbounded wait would let a client stall itself with no
+	// way back — the cancel it would send arrives behind the request it wanted to
+	// cancel. The ceiling turns that into a refusal the client can act on.
+	MaxLockWait time.Duration
+
 	// MaxConnections bounds the number of connections served at once. A
 	// connection arriving while the server is at the limit is closed
 	// immediately. Zero means unbounded.
@@ -114,6 +132,27 @@ const (
 	DefaultMaxTreesPerConnection    = 64
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxSearchesPerConnection = 128
+
+	// DefaultMaxLargeTransfer is the ceiling on one large read or write.
+	//
+	// It is 0xFF00 rather than the 64 KiB Windows uses, and the difference is not
+	// arbitrary. SMB_Data.ByteCount is a USHORT, and neither [MS-SMB] section
+	// 2.2.4.2.2 nor 2.2.4.3.1 widens it for a large transfer, so a data block of
+	// 0x10000 bytes or more cannot describe itself — its length has to be taken
+	// from DataLength and DataLengthHigh instead, and a data block here is parsed
+	// by its ByteCount. Staying under 0x10000 keeps ByteCount truthful, which
+	// keeps the message readable by any client rather than only by one that
+	// ignores it.
+	//
+	// The point of the capability survives intact: a transfer goes from the
+	// negotiated 16644 bytes to 65280, and escaping MaxBufferSize is what matters
+	// rather than the last kilobyte.
+	DefaultMaxLargeTransfer = 0xFF00
+	// DefaultMaxLockWait is how long a blocked lock request waits before it is
+	// refused. It is long enough for a lock held across a short read or write to
+	// be released, and short enough that a client that asked to wait forever gets
+	// an answer.
+	DefaultMaxLockWait = 30 * time.Second
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
