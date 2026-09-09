@@ -28,7 +28,7 @@ func (c *Client) QueryDirectory(fileId types.SMB2_FILEID, fileInformationClass u
 	req.FileInformationClass = fileInformationClass
 	req.Flags = flags
 	req.FileName = searchPattern
-	req.OutputBufferLength = c.Connection.Server.MaxTransactSize
+	req.OutputBufferLength = types.ULONG(c.maxPayloadForRequest(c.Connection.Server.MaxTransactSize))
 
 	response, err := c.sendReceive(c.newRequest(req), "QueryDirectory")
 	if err != nil {

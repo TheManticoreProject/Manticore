@@ -9,26 +9,36 @@ import (
 )
 
 // newRequest builds an SMB2 request message with the header fields common to
-// every command: the next 64-bit MessageId on the connection, a one-credit
-// request (CreditCharge is 0 in the SMB 2.0.2 dialect), and — when a session is
-// established — the current SessionId and TreeId. The command code is taken from
-// the command when it is attached via SetCommand.
+// every command: the credit charge the payload incurs, a credit request sized to
+// sustain the window, the next 64-bit MessageId on the connection, and — when a
+// session is established — the current SessionId and TreeId. The command code is
+// taken from the command when it is attached via SetCommand.
 func (c *Client) newRequest(command command_interface.CommandInterface) *message.Message {
 	msg := message.NewMessage()
 
-	// Allocate the next MessageId for this connection.
-	msg.Header.MessageId = c.Connection.MessageId
-	c.Connection.MessageId++
-
 	// The SMB 2.0.2 dialect requires CreditCharge to be 0. From SMB 2.1 onward the
-	// large-MTU credit model applies and a small (single-block) request charges 1
-	// credit; the client requests a single credit back per message.
+	// large-MTU credit model applies and the charge is a function of the payload,
+	// not a constant: a request carrying (or expecting back) more than 64 KiB costs
+	// more than one credit, and a server rejects one that under-declares its charge
+	// (MS-SMB2 3.1.5.2, 3.3.5.2.5).
+	charge := requestCreditCharge(command)
 	if c.Connection.Dialect >= dialects.SMB2_DIALECT_2_1_0 {
-		msg.Header.CreditCharge = 1
+		msg.Header.CreditCharge = charge
 	} else {
 		msg.Header.CreditCharge = 0
+		charge = 1
 	}
-	msg.Header.Credit = 1
+	// Ask for enough credits to cover what this request spends and to grow the
+	// window; the server grants only one credit with NEGOTIATE.
+	msg.Header.Credit = c.creditRequest(charge)
+	c.spendCredits(charge)
+
+	// Allocate the next MessageId for this connection. A multi-credit request
+	// consumes one sequence number per credit charged (MS-SMB2 3.2.4.1.3), so
+	// advancing by one would reuse identifiers the server has already retired and
+	// it drops the connection.
+	msg.Header.MessageId = c.Connection.MessageId
+	c.Connection.MessageId += uint64(charge)
 
 	if c.Session != nil {
 		msg.Header.SessionId = c.Session.SessionId
@@ -131,9 +141,11 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
 			}
 		}
-		// The server replenishes credits via the response Credit field.
+		// The server replenishes credits via the response Credit field. They add to
+		// the credits on hand rather than replacing them: the count is what this
+		// response grants, not the size of the window.
 		if response.Header.Credit > 0 {
-			c.Connection.Credits = response.Header.Credit
+			c.grantCredits(response.Header.Credit)
 		}
 
 		// A response must carry the MessageId of the request it answers; an

@@ -23,7 +23,7 @@ func (c *Client) QueryInfo(fileId types.SMB2_FILEID, infoType, fileInfoClass uin
 	req.InfoType = types.UCHAR(infoType)
 	req.FileInfoClass = types.UCHAR(fileInfoClass)
 	req.AdditionalInformation = types.ULONG(additionalInformation)
-	req.OutputBufferLength = types.ULONG(c.Connection.Server.MaxTransactSize)
+	req.OutputBufferLength = types.ULONG(c.maxPayloadForRequest(c.Connection.Server.MaxTransactSize))
 	req.FileId = fileId
 
 	response, err := c.sendReceive(c.newRequest(req), "QueryInfo")

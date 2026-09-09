@@ -105,8 +105,10 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 	pos := offset
 	for remaining > 0 {
 		chunk := remaining
-		if chunk > maxRead {
-			chunk = maxRead
+		// Recomputed per chunk: the credit window grows as responses arrive, and a
+		// chunk may not exceed what the credits on hand can pay for.
+		if budget := c.maxPayloadForRequest(maxRead); chunk > budget {
+			chunk = budget
 		}
 		data, eof, err := c.readChunk(fileId, pos, chunk)
 		if err != nil {
@@ -170,8 +172,8 @@ func (c *Client) WriteFile(fileId types.SMB2_FILEID, offset uint64, data []byte)
 	pos := offset
 	for len(data) > 0 {
 		n := uint32(len(data))
-		if n > maxWrite {
-			n = maxWrite
+		if budget := c.maxPayloadForRequest(maxWrite); n > budget {
+			n = budget
 		}
 		written, err := c.writeChunk(fileId, pos, data[:n])
 		if err != nil {

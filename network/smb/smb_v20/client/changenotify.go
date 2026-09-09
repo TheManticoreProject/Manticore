@@ -37,7 +37,7 @@ func (c *Client) ChangeNotify(fileId types.SMB2_FILEID, completionFilter uint32,
 	req := commands.NewChangeNotifyRequest()
 	req.FileId = fileId
 	req.CompletionFilter = types.ULONG(completionFilter)
-	req.OutputBufferLength = types.ULONG(c.Connection.Server.MaxTransactSize)
+	req.OutputBufferLength = types.ULONG(c.maxPayloadForRequest(c.Connection.Server.MaxTransactSize))
 	if watchTree {
 		req.Flags = commands.SMB2_WATCH_TREE
 	}
