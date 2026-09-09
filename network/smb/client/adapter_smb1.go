@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"strings"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
@@ -119,9 +118,7 @@ func (b *smb1Backend) ListDirectory(path, pattern string) ([]FileInfo, error) {
 
 	out := make([]FileInfo, 0, len(entries))
 	for _, e := range entries {
-		// The SMB1 engine includes the OEM name's trailing NUL terminator in
-		// LongName; normalize it away (SMB2 names are already NUL-trimmed).
-		name := strings.TrimRight(e.LongName, "\x00")
+		name := e.LongName
 		if name == "." || name == ".." {
 			continue
 		}
