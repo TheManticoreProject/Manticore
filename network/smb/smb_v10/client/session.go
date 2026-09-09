@@ -162,10 +162,13 @@ func (s *Session) SessionSetup() error {
 					// takes the NTLMv2 path and computes the SessionBaseKey ([MS-NLMP] 3.3.2).
 					// Without it the NTLMv1 path runs and no key is derived, so SMB message
 					// signing (required by hardened servers, e.g. Windows Server 2003+) cannot
-					// be activated. We deliberately do NOT request NTLMSSP_NEGOTIATE_KEY_EXCH,
-					// so ExportedSessionKey == KeyExchangeKey == SessionBaseKey ([MS-NLMP]
-					// KXKEY) and EncryptedRandomSessionKey stays empty.
+					// be activated.
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
+					// Key exchange, so the signing key is a random key of the client's
+					// choosing rather than the SessionBaseKey derived from the
+					// credentials. The server only offers it back in its CHALLENGE if it
+					// is requested here.
+					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_KEY_EXCH |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_SIGN |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
 					spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_128 |
