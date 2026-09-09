@@ -115,10 +115,10 @@ func TestTCPTransport_ReceiveRejectsOversizedLength(t *testing.T) {
 			return
 		}
 		defer c.Close()
-		// Send a Direct TCP header claiming a 0xFFFFFF (≈16 MiB) payload,
-		// well above MaxDirectTCPPayloadSize; Receive should reject before
-		// allocating or reading.
-		_, _ = c.Write([]byte{0x00, 0xFF, 0xFF, 0xFF})
+		// Send a Direct TCP header claiming a 0x100000 (1 MiB) payload, above the
+		// cap the test installs below; Receive should reject before allocating or
+		// reading.
+		_, _ = c.Write([]byte{0x00, 0x10, 0x00, 0x00})
 	}()
 
 	host, portStr, err := net.SplitHostPort(ln.Addr().String())
@@ -135,10 +135,118 @@ func TestTCPTransport_ReceiveRejectsOversizedLength(t *testing.T) {
 		t.Fatalf("TCPTransport.Connect() error = %v", err)
 	}
 	defer tr.Close()
+	// A frame of 1 MiB is legal by default now, so bound this transport explicitly.
+	tr.SetMaxPayloadSize(64 * 1024)
 
 	_, err = tr.Receive()
 	if err == nil {
 		t.Fatal("TCPTransport.Receive() should return error for oversized length, got nil")
+	}
+}
+
+// TestTCPTransport_ReceiveAcceptsLargeNegotiatedFrame guards the defect: a frame
+// larger than the old 1 MiB cap but within what the 24-bit length field describes
+// must be accepted, because a Windows server advertises an 8 MiB MaxReadSize and is
+// entitled to answer a read in one frame of that size.
+func TestTCPTransport_ReceiveAcceptsLargeNegotiatedFrame(t *testing.T) {
+	const payloadLen = 2 * 1024 * 1024 // above the old cap, within the field
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start test server: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		header := []byte{0x00, byte((payloadLen >> 16) & 0xFF), byte((payloadLen >> 8) & 0xFF), byte(payloadLen & 0xFF)}
+		if _, err := c.Write(header); err != nil {
+			return
+		}
+		_, _ = c.Write(make([]byte, payloadLen))
+	}()
+
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to parse listener address: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	tr := tcp.NewTCPTransport()
+	tr.SetTimeout(10 * time.Second)
+	if err := tr.Connect(net.ParseIP(host), port); err != nil {
+		t.Fatalf("TCPTransport.Connect() error = %v", err)
+	}
+	defer tr.Close()
+
+	got, err := tr.Receive()
+	if err != nil {
+		t.Fatalf("TCPTransport.Receive() rejected a %d-byte frame: %v", payloadLen, err)
+	}
+	if len(got) != payloadLen {
+		t.Errorf("Receive() returned %d bytes, want %d", len(got), payloadLen)
+	}
+}
+
+// TestTCPTransport_SetMaxPayloadSizeBounds checks the listener-side lever: an
+// explicit cap is honoured, and 0 or an unrepresentable value restores the default.
+func TestTCPTransport_SetMaxPayloadSizeBounds(t *testing.T) {
+	// Drive each case through Receive against a peer that announces a frame of a
+	// known size, since the cap is only observable there.
+	for _, tc := range []struct {
+		name      string
+		cap       uint32
+		announce  int
+		wantError bool
+	}{
+		{"within explicit cap", 64 * 1024, 1024, false},
+		{"above explicit cap", 1024, 64 * 1024, true},
+		{"zero restores default", 0, 2 * 1024 * 1024, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			defer ln.Close()
+
+			go func() {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer c.Close()
+				n := tc.announce
+				_, _ = c.Write([]byte{0x00, byte(n >> 16), byte(n >> 8), byte(n)})
+				_, _ = c.Write(make([]byte, n))
+			}()
+
+			host, portStr, _ := net.SplitHostPort(ln.Addr().String())
+			port, _ := strconv.Atoi(portStr)
+
+			conn := tcp.NewTCPTransport()
+			conn.SetTimeout(10 * time.Second)
+			if err := conn.Connect(net.ParseIP(host), port); err != nil {
+				t.Fatalf("connect: %v", err)
+			}
+			defer conn.Close()
+			conn.SetMaxPayloadSize(tc.cap)
+
+			_, err = conn.Receive()
+			if tc.wantError && err == nil {
+				t.Errorf("Receive() accepted %d bytes under a %d cap", tc.announce, tc.cap)
+			}
+			if !tc.wantError && err != nil {
+				t.Errorf("Receive() rejected %d bytes under a %d cap: %v", tc.announce, tc.cap, err)
+			}
+		})
 	}
 }
 
