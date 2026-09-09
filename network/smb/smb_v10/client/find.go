@@ -491,7 +491,8 @@ func placeTrans2Fragment(dst, run []byte, displacement int, label string) (int, 
 // parseBothDirInfo decodes a buffer of consecutive SMB_FIND_FILE_BOTH_DIRECTORY_INFO
 // entries (as returned in the FIND_FIRST2/FIND_NEXT2 data) into Entry values.
 // Each entry may represent a file or a directory.
-// FileName is decoded as OEM/ASCII because the client issues non-Unicode requests.
+// FileName is decoded as OEM/ASCII because the client issues non-Unicode requests,
+// and its SMB_STRING terminator is stripped.
 func parseBothDirInfo(data []byte) []Entry {
 	entries := []Entry{}
 
@@ -513,7 +514,17 @@ func parseBothDirInfo(data []byte) []Entry {
 
 		longName := ""
 		if nameLen > 0 && pos+bothDirInfoFixedSize+nameLen <= len(data) {
-			longName = string(data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+nameLen])
+			// FileName is an SMB_STRING, so FileNameLength counts the terminator
+			// ([MS-SMB] 2.2.8.1.2). Windows sends "ADFS\0" with a length of 5, and
+			// keeping the terminator leaves a name that will not compare equal to
+			// the file it names. Trimming is done on the raw bytes rather than the
+			// decoded string so a UTF-16LE name's two-byte terminator is also
+			// removed if the request ever negotiates Unicode.
+			raw := data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+nameLen]
+			for len(raw) > 0 && raw[len(raw)-1] == 0x00 {
+				raw = raw[:len(raw)-1]
+			}
+			longName = string(raw)
 		}
 
 		entries = append(entries, Entry{
