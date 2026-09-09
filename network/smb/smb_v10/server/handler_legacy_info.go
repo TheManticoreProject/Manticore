@@ -27,10 +27,16 @@ const (
 )
 
 // legacyAttributesFor renders what the backend reported as SMB_FILE_ATTRIBUTES.
+//
+// A regular file carries the archive bit here too, so the 16-bit and 32-bit views
+// of the same entry agree. SMB_FILE_ATTRIBUTE_NORMAL is 0x0000, the absence of
+// every bit, so it remains the starting value rather than a bit to set.
 func legacyAttributesFor(attr FileAttr) uint16 {
 	attributes := uint16(smbFileAttributeNormal)
 	if attr.IsDir {
 		attributes |= smbFileAttributeDirectory
+	} else {
+		attributes |= smbFileAttributeArchive
 	}
 	if attr.ReadOnly {
 		attributes |= smbFileAttributeReadOnly

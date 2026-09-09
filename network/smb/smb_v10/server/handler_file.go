@@ -272,18 +272,26 @@ func createActionFor(existed bool, flags OpenFlags) uint32 {
 }
 
 // attributesFor renders a backend's view of an entry as the attribute bits a
-// client expects. FILE_ATTRIBUTE_NORMAL is only meaningful alone, so it is used
-// when nothing else applies.
+// client expects.
+//
+// A regular file carries FILE_ATTRIBUTE_ARCHIVE, as Windows reports for
+// essentially every file. The bit means "modified since the last backup"; no
+// backend here records a backup and none can clear the bit, so set is the
+// accurate value rather than a guess. Windows does not set it on directories and
+// neither does this.
+//
+// FILE_ATTRIBUTE_NORMAL is not used: it is valid only when it stands alone
+// ([MS-FSCC] 2.6), and with the archive bit on every file and the directory bit
+// on every directory there is no entry left for it to describe.
 func attributesFor(attr FileAttr) uint32 {
 	attributes := uint32(0)
 	if attr.IsDir {
 		attributes |= fileflags.FILE_ATTRIBUTE_DIRECTORY
+	} else {
+		attributes |= fileflags.FILE_ATTRIBUTE_ARCHIVE
 	}
 	if attr.ReadOnly {
 		attributes |= fileflags.FILE_ATTRIBUTE_READONLY
-	}
-	if attributes == 0 {
-		attributes = fileflags.FILE_ATTRIBUTE_NORMAL
 	}
 	return attributes
 }
