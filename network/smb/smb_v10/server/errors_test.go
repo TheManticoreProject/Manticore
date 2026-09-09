@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // TestSMBStatusEncode asserts the SMBSTATUS pair is packed the way [MS-CIFS]

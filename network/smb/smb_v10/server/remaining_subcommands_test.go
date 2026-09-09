@@ -11,7 +11,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // open2Parameters builds a TRANS2_OPEN2 request's parameter block.
@@ -210,7 +210,7 @@ func TestReservedSubcommandsUseTheirMandatedStatus(t *testing.T) {
 	_, client := fileServer(t, fs, false)
 
 	t.Run("TRANS2_SET_FS_INFORMATION", func(t *testing.T) {
-		// STATUS_SMB_NO_SUPPORT has no constant in windows/nt_status, so the
+		// STATUS_SMB_NO_SUPPORT has no constant in windows/errors/nt_status, so the
 		// closest available is used; what matters here is that it is not the
 		// generic STATUS_NOT_IMPLEMENTED.
 		_, _, status := sendTrans2(t, client, subcommands.TRANS2_SET_FS_INFORMATION, make([]byte, 4), nil)

@@ -6,7 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // handleOpen2 answers TRANS2_OPEN2: the TRANSACTION2 open, whose AccessMode and
@@ -142,7 +142,7 @@ func handleTrans2CreateDirectory(
 // than left to fall through to STATUS_NOT_IMPLEMENTED because the specification
 // names a different status for it than for its neighbours.
 //
-// STATUS_SMB_NO_SUPPORT has no constant in windows/nt_status, so the closest
+// STATUS_SMB_NO_SUPPORT has no constant in windows/errors/nt_status, so the closest
 // available is used: NT_STATUS_NOT_SUPPORTED, which carries the same meaning and
 // maps to a not-supported legacy code. Nothing sends this subcommand — it is
 // reserved — so the difference is a conformance detail rather than a live one.

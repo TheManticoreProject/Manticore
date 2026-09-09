@@ -13,8 +13,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/securitymode"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // noDialectSelected is the DialectIndex a server returns when it supports none of

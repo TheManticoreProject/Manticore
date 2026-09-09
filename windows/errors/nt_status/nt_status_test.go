@@ -3,7 +3,7 @@ package nt_status_test
 import (
 	"testing"
 
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 func TestNTStatusString(t *testing.T) {

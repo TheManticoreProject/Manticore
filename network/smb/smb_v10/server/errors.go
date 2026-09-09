@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // ErrorClass is the SMB error class carried in the low byte of the Status field

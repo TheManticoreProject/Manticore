@@ -13,8 +13,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // countingBytes is a block whose every byte identifies its own position, so a

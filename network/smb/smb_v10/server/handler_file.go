@@ -10,9 +10,9 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
 )
 
 // Resource types reported in a create response ([MS-CIFS] 2.2.4.64.2).
