@@ -78,6 +78,12 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 			spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_56 |
 			spnego_ntlm_negotiate_flags.NTLMSSP_REQUEST_TARGET |
 			spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_TARGET_INFO |
+			// Key exchange, so the signing key is a random key of the client's
+			// choosing rather than the SessionBaseKey derived from the credentials.
+			// The server only offers it back in its CHALLENGE if it is requested
+			// here, and the AUTHENTICATE performs the exchange only when the
+			// CHALLENGE confirms it.
+			spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_KEY_EXCH |
 			spnego_ntlm_negotiate_flags.NTLMSSP_NEGOTIATE_VERSION,
 	)
 	v := &version.Version{

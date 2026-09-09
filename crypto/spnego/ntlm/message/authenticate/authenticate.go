@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/rc4"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -154,6 +155,14 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		flags.NTLMSSP_NEGOTIATE_128 |
 		flags.NTLMSSP_NEGOTIATE_56
 
+	// Key exchange is only asserted when the server offered it, since a server that
+	// sees the flag MUST then find a valid EncryptedRandomSessionKey or fail the
+	// authentication outright (MS-NLMP 3.2.5.1.2).
+	keyExchange := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_KEY_EXCH) != 0
+	if keyExchange {
+		msg.NegotiateFlags |= flags.NTLMSSP_NEGOTIATE_KEY_EXCH
+	}
+
 	// Determine if we should use Unicode
 	useUnicode := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_UNICODE) != 0
 
@@ -204,9 +213,26 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		// Send a real LMv2 response (the Windows client does, even with a timestamp).
 		msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(false)
 
-		// EXPERIMENT: no key exchange. The exported session key (the SMB signing MAC
-		// key) equals the SessionBaseKey.
-		msg.SessionKey = v2.ComputeSessionBaseKey(ntProofStr)
+		// KXKEY for NTLMv2 is the SessionBaseKey itself (MS-NLMP 3.4.5.1).
+		keyExchangeKey := v2.ComputeSessionBaseKey(ntProofStr)
+
+		// With key exchange, the key that protects signing and sealing is generated
+		// here and travels RC4-wrapped under the KeyExchangeKey; without it, the
+		// KeyExchangeKey is used directly (MS-NLMP 3.1.5.1.2).
+		if keyExchange {
+			exportedSessionKey := make([]byte, 16)
+			if _, err := rand.Read(exportedSessionKey); err != nil {
+				return nil, fmt.Errorf("failed to generate an exported session key: %w", err)
+			}
+			wrapped, err := rc4k(keyExchangeKey, exportedSessionKey)
+			if err != nil {
+				return nil, err
+			}
+			msg.EncryptedRandomSessionKey = wrapped
+			msg.SessionKey = exportedSessionKey
+		} else {
+			msg.SessionKey = keyExchangeKey
+		}
 	} else {
 		// Use NTLMv1
 		ntlmv1Ctx, err := ntlmv1.NewNTLMv1CtxWithPassword(domain, username, password, challenge.ServerChallenge)
@@ -249,6 +275,19 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 	}
 
 	return &msg, nil
+}
+
+// rc4k applies RC4 keyed with key to data and returns the result, the RC4K
+// primitive of [MS-NLMP] 6. RC4 is a stream cipher, so the output is the same
+// length as the input and the operation is its own inverse.
+func rc4k(key, data []byte) ([]byte, error) {
+	cipher, err := rc4.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialise RC4 for key exchange: %w", err)
+	}
+	out := make([]byte, len(data))
+	cipher.XORKeyStream(out, data)
+	return out, nil
 }
 
 // ComputeMIC computes the AUTHENTICATE_MESSAGE message integrity code and stores
