@@ -16,7 +16,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // ntStatusMoreProcessingRequired (STATUS_MORE_PROCESSING_REQUIRED) is the status

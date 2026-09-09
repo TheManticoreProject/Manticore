@@ -7,7 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // sendNtRename sends an SMB_COM_NT_RENAME at the given information level.

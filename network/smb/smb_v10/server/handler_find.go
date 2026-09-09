@@ -8,7 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // Search flags a client sends on a FIND ([MS-CIFS] 2.2.6.2.1).

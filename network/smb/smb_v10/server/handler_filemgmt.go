@@ -5,7 +5,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // writableTreeFor resolves the tree a modifying command acts on, refusing a

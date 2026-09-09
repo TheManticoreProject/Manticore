@@ -17,7 +17,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // The conformance suite pairs the SMB1 client in this repository with the server

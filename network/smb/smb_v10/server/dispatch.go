@@ -12,7 +12,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/windows/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // commandHandler answers one request.
