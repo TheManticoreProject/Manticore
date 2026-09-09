@@ -7,24 +7,22 @@ import (
 	"time"
 )
 
-// MaxDirectTCPPayloadSize is the default cap on the payload accepted from a single
-// Direct TCP frame, and is the largest the session service can describe: the length
-// field is 24 bits wide ([MS-SMB2] 2.1).
-//
-// The transport carries SMB1, SMB2 and SMB3, whose negotiated limits differ by more
-// than an order of magnitude — a Windows server advertises an 8 MiB MaxReadSize —
-// so a smaller default here would refuse frames the peer was entitled to send after
-// a successful negotiation. Bounding what a peer can induce this side to allocate is
-// a policy the accepting side sets with SetMaxPayloadSize, not something a constant
-// shared with the client can express.
-const MaxDirectTCPPayloadSize = 0xFFFFFF
-
 // MaxDirectTCPFrameLength is the largest payload the Direct TCP session service can
 // describe: [MS-SMB2] 2.1 gives the header as a zero byte followed by a 3-byte
 // big-endian length, so a longer payload has no representable length and MUST NOT be
-// sent. This bounds what Send will encode; MaxDirectTCPPayloadSize is the separate,
-// stricter policy applied to what Receive will accept.
+// sent. It bounds what Send will encode.
 const MaxDirectTCPFrameLength = 0xFFFFFF
+
+// MaxDirectTCPPayloadSize is the default cap on the payload Receive will accept from
+// a single frame. It is the wire limit above, because the transport carries SMB1,
+// SMB2 and SMB3, whose negotiated limits differ by more than an order of magnitude —
+// a Windows server advertises an 8 MiB MaxReadSize — so any smaller default would
+// refuse frames the peer was entitled to send after a successful negotiation.
+//
+// Bounding what a peer can induce this side to allocate is a policy the accepting
+// side sets per connection with SetMaxPayloadSize, not something a constant shared
+// with the client can express.
+const MaxDirectTCPPayloadSize = MaxDirectTCPFrameLength
 
 // TCPTransport implements the Transport interface for Direct TCP transport
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/f906c680-330c-43ae-9a71-f854e24aeee6
