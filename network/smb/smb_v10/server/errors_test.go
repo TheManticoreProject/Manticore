@@ -187,11 +187,11 @@ func TestErrorClassString(t *testing.T) {
 // value otherwise, so a log line is never just an opaque number where a name
 // exists.
 func TestStatusName(t *testing.T) {
-	if got := statusName(nt_status.NT_STATUS_ACCESS_DENIED); got != "ACCESS_DENIED" {
+	if got := statusName(nt_status.NT_STATUS_ACCESS_DENIED); got != "NT_STATUS_ACCESS_DENIED" {
 		t.Fatalf("statusName(ACCESS_DENIED) = %q", got)
 	}
 	// The CIFS-specific codes are registered too.
-	if got := statusName(nt_status.NT_STATUS_SMB_BAD_TID); got != "SMB_BAD_TID" {
+	if got := statusName(nt_status.NT_STATUS_SMB_BAD_TID); got != "NT_STATUS_SMB_BAD_TID" {
 		t.Fatalf("statusName(SMB_BAD_TID) = %q", got)
 	}
 	if got := statusName(nt_status.NT_STATUS(0xDEADBEEF)); got != "0xdeadbeef" {

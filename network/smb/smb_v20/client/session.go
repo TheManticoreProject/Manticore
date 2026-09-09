@@ -220,7 +220,7 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 
 // formatNTStatus renders an NT status code with its symbolic name when known.
 func formatNTStatus(status uint32) string {
-	if name, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(status)]; ok {
+	if name := nt_status.NT_STATUS(status).Name(); name != "" {
 		return fmt.Sprintf("%s (0x%08x)", name, status)
 	}
 	return fmt.Sprintf("0x%08x", status)
