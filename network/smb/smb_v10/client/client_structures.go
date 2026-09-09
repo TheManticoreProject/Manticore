@@ -19,6 +19,16 @@ const (
 	DefaultNativeLanMan = "Samba"
 )
 
+// DefaultMaxBufferSize is the client's own maximum receive buffer, declared in
+// SESSION_SETUP_ANDX when Client.MaxBufferSize is left zero.
+//
+// [MS-CIFS] 2.2.4.53.1 defines this field as the largest message the *client* can
+// receive, so it is a property of the client and not an echo of what the server
+// advertised: the field is 16 bits wide, while the server's MaxBufferSize is 32
+// bits and routinely exceeds it. 16644 is the value Windows sends, and the value
+// this repository's own SMB1 server defaults to.
+const DefaultMaxBufferSize uint16 = 16644
+
 // Client represents an SMB v1.0 client
 type Client struct {
 	// Transport is the transport layer for the client
@@ -38,6 +48,10 @@ type Client struct {
 
 	// Workstation is the workstation name of the client
 	Workstation string
+
+	// MaxBufferSize is the largest message this client can receive, declared in
+	// SESSION_SETUP_ANDX. Zero selects DefaultMaxBufferSize.
+	MaxBufferSize uint16
 }
 
 // Connection represents an established SMB connection between the client and server
