@@ -190,7 +190,8 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 
 		// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
 		timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
-		if len(timestamp) != 8 {
+		serverSuppliedTimestamp := len(timestamp) == 8
+		if !serverSuppliedTimestamp {
 			windowsFiletime := (uint64(time.Now().Unix()) + 116444736000) * 10000000
 			timestamp = make([]byte, 8)
 			binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
@@ -201,8 +202,11 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		if err != nil {
 			return nil, err
 		}
-		// Send a real LMv2 response (the Windows client does, even with a timestamp).
-		msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(false)
+		// When the server supplied an MsvAvTimestamp, MS-NLMP 3.1.5.1.2 requires
+		// Z(24) here rather than a computed response. KXKEY for NTLMv2 derives
+		// KeyExchangeKey from SessionBaseKey alone and does not consume this field
+		// (MS-NLMP 3.4.5.1), so zeroing it changes no derived key.
+		msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(serverSuppliedTimestamp)
 
 		// EXPERIMENT: no key exchange. The exported session key (the SMB signing MAC
 		// key) equals the SessionBaseKey.
