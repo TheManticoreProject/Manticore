@@ -153,7 +153,12 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
 		flags.NTLMSSP_NEGOTIATE_TARGET_INFO |
 		flags.NTLMSSP_NEGOTIATE_128 |
-		flags.NTLMSSP_NEGOTIATE_56
+		flags.NTLMSSP_NEGOTIATE_56 |
+		// The Version field is physically present in the AUTHENTICATE structure
+		// whether or not this flag is set ([MS-NLMP] 2.2.1.3), and the payload
+		// offsets — and the position of the MIC when one is carried — follow from
+		// that. Emitting it keeps the layout the one a server expects.
+		flags.NTLMSSP_NEGOTIATE_VERSION
 
 	// Key exchange is only asserted when the server offered it, since a server that
 	// sees the flag MUST then find a valid EncryptedRandomSessionKey or fail the
@@ -272,11 +277,9 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		msg.EncryptedRandomSessionKey = []byte{}
 	}
 
-	// Set version if needed
-	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_VERSION) != 0 {
-		v := version.DefaultVersion()
-		msg.Version = &v
-	}
+	// Populate the Version the flag above advertises.
+	v := version.DefaultVersion()
+	msg.Version = &v
 
 	return &msg, nil
 }
