@@ -1,8 +1,9 @@
 package guid
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
-	"math/rand/v2"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,28 +34,34 @@ type GUID struct {
 	E uint64
 }
 
-// NewGUID generates a new random GUID.
+// NewGUID generates a new random RFC 4122 version-4 GUID.
 //
-// The function creates a new GUID by generating random values for each of its five fields:
-// - A: A 32-bit unsigned integer.
-// - B: A 16-bit unsigned integer.
-// - C: A 16-bit unsigned integer.
-// - D: A 16-bit unsigned integer.
-// - E: A 64-bit unsigned integer.
+// The 122 free bits come from crypto/rand. The remaining six carry the version
+// and variant RFC 4122 4.4 requires: the high nibble of C (time_hi_and_version)
+// is set to 0100, and the two high bits of D (clock_seq_hi_and_reserved) to 10.
+// A consumer that parses those fields — an SMB peer reading a ServerGUID, for
+// instance — sees a well-formed v4 GUID rather than an arbitrary one.
 //
 // Returns:
 // - A pointer to a newly generated GUID.
 func NewGUID() *GUID {
-	a := uint32(rand.Uint32())
+	// crypto/rand.Read is documented never to return an error as of Go 1.24: it
+	// panics if the operating system's source of randomness fails. There is
+	// therefore no failure for this constructor to report, and its signature is
+	// left unchanged.
+	var buf [16]byte
+	_, _ = rand.Read(buf[:])
 
-	b := uint16(rand.Uint32() & 0xFFFF)
+	a := binary.BigEndian.Uint32(buf[0:4])
+	b := binary.BigEndian.Uint16(buf[4:6])
+	c := binary.BigEndian.Uint16(buf[6:8])
+	d := binary.BigEndian.Uint16(buf[8:10])
+	e := uint64(binary.BigEndian.Uint16(buf[10:12]))<<32 | uint64(binary.BigEndian.Uint32(buf[12:16]))
 
-	c := uint16(rand.Uint32() & 0xFFFF)
-
-	d := uint16(rand.Uint32() & 0xFFFF)
-
-	e := uint64(rand.Uint32())<<32 | uint64(rand.Uint32())
-	e = e & 0xFFFFFFFFFFFF
+	// RFC 4122 4.4: version 4 in the high nibble of time_hi_and_version, and the
+	// variant 10 in the two high bits of clock_seq_hi_and_reserved.
+	c = (c & 0x0FFF) | 0x4000
+	d = (d & 0x3FFF) | 0x8000
 
 	return &GUID{A: a, B: b, C: c, D: d, E: e}
 }
