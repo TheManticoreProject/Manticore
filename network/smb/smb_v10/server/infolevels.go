@@ -42,6 +42,33 @@ const (
 	smbQueryFsAttributeInfo = 0x0105
 )
 
+// FileSystemAttributes bits reported by SMB_QUERY_FS_ATTRIBUTE_INFO ([MS-FSCC]
+// 2.5.1). Only the bits this server honours are named; the rest are deliberately
+// absent rather than defined-and-unused.
+const (
+	// fileCasePreservedNames: the volume stores the case of a name as given.
+	fileCasePreservedNames uint32 = 0x00000002
+
+	// fileUnicodeOnDisk: the volume stores names in Unicode. The server decodes a
+	// request name and re-encodes it per message, so a UTF-16LE name is carried
+	// and returned intact whatever the backend stores it as.
+	fileUnicodeOnDisk uint32 = 0x00000004
+)
+
+// serverFileSystemAttributes is the set this server claims.
+//
+// It is deliberately far short of what a real NTFS volume reports — a Windows
+// Server 2012 R2 volume reports 0x00C700FF — because the remaining bits stand for
+// features this server does not implement: compression, quotas, sparse files,
+// reparse points, encryption, object IDs and named streams. Claiming a capability
+// the server lacks is worse than claiming none, since a client then uses it and
+// the follow-up request is refused. Each bit becomes claimable when the feature
+// behind it exists.
+//
+// FILE_CASE_SENSITIVE_SEARCH is likewise withheld: path resolution here is
+// case-insensitive.
+const serverFileSystemAttributes = fileCasePreservedNames | fileUnicodeOnDisk
+
 // bothDirectoryInfoFixedSize is the fixed part of an
 // SMB_FIND_FILE_BOTH_DIRECTORY_INFO entry, before its variable-length name.
 const bothDirectoryInfoFixedSize = 94
@@ -366,12 +393,9 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 		// FileSystemAttributes(4) MaxFileNameLengthInBytes(4)
 		// LengthOfFileSystemName(4) FileSystemName(variable).
 		//
-		// Only case-preserving names are claimed. Claiming a capability the
-		// storage does not have — unicode-on-disk, compression, quotas — is worse
-		// than claiming none, because a client then uses it.
 		name := encodeWireString(volume.FileSystemName, unicode)
 		info := make([]byte, 12)
-		binary.LittleEndian.PutUint32(info[0:4], 0x00000002) // FILE_CASE_PRESERVED_NAMES
+		binary.LittleEndian.PutUint32(info[0:4], serverFileSystemAttributes)
 		binary.LittleEndian.PutUint32(info[4:8], MaxPathComponentLength)
 		binary.LittleEndian.PutUint32(info[8:12], uint32(len(name)))
 		return append(info, name...), true
