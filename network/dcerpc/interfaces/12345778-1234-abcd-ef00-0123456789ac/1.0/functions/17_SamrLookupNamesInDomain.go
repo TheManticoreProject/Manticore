@@ -10,6 +10,7 @@ import (
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
@@ -55,9 +56,8 @@ func SamrLookupNamesInDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDLE, 
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return mssamr.SAMPR_ULONG_ARRAY{}, mssamr.SAMPR_ULONG_ARRAY{}, fmt.Errorf("SamrLookupNamesInDomain: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != samr.StatusSuccess && status != samr.StatusSomeNotMapped && status != samr.StatusNoneMapped {
-		return resp.RelativeIds, resp.Use, fmt.Errorf("SamrLookupNamesInDomain failed: %s", samr.StatusString(status))
+	if status := nt_status.NT_STATUS(resp.Status); status != nt_status.NT_STATUS_SUCCESS && status != nt_status.NT_STATUS_SOME_NOT_MAPPED && status != nt_status.NT_STATUS_NONE_MAPPED {
+		return resp.RelativeIds, resp.Use, fmt.Errorf("SamrLookupNamesInDomain failed: %s", status)
 	}
 	return resp.RelativeIds, resp.Use, nil
 }

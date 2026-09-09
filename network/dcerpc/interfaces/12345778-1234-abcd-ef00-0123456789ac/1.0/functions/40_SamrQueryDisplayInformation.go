@@ -10,6 +10,7 @@ import (
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -53,9 +54,8 @@ func SamrQueryDisplayInformation(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HAND
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return 0, 0, mssamr.SAMPR_DISPLAY_INFO_BUFFER{}, fmt.Errorf("SamrQueryDisplayInformation: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != samr.StatusSuccess && status != samr.StatusMoreEntries {
-		return uint32(resp.TotalAvailable), uint32(resp.TotalReturned), resp.Buffer, fmt.Errorf("SamrQueryDisplayInformation failed: %s", samr.StatusString(status))
+	if status := nt_status.NT_STATUS(resp.Status); status != nt_status.NT_STATUS_SUCCESS && status != nt_status.NT_STATUS_MORE_ENTRIES {
+		return uint32(resp.TotalAvailable), uint32(resp.TotalReturned), resp.Buffer, fmt.Errorf("SamrQueryDisplayInformation failed: %s", status)
 	}
 	return uint32(resp.TotalAvailable), uint32(resp.TotalReturned), resp.Buffer, nil
 }

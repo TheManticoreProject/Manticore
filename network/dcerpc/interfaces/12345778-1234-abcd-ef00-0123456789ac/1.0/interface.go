@@ -8,8 +8,8 @@
 // interface UUID with the version in the nested 1.0/ directory.
 //
 // This package holds only the interface-level descriptor: the abstract syntax
-// identifier, the transport endpoint (PipeName), the opnum constants and opnum<->name
-// maps, and the NTSTATUS return codes. NDR types live in the structures subpackage and
+// identifier, the transport endpoint (PipeName), and the opnum constants and
+// opnum<->name maps. NDR types live in the structures subpackage and
 // the method stubs in functions; both depend on this package, never the reverse.
 //
 // References:
@@ -23,8 +23,6 @@ package rpcinterface_123457781234abcdef000123456789ac_1_0
 // A fetched copy is kept at ms-samr.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -101,28 +99,12 @@ const (
 	OpnumSamrAccountIsDelegatedManagedServiceAccount uint16 = 77
 )
 
-// Common NTSTATUS codes returned by samr methods ([MS-ERREF] 2.3.1). samr methods return
-// an NTSTATUS (the IDL "long" return value).
-const (
-	StatusSuccess            uint32 = 0x00000000
-	StatusMoreEntries        uint32 = 0x00000105
-	StatusSomeNotMapped      uint32 = 0x00000107
-	StatusNoMoreEntries      uint32 = 0x8000001A
-	StatusInvalidHandle      uint32 = 0xC0000008
-	StatusInvalidParameter   uint32 = 0xC000000D
-	StatusAccessDenied       uint32 = 0xC0000022
-	StatusObjectNameNotFound uint32 = 0xC0000034
-	StatusNoSuchUser         uint32 = 0xC0000064
-	StatusNoneMapped         uint32 = 0xC0000073
-	StatusNoSuchDomain       uint32 = 0xC00000DF
-	StatusNoSuchAlias        uint32 = 0xC0000151
-	StatusNoSuchGroup        uint32 = 0xC0000066
-	StatusUserExists         uint32 = 0xC0000063
-	StatusGroupExists        uint32 = 0xC0000065
-	StatusAliasExists        uint32 = 0xC0000154
-	StatusWrongPassword      uint32 = 0xC000006A
-	StatusNotSupported       uint32 = 0xC00000BB
-)
+// samr methods return an NTSTATUS as the IDL "long" return value. The codes are not
+// declared here: the whole of [MS-ERREF] 2.3.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/nt_status, and the method
+// stubs in functions convert their return value to nt_status.NT_STATUS to compare and
+// render it. A subset transcribed here would cover a fraction of the table and drift
+// from it.
 
 // SyntaxID returns the samr abstract syntax identifier:
 // 12345778-1234-abcd-ef00-0123456789ac, version 1.0.
@@ -131,51 +113,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x12345778, B: 0x1234, C: 0xabcd, D: 0xef00, E: 0x0123456789ac},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the hex
-// value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "STATUS_SUCCESS"
-	case StatusMoreEntries:
-		return "STATUS_MORE_ENTRIES"
-	case StatusSomeNotMapped:
-		return "STATUS_SOME_NOT_MAPPED"
-	case StatusNoMoreEntries:
-		return "STATUS_NO_MORE_ENTRIES"
-	case StatusInvalidHandle:
-		return "STATUS_INVALID_HANDLE"
-	case StatusInvalidParameter:
-		return "STATUS_INVALID_PARAMETER"
-	case StatusAccessDenied:
-		return "STATUS_ACCESS_DENIED"
-	case StatusObjectNameNotFound:
-		return "STATUS_OBJECT_NAME_NOT_FOUND"
-	case StatusNoSuchUser:
-		return "STATUS_NO_SUCH_USER"
-	case StatusNoneMapped:
-		return "STATUS_NONE_MAPPED"
-	case StatusNoSuchDomain:
-		return "STATUS_NO_SUCH_DOMAIN"
-	case StatusNoSuchAlias:
-		return "STATUS_NO_SUCH_ALIAS"
-	case StatusNoSuchGroup:
-		return "STATUS_NO_SUCH_GROUP"
-	case StatusUserExists:
-		return "STATUS_USER_EXISTS"
-	case StatusGroupExists:
-		return "STATUS_GROUP_EXISTS"
-	case StatusAliasExists:
-		return "STATUS_ALIAS_EXISTS"
-	case StatusWrongPassword:
-		return "STATUS_WRONG_PASSWORD"
-	case StatusNotSupported:
-		return "STATUS_NOT_SUPPORTED"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

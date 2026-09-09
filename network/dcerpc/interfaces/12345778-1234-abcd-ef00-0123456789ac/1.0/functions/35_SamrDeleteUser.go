@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -29,8 +30,8 @@ func SamrDeleteUser(rpc ndr.Invoker, userHandle mssamr.SAMPR_HANDLE) (mssamr.SAM
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return userHandle, fmt.Errorf("SamrDeleteUser: %w", err)
 	}
-	if uint32(resp.Status) != samr.StatusSuccess {
-		return resp.Handle, fmt.Errorf("SamrDeleteUser failed: %s", samr.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return resp.Handle, fmt.Errorf("SamrDeleteUser failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return resp.Handle, nil
 }

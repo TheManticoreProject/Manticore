@@ -10,6 +10,7 @@ import (
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
@@ -37,8 +38,8 @@ func SamrSetDSRMPassword(rpc ndr.Invoker, userId uint32, encryptedNtOwfPassword 
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("SamrSetDSRMPassword: %w", err)
 	}
-	if uint32(resp.Status) != samr.StatusSuccess {
-		return fmt.Errorf("SamrSetDSRMPassword failed: %s", samr.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return fmt.Errorf("SamrSetDSRMPassword failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return nil
 }

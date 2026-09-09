@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -36,8 +37,8 @@ func SamrSetInformationUser(rpc ndr.Invoker, userHandle mssamr.SAMPR_HANDLE, use
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("SamrSetInformationUser: %w", err)
 	}
-	if uint32(resp.Status) != samr.StatusSuccess {
-		return fmt.Errorf("SamrSetInformationUser failed: %s", samr.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return fmt.Errorf("SamrSetInformationUser failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return nil
 }
