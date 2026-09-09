@@ -55,36 +55,72 @@ func TestCIFSStatusEncoding(t *testing.T) {
 }
 
 // TestCIFSStatusNamesRegistered asserts each CIFS-specific status resolves
-// through the shared name table, so a server error renders by name rather than
-// as a bare hex value.
+// through the package's lookup, so a server error renders by name rather than as
+// a bare hex value.
 func TestCIFSStatusNamesRegistered(t *testing.T) {
-	for status, name := range cifsStatusNames {
-		got, ok := NTStatusToStringName[status]
-		if !ok {
-			t.Fatalf("0x%08X (%s) is not registered in NTStatusToStringName", uint32(status), name)
+	for status, entry := range cifsTable {
+		if entry.Name == "" {
+			t.Errorf("0x%08X has no name", uint32(status))
 		}
-		if got != name {
-			t.Fatalf("0x%08X resolves to %q, want %q", uint32(status), got, name)
+		if entry.Description == "" {
+			t.Errorf("%s has no description", entry.Name)
+		}
+		if got := status.String(); got != entry.Name {
+			t.Errorf("0x%08X renders as %q, want %q", uint32(status), got, entry.Name)
+		}
+		if resolved, defined := FromName(entry.Name); !defined || resolved != status {
+			t.Errorf("FromName(%q) = 0x%08X, %v; want 0x%08X, true",
+				entry.Name, uint32(resolved), defined, uint32(status))
 		}
 	}
 }
 
-// TestCIFSStatusDistinctFromERREF asserts the CIFS-specific values do not
-// collide with the [MS-ERREF] values already transcribed in nt_status.go. A
-// collision would mean one of the two tables is wrong, and would make a status
-// render under the other table's name.
-func TestCIFSStatusDistinctFromERREF(t *testing.T) {
-	// NT_STATUS_SUCCESS is 0x00000000 and every CIFS-specific value has a
-	// non-zero class byte, so no CIFS value can be a success code.
-	for status, name := range cifsStatusNames {
-		if status == NT_STATUS_SUCCESS {
-			t.Fatalf("%s collides with NT_STATUS_SUCCESS", name)
+// TestCIFSStatusPrecedence pins which name wins where the two specifications
+// give the same value a name, and that this happens for exactly one value.
+//
+// The CIFS values are ErrorClass | ErrorCode<<16 composites, which puts them in
+// the same numeric region as the [MS-ERREF] DBG_* block, so 0x00010002 is both
+// NT_STATUS_INVALID_SMB and NT_STATUS_DBG_CONTINUE. lookup consults the CIFS
+// table first, so the SMB name wins — which is the useful answer, since this
+// tree produces the SMB status and never the debugger one.
+func TestCIFSStatusPrecedence(t *testing.T) {
+	var overlapping []NT_STATUS
+	for status := range cifsTable {
+		if _, alsoInERREF := table[status]; alsoInERREF {
+			overlapping = append(overlapping, status)
+		}
+	}
+
+	if len(overlapping) != 1 || overlapping[0] != NT_STATUS_INVALID_SMB {
+		t.Fatalf("the CIFS and [MS-ERREF] tables overlap at %v, want only NT_STATUS_INVALID_SMB (0x00010002); "+
+			"a new overlap needs a documented precedence decision", overlapping)
+	}
+
+	if got, want := NT_STATUS_INVALID_SMB.String(), "NT_STATUS_INVALID_SMB"; got != want {
+		t.Errorf("0x00010002 renders as %q, want %q", got, want)
+	}
+	if NT_STATUS_DBG_CONTINUE != NT_STATUS_INVALID_SMB {
+		t.Fatal("NT_STATUS_DBG_CONTINUE and NT_STATUS_INVALID_SMB no longer share a value; this test is stale")
+	}
+	// The displaced [MS-ERREF] name still resolves, so nothing is unreachable.
+	if resolved, defined := FromName("NT_STATUS_DBG_CONTINUE"); !defined || resolved != NT_STATUS_INVALID_SMB {
+		t.Errorf("FromName(\"NT_STATUS_DBG_CONTINUE\") = 0x%08X, %v; want 0x00010002, true",
+			uint32(resolved), defined)
+	}
+}
+
+// TestCIFSStatusesAreNotSuccess asserts no CIFS-specific value is
+// NT_STATUS_SUCCESS, which would make a server error read as success.
+func TestCIFSStatusesAreNotSuccess(t *testing.T) {
+	for status, entry := range cifsTable {
+		if status.IsSuccess() {
+			t.Errorf("%s reports success", entry.Name)
 		}
 		// A CIFS-specific value must carry a non-zero error class in its low
 		// byte, which is what distinguishes it from the [MS-ERREF] severity
 		// encoding in the high bits.
 		if uint32(status)&0xFF == 0 {
-			t.Fatalf("%s = 0x%08X has a zero ErrorClass byte", name, uint32(status))
+			t.Errorf("%s = 0x%08X has a zero ErrorClass byte", entry.Name, uint32(status))
 		}
 	}
 }

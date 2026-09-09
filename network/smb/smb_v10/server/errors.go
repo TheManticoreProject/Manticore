@@ -200,20 +200,5 @@ func EncodeStatus(status nt_status.NT_STATUS, ntStatusCodes bool) uint32 {
 // statusName renders an NTSTATUS for a log line, by name where one is known and
 // as a bare hex value otherwise.
 func statusName(status nt_status.NT_STATUS) string {
-	if name, ok := nt_status.NTStatusToStringName[status]; ok {
-		return name
-	}
-	return "0x" + hex32(uint32(status))
-}
-
-// hex32 formats a 32-bit value as eight lowercase hex digits, without pulling in
-// a format call on the per-request logging path.
-func hex32(v uint32) string {
-	const digits = "0123456789abcdef"
-	out := make([]byte, 8)
-	for i := 7; i >= 0; i-- {
-		out[i] = digits[v&0xF]
-		v >>= 4
-	}
-	return string(out)
+	return status.String()
 }

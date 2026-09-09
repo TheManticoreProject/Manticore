@@ -260,7 +260,7 @@ func (s *Session) SessionSetup() error {
 	// as an NTLMSSP challenge.
 	if !useExtendedSecurity {
 		if responseMsg.Header.Status != 0x00 {
-			if name, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(responseMsg.Header.Status)]; ok {
+			if name := nt_status.NT_STATUS(responseMsg.Header.Status).Name(); name != "" {
 				return fmt.Errorf("session setup failed: %s (0x%08x)", name, responseMsg.Header.Status)
 			}
 			return fmt.Errorf("session setup failed: 0x%08x", responseMsg.Header.Status)
@@ -323,7 +323,7 @@ func (s *Session) SessionSetup() error {
 	// directly here rather than feeding an empty buffer to the SPNEGO parser, which
 	// would otherwise fail with the opaque "asn1: syntax error: sequence truncated".
 	if responseMsg.Header.Status != 0x00000000 && responseMsg.Header.Status != ntStatusMoreProcessingRequired {
-		if name, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(responseMsg.Header.Status)]; ok {
+		if name := nt_status.NT_STATUS(responseMsg.Header.Status).Name(); name != "" {
 			return fmt.Errorf("session setup challenge failed: %s (0x%08x)", name, responseMsg.Header.Status)
 		}
 		return fmt.Errorf("session setup challenge failed: 0x%08x", responseMsg.Header.Status)
@@ -405,11 +405,10 @@ func (s *Session) SessionSetup() error {
 	}
 
 	if authResponseMsg.Header.Status != 0x00 {
-		if _, ok := nt_status.NTStatusToStringName[nt_status.NT_STATUS(authResponseMsg.Header.Status)]; ok {
-			return fmt.Errorf("session setup failed: %s (0x%08x)", nt_status.NTStatusToStringName[nt_status.NT_STATUS(authResponseMsg.Header.Status)], authResponseMsg.Header.Status)
-		} else {
-			return fmt.Errorf("session setup failed: 0x%08x", authResponseMsg.Header.Status)
+		if name := nt_status.NT_STATUS(authResponseMsg.Header.Status).Name(); name != "" {
+			return fmt.Errorf("session setup failed: %s (0x%08x)", name, authResponseMsg.Header.Status)
 		}
+		return fmt.Errorf("session setup failed: 0x%08x", authResponseMsg.Header.Status)
 	}
 
 	// Retain the server's native OS string from the SESSION_SETUP response. The final

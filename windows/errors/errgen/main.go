@@ -8,6 +8,11 @@
 // Usage:
 //
 //	go run ./windows/errors/errgen -in <table.tsv> -out <dir> -package win32 -type WIN32_ERROR
+//
+// The Go constant name for a row is derived from its symbolic name by stripping
+// -strip-name-prefix and prepending -add-name-prefix, which is how the [MS-ERREF]
+// NTSTATUS names become the NT_STATUS_* constants this tree already uses. Where
+// the two differ, both resolve through FromName.
 package main
 
 import (
@@ -26,7 +31,8 @@ import (
 // description the specification gives for it.
 type record struct {
 	Code        uint32
-	Name        string
+	Name        string // the symbolic name as the specification writes it
+	GoName      string // the Go constant name, which may differ from Name
 	Description string
 	Order       int // position in the file, so specification order can be preserved
 }
@@ -37,6 +43,8 @@ func main() {
 	pkg := flag.String("package", "", "package name for the generated files")
 	typeName := flag.String("type", "", "name of the code type to generate")
 	source := flag.String("source", "", "specification URL to record in the generated files")
+	stripPrefix := flag.String("strip-name-prefix", "", "prefix to strip from a symbolic name before deriving its Go constant name")
+	addPrefix := flag.String("add-name-prefix", "", "prefix to prepend when deriving a Go constant name")
 	flag.Parse()
 
 	for name, value := range map[string]string{"in": *in, "out": *out, "package": *pkg, "type": *typeName} {
@@ -45,7 +53,7 @@ func main() {
 		}
 	}
 
-	records, err := readTable(*in)
+	records, err := readTable(*in, *stripPrefix, *addPrefix)
 	if err != nil {
 		fatalf("reading %s: %v", *in, err)
 	}
@@ -66,7 +74,7 @@ func main() {
 
 // readTable parses the TSV, rejecting anything malformed rather than skipping it
 // so that a change in the extract cannot silently drop codes.
-func readTable(path string) ([]record, error) {
+func readTable(path, stripPrefix, addPrefix string) ([]record, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -75,6 +83,7 @@ func readTable(path string) ([]record, error) {
 
 	var records []record
 	seenNames := make(map[string]uint32)
+	seenGoNames := make(map[string]uint32)
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -105,9 +114,19 @@ func readTable(path string) ([]record, error) {
 		}
 		seenNames[name] = uint32(code)
 
+		goName := addPrefix + strings.TrimPrefix(name, stripPrefix)
+		if !isIdentifier(goName) {
+			return nil, fmt.Errorf("line %d: %q is not a Go identifier", line, goName)
+		}
+		if previous, duplicate := seenGoNames[goName]; duplicate {
+			return nil, fmt.Errorf("line %d: the Go name %s is already defined as 0x%08X", line, goName, previous)
+		}
+		seenGoNames[goName] = uint32(code)
+
 		records = append(records, record{
 			Code:        uint32(code),
 			Name:        name,
+			GoName:      goName,
 			Description: description,
 			Order:       len(records),
 		})
@@ -139,7 +158,10 @@ func renderCodes(records []record, pkg, typeName, base, source string) string {
 	b.WriteString("// same value.\nconst (\n")
 	for _, r := range records {
 		fmt.Fprintf(&b, "\t// %s\n", r.Description)
-		fmt.Fprintf(&b, "\t%s %s = 0x%08X\n", r.Name, typeName, r.Code)
+		if r.GoName != r.Name {
+			fmt.Fprintf(&b, "\t//\n\t// The specification names this %s.\n", r.Name)
+		}
+		fmt.Fprintf(&b, "\t%s %s = 0x%08X\n", r.GoName, typeName, r.Code)
 	}
 	b.WriteString(")\n")
 	return b.String()
@@ -159,14 +181,19 @@ func renderTable(records []record, pkg, typeName, base, source string) string {
 			continue
 		}
 		seen[r.Code] = true
-		fmt.Fprintf(&b, "\t%s: {Name: %q, Description: %q},\n", r.Name, r.Name, r.Description)
+		fmt.Fprintf(&b, "\t%s: {Name: %q, Description: %q},\n", r.GoName, r.GoName, r.Description)
 	}
 	b.WriteString("}\n\n")
 
 	b.WriteString("// nameToCode resolves every symbolic name, canonical or alias, to its code.\n")
+	b.WriteString("// Where the Go constant name differs from the name the specification uses,\n")
+	b.WriteString("// both are present, so a name copied out of the specification resolves too.\n")
 	fmt.Fprintf(&b, "var nameToCode = map[string]%s{\n", typeName)
 	for _, r := range records {
-		fmt.Fprintf(&b, "\t%q: %s,\n", r.Name, r.Name)
+		fmt.Fprintf(&b, "\t%q: %s,\n", r.GoName, r.GoName)
+		if r.GoName != r.Name {
+			fmt.Fprintf(&b, "\t%q: %s,\n", r.Name, r.GoName)
+		}
 	}
 	b.WriteString("}\n")
 	return b.String()

@@ -1,4 +1,4 @@
-# [MS-ERREF] 2.2 Win32 Error Codes, extracted by extract_ms_erref.py.
+# [MS-ERREF] 2.2 Win32 Error Codes, extracted by extract_ms_erref.py --table win32.
 # Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/18d8fbe8-a967-4f1c-ae50-99ca8e491d2d
 # Columns: code (hex, no prefix), symbolic name, description.
 # Rows are in specification order; a code may carry more than one name.

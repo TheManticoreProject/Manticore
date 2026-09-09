@@ -2714,6 +2714,8 @@ var table = map[WIN32_ERROR]Entry{
 }
 
 // nameToCode resolves every symbolic name, canonical or alias, to its code.
+// Where the Go constant name differs from the name the specification uses,
+// both are present, so a name copied out of the specification resolves too.
 var nameToCode = map[string]WIN32_ERROR{
 	"ERROR_SUCCESS":                                ERROR_SUCCESS,
 	"NERR_Success":                                 NERR_Success,
