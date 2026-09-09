@@ -69,6 +69,11 @@ func GetTimestamp(targetInfo []byte) []byte {
 	return ts
 }
 
+// channelBindingsLength is the size of an MsvAvChannelBindings value: the MD5 hash
+// of a gss_channel_bindings_struct, or all zeroes when the application supplied no
+// bindings ([MS-NLMP] 2.2.2.1).
+const channelBindingsLength = 16
+
 // BuildBlobTargetInfo constructs the modified TargetInfo to embed in the NTLMv2 blob.
 //
 // It copies all AVPairs from the challenge TargetInfo and, when a DNS computer name
@@ -94,6 +99,17 @@ func BuildBlobTargetInfo(targetInfo []byte) []byte {
 		avLen := binary.LittleEndian.Uint16(targetInfo[i+2 : i+4])
 
 		if currentID == avpair.MsvAvEOL {
+			// Insert MsvAvChannelBindings before EOL. A client with no application-
+			// supplied channel bindings sends the pair with an all-zero 16-byte
+			// value, which is what a Windows client emits; omitting the pair
+			// entirely is what a server enforcing channel binding (EPA) rejects
+			// (MS-NLMP 3.2.5.1.2).
+			hdr := make([]byte, 4)
+			binary.LittleEndian.PutUint16(hdr[0:2], uint16(avpair.MsvAvChannelBindings))
+			binary.LittleEndian.PutUint16(hdr[2:4], channelBindingsLength)
+			result = append(result, hdr...)
+			result = append(result, make([]byte, channelBindingsLength)...)
+
 			// Insert MsvAvTargetName (SPN) before EOL, then append EOL.
 			if len(targetName) > 0 {
 				hdr := make([]byte, 4)
