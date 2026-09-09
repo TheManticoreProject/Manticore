@@ -110,10 +110,18 @@ type Config struct {
 
 // Configuration defaults applied by NewServer when a field is left zero.
 const (
-	// DefaultNativeOS and DefaultNativeLanMan are informational only, but must
-	// be non-empty for strict clients to accept the session setup.
-	DefaultNativeOS     = "Unix"
-	DefaultNativeLanMan = "Manticore"
+	// DefaultNativeOS and DefaultNativeLanMan are informational only ([MS-CIFS]
+	// 2.2.4.53.2), but must be non-empty for strict clients to accept the session
+	// setup, and they are returned in every SESSION_SETUP_ANDX response — which
+	// makes them the most direct description of this server available to anyone
+	// observing a session.
+	//
+	// The pair below is what a Windows Server 2012 R2 Standard 9600 returns, and
+	// is self-consistent in the way Windows makes it: the same product name, with
+	// the build number in one field and the major.minor version in the other.
+	// Override both through Config for a different identity.
+	DefaultNativeOS     = "Windows Server 2012 R2 Standard 9600"
+	DefaultNativeLanMan = "Windows Server 2012 R2 Standard 6.3"
 
 	// DefaultMaxBufferSize is what Windows offers. [MS-CIFS] 2.2.4.52.2 requires
 	// a multiple of 4 and suggests at least 4356.
