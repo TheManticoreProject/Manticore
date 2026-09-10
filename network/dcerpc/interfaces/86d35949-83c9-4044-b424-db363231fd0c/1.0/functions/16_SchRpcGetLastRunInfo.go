@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
 
@@ -41,7 +42,7 @@ func SchRpcGetLastRunInfo(rpc ndr.Invoker, path ndr.WSTR) (PLastRuntime msdtyp.S
 	}
 	PLastRuntime = resp.PLastRuntime
 	PLastReturnCode = resp.PLastReturnCode
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcGetLastRunInfo failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

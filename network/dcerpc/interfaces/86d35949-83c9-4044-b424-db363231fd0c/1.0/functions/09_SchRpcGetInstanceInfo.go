@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -51,7 +52,7 @@ func SchRpcGetInstanceInfo(rpc ndr.Invoker, guid guid.GUID) (PPath *ndr.WSTR, PS
 	PcGroupInstances = resp.PcGroupInstances
 	PGroupInstances = resp.PGroupInstances
 	PEnginePID = resp.PEnginePID
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcGetInstanceInfo failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return
