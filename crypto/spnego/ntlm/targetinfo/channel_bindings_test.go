@@ -41,7 +41,7 @@ func TestBlobCarriesChannelBindings(t *testing.T) {
 		t.Fatalf("BuildServerTargetInfo: %v", err)
 	}
 
-	blob := targetinfo.BuildBlobTargetInfo(serverInfo)
+	blob := targetinfo.BuildBlobTargetInfo(serverInfo, false)
 	offsets, values := avPairOffsets(t, blob)
 
 	cb, ok := values[avpair.MsvAvChannelBindings]
@@ -85,7 +85,7 @@ func TestBlobChannelBindingsPrecedeTargetName(t *testing.T) {
 		t.Fatalf("BuildServerTargetInfo: %v", err)
 	}
 
-	offsets, _ := avPairOffsets(t, targetinfo.BuildBlobTargetInfo(serverInfo))
+	offsets, _ := avPairOffsets(t, targetinfo.BuildBlobTargetInfo(serverInfo, false))
 
 	spn, ok := offsets[avpair.MsvAvTargetName]
 	if !ok {

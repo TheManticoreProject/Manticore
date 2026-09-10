@@ -196,12 +196,6 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 	if v2 != nil {
 		// Use NTLMv2 (MS-NLMP 3.3.2)
 
-		// Prepare TargetInfo for the blob: add the MsvAvTargetName (SPN) AVPair, as
-		// the Windows client does. This server (Server 2016, signing required)
-		// requires the SPN rather than an MsvAvFlags MIC, so no MIC is emitted.
-		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo)
-		msg.NeedsMIC = false
-
 		// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
 		timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
 		serverSuppliedTimestamp := len(timestamp) == 8
@@ -210,6 +204,19 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 			timestamp = make([]byte, 8)
 			binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
 		}
+
+		// A MIC binds the NEGOTIATE and CHALLENGE to this AUTHENTICATE. It is emitted
+		// whenever the server supplied an MsvAvTimestamp — the same condition under
+		// which MS-NLMP 3.1.5.1.2 zeroes the LM response, and the signal that the
+		// server is recent enough to verify one.
+		msg.NeedsMIC = serverSuppliedTimestamp
+
+		// Prepare TargetInfo for the blob: the MsvAvTargetName (SPN) AVPair and the
+		// channel-bindings pair as the Windows client sends, plus the MsvAvFlags
+		// MIC-present bit when a MIC will follow. All are added before the NT
+		// response is computed, so they are covered by the NTProofStr as well as by
+		// the MIC.
+		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, msg.NeedsMIC)
 
 		var ntProofStr []byte
 		msg.NtChallengeResponse, ntProofStr, err = v2.ComputeNTChallengeResponse(timestamp, blobTargetInfo)

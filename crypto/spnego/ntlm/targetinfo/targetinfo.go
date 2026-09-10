@@ -82,7 +82,7 @@ const channelBindingsLength = 16
 // what the Windows client sends; modern Windows servers require the SPN in the
 // AUTHENTICATE's NTLMv2 AVPairs and reject the authentication (STATUS_INVALID_PARAMETER)
 // when it is absent.
-func BuildBlobTargetInfo(targetInfo []byte) []byte {
+func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 	// Build the SMB SPN "cifs/<DnsComputerName>" from the DNS computer name AVPair,
 	// in UTF-16LE (DnsComputerName is already UTF-16LE on the wire).
 	var targetName []byte
@@ -99,6 +99,20 @@ func BuildBlobTargetInfo(targetInfo []byte) []byte {
 		avLen := binary.LittleEndian.Uint16(targetInfo[i+2 : i+4])
 
 		if currentID == avpair.MsvAvEOL {
+			// Insert MsvAvFlags before EOL when the AUTHENTICATE will carry a MIC:
+			// that bit is how a server detects one (MS-NLMP 3.2.5.1.2). It is added
+			// before the NT response is computed, so it is covered by the NTProofStr
+			// as well as by the MIC itself.
+			if micPresent {
+				hdr := make([]byte, 4)
+				binary.LittleEndian.PutUint16(hdr[0:2], uint16(avpair.MsvAvFlags))
+				binary.LittleEndian.PutUint16(hdr[2:4], 4)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, avpair.MsvAvFlagMICPresent)
+				result = append(result, hdr...)
+				result = append(result, value...)
+			}
+
 			// Insert MsvAvChannelBindings before EOL. A client with no application-
 			// supplied channel bindings sends the pair with an all-zero 16-byte
 			// value, which is what a Windows client emits; omitting the pair
