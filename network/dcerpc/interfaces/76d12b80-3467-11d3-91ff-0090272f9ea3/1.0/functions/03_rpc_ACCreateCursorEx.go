@@ -10,6 +10,7 @@ import (
 
 	qmcomm2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76d12b80-3467-11d3-91ff-0090272f9ea3/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmp"
 )
 
@@ -41,8 +42,8 @@ func Rpc_ACCreateCursorEx(rpc ndr.Invoker, hQueue msmqmp.RPC_QUEUE_HANDLE, pcc m
 		return
 	}
 	Pcc = resp.Pcc
-	if uint32(resp.Status) != qmcomm2.StatusSuccess {
-		err = fmt.Errorf("rpc_ACCreateCursorEx failed: %s", qmcomm2.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("rpc_ACCreateCursorEx failed: %s", qmcomm2.StatusString(uint32(status)))
 	}
 	return
 }
