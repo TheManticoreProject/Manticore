@@ -10,6 +10,7 @@ import (
 
 	qmmgmt "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/41208ee0-e970-11d1-9b9e-00e02c064c39/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 	msmqmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmr"
 )
@@ -51,8 +52,8 @@ func R_QMMgmtGetInfo(rpc ndr.Invoker, pObjectFormat msmqmr.MGMT_OBJECT, cp ndr.D
 		return
 	}
 	ApVar = resp.ApVar
-	if uint32(resp.Status) != qmmgmt.StatusSuccess {
-		err = fmt.Errorf("R_QMMgmtGetInfo failed: %s", qmmgmt.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("R_QMMgmtGetInfo failed: %s", qmmgmt.StatusString(uint32(status)))
 	}
 	return
 }

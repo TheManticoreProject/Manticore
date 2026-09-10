@@ -10,6 +10,7 @@ import (
 
 	qmmgmt "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/41208ee0-e970-11d1-9b9e-00e02c064c39/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmr"
 )
 
@@ -42,8 +43,8 @@ func R_QMMgmtAction(rpc ndr.Invoker, pObjectFormat msmqmr.MGMT_OBJECT, action st
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("R_QMMgmtAction: %w", err)
 	}
-	if uint32(resp.Status) != qmmgmt.StatusSuccess {
-		return fmt.Errorf("R_QMMgmtAction failed: %s", qmmgmt.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		return fmt.Errorf("R_QMMgmtAction failed: %s", qmmgmt.StatusString(uint32(status)))
 	}
 	return nil
 }

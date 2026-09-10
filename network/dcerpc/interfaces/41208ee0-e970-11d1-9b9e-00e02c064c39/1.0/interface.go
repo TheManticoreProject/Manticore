@@ -12,9 +12,8 @@ package rpcinterface_41208ee0e97011d19b9e00e02c064c39_1_0
 // A fetched copy is kept at ms-mqmq.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -29,13 +28,25 @@ const (
 	OpnumR_QMMgmtAction  uint16 = 1
 )
 
-// Status codes returned by this interface. Both qmmgmt methods return an HRESULT; the
-// values are Message Queuing result codes ([MS-MQMQ] 2.4, mqerror.h). [MS-MQMR] 3.1.4.1
-// and 3.1.4.2 name only the codes below; StatusString falls back to the hex value for
-// any other failure HRESULT.
+// Status codes returned by this interface. Both qmmgmt methods return an HRESULT, and
+// the whole of [MS-ERREF] section 2.1.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult as the HRESULT type,
+// so no code that table names is repeated here. MQ_OK, the success value, is the
+// HRESULT S_OK and is spelled hresult.S_OK.
+//
+// The three Message Queuing result codes [MS-MQMR] 3.1.4.1 and 3.1.4.2 name are the
+// exception. They are MQ_* values of [MS-MQMQ] 2.4 (mqerror.h) living in FACILITY_MSMQ
+// (0x00E): each is of the form 0xC00E____, and [MS-ERREF] 2.1.1 carries no row in that
+// facility at all — not one of its 2928 values has a code whose facility field is
+// 0x00E. The shared table names none of these, so they stay declared here and
+// StatusString decodes them before deferring to the shared table for everything else.
+//
+// MQ_ERROR_INVALID_PARAMETER is the one with server behaviour attached, and that
+// knowledge is why it stays spelled out: the server returns it when pObjectFormat names
+// the MGMT_SESSION object type rather than MGMT_MACHINE or MGMT_QUEUE, and, for
+// R_QMMgmtAction, when lpwszAction is not one of the documented verbs (see the Action*
+// constants below).
 const (
-	StatusSuccess uint32 = 0x00000000 // MQ_OK
-
 	MQ_ERROR                   uint32 = 0xC00E0001 // generic error
 	MQ_ERROR_INVALID_PARAMETER uint32 = 0xC00E0006 // e.g. MGMT_SESSION type or bad lpwszAction
 	MQ_ERROR_ILLEGAL_PROPID    uint32 = 0xC00E0039 // a property id in aProp is not valid for the object
@@ -62,12 +73,14 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the Message Queuing result codes of [MS-MQMQ] 2.4, which live in
+// the FACILITY_MSMQ facility that [MS-ERREF] 2.1.1 does not cover, and defers every
+// other status to the shared [MS-ERREF] 2.1.1 table, which names each value the
+// specification defines, derives the FACILITY_WIN32 values it wraps, and renders hex
+// only for values it does not know. A zero status renders as S_OK, the name the shared
+// table gives the value MSMQ also spells MQ_OK.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "MQ_OK"
 	case MQ_ERROR:
 		return "MQ_ERROR"
 	case MQ_ERROR_INVALID_PARAMETER:
@@ -75,7 +88,7 @@ func StatusString(status uint32) string {
 	case MQ_ERROR_ILLEGAL_PROPID:
 		return "MQ_ERROR_ILLEGAL_PROPID"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 
