@@ -1,16 +1,52 @@
 package rpcinterface_3dde7c30165d11d1ab8f00805f14db40_1_0
 
-import "testing"
+import (
+	"testing"
 
-func TestStatusString(t *testing.T) {
-	if got := StatusString(ErrorSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(0) = %q, want ERROR_SUCCESS", got)
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
+
+// TestStatusCodesResolveThroughWin32 pins that the two NET_API_STATUS codes [MS-BKRP]
+// section 3.1.4.1 names for BackuprKey resolve through the shared [MS-ERREF] 2.2 table
+// under their specification names, that codes the interface never enumerated now render
+// by name rather than as undecoded hex, and that a value the specification does not
+// define still renders as hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000057: "ERROR_INVALID_PARAMETER",
 	}
-	if got := StatusString(ErrorInvalidParameter); got != "ERROR_INVALID_PARAMETER" {
-		t.Errorf("StatusString(0x57) = %q, want ERROR_INVALID_PARAMETER", got)
+	if len(documented) != 2 {
+		t.Fatalf("documented table has %d entries, want the 2 codes the descriptor declared", len(documented))
 	}
-	if got := StatusString(0x12345678); got != "0x12345678" {
-		t.Errorf("StatusString(unknown) = %q, want hex fallback", got)
+	for code, name := range documented {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
+		}
+	}
+
+	// The descriptor called every other nonzero code opaque, so a server refusing the
+	// call or rejecting the input BLOB rendered as undecoded hex. These resolve by name
+	// now, which is the whole point of routing through the shared table.
+	outsideOldSubset := map[uint32]string{
+		0x00000002: "ERROR_FILE_NOT_FOUND",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x0000000D: "ERROR_INVALID_DATA",
+		0x00000032: "ERROR_NOT_SUPPORTED",
+		0x0000054F: "ERROR_INTERNAL_ERROR",
+	}
+	for code, name := range outsideOldSubset {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0x12345678).String(); got != "0x12345678" {
+		t.Errorf("win32.WIN32_ERROR(0x12345678).String() = %q, want hex", got)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	dssetup "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/3919286a-b10c-11d0-9ba8-00c04fd92ef5/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdssp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dssp"
 )
 
@@ -50,8 +51,8 @@ func DsRolerGetPrimaryDomainInformation(rpc ndr.Invoker, infoLevel msdssp.DSROLE
 		return
 	}
 	DomainInfo = resp.DomainInfo
-	if uint32(resp.Status) != dssetup.StatusSuccess {
-		err = fmt.Errorf("DsRolerGetPrimaryDomainInformation failed: %s", dssetup.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("DsRolerGetPrimaryDomainInformation failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
