@@ -10,6 +10,7 @@ import (
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -38,8 +39,8 @@ func SamrGetUserDomainPasswordInformation(rpc ndr.Invoker, userHandle mssamr.SAM
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return mssamr.USER_DOMAIN_PASSWORD_INFORMATION{}, fmt.Errorf("SamrGetUserDomainPasswordInformation: %w", err)
 	}
-	if uint32(resp.Status) != samr.StatusSuccess {
-		return resp.PasswordInformation, fmt.Errorf("SamrGetUserDomainPasswordInformation failed: %s", samr.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return resp.PasswordInformation, fmt.Errorf("SamrGetUserDomainPasswordInformation failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return resp.PasswordInformation, nil
 }

@@ -10,6 +10,7 @@ import (
 
 	samr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ac/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mssamr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-samr"
 )
 
@@ -50,9 +51,8 @@ func SamrEnumerateUsersInDomain(rpc ndr.Invoker, domainHandle mssamr.SAMPR_HANDL
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return 0, nil, 0, fmt.Errorf("SamrEnumerateUsersInDomain: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != samr.StatusSuccess && status != samr.StatusMoreEntries {
-		return uint32(resp.EnumerationContext), resp.Buffer, uint32(resp.CountReturned), fmt.Errorf("SamrEnumerateUsersInDomain failed: %s", samr.StatusString(status))
+	if status := nt_status.NT_STATUS(resp.Status); status != nt_status.NT_STATUS_SUCCESS && status != nt_status.NT_STATUS_MORE_ENTRIES {
+		return uint32(resp.EnumerationContext), resp.Buffer, uint32(resp.CountReturned), fmt.Errorf("SamrEnumerateUsersInDomain failed: %s", status)
 	}
 	return uint32(resp.EnumerationContext), resp.Buffer, uint32(resp.CountReturned), nil
 }

@@ -14,6 +14,23 @@ type NegTokenInit struct {
 	MechTokenMIC []byte                  `asn1:"explicit,optional,tag:3"`
 }
 
+// MarshalMechTypeList returns the DER encoding of a MechTypeList: the bare
+// SEQUENCE OF MechType, without the [0] context tag that wraps it inside a
+// NegTokenInit.
+//
+// This is the exact input a mechListMIC is computed over. RFC 4178 section 5 is
+// explicit that the message is "the DER encoding of the value of type
+// MechTypeList, which is contained in the mechTypes field of the NegTokenInit",
+// and NOT the DER encoding of the type "[0] MechTypeList" — so the context tag
+// must be absent or the MIC will not verify against a peer's.
+func MarshalMechTypeList(mechTypes []asn1.ObjectIdentifier) ([]byte, error) {
+	der, err := asn1.Marshal(mechTypes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal MechTypeList: %v", err)
+	}
+	return der, nil
+}
+
 // CreateNegTokenInit creates a SPNEGO NegTokenInit with the given NTLM token and marshals it.
 // Parameters:
 //   - ntlmToken: The NTLM token bytes to include in the SPNEGO token

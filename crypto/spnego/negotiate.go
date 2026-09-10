@@ -1,6 +1,7 @@
 package spnego
 
 import (
+	"encoding/asn1"
 	"errors"
 	"fmt"
 
@@ -41,6 +42,14 @@ func (ctx *AuthContext) processNegotiateInnerTokenNTLM(negotiateFlags flags.Nego
 
 	// Retain the raw NEGOTIATE message for the AUTHENTICATE MIC computation.
 	ctx.NegotiateMessageBytes = ntlmNegotiateBytes
+
+	// Retain the mech list for the mechListMIC computed over it later.
+	mechTypes := []asn1.ObjectIdentifier{NtlmOID}
+	mechListDER, err := MarshalMechTypeList(mechTypes)
+	if err != nil {
+		return nil, err
+	}
+	ctx.MechListDER = mechListDER
 
 	// Wrap in SPNEGO
 	return CreateNegTokenInit(ntlmNegotiateBytes)
