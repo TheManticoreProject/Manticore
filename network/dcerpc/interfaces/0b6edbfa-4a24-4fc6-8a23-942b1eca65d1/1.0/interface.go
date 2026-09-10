@@ -13,8 +13,6 @@ package rpcinterface_0b6edbfa4a244fc68a23942b1eca65d1_1_0
 // A fetched copy is kept at ms-pan.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -36,19 +34,20 @@ const (
 	OpnumIRPCAsyncNotify_CloseChannel                uint16 = 6
 )
 
-// Status codes. IRPCAsyncNotify methods return an HRESULT: ZERO (S_OK, 0x00000000) on
-// success, or a common [MS-ERREF] HRESULT / one of the protocol-specific values below on
-// failure ([MS-PAN] 3.1.4). The client SHOULD treat all error return values the same,
-// except where noted in the per-method processing rules.
-const (
-	StatusSuccess uint32 = 0x00000000 // S_OK
-
-	// Protocol-specific error values ([MS-PAN] 3.1.4.1 IRPCAsyncNotify_RegisterClient).
-	ErrorAccessDenied     uint32 = 0x80070005 // E_ACCESSDENIED: caller not authorized to register
-	ErrorNotEnoughMemory  uint32 = 0x8007000E // E_OUTOFMEMORY: no memory for the new registration
-	ErrorRegistrationFull uint32 = 0x80070015 // HRESULT_FROM_WIN32(ERROR_NOT_READY): registration limit reached
-	ErrorInvalidName      uint32 = 0x8007007B // HRESULT_FROM_WIN32(ERROR_INVALID_NAME): pName format invalid
-)
+// The HRESULTs IRPCAsyncNotify methods return ([MS-PAN] 3.1.4) are not declared here. The
+// whole of [MS-ERREF] 2.1.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult as the HRESULT type,
+// and the five values repeated here covered five of that 2928-value table while drifting
+// from it — [MS-PAN] 3.1.4 lets a server return any common [MS-ERREF] HRESULT and tells
+// the client to treat error returns alike, so the subset could name none of them.
+// Convert a returned status with hresult.HRESULT(status) and compare against
+// hresult.S_OK; hresult.HRESULT.IsSuccess covers the whole success range, since for an
+// HRESULT success is a severity bit rather than the single value zero.
+//
+// Two of the five were FACILITY_WIN32 wrappings, 0x80070015 and 0x8007007B, and those
+// need no declaration at all: the shared table derives such a name from the Win32 code
+// the low half carries, so both render exactly as they did here. Build one with
+// hresult.FromWin32(win32.ERROR_NOT_READY) and unwrap it with hresult.HRESULT.ToWin32.
 
 // Access rights checked by the server when authorizing a registration
 // ([MS-PAN] 3.1.4.1). These combine the standard [MS-DTYP] ACCESS_MASK bits with
@@ -65,25 +64,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x0b6edbfa, B: 0x4a24, C: 0x4fc6, D: 0x8a23, E: 0x942b1eca65d1},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "S_OK"
-	case ErrorAccessDenied:
-		return "E_ACCESSDENIED"
-	case ErrorNotEnoughMemory:
-		return "E_OUTOFMEMORY"
-	case ErrorRegistrationFull:
-		return "HRESULT_FROM_WIN32(ERROR_NOT_READY)"
-	case ErrorInvalidName:
-		return "HRESULT_FROM_WIN32(ERROR_INVALID_NAME)"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

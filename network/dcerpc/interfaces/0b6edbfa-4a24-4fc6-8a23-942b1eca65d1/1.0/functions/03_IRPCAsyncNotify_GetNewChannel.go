@@ -10,6 +10,7 @@ import (
 
 	IRPCAsyncNotify "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/0b6edbfa-4a24-4fc6-8a23-942b1eca65d1/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mspan "github.com/TheManticoreProject/Manticore/windows/protocols/ms-pan"
 )
 
@@ -46,8 +47,8 @@ func IRPCAsyncNotify_GetNewChannel(rpc ndr.Invoker, pRemoteObj mspan.PRPCREMOTEO
 	}
 	PNoOfChannels = resp.PNoOfChannels
 	PpChannelCtxt = resp.PpChannelCtxt
-	if uint32(resp.Status) != IRPCAsyncNotify.StatusSuccess {
-		err = fmt.Errorf("IRPCAsyncNotify_GetNewChannel failed: %s", IRPCAsyncNotify.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("IRPCAsyncNotify_GetNewChannel failed: %s", status)
 	}
 	return
 }
