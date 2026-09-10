@@ -10,6 +10,7 @@ import (
 
 	winsif "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/45f52c28-7f9f-101a-b52b-08002b2efabe/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msraiw "github.com/TheManticoreProject/Manticore/windows/protocols/ms-raiw"
 )
 
@@ -37,8 +38,8 @@ func R_WinsGetNameAndAdd(rpc ndr.Invoker) (PWinsAdd msraiw.WINSINTF_ADD_T, PUncN
 	}
 	PWinsAdd = resp.PWinsAdd
 	PUncName = resp.PUncName
-	if uint32(resp.Status) != winsif.StatusSuccess {
-		err = fmt.Errorf("R_WinsGetNameAndAdd failed: %s", winsif.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_WinsGetNameAndAdd failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
