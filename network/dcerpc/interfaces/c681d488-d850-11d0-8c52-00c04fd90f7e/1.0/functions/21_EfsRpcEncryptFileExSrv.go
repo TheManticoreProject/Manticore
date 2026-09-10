@@ -10,6 +10,7 @@ import (
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // efsRpcEncryptFileExSrvRequest carries the [in] parameters of EfsRpcEncryptFileExSrv.
@@ -39,8 +40,8 @@ func EfsRpcEncryptFileExSrv(rpc ndr.Invoker, fileName ndr.WSTR, protectorDescrip
 		err = fmt.Errorf("EfsRpcEncryptFileExSrv: %w", err)
 		return
 	}
-	if uint32(resp.Status) != efsrpc.StatusSuccess {
-		err = fmt.Errorf("EfsRpcEncryptFileExSrv failed: %s", efsrpc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("EfsRpcEncryptFileExSrv failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
