@@ -10,6 +10,7 @@ import (
 
 	msgsvcsend "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5a7b91f8-ff00-11d0-a9b2-00c04fb6e6fc/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrSendMessageRequest carries the [in] parameters of NetrSendMessage.
@@ -46,8 +47,8 @@ func NetrSendMessage(rpc ndr.Invoker, from ndr.STR, to ndr.STR, text ndr.STR) (e
 		err = fmt.Errorf("NetrSendMessage: %w", err)
 		return
 	}
-	if uint32(resp.Status) != msgsvcsend.StatusSuccess {
-		err = fmt.Errorf("NetrSendMessage failed: %s", msgsvcsend.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrSendMessage failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
