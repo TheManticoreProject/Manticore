@@ -12,9 +12,8 @@ package rpcinterface_1088a980eae511d08d9b00a02453c337_1_0
 // A fetched copy is kept at ms-mqqp.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -40,18 +39,35 @@ const (
 	OpnumRemoteQMStartReceiveByLookupId uint16 = 10
 )
 
-// Status codes returned by the HRESULT-returning methods of this interface. The values are
-// the Message Queuing result codes ([MS-MQMQ] 2.4, mqerror.h), plus the one NTSTATUS the
-// spec cites directly. MQ_OK is success; per [MS-MQQP] 3.1.4.x the client MUST treat every
-// failure HRESULT identically. Only the codes the [MS-MQQP] method sections enumerate are
-// listed here; StatusString falls back to the hex value for any other code.
+// Status codes returned by the HRESULT-returning methods of this interface. Most are the
+// Message Queuing result codes ([MS-MQMQ] 2.4, mqerror.h). They are HRESULTs in
+// FACILITY_MSMQ (0x00E), and [MS-ERREF] section 2.1.1 carries no row for that facility at
+// all: the table names nothing in 0xC00E____ or 0x400E____ and no value whose name begins
+// MQ_. So none of them can be read out of
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult, and they stay declared
+// here, decoded by StatusString before it defers to the shared table.
+//
+// MQ_OK is gone from this block: its value is 0x00000000, which the shared package declares
+// as hresult.S_OK, so the stubs compare a returned status against that constant. They
+// compare for equality with it rather than testing IsSuccess, which preserves the behaviour
+// they have always had — [MS-MQQP] 3.1.4.x documents MQ_OK as the success value and requires
+// the client to treat every failure identically, so a success-severity value that is not
+// MQ_OK, such as one of the MQ_INFORMATION_* codes in 0x400E____, is still reported as a
+// failure.
+//
+// STATUS_INVALID_PARAMETER stays for a second, unrelated reason: it is not an HRESULT at all
+// but the NTSTATUS 0xC000000D that [MS-MQQP] cites directly, and [MS-ERREF] section 2.3.1 is
+// the table that names it. Read as an HRESULT the same value is FACILITY_NULL code 0x000D,
+// which [MS-ERREF] 2.1.1 does not define, so deferring it to the shared HRESULT table would
+// render it as bare hex; the local arm keeps naming it.
+//
+// Only the codes the [MS-MQQP] method sections enumerate are listed here; StatusString
+// defers every other value to the shared HRESULT table.
 //
 // Note the two exceptions among the opnums: RemoteQMGetQMQMServerPort (opnum 7) does NOT
 // return an HRESULT — its DWORD result is a TCP/SPX port, with 0x00000000 signalling failure
 // — and RemoteQmGetVersion (opnum 8) has no return value at all.
 const (
-	StatusSuccess uint32 = 0x00000000 // MQ_OK
-
 	MQ_ERROR                   uint32 = 0xC00E0001
 	MQ_ERROR_INVALID_PARAMETER uint32 = 0xC00E0006
 	MQ_ERROR_INVALID_HANDLE    uint32 = 0xC00E0007
@@ -70,12 +86,14 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the FACILITY_MSMQ result codes above, which [MS-ERREF] section 2.1.1
+// does not carry, along with the one NTSTATUS the specification cites, and defers every other
+// status to the shared HRESULT table. The deferral is correct because an MSMQ result code
+// genuinely is an HRESULT and only its facility is absent from the specification's table:
+// 0x00000000 renders as S_OK, a FACILITY_WIN32 value renders through the Win32 code it wraps,
+// and a value the table does not define renders as hex, exactly as it did before.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "MQ_OK"
 	case MQ_ERROR:
 		return "MQ_ERROR"
 	case MQ_ERROR_INVALID_PARAMETER:
@@ -87,7 +105,7 @@ func StatusString(status uint32) string {
 	case STATUS_INVALID_PARAMETER:
 		return "STATUS_INVALID_PARAMETER"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 

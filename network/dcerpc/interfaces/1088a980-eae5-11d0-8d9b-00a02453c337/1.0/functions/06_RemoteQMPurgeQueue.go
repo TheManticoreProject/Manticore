@@ -10,6 +10,7 @@ import (
 
 	qm2qm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1088a980-eae5-11d0-8d9b-00a02453c337/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // remoteQMPurgeQueueRequest carries the [in] parameters of RemoteQMPurgeQueue.
@@ -34,7 +35,7 @@ func RemoteQMPurgeQueue(rpc ndr.Invoker, hQueue ndr.DWORD) (err error) {
 		err = fmt.Errorf("RemoteQMPurgeQueue: %w", err)
 		return
 	}
-	if uint32(resp.Status) != qm2qm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("RemoteQMPurgeQueue failed: %s", qm2qm.StatusString(uint32(resp.Status)))
 	}
 	return
