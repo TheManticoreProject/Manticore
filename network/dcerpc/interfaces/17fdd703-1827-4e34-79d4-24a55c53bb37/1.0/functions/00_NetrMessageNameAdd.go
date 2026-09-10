@@ -10,6 +10,7 @@ import (
 
 	msgsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/17fdd703-1827-4e34-79d4-24a55c53bb37/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrMessageNameAddRequest carries the [in] parameters of NetrMessageNameAdd.
@@ -37,8 +38,8 @@ func NetrMessageNameAdd(rpc ndr.Invoker, serverName *ndr.WSTR, msgName ndr.WSTR)
 		err = fmt.Errorf("NetrMessageNameAdd: %w", err)
 		return
 	}
-	if uint32(resp.Status) != msgsvc.StatusSuccess {
-		err = fmt.Errorf("NetrMessageNameAdd failed: %s", msgsvc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrMessageNameAdd failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
