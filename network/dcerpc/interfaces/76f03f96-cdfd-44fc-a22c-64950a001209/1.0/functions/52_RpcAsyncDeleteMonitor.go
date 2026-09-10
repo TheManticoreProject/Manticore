@@ -10,6 +10,7 @@ import (
 
 	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rpcAsyncDeleteMonitorRequest carries the [in] parameters of RpcAsyncDeleteMonitor.
@@ -41,8 +42,8 @@ func RpcAsyncDeleteMonitor(rpc ndr.Invoker, name *ndr.WSTR, pEnvironment *ndr.WS
 		err = fmt.Errorf("RpcAsyncDeleteMonitor: %w", err)
 		return
 	}
-	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
-		err = fmt.Errorf("RpcAsyncDeleteMonitor failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcAsyncDeleteMonitor failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

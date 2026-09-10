@@ -10,6 +10,7 @@ import (
 
 	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rpcAsyncDeletePrinterDriverRequest carries the [in] parameters of RpcAsyncDeletePrinterDriver.
@@ -41,8 +42,8 @@ func RpcAsyncDeletePrinterDriver(rpc ndr.Invoker, pName *ndr.WSTR, pEnvironment 
 		err = fmt.Errorf("RpcAsyncDeletePrinterDriver: %w", err)
 		return
 	}
-	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
-		err = fmt.Errorf("RpcAsyncDeletePrinterDriver failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcAsyncDeletePrinterDriver failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

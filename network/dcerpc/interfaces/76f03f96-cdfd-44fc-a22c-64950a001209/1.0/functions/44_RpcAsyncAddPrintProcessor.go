@@ -10,6 +10,7 @@ import (
 
 	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rpcAsyncAddPrintProcessorRequest carries the [in] parameters of RpcAsyncAddPrintProcessor.
@@ -43,8 +44,8 @@ func RpcAsyncAddPrintProcessor(rpc ndr.Invoker, pName *ndr.WSTR, pEnvironment nd
 		err = fmt.Errorf("RpcAsyncAddPrintProcessor: %w", err)
 		return
 	}
-	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
-		err = fmt.Errorf("RpcAsyncAddPrintProcessor failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcAsyncAddPrintProcessor failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
