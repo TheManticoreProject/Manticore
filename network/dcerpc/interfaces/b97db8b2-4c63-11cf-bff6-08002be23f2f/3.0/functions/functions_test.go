@@ -7,6 +7,7 @@ import (
 	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mscmrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmrp"
 )
 
@@ -49,7 +50,7 @@ func TestApiOpenClusterMarshal(t *testing.T) {
 	if cap.opnum != clusapi.OpnumApiOpenCluster {
 		t.Fatalf("opnum = %d, want %d", cap.opnum, clusapi.OpnumApiOpenCluster)
 	}
-	if h != (mscmrp.HCLUSTER_RPC{}) || status != clusapi.StatusSuccess {
+	if h != (mscmrp.HCLUSTER_RPC{}) || win32.WIN32_ERROR(status) != win32.ERROR_SUCCESS {
 		t.Fatalf("zero response: handle=%v status=%#x", h, status)
 	}
 	if len(cap.stub) != 0 {

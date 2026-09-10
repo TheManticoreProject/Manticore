@@ -10,6 +10,7 @@ import (
 
 	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // opnum261ReservedRequest carries the [in] parameters of Opnum261Reserved.
@@ -32,8 +33,8 @@ func Opnum261Reserved(rpc ndr.Invoker) (err error) {
 		err = fmt.Errorf("Opnum261Reserved: %w", err)
 		return
 	}
-	if uint32(resp.Status) != clusapi.StatusSuccess {
-		err = fmt.Errorf("Opnum261Reserved failed: %s", clusapi.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("Opnum261Reserved failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
