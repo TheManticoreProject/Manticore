@@ -10,6 +10,7 @@ import (
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
@@ -46,8 +47,8 @@ func REnumDependentServicesA(rpc ndr.Invoker, hService msscmr.SC_RPC_HANDLE, dwS
 	LpServices = resp.LpServices
 	PcbBytesNeeded = resp.PcbBytesNeeded
 	LpServicesReturned = resp.LpServicesReturned
-	if uint32(resp.Status) != svcctl.StatusSuccess {
-		err = fmt.Errorf("REnumDependentServicesA failed: %s", svcctl.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("REnumDependentServicesA failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

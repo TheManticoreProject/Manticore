@@ -10,6 +10,7 @@ import (
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msscmr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-scmr"
 )
 
@@ -40,8 +41,8 @@ func RCloseNotifyHandle(rpc ndr.Invoker, phNotify msscmr.LPSC_NOTIFY_RPC_HANDLE)
 	}
 	PhNotify = resp.PhNotify
 	PfApcFired = resp.PfApcFired
-	if uint32(resp.Status) != svcctl.StatusSuccess {
-		err = fmt.Errorf("RCloseNotifyHandle failed: %s", svcctl.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RCloseNotifyHandle failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
