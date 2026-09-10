@@ -10,6 +10,7 @@ import (
 
 	RCMPublic "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/bde95fdf-eee0-45de-9e12-e5a61cd0d4fe/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // rpcGetLastInputTimeRequest carries the [in] parameters of RpcGetLastInputTime.
@@ -37,8 +38,8 @@ func RpcGetLastInputTime(rpc ndr.Invoker, sessionId ndr.DWORD) (PLastInputTime i
 		return
 	}
 	PLastInputTime = resp.PLastInputTime
-	if uint32(resp.Status) != RCMPublic.StatusSuccess {
-		err = fmt.Errorf("RpcGetLastInputTime failed: %s", RCMPublic.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetLastInputTime failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }

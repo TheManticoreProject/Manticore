@@ -10,6 +10,7 @@ import (
 
 	RCMPublic "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/bde95fdf-eee0-45de-9e12-e5a61cd0d4fe/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // rpcGetConfigDataRequest carries the [in] parameters of RpcGetConfigData.
@@ -39,8 +40,8 @@ func RpcGetConfigData(rpc ndr.Invoker, sessionId ndr.DWORD) (PpBuff []uint8, POu
 	}
 	PpBuff = resp.PpBuff
 	POutBuffByteLen = resp.POutBuffByteLen
-	if uint32(resp.Status) != RCMPublic.StatusSuccess {
-		err = fmt.Errorf("RpcGetConfigData failed: %s", RCMPublic.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetConfigData failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
