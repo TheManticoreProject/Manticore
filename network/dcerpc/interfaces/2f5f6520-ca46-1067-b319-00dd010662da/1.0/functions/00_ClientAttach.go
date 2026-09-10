@@ -10,6 +10,7 @@ import (
 
 	tapsrv "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/2f5f6520-ca46-1067-b319-00dd010662da/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mstrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-trp"
 )
 
@@ -51,8 +52,8 @@ func ClientAttach(rpc ndr.Invoker, lProcessID int32, pszDomainUser ndr.WSTR, psz
 	}
 	PphContext = resp.PphContext
 	PhAsyncEventsEvent = resp.PhAsyncEventsEvent
-	if uint32(resp.Return) != tapsrv.StatusSuccess {
-		err = fmt.Errorf("ClientAttach failed: %s", tapsrv.StatusString(uint32(resp.Return)))
+	if win32.WIN32_ERROR(resp.Return) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("ClientAttach failed: %s", win32.WIN32_ERROR(resp.Return).String())
 	}
 	return
 }
