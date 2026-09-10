@@ -95,8 +95,10 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 		return nil, fmt.Errorf("failed to create NTLM AUTHENTICATE message: %v", err)
 	}
 
-	// Retain the derived session key so callers can use it as the SMB signing MAC key.
+	// Retain the derived session key so callers can use it as the SMB signing MAC key,
+	// and the flags it was negotiated under, which key the mechListMIC below.
 	ctx.SessionKey = ntlmAuth.SessionKey
+	ctx.authenticateFlags = ntlmAuth.NegotiateFlags
 
 	// When the server's CHALLENGE carried an MsvAvTimestamp, CreateAuthenticateMessage
 	// sets the MsvAvFlags MIC-present bit in the NtChallengeResponse, so the
@@ -120,6 +122,19 @@ func (ctx *AuthContext) processChallengeInnerTokenNTLM(innerToken []byte) ([]byt
 	// — no negState and no supportedMech — matching the Windows client.
 	negTokenResp := NegTokenResp{SuppressNegState: true}
 	negTokenResp.SetMechToken(ntlmAuthBytes)
+
+	// Protect the negotiation itself. The mechListMIC is a GSS_GetMIC over the
+	// DER-encoded MechTypeList this client advertised, keyed on the session the
+	// AUTHENTICATE just established (RFC 4178 section 5), so a peer that altered
+	// the offered mech list cannot go undetected. A server that requires it
+	// answers accept-incomplete and holds the context open until it arrives.
+	mic, err := ctx.computeMechListMIC(ctx.authenticateFlags)
+	if err != nil {
+		return nil, err
+	}
+	if len(mic) > 0 {
+		negTokenResp.MechListMIC = mic
+	}
 
 	marshalledNegTokenResp, err := negTokenResp.Marshal()
 	if err != nil {

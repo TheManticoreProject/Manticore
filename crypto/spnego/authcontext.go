@@ -2,6 +2,7 @@ package spnego
 
 import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
 
@@ -33,6 +34,17 @@ type AuthContext struct {
 	// NegotiateMessageBytes retains the raw NTLM NEGOTIATE_MESSAGE that was sent,
 	// so the AUTHENTICATE MIC can be computed over NEGOTIATE||CHALLENGE||AUTHENTICATE.
 	NegotiateMessageBytes []byte
+
+	// MechListDER retains the DER-encoded MechTypeList advertised in the
+	// NegTokenInit. The SPNEGO mechListMIC is computed over exactly these bytes
+	// (RFC 4178 section 5), so they must be the ones that went on the wire rather
+	// than a re-encoding of the same list.
+	MechListDER []byte
+
+	// authenticateFlags are the flags carried by the AUTHENTICATE message, which
+	// key the per-message security context a mechListMIC is taken under. They are
+	// the negotiated flags, not those the client asked for.
+	authenticateFlags flags.NegotiateFlags
 
 	// SessionKey is the session key derived during the most recent successful
 	// CreateAuthenticateTokenFromChallengeToken call. It is not transmitted on the
