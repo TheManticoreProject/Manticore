@@ -40,6 +40,12 @@ TABLES = {
         "section": "2.3.1 NTSTATUS Values",
         "min_rows": 1790,
     },
+    "hresult": {
+        "url": "https://learn.microsoft.com/en-us/openspecs/windows_protocols/"
+        "ms-erref/705fb797-2175-4a90-b5a3-3918024b10b8",
+        "section": "2.1.1 HRESULT Values",
+        "min_rows": 2850,
+    },
 }
 
 # The value cell holds "0xXXXXXXXX" and the symbolic name, normally in separate
