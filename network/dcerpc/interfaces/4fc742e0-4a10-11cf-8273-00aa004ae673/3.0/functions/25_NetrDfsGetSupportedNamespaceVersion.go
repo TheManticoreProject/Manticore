@@ -10,6 +10,7 @@ import (
 
 	netdfs "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4fc742e0-4a10-11cf-8273-00aa004ae673/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdfsnm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dfsnm"
 )
 
@@ -42,8 +43,8 @@ func NetrDfsGetSupportedNamespaceVersion(rpc ndr.Invoker, origin msdfsnm.DFS_NAM
 		return
 	}
 	PVersionInfo = resp.PVersionInfo
-	if uint32(resp.Status) != netdfs.StatusSuccess {
-		err = fmt.Errorf("NetrDfsGetSupportedNamespaceVersion failed: %s", netdfs.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrDfsGetSupportedNamespaceVersion failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

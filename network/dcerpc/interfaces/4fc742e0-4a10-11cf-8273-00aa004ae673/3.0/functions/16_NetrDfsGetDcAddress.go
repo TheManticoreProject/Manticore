@@ -10,6 +10,7 @@ import (
 
 	netdfs "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4fc742e0-4a10-11cf-8273-00aa004ae673/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrDfsGetDcAddressRequest carries the [in] parameters of NetrDfsGetDcAddress.
@@ -47,8 +48,8 @@ func NetrDfsGetDcAddress(rpc ndr.Invoker, serverName ndr.WSTR, dcName ndr.WSTR, 
 	DcName = resp.DcName
 	IsRoot = resp.IsRoot
 	Timeout = resp.Timeout
-	if uint32(resp.Status) != netdfs.StatusSuccess {
-		err = fmt.Errorf("NetrDfsGetDcAddress failed: %s", netdfs.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrDfsGetDcAddress failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

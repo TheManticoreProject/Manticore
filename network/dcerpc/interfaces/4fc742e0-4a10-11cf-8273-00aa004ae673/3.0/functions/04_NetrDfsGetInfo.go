@@ -10,6 +10,7 @@ import (
 
 	netdfs "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4fc742e0-4a10-11cf-8273-00aa004ae673/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdfsnm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dfsnm"
 )
 
@@ -44,8 +45,8 @@ func NetrDfsGetInfo(rpc ndr.Invoker, dfsEntryPath ndr.WSTR, serverName *ndr.WSTR
 		return
 	}
 	DfsInfo = resp.DfsInfo
-	if uint32(resp.Status) != netdfs.StatusSuccess {
-		err = fmt.Errorf("NetrDfsGetInfo failed: %s", netdfs.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrDfsGetInfo failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
