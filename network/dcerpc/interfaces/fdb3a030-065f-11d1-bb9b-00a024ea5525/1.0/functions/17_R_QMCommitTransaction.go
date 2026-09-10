@@ -10,6 +10,7 @@ import (
 
 	qmcomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/fdb3a030-065f-11d1-bb9b-00a024ea5525/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmp"
 )
 
@@ -38,7 +39,7 @@ func R_QMCommitTransaction(rpc ndr.Invoker, phIntXact msmqmp.RPC_INT_XACT_HANDLE
 		return
 	}
 	PhIntXact = resp.PhIntXact
-	if uint32(resp.Status) != qmcomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_QMCommitTransaction failed: %s", qmcomm.StatusString(uint32(resp.Status)))
 	}
 	return

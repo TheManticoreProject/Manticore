@@ -10,6 +10,7 @@ import (
 
 	qmcomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/fdb3a030-065f-11d1-bb9b-00a024ea5525/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqmp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmp"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
@@ -56,7 +57,7 @@ func R_QMOpenRemoteQueue(rpc ndr.Invoker, pQueueFormat *msmqmq.QUEUE_FORMAT, dwC
 	PdwContext = resp.PdwContext
 	DwpQueue = resp.DwpQueue
 	PhQueue = resp.PhQueue
-	if uint32(resp.Status) != qmcomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_QMOpenRemoteQueue failed: %s", qmcomm.StatusString(uint32(resp.Status)))
 	}
 	return

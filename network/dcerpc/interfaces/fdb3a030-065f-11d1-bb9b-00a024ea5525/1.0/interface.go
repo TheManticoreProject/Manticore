@@ -12,9 +12,8 @@ package rpcinterface_fdb3a030065f11d1bb9b00a024ea5525_1_0
 // A fetched copy is kept at ms-mqmp.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -57,11 +56,18 @@ const (
 // Status codes returned by this interface. Every qmcomm method returns an HRESULT (except
 // R_QMGetRTQMServerPort, which returns a port number); the values are the Message Queuing
 // result codes ([MS-MQMQ] 2.4, mqerror.h). Only the codes most relevant to queue-manager
-// operations are enumerated here; StatusString falls back to the hex value for any other
-// HRESULT.
+// operations are enumerated here.
+//
+// These are MQ_* values in FACILITY_MSMQ (0x00E), and that is why they stay declared here
+// instead of moving to github.com/TheManticoreProject/Manticore/windows/errors/hresult:
+// [MS-ERREF] section 2.1.1 does not carry that facility at all. Its 2928 values span 22
+// facilities and none of them is 0x00E; no name in the table begins with MQ_ and none
+// contains MSMQ. Routing MQ_ERROR_QUEUE_NOT_FOUND (0xC00E0003) through the shared table
+// would therefore render it as bare hex rather than name it.
+//
+// MQ_OK is the one value that does move. It is 0x00000000, which is S_OK, so the methods
+// compare against hresult.S_OK and no local success constant is declared here.
 const (
-	StatusSuccess uint32 = 0x00000000 // MQ_OK
-
 	MQ_ERROR                             uint32 = 0xC00E0001
 	MQ_ERROR_PROPERTY                    uint32 = 0xC00E0002
 	MQ_ERROR_QUEUE_NOT_FOUND             uint32 = 0xC00E0003
@@ -94,12 +100,16 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the Message Queuing result codes of [MS-MQMQ] 2.4 that this interface
+// returns, whose FACILITY_MSMQ values [MS-ERREF] 2.1.1 does not carry, and defers every
+// other status to the shared [MS-ERREF] 2.1.1 table.
+//
+// That fall-through is correct despite the missing facility: an MSMQ status genuinely is an
+// HRESULT, with bit 31 as its severity and 0x00E in its facility field, so a value outside
+// the list below is decoded as the HRESULT it is and rendered as hex only where the
+// specification names nothing.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "MQ_OK"
 	case MQ_ERROR:
 		return "MQ_ERROR"
 	case MQ_ERROR_PROPERTY:
@@ -141,7 +151,7 @@ func StatusString(status uint32) string {
 	case MQ_ERROR_TRANSACTION_ENLIST:
 		return "MQ_ERROR_TRANSACTION_ENLIST"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 
