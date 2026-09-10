@@ -12,9 +12,8 @@ package rpcinterface_f5cc5a184264101a8c5908002b2f8426_56_0
 // A fetched copy is kept at ms-nspi.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -52,28 +51,50 @@ const (
 
 // Status codes an NSPI method may return. NSPI methods return a LONG whose permitted
 // values are the [MS-NSPI] section 2.2.2 "Permitted Error Code Values", defined in
-// [MS-OXCDATA] section 2.4 (Error Codes) and 2.5 (Warning Codes). The two success-severity
-// codes (high bit clear) are Success and the ErrorsReturned warning; the remainder are
-// failures ([MS-OXCDATA] values). [MS-NSPI] also permits "TooBig", whose numeric value is
-// defined in [MS-OXCDATA]; it is intentionally not hardcoded here.
+// [MS-OXCDATA] section 2.4 (Error Codes) and 2.5 (Warning Codes). Those values are
+// HRESULTs ([MS-ERREF] section 2.1), so severity is a range rather than a single value:
+// Success and the ErrorsReturned warning both have the severity bit clear and are
+// successes, and every other permitted value has it set. [MS-NSPI] also permits
+// "TooBig", whose numeric value is defined in [MS-OXCDATA]; it is intentionally not
+// hardcoded here.
+//
+// Five of the seventeen permitted values are generic HRESULTs that the whole of
+// [MS-ERREF] 2.1.1 already carries in
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult under the HRESULT
+// type, so they are not re-declared here. 0x00000000 is S_OK and 0x80004005 is E_FAIL,
+// and the three FACILITY_WIN32 values 0x80070005, 0x8007000E and 0x80070057 are the
+// HRESULT_FROM_WIN32 wrappings of ERROR_ACCESS_DENIED, ERROR_OUTOFMEMORY and
+// ERROR_INVALID_PARAMETER ([MS-ERREF] 2.1.2), which the shared table names outright as
+// E_ACCESSDENIED, E_OUTOFMEMORY and E_INVALIDARG and hresult.HRESULT.ToWin32 unwraps.
+// Reference those from the shared package, converting a returned status with
+// hresult.HRESULT(status) first. The wrapped code for 0x8007000E is ERROR_OUTOFMEMORY
+// (0x0000000E), not the ERROR_NOT_ENOUGH_MEMORY (0x00000008) the value's former private
+// name suggested; that code wraps to the different HRESULT 0x80070008.
+//
+// The twelve values below are the exception, and they cannot move. They are MAPI status
+// values in FACILITY_ITF (0x004), the facility [MS-ERREF] 2.1 sets aside for meanings
+// specific to the interface returning them, so the same number legitimately means
+// different things in different interfaces. The shared table fills facility 4 with the
+// OLE, drag-drop and class-registration names, and for two of these values it holds an
+// unrelated row: it decodes 0x80040102 as DRAGDROP_E_INVALIDHWND where NSPI means
+// MAPI_E_NO_SUPPORT, and 0x80040111 as CLASS_E_CLASSNOTAVAILABLE where NSPI means
+// MAPI_E_LOGON_FAILED, so reading those out of it would report a failed address-book
+// logon as a missing class factory. The other ten have no [MS-ERREF] 2.1.1 row at all.
+// They stay declared here, and StatusString decodes them before deferring to the shared
+// table for everything else.
 const (
-	StatusSuccess            uint32 = 0x00000000 // Success (S_OK)
-	StatusErrorsReturned     uint32 = 0x00040380 // ErrorsReturned (MAPI_W_ERRORS_RETURNED) — warning
-	StatusGeneralFailure     uint32 = 0x80004005 // GeneralFailure (MAPI_E_CALL_FAILED)
-	StatusNotSupported       uint32 = 0x80040102 // NotSupported (MAPI_E_NO_SUPPORT)
-	StatusInvalidObject      uint32 = 0x80040108 // InvalidObject (MAPI_E_INVALID_OBJECT)
-	StatusOutOfResources     uint32 = 0x8004010E // OutOfResources (MAPI_E_NOT_ENOUGH_RESOURCES)
-	StatusNotFound           uint32 = 0x8004010F // NotFound (MAPI_E_NOT_FOUND)
-	StatusLogonFailed        uint32 = 0x80040111 // LogonFailed (MAPI_E_LOGON_FAILED)
-	StatusTooComplex         uint32 = 0x80040117 // TooComplex (MAPI_E_TOO_COMPLEX)
-	StatusInvalidCodepage    uint32 = 0x8004011E // InvalidCodepage (MAPI_E_UNKNOWN_CPID)
-	StatusInvalidLocale      uint32 = 0x8004011F // InvalidLocale (MAPI_E_UNKNOWN_LCID)
-	StatusTableTooBig        uint32 = 0x80040403 // TableTooBig (MAPI_E_TABLE_TOO_BIG)
-	StatusInvalidBookmark    uint32 = 0x80040405 // InvalidBookmark (MAPI_E_INVALID_BOOKMARK)
-	StatusAmbiguousRecipient uint32 = 0x80040700 // AmbiguousRecipient (MAPI_E_AMBIGUOUS_RECIP)
-	StatusAccessDenied       uint32 = 0x80070005 // AccessDenied (MAPI_E_NO_ACCESS)
-	StatusNotEnoughMemory    uint32 = 0x8007000E // NotEnoughMemory (MAPI_E_NOT_ENOUGH_MEMORY)
-	StatusInvalidParameter   uint32 = 0x80070057 // InvalidParameter (MAPI_E_INVALID_PARAMETER)
+	StatusErrorsReturned     uint32 = 0x00040380 // ErrorsReturned (MAPI_W_ERRORS_RETURNED) — warning, no [MS-ERREF] 2.1.1 row
+	StatusNotSupported       uint32 = 0x80040102 // NotSupported (MAPI_E_NO_SUPPORT); [MS-ERREF] 2.1.1 names this value DRAGDROP_E_INVALIDHWND
+	StatusInvalidObject      uint32 = 0x80040108 // InvalidObject (MAPI_E_INVALID_OBJECT), no [MS-ERREF] 2.1.1 row
+	StatusOutOfResources     uint32 = 0x8004010E // OutOfResources (MAPI_E_NOT_ENOUGH_RESOURCES), no [MS-ERREF] 2.1.1 row
+	StatusNotFound           uint32 = 0x8004010F // NotFound (MAPI_E_NOT_FOUND), no [MS-ERREF] 2.1.1 row
+	StatusLogonFailed        uint32 = 0x80040111 // LogonFailed (MAPI_E_LOGON_FAILED); [MS-ERREF] 2.1.1 names this value CLASS_E_CLASSNOTAVAILABLE
+	StatusTooComplex         uint32 = 0x80040117 // TooComplex (MAPI_E_TOO_COMPLEX), no [MS-ERREF] 2.1.1 row
+	StatusInvalidCodepage    uint32 = 0x8004011E // InvalidCodepage (MAPI_E_UNKNOWN_CPID), no [MS-ERREF] 2.1.1 row
+	StatusInvalidLocale      uint32 = 0x8004011F // InvalidLocale (MAPI_E_UNKNOWN_LCID), no [MS-ERREF] 2.1.1 row
+	StatusTableTooBig        uint32 = 0x80040403 // TableTooBig (MAPI_E_TABLE_TOO_BIG), no [MS-ERREF] 2.1.1 row
+	StatusInvalidBookmark    uint32 = 0x80040405 // InvalidBookmark (MAPI_E_INVALID_BOOKMARK), no [MS-ERREF] 2.1.1 row
+	StatusAmbiguousRecipient uint32 = 0x80040700 // AmbiguousRecipient (MAPI_E_AMBIGUOUS_RECIP), no [MS-ERREF] 2.1.1 row
 )
 
 // SyntaxID returns the nspi abstract syntax identifier:
@@ -86,46 +107,41 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the MAPI status values of [MS-NSPI] section 2.2.2 that sit in
+// FACILITY_ITF, where [MS-ERREF] 2.1.1 either says nothing or names the same value for
+// an unrelated OLE error, and defers every other status to the shared [MS-ERREF] 2.1
+// table, which names each value the specification defines, derives a name for a
+// FACILITY_WIN32 value from the Win32 code it wraps, and renders hex only for a value it
+// cannot name. Deferring is right here because an NSPI return is itself an HRESULT; only
+// the facility-4 block is interface-private.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "Success"
 	case StatusErrorsReturned:
-		return "ErrorsReturned"
-	case StatusGeneralFailure:
-		return "GeneralFailure"
+		return "MAPI_W_ERRORS_RETURNED"
 	case StatusNotSupported:
-		return "NotSupported"
+		return "MAPI_E_NO_SUPPORT"
 	case StatusInvalidObject:
-		return "InvalidObject"
+		return "MAPI_E_INVALID_OBJECT"
 	case StatusOutOfResources:
-		return "OutOfResources"
+		return "MAPI_E_NOT_ENOUGH_RESOURCES"
 	case StatusNotFound:
-		return "NotFound"
+		return "MAPI_E_NOT_FOUND"
 	case StatusLogonFailed:
-		return "LogonFailed"
+		return "MAPI_E_LOGON_FAILED"
 	case StatusTooComplex:
-		return "TooComplex"
+		return "MAPI_E_TOO_COMPLEX"
 	case StatusInvalidCodepage:
-		return "InvalidCodepage"
+		return "MAPI_E_UNKNOWN_CPID"
 	case StatusInvalidLocale:
-		return "InvalidLocale"
+		return "MAPI_E_UNKNOWN_LCID"
 	case StatusTableTooBig:
-		return "TableTooBig"
+		return "MAPI_E_TABLE_TOO_BIG"
 	case StatusInvalidBookmark:
-		return "InvalidBookmark"
+		return "MAPI_E_INVALID_BOOKMARK"
 	case StatusAmbiguousRecipient:
-		return "AmbiguousRecipient"
-	case StatusAccessDenied:
-		return "AccessDenied"
-	case StatusNotEnoughMemory:
-		return "NotEnoughMemory"
-	case StatusInvalidParameter:
-		return "InvalidParameter"
+		return "MAPI_E_AMBIGUOUS_RECIP"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 

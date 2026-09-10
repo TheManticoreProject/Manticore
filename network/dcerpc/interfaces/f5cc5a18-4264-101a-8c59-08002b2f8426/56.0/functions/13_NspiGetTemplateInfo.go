@@ -10,6 +10,7 @@ import (
 
 	nspi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f5cc5a18-4264-101a-8c59-08002b2f8426/56.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msnspi "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nspi"
 )
 
@@ -50,7 +51,7 @@ func NspiGetTemplateInfo(rpc ndr.Invoker, hRpc msnspi.NSPI_HANDLE, dwFlags ndr.D
 	PpData = resp.PpData
 	// ErrorsReturned is a success-severity warning: the call succeeded overall but one or
 	// more returned properties are PtypErrorCode ([MS-NSPI] 3.1.4.1.14 / [MS-OXCDATA] 2.5).
-	if s := uint32(resp.Status); s != nspi.StatusSuccess && s != nspi.StatusErrorsReturned {
+	if s := uint32(resp.Status); hresult.HRESULT(s) != hresult.S_OK && s != nspi.StatusErrorsReturned {
 		err = fmt.Errorf("NspiGetTemplateInfo failed: %s", nspi.StatusString(s))
 	}
 	return
