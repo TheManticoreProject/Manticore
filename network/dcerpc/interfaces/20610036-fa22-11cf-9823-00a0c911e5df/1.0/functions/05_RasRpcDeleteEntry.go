@@ -10,6 +10,7 @@ import (
 
 	rasrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/20610036-fa22-11cf-9823-00a0c911e5df/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rasRpcDeleteEntryRequest carries the [in] parameters of RasRpcDeleteEntry.
@@ -37,7 +38,7 @@ func RasRpcDeleteEntry(rpc ndr.Invoker, lpszPhonebook ndr.WSTR, lpszEntry ndr.WS
 		err = fmt.Errorf("RasRpcDeleteEntry: %w", err)
 		return
 	}
-	if uint32(resp.Status) != rasrpc.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("RasRpcDeleteEntry failed: %s", rasrpc.StatusString(uint32(resp.Status)))
 	}
 	return

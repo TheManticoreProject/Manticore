@@ -10,6 +10,7 @@ import (
 
 	rasrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/20610036-fa22-11cf-9823-00a0c911e5df/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rasRpcGetInstalledProtocolsExRequest carries the [in] parameters of RasRpcGetInstalledProtocolsEx.
@@ -41,7 +42,7 @@ func RasRpcGetInstalledProtocolsEx(rpc ndr.Invoker, fRouter ndr.BOOL, fRasCli nd
 		err = fmt.Errorf("RasRpcGetInstalledProtocolsEx: %w", err)
 		return
 	}
-	if uint32(resp.Status) != rasrpc.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("RasRpcGetInstalledProtocolsEx failed: %s", rasrpc.StatusString(uint32(resp.Status)))
 	}
 	return

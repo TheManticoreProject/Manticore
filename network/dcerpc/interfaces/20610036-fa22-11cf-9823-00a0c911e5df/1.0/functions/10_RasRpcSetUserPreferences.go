@@ -10,6 +10,7 @@ import (
 
 	rasrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/20610036-fa22-11cf-9823-00a0c911e5df/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrrasm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrasm"
 )
 
@@ -38,7 +39,7 @@ func RasRpcSetUserPreferences(rpc ndr.Invoker, pUser msrrasm.RASRPC_PBUSER, dwMo
 		err = fmt.Errorf("RasRpcSetUserPreferences: %w", err)
 		return
 	}
-	if uint32(resp.Status) != rasrpc.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("RasRpcSetUserPreferences failed: %s", rasrpc.StatusString(uint32(resp.Status)))
 	}
 	return
