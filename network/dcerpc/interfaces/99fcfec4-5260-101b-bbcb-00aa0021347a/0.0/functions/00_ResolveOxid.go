@@ -10,6 +10,7 @@ import (
 
 	IObjectExporter "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/99fcfec4-5260-101b-bbcb-00aa0021347a/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdcom "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dcom"
 )
 
@@ -54,8 +55,8 @@ func ResolveOxid(rpc ndr.Invoker, pOxid msdcom.OXID, cRequestedProtseqs uint16, 
 	PpdsaOxidBindings = resp.PpdsaOxidBindings
 	PipidRemUnknown = resp.PipidRemUnknown
 	PAuthnHint = resp.PAuthnHint
-	if uint32(resp.Status) != IObjectExporter.StatusSuccess {
-		err = fmt.Errorf("ResolveOxid failed: %s", IObjectExporter.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("ResolveOxid failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

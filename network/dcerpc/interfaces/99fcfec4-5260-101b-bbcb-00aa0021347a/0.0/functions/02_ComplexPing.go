@@ -10,6 +10,7 @@ import (
 
 	IObjectExporter "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/99fcfec4-5260-101b-bbcb-00aa0021347a/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdcom "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dcom"
 )
 
@@ -57,8 +58,8 @@ func ComplexPing(rpc ndr.Invoker, pSetId msdcom.SETID, sequenceNum uint16, cAddT
 	}
 	PSetId = resp.PSetId
 	PPingBackoffFactor = resp.PPingBackoffFactor
-	if uint32(resp.Status) != IObjectExporter.StatusSuccess {
-		err = fmt.Errorf("ComplexPing failed: %s", IObjectExporter.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("ComplexPing failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

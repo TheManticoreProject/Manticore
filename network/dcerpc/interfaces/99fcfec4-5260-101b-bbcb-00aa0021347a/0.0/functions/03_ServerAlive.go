@@ -10,6 +10,7 @@ import (
 
 	IObjectExporter "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/99fcfec4-5260-101b-bbcb-00aa0021347a/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // serverAliveRequest carries the [in] parameters of ServerAlive.
@@ -33,8 +34,8 @@ func ServerAlive(rpc ndr.Invoker) (err error) {
 		err = fmt.Errorf("ServerAlive: %w", err)
 		return
 	}
-	if uint32(resp.Status) != IObjectExporter.StatusSuccess {
-		err = fmt.Errorf("ServerAlive failed: %s", IObjectExporter.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("ServerAlive failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

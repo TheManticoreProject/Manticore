@@ -20,8 +20,6 @@ package rpcinterface_99fcfec45260101bbbcb00aa0021347a_0_0
 // A fetched copy is kept at ms-dcom.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -47,15 +45,15 @@ const (
 	OpnumServerAlive2 uint16 = 5
 )
 
-// Status codes returned by this interface. IObjectExporter methods return error_status_t,
-// an RPC/Win32 status ([C706]; [MS-ERREF] 2.2). RPC_S_OK indicates success; the OR_* codes
-// are the object resolver specific failures. Any other Win32/RPC status can also surface.
-const (
-	StatusSuccess uint32 = 0x00000000 // RPC_S_OK
-	OrInvalidOxid uint32 = 0x00000776 // OR_INVALID_OXID: the object exporter identifier is not known
-	OrInvalidOid  uint32 = 0x00000777 // OR_INVALID_OID: the object identifier is not known
-	OrInvalidSet  uint32 = 0x00000778 // OR_INVALID_SET: the ping set identifier is not known
-)
+// The status codes IObjectExporter methods return in their error_status_t ([C706];
+// [MS-ERREF] 2.2, [MS-DCOM] 3.1.2.5) are not declared here. The whole of [MS-ERREF] 2.2
+// lives in github.com/TheManticoreProject/Manticore/windows/errors/win32 as the
+// WIN32_ERROR type, and a subset repeated here would cover a fraction of that 2703-code
+// table while drifting from it. The object resolver specific failures are part of that
+// table: OR_INVALID_OXID is 0x00000776, OR_INVALID_OID is 0x00000777 and OR_INVALID_SET
+// is 0x00000778, and RPC_S_OK is the zero the table names ERROR_SUCCESS. Convert a
+// returned status with win32.WIN32_ERROR(status) and compare against win32.ERROR_SUCCESS,
+// win32.OR_INVALID_OXID and the rest.
 
 // SyntaxID returns the IObjectExporter abstract syntax identifier:
 // 99fcfec4-5260-101b-bbcb-00aa0021347a, version 0.0.
@@ -64,23 +62,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x99fcfec4, B: 0x5260, C: 0x101b, D: 0xbbcb, E: 0x00aa0021347a},
 		MajorVersion: 0,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "RPC_S_OK"
-	case OrInvalidOxid:
-		return "OR_INVALID_OXID"
-	case OrInvalidOid:
-		return "OR_INVALID_OID"
-	case OrInvalidSet:
-		return "OR_INVALID_SET"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 
