@@ -1,6 +1,10 @@
 package rpcinterface_ccd8c074d0e54a4092b4d074faa6ba28_1_1
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax identifier for the Witness interface
 // (ccd8c074-d0e5-4a40-92b4-d074faa6ba28 v1.1, [MS-SWN]).
@@ -50,24 +54,59 @@ func TestOpnumContiguous(t *testing.T) {
 	}
 }
 
-// TestStatusString checks known Win32 mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	cases := map[uint32]string{
-		StatusSuccess:           "ERROR_SUCCESS",
-		StatusAccessDenied:      "ERROR_ACCESS_DENIED",
-		StatusInvalidParameter:  "ERROR_INVALID_PARAMETER",
-		StatusNotFound:          "ERROR_NOT_FOUND",
-		StatusRevisionMismatch:  "ERROR_REVISION_MISMATCH",
-		StatusNoSystemResources: "ERROR_NO_SYSTEM_RESOURCES",
-		StatusInvalidState:      "ERROR_INVALID_STATE",
+// TestStatusCodesResolveThroughWin32 pins that the seven Win32 codes [MS-SWN] section
+// 3.1.4 documents for the Witnessr* methods resolve through the shared [MS-ERREF] 2.2
+// table under their specification names, that codes the descriptor never enumerated now
+// render by name rather than as undecoded hex, and that a value the specification does
+// not define still renders as hex. None of the seven is private to [MS-SWN]: each was
+// looked up by value in the shared table, and the name the table records is the name the
+// descriptor's comment carried.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000057: "ERROR_INVALID_PARAMETER",
+		0x00000490: "ERROR_NOT_FOUND",
+		0x0000051A: "ERROR_REVISION_MISMATCH",
+		0x000005AA: "ERROR_NO_SYSTEM_RESOURCES",
+		0x0000139F: "ERROR_INVALID_STATE",
 	}
-	for code, want := range cases {
-		if got := StatusString(code); got != want {
-			t.Errorf("StatusString(0x%08x) = %q, want %q", code, got, want)
+	if len(documented) != 7 {
+		t.Fatalf("documented table has %d entries, want the 7 codes the descriptor declared", len(documented))
+	}
+	for code, name := range documented {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
 		}
 	}
-	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
-		t.Errorf("StatusString(unknown) = %q, want 0xdeadbeef", got)
+
+	// These sit outside the subset the descriptor used to declare, so a method returning
+	// one of them used to render as undecoded hex: ERROR_INVALID_HANDLE for a context
+	// handle the server no longer knows, ERROR_NO_MATCH a single value past the
+	// ERROR_NOT_FOUND the subset did list, ERROR_NONPAGED_SYSTEM_RESOURCES a single value
+	// past ERROR_NO_SYSTEM_RESOURCES, ERROR_TIMEOUT, and ERROR_CLUSTER_SHUTTING_DOWN a
+	// single value before ERROR_INVALID_STATE. They resolve by name now. Naming them here
+	// says only that they decode: the method stubs still treat every status other than
+	// ERROR_SUCCESS as a failure, exactly as they did before.
+	outsideOldSubset := map[uint32]string{
+		0x00000006: "ERROR_INVALID_HANDLE",
+		0x00000491: "ERROR_NO_MATCH",
+		0x000005AB: "ERROR_NONPAGED_SYSTEM_RESOURCES",
+		0x000005B4: "ERROR_TIMEOUT",
+		0x0000139E: "ERROR_CLUSTER_SHUTTING_DOWN",
+	}
+	for code, name := range outsideOldSubset {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("win32.WIN32_ERROR(0xdeadbeef).String() = %q, want hex", got)
 	}
 }
 

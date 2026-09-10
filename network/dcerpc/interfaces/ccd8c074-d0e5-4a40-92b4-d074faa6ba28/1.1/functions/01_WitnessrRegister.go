@@ -10,6 +10,7 @@ import (
 
 	Witness "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ccd8c074-d0e5-4a40-92b4-d074faa6ba28/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msswn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-swn"
 )
 
@@ -43,8 +44,8 @@ func WitnessrRegister(rpc ndr.Invoker, version ndr.DWORD, netName *ndr.WSTR, ipA
 		return
 	}
 	PpContext = resp.PpContext
-	if uint32(resp.Status) != Witness.StatusSuccess {
-		err = fmt.Errorf("WitnessrRegister failed: %s", Witness.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("WitnessrRegister failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
