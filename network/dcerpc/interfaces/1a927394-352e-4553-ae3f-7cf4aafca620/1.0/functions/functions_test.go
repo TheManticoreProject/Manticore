@@ -7,6 +7,7 @@ import (
 	WdsRpcInterface "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a927394-352e-4553-ae3f-7cf4aafca620/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a927394-352e-4553-ae3f-7cf4aafca620/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // responder is an ndr.Invoker that records the marshalled request stub (so the on-the-wire
@@ -85,9 +86,9 @@ func TestWdsRpcMessageRoundTrip(t *testing.T) {
 // TestWdsRpcMessageErrorStatus verifies a nonzero Win32 return code is surfaced as an
 // error and the (empty) reply packet is not returned as success.
 func TestWdsRpcMessageErrorStatus(t *testing.T) {
-	r := &responder{resp: mustMarshal(t, &replyStub{Status: WdsRpcInterface.ErrorAccessDenied})}
+	r := &responder{resp: mustMarshal(t, &replyStub{Status: uint32(win32.ERROR_ACCESS_DENIED)})}
 	_, got, err := functions.WdsRpcMessage(r, 1, []byte{0x01})
 	if err == nil {
-		t.Fatalf("expected error for return code 0x%08x, got nil (reply=%x)", WdsRpcInterface.ErrorAccessDenied, got)
+		t.Fatalf("expected error for return code 0x%08x, got nil (reply=%x)", uint32(win32.ERROR_ACCESS_DENIED), got)
 	}
 }

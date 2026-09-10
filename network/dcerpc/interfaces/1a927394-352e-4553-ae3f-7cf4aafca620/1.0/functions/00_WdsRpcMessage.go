@@ -10,6 +10,7 @@ import (
 
 	WdsRpcInterface "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a927394-352e-4553-ae3f-7cf4aafca620/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // wdsRpcMessageRequest carries the [in] parameters of WdsRpcMessage.
@@ -46,8 +47,8 @@ func WdsRpcMessage(rpc ndr.Invoker, uRequestPacketSize ndr.DWORD, bRequestPacket
 	}
 	PuReplyPacketSize = resp.PuReplyPacketSize
 	PbReplyPacket = resp.PbReplyPacket
-	if uint32(resp.Status) != WdsRpcInterface.StatusSuccess {
-		err = fmt.Errorf("WdsRpcMessage failed: %s", WdsRpcInterface.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("WdsRpcMessage failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
