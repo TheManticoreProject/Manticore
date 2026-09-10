@@ -10,6 +10,7 @@ import (
 
 	efsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/c681d488-d850-11d0-8c52-00c04fd90f7e/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msefsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-efsr"
 )
 
@@ -36,8 +37,8 @@ func EfsRpcWriteFileRaw(rpc ndr.Invoker, hContext msefsr.PEXIMPORT_CONTEXT_HANDL
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("EfsRpcWriteFileRaw: %w", err)
 	}
-	if uint32(resp.Status) != efsrpc.StatusSuccess {
-		return fmt.Errorf("EfsRpcWriteFileRaw failed: %s", efsrpc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		return fmt.Errorf("EfsRpcWriteFileRaw failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return nil
 }
