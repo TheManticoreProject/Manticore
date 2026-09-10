@@ -112,6 +112,13 @@ func (s *Session) SessionSetup() error {
 	// the share-level and plaintext paths complete in a single round trip.
 	useExtendedSecurity := false
 
+	// The authentication context spans both steps. State the exchange accumulates
+	// in step 1 — the NEGOTIATE message the AUTHENTICATE MIC is computed over, and
+	// the mech list its mechListMIC covers — is only available to step 2 if the
+	// same context is carried across, so it is declared here rather than in either
+	// branch.
+	var authCtx *spnego.AuthContext
+
 	// Check if we're using share level access control
 	if s.Client.Connection.Server.SecurityMode.SupportsShareLevelAccessControl() {
 		// Share level access control is required by the server
@@ -144,7 +151,7 @@ func (s *Session) SessionSetup() error {
 
 			useUnicode := s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
 
-			authCtx := spnego.NewAuthContext(
+			authCtx = spnego.NewAuthContext(
 				spnego.AuthTypeNTLM,
 				s.Credentials.Domain,
 				s.Credentials.Username,
@@ -274,18 +281,12 @@ func (s *Session) SessionSetup() error {
 	// Server supports challenge/response authentication
 	// Determine authentication type based on policies
 
-	useUnicode := s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
-
-	authCtx := spnego.NewAuthContext(
-		spnego.AuthTypeNTLM,
-		s.Credentials.Domain,
-		s.Credentials.Username,
-		s.Credentials.Password,
-		s.Client.Workstation,
-		useUnicode,
-	)
-	// Pass-the-hash: when an NT hash is supplied, authenticate from it instead of the password.
-	authCtx.NTHash = s.Credentials.GetNTHash()
+	// Step 2 continues the context step 1 started. Building a second one here would
+	// discard the retained NEGOTIATE message and mech list, leaving the AUTHENTICATE
+	// unable to compute either MIC.
+	if authCtx == nil {
+		return fmt.Errorf("session setup reached the authenticate step without an authentication context")
+	}
 
 	requestStep2Msg := message.NewMessage()
 	requestStep2Msg.Header.Command = codes.SMB_COM_SESSION_SETUP_ANDX

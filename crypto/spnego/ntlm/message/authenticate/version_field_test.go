@@ -60,8 +60,38 @@ func TestAuthenticateCarriesVersion(t *testing.T) {
 		t.Error("Version.ProductBuild is 0, which is not a real Windows build")
 	}
 
-	// The payload must begin after the 64-byte fixed part plus the 8-byte Version,
-	// which is where a server reads it from.
+	// The payload begins after the 64-byte fixed part, the 8-byte Version and,
+	// when one is carried, the 16-byte MIC ([MS-NLMP] 2.2.1.3). This challenge
+	// supplies an MsvAvTimestamp, so a MIC is emitted and the payload starts at 88.
+	assertFirstPayloadOffset(t, msg, 88)
+}
+
+// TestAuthenticateVersionOffsetWithoutMIC covers the other layout: a server that
+// supplies no MsvAvTimestamp gets no MIC, and the payload then starts at 72.
+func TestAuthenticateVersionOffsetWithoutMIC(t *testing.T) {
+	ch := verChallenge(t)
+	// Rebuild the TargetInfo without a timestamp, which is what suppresses the MIC.
+	info, err := targetinfo.BuildServerTargetInfo("DC01", "TMP", "dc01.tmp.local", "tmp.local", nil)
+	if err != nil {
+		t.Fatalf("BuildServerTargetInfo: %v", err)
+	}
+	ch.TargetInfo = info
+
+	msg, err := authenticate.CreateAuthenticateMessage(ch, "Administrator", "pass", "TMP", "WORKSTATION")
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessage: %v", err)
+	}
+	if msg.NeedsMIC {
+		t.Fatal("a challenge without MsvAvTimestamp produced a MIC")
+	}
+	assertFirstPayloadOffset(t, msg, 72)
+}
+
+// assertFirstPayloadOffset marshals the message and checks where the payload
+// begins, which is where a server reads it from.
+func assertFirstPayloadOffset(t *testing.T, msg *authenticate.AuthenticateMessage, want uint32) {
+	t.Helper()
+
 	raw, err := msg.Marshal()
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -71,7 +101,7 @@ func TestAuthenticateCarriesVersion(t *testing.T) {
 	}
 	// DomainNameFields.BufferOffset sits at offset 32 of the fixed part and is the
 	// first payload field in the canonical layout this marshaller emits.
-	if got := binary.LittleEndian.Uint32(raw[32:36]); got != 72 {
-		t.Errorf("first payload field begins at offset %d, want 72 (64-byte fixed part plus the 8-byte Version)", got)
+	if got := binary.LittleEndian.Uint32(raw[32:36]); got != want {
+		t.Errorf("first payload field begins at offset %d, want %d", got, want)
 	}
 }

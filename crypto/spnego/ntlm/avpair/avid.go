@@ -63,6 +63,21 @@ func (id AvId) Compare(other AvId) bool {
 }
 
 // String returns a human-readable name for a given AV ID.
+// Values carried by an MsvAvFlags AV_PAIR ([MS-NLMP] 2.2.2.1).
+const (
+	// MsvAvFlagConstrainedAuth indicates the account authentication is constrained.
+	MsvAvFlagConstrainedAuth uint32 = 0x00000001
+
+	// MsvAvFlagMICPresent indicates the client is providing message integrity in
+	// the MIC field of the AUTHENTICATE_MESSAGE. A server detects a MIC by this
+	// bit ([MS-NLMP] 3.2.5.1.2).
+	MsvAvFlagMICPresent uint32 = 0x00000002
+
+	// MsvAvFlagUntrustedSPN indicates the target SPN was generated from an
+	// untrusted source.
+	MsvAvFlagUntrustedSPN uint32 = 0x00000004
+)
+
 func (id AvId) String() string {
 	switch id {
 	case MsvAvEOL:

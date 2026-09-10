@@ -19,5 +19,5 @@ func TestBuildBlobTargetInfoRejectsOversizedAVPairLength(t *testing.T) {
 		}
 	}()
 
-	_ = targetinfo.BuildBlobTargetInfo(malformed)
+	_ = targetinfo.BuildBlobTargetInfo(malformed, true)
 }
