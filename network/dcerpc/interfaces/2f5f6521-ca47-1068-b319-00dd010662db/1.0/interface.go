@@ -11,9 +11,9 @@
 // <maj>.<min>/ directory.
 //
 // This package holds only the interface-level descriptor (abstract syntax, transport
-// endpoint, opnums, opnum<->name maps, status constants). NDR types live in the
-// windows/protocols/ms-trp package (imported as mstrp) and method stubs in functions;
-// both depend on this package, never the reverse.
+// endpoint, opnums, opnum<->name maps). NDR types live in the windows/protocols/ms-trp
+// package (imported as mstrp) and method stubs in functions; both depend on this package,
+// never the reverse.
 package rpcinterface_2f5f6521ca471068b31900dd010662db_1_0
 
 // IDL source: [MS-TRP] — this interface is translated from and verified
@@ -22,8 +22,6 @@ package rpcinterface_2f5f6521ca471068b31900dd010662db_1_0
 // A fetched copy is kept at ms-trp.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -42,14 +40,20 @@ const (
 	OpnumRemoteSPDetach    uint16 = 2
 )
 
-// Status codes for this interface. RemoteSPAttach returns 0 on success and a nonzero
-// error code otherwise ([MS-TRP] 3.1.4.1); the void methods (RemoteSPEventProc,
-// RemoteSPDetach) carry no RPC return value. [MS-TRP] does not enumerate a named
-// error-code table for the RPC return, so only success is modeled; StatusString renders
-// any other value as hex.
-const (
-	StatusSuccess uint32 = 0x00000000 // success (return value 0)
-)
+// RemoteSPAttach returns 0 on success and otherwise a nonzero error code "as specified in
+// [MS-ERREF]" ([MS-TRP] 3.1.4.1); the void methods (RemoteSPEventProc, RemoteSPDetach)
+// carry no RPC return value. Those codes are not declared here. The whole of [MS-ERREF]
+// 2.2 lives in github.com/TheManticoreProject/Manticore/windows/errors/win32 as the
+// WIN32_ERROR type, and a subset repeated here would cover a fraction of that 2703-code
+// table while drifting from it. Convert a returned status with win32.WIN32_ERROR(status)
+// and compare against win32.ERROR_SUCCESS and the rest. The one success value this
+// interface used to declare has a row in [MS-ERREF] 2.2, so nothing is kept local.
+//
+// The specification names no failure code for this return in particular, but the
+// neighbouring tapsrv ClientAttach return does name LINEERR_OPERATIONFAILED (0x80000048),
+// a TAPI code from the 0x8000xxxx block [MS-ERREF] 2.2 does not cover. Such a value has
+// no row in the shared table, so it stays hexadecimal here exactly as it did before and
+// cannot be misnamed out of the Win32 space.
 
 // SyntaxID returns the remotesp abstract syntax identifier:
 // 2f5f6521-ca47-1068-b319-00dd010662db, version 1.0.
@@ -58,17 +62,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x2f5f6521, B: 0xca47, C: 0x1068, D: 0xb319, E: 0x00dd010662db},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "STATUS_SUCCESS"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

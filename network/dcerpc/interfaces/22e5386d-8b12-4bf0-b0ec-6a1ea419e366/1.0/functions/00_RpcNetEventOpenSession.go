@@ -10,6 +10,7 @@ import (
 
 	NetEventForwarder "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/22e5386d-8b12-4bf0-b0ec-6a1ea419e366/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mslrec "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lrec"
 )
 
@@ -42,8 +43,8 @@ func RpcNetEventOpenSession(rpc ndr.Invoker, loggerName ndr.WSTR) (SessionHandle
 		return
 	}
 	SessionHandle = resp.SessionHandle
-	if uint32(resp.Status) != NetEventForwarder.StatusSuccess {
-		err = fmt.Errorf("RpcNetEventOpenSession failed: %s", NetEventForwarder.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcNetEventOpenSession failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
