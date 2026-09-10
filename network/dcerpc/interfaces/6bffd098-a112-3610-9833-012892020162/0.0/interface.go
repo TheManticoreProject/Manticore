@@ -15,8 +15,6 @@ package rpcinterface_6bffd098a11236109833012892020162_0_0
 // A fetched copy is kept at ms-brwsa.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -31,16 +29,14 @@ const (
 	OpnumI_BrowserrQueryOtherDomains uint16 = 2
 )
 
-// NET_API_STATUS codes returned by I_BrowserrQueryOtherDomains ([MS-BRWSA] 3.1.4.1;
-// values from [MS-ERREF] Win32 error codes).
-const (
-	NERR_Success            uint32 = 0x00000000 // The operation completed successfully.
-	ERROR_ACCESS_DENIED     uint32 = 0x00000005 // Access is denied.
-	ERROR_NOT_ENOUGH_MEMORY uint32 = 0x00000008 // The server could not allocate enough memory.
-	ERROR_INVALID_PARAMETER uint32 = 0x00000057 // A parameter is incorrect (e.g. InfoStruct or Level100 is NULL).
-	ERROR_INVALID_LEVEL     uint32 = 0x0000007C // The Level member is not 100.
-	ERROR_MORE_DATA         uint32 = 0x000000EA // Not all available entries were returned.
-)
+// The NET_API_STATUS codes I_BrowserrQueryOtherDomains returns ([MS-BRWSA] 3.1.4.1) are
+// not declared here. A NET_API_STATUS is a Win32 error code, and the whole of
+// [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR type,
+// so a subset repeated here would cover a fraction of that 2703-code table while drifting
+// from it. Convert a returned status with win32.WIN32_ERROR(status) and compare against
+// win32.NERR_Success, which is the zero success the specification calls NERR_Success, and
+// against win32.ERROR_MORE_DATA and the rest.
 
 // SyntaxID returns the browser abstract syntax identifier:
 // 6bffd098-a112-3610-9833-012892020162, version 0.0.
@@ -49,27 +45,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x6bffd098, B: 0xa112, C: 0x3610, D: 0x9833, E: 0x012892020162},
 		MajorVersion: 0,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case NERR_Success:
-		return "NERR_Success"
-	case ERROR_ACCESS_DENIED:
-		return "ERROR_ACCESS_DENIED"
-	case ERROR_NOT_ENOUGH_MEMORY:
-		return "ERROR_NOT_ENOUGH_MEMORY"
-	case ERROR_INVALID_PARAMETER:
-		return "ERROR_INVALID_PARAMETER"
-	case ERROR_INVALID_LEVEL:
-		return "ERROR_INVALID_LEVEL"
-	case ERROR_MORE_DATA:
-		return "ERROR_MORE_DATA"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	browser "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6bffd098-a112-3610-9833-012892020162/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msbrwsa "github.com/TheManticoreProject/Manticore/windows/protocols/ms-brwsa"
 )
 
@@ -48,9 +49,8 @@ func I_BrowserrQueryOtherDomains(rpc ndr.Invoker, serverName string, info msbrws
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return msbrwsa.SERVER_ENUM_STRUCT{}, 0, fmt.Errorf("I_BrowserrQueryOtherDomains: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != browser.NERR_Success && status != browser.ERROR_MORE_DATA {
-		return resp.InfoStruct, uint32(resp.TotalEntries), fmt.Errorf("I_BrowserrQueryOtherDomains failed: %s", browser.StatusString(status))
+	if status := win32.WIN32_ERROR(resp.Status); status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return resp.InfoStruct, uint32(resp.TotalEntries), fmt.Errorf("I_BrowserrQueryOtherDomains failed: %s", status.String())
 	}
 	return resp.InfoStruct, uint32(resp.TotalEntries), nil
 }
