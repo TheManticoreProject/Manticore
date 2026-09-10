@@ -10,6 +10,7 @@ import (
 
 	nspi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f5cc5a18-4264-101a-8c59-08002b2f8426/56.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msnspi "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nspi"
 )
 
@@ -48,7 +49,7 @@ func NspiResortRestriction(rpc ndr.Invoker, hRpc msnspi.NSPI_HANDLE, reserved nd
 	}
 	PStat = resp.PStat
 	PpOutMIds = resp.PpOutMIds
-	if uint32(resp.Status) != nspi.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("NspiResortRestriction failed: %s", nspi.StatusString(uint32(resp.Status)))
 	}
 	return
