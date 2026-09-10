@@ -10,6 +10,7 @@ import (
 
 	IRemoteWinspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/76f03f96-cdfd-44fc-a22c-64950a001209/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rpcAsyncGetPrinterDriverPackagePathRequest carries the [in] parameters of RpcAsyncGetPrinterDriverPackagePath.
@@ -51,8 +52,8 @@ func RpcAsyncGetPrinterDriverPackagePath(rpc ndr.Invoker, pszServer *ndr.WSTR, p
 	}
 	PszDriverPackageCab = resp.PszDriverPackageCab
 	PcchRequiredSize = resp.PcchRequiredSize
-	if uint32(resp.Status) != IRemoteWinspool.StatusSuccess {
-		err = fmt.Errorf("RpcAsyncGetPrinterDriverPackagePath failed: %s", IRemoteWinspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcAsyncGetPrinterDriverPackagePath failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
