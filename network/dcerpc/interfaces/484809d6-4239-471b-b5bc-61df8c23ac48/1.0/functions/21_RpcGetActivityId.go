@@ -10,6 +10,7 @@ import (
 
 	TermSrvSession "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/484809d6-4239-471b-b5bc-61df8c23ac48/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
@@ -39,8 +40,8 @@ func RpcGetActivityId(rpc ndr.Invoker, hSession mststs.SESSION_HANDLE) (PActivit
 		return
 	}
 	PActivityId = resp.PActivityId
-	if uint32(resp.Status) != TermSrvSession.StatusSuccess {
-		err = fmt.Errorf("RpcGetActivityId failed: %s", TermSrvSession.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetActivityId failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
