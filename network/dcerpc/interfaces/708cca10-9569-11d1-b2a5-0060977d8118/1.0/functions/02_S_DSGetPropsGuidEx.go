@@ -10,6 +10,7 @@ import (
 
 	dscomm2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/708cca10-9569-11d1-b2a5-0060977d8118/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
@@ -56,7 +57,7 @@ func S_DSGetPropsGuidEx(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid *msdtyp.G
 	ApVar = resp.ApVar
 	PbServerSignature = resp.PbServerSignature
 	PdwServerSignatureSize = resp.PdwServerSignatureSize
-	if uint32(resp.Status) != dscomm2.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("S_DSGetPropsGuidEx failed: %s", dscomm2.StatusString(uint32(resp.Status)))
 	}
 	return

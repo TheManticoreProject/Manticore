@@ -10,6 +10,7 @@ import (
 
 	dscomm2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/708cca10-9569-11d1-b2a5-0060977d8118/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 )
 
@@ -36,7 +37,7 @@ func S_DSNotifyDelete(rpc ndr.Invoker, handle msmqds.PCONTEXT_HANDLE_DELETE_TYPE
 		err = fmt.Errorf("S_DSNotifyDelete: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dscomm2.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("S_DSNotifyDelete failed: %s", dscomm2.StatusString(uint32(resp.Status)))
 	}
 	return
