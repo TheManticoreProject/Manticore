@@ -10,6 +10,7 @@ import (
 
 	wkssvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6bffd098-a112-3610-9833-46c3f87e345a/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mswkst "github.com/TheManticoreProject/Manticore/windows/protocols/ms-wkst"
 )
 
@@ -50,8 +51,8 @@ func NetrUseEnum(rpc ndr.Invoker, serverName *ndr.WSTR, infoStruct mswkst.USE_EN
 	// ERROR_MORE_DATA is a non-fatal status for the resume-capable Enum* methods: it
 	// signals that the returned buffer holds a partial set and the caller should re-call
 	// with the updated ResumeHandle. Treat it as success and surface the partial results.
-	if s := uint32(resp.Status); s != wkssvc.StatusSuccess && s != wkssvc.ErrorMoreData {
-		err = fmt.Errorf("NetrUseEnum failed: %s", wkssvc.StatusString(s))
+	if code := win32.WIN32_ERROR(resp.Status); code != win32.NERR_Success && code != win32.ERROR_MORE_DATA {
+		err = fmt.Errorf("NetrUseEnum failed: %s", code)
 	}
 	return
 }

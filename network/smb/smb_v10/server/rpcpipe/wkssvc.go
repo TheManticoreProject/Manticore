@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/rpcserver"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mswkst "github.com/TheManticoreProject/Manticore/windows/protocols/ms-wkst"
 )
 
@@ -80,7 +81,7 @@ func (s *wkssvcService) netrWkstaGetInfo(stub []byte) ([]byte, error) {
 	level := uint32(request.Level)
 	response := &netrWkstaGetInfoResponse{
 		WkstaInfo: mswkst.WKSTA_INFO{Tag: ndr.DWORD(level)},
-		Status:    ndr.DWORD(wkssvc.StatusSuccess),
+		Status:    ndr.DWORD(win32.NERR_Success),
 	}
 
 	switch level {
@@ -103,7 +104,7 @@ func (s *wkssvcService) netrWkstaGetInfo(stub []byte) ([]byte, error) {
 		}
 	default:
 		logger.Debugf("rpcpipe: wkssvc NetrWkstaGetInfo asked for level %d, which is not served", level)
-		response.Status = ndr.DWORD(wkssvc.ErrorInvalidLevel)
+		response.Status = ndr.DWORD(win32.ERROR_INVALID_LEVEL)
 	}
 
 	return ndr.Marshal(response)
