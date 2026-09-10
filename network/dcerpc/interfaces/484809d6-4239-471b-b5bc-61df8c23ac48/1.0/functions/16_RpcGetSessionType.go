@@ -10,6 +10,7 @@ import (
 
 	TermSrvSession "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/484809d6-4239-471b-b5bc-61df8c23ac48/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // rpcGetSessionTypeRequest carries the [in] parameters of RpcGetSessionType.
@@ -37,8 +38,8 @@ func RpcGetSessionType(rpc ndr.Invoker, sessionId int32) (PSessionType ndr.DWORD
 		return
 	}
 	PSessionType = resp.PSessionType
-	if uint32(resp.Status) != TermSrvSession.StatusSuccess {
-		err = fmt.Errorf("RpcGetSessionType failed: %s", TermSrvSession.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetSessionType failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }

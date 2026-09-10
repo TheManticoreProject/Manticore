@@ -10,6 +10,7 @@ import (
 
 	TermSrvSession "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/484809d6-4239-471b-b5bc-61df8c23ac48/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // rpcGetLoggedOnCountRequest carries the [in] parameters of RpcGetLoggedOnCount.
@@ -36,8 +37,8 @@ func RpcGetLoggedOnCount(rpc ndr.Invoker) (PUserSessions ndr.DWORD, PDeviceSessi
 	}
 	PUserSessions = resp.PUserSessions
 	PDeviceSessions = resp.PDeviceSessions
-	if uint32(resp.Status) != TermSrvSession.StatusSuccess {
-		err = fmt.Errorf("RpcGetLoggedOnCount failed: %s", TermSrvSession.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetLoggedOnCount failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }

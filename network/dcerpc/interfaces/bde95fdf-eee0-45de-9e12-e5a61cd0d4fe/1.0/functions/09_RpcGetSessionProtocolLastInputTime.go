@@ -10,6 +10,7 @@ import (
 
 	RCMPublic "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/bde95fdf-eee0-45de-9e12-e5a61cd0d4fe/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -46,8 +47,8 @@ func RpcGetSessionProtocolLastInputTime(rpc ndr.Invoker, sessionId ndr.DWORD, in
 	PpProtoStatus = resp.PpProtoStatus
 	PcbProtoStatus = resp.PcbProtoStatus
 	PLastInputTime = resp.PLastInputTime
-	if uint32(resp.Status) != RCMPublic.StatusSuccess {
-		err = fmt.Errorf("RpcGetSessionProtocolLastInputTime failed: %s", RCMPublic.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetSessionProtocolLastInputTime failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
