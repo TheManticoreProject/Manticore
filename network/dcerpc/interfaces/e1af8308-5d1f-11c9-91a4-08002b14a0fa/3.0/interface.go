@@ -48,6 +48,25 @@ const (
 // the ept specific codes are DCE error-status values ([C706] Appendix O / Appendix E).
 // ept_lookup additionally returns ept_s_not_registered (EptStatusNotRegistered) once no
 // further elements match, which the paging loop treats as a normal end of enumeration.
+//
+// These are DCE RPC status codes, not [MS-ERREF] 2.2 Win32 error codes, so they are
+// declared here rather than referenced from
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 the way an interface
+// reporting a WIN32_ERROR does. The ept_s_* values belong to the DCE status facility
+// 0x16c9a0xx, and the [MS-ERREF] 2.2 table windows/errors/win32 carries has no row for
+// any of them: looked up by value, 0x16c9a0d6, 0x16c9a0d7 and 0x16c9a0d8 are absent from
+// it, and it names no code rpc_s_ok either. There is nothing in the shared table to
+// migrate these to.
+//
+// The Win32 space does name the same three conditions, at values of its own:
+// EPT_S_INVALID_ENTRY is 0x000006D7, EPT_S_CANT_PERFORM_OP is 0x000006D8 and
+// EPT_S_NOT_REGISTERED is 0x000006D9, which is what the RPC runtime hands a local caller
+// after mapping the DCE status the wire carried. Two of the three DCE values share their
+// low byte with the Win32 code for the same condition and the third does not, so a
+// migration trusting that resemblance would land ept_s_not_registered on 0x000006D6,
+// RPC_S_UNKNOWN_AUTHZ_SERVICE, an unrelated authorization failure, while compiling and
+// passing every test. The two spaces run parallel rather than coinciding, and this
+// interface reports the one the wire carries.
 const (
 	EptStatusSuccess       uint32 = 0x00000000 // rpc_s_ok
 	EptStatusCantPerform   uint32 = 0x16c9a0d8 // ept_s_cant_perform_op
@@ -86,7 +105,11 @@ func SyntaxID() syntax.SyntaxID {
 }
 
 // StatusString returns a mnemonic for the documented status codes, otherwise the hex
-// value.
+// value. An unrecognized status stays hexadecimal rather than being resolved through
+// windows/errors/win32, which would name a DCE facility status out of the Win32 table:
+// 0x000006D9 would read as EPT_S_NOT_REGISTERED and 0x00000002 as ERROR_FILE_NOT_FOUND,
+// meanings the endpoint mapper's error_status_t never carries. Hex is the honest
+// rendering of a value this interface does not document.
 func StatusString(status uint32) string {
 	switch status {
 	case EptStatusSuccess:
