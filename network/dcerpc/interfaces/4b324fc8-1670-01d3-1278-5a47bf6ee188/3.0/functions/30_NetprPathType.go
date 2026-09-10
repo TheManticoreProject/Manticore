@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netprPathTypeRequest is the [in] parameter set of NetprPathType: the [unique] server
@@ -41,9 +42,9 @@ func NetprPathType(rpc ndr.Invoker, serverName, pathName string, flags uint32) (
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return 0, fmt.Errorf("NetprPathType: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return uint32(resp.PathType), fmt.Errorf("NetprPathType failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return uint32(resp.PathType), fmt.Errorf("NetprPathType failed: %s", status)
 	}
 	return uint32(resp.PathType), nil
 }

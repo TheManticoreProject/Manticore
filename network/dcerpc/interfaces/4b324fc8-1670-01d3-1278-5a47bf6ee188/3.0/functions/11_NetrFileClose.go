@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrFileCloseRequest is the [in] parameter set of NetrFileClose: the [unique] server
@@ -32,9 +33,9 @@ func NetrFileClose(rpc ndr.Invoker, serverName string, fileId uint32) error {
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("NetrFileClose: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return fmt.Errorf("NetrFileClose failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return fmt.Errorf("NetrFileClose failed: %s", status)
 	}
 	return nil
 }

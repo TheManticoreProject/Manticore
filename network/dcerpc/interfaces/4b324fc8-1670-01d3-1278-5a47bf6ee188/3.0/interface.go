@@ -7,10 +7,11 @@
 // after the interface UUID (with the version in the nested 3.0/ directory).
 //
 // This package holds only the interface-level descriptor: the abstract syntax
-// identifier, the transport endpoint (PipeName), the opnum constants and opnum<->name
-// maps, and the NET_API_STATUS return codes. The NDR types live in the protocol
-// structures package windows/protocols/ms-srvs (package mssrvs) and the method stubs in
-// functions; both depend on this package, never the reverse.
+// identifier, the transport endpoint (PipeName), and the opnum constants and
+// opnum<->name maps. The NET_API_STATUS values the methods return are Win32 error
+// codes decoded through windows/errors/win32, not redeclared here. The NDR types live
+// in the protocol structures package windows/protocols/ms-srvs (package mssrvs) and the
+// method stubs in functions; both depend on this package, never the reverse.
 //
 // References:
 //   - [MS-SRVS] Server Service Remote Protocol:
@@ -23,8 +24,6 @@ package rpcinterface_4b324fc8167001d312785a47bf6ee188_3_0
 // A fetched copy is kept at ms-srvs.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -84,25 +83,19 @@ const (
 	OpnumNetrShareDelEx               uint16 = 57
 )
 
-// NET_API_STATUS return codes ([MS-ERREF] 2.2 Win32 error codes / lmerr.h). srvsvc
-// methods return a NET_API_STATUS (a 32-bit Win32 error) rather than an NTSTATUS.
-const (
-	NERR_Success            uint32 = 0
-	ERROR_FILE_NOT_FOUND    uint32 = 2
-	ERROR_ACCESS_DENIED     uint32 = 5
-	ERROR_NOT_SUPPORTED     uint32 = 50
-	ERROR_INVALID_PARAMETER uint32 = 87
-	ERROR_INVALID_NAME      uint32 = 123
-	ERROR_INVALID_LEVEL     uint32 = 124
-	ERROR_MORE_DATA         uint32 = 234
-	NERR_BASE               uint32 = 2100
-	NERR_BufTooSmall        uint32 = 2123
-	NERR_NetNameNotFound    uint32 = 2310
-	NERR_DeviceNotShared    uint32 = 2311
-	NERR_ClientNameNotFound uint32 = 2312
-	NERR_UserNotFound       uint32 = 2221
-	NERR_DuplicateShare     uint32 = 2118
-)
+// The NET_API_STATUS codes srvsvc methods return are not declared here. A
+// NET_API_STATUS is a 32-bit Win32 error rather than an NTSTATUS, and the whole of
+// [MS-ERREF] 2.2 lives in
+// [github.com/TheManticoreProject/Manticore/windows/errors/win32] as the
+// win32.WIN32_ERROR type: a subset repeated here would cover a fraction of that
+// 2703-code table, would render everything outside itself as an undecoded number, and
+// would drift from the specification as the table is regenerated. Compare a returned
+// status against win32.NERR_Success, win32.ERROR_MORE_DATA and the rest, and render it
+// with win32.WIN32_ERROR.String.
+//
+// NERR_BASE is the exception: it is the base of the lmerr.h network-error range rather
+// than a code, so [MS-ERREF] 2.2 has no row for it and it stays here.
+const NERR_BASE uint32 = 2100
 
 // SyntaxID returns the srvsvc abstract syntax identifier:
 // 4b324fc8-1670-01d3-1278-5a47bf6ee188, version 3.0.
@@ -111,43 +104,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x4b324fc8, B: 0x1670, C: 0x01d3, D: 0x1278, E: 0x5a47bf6ee188},
 		MajorVersion: 3,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented NET_API_STATUS codes, otherwise the
-// decimal value (Win32 error codes are conventionally decimal).
-func StatusString(status uint32) string {
-	switch status {
-	case NERR_Success:
-		return "NERR_Success"
-	case ERROR_FILE_NOT_FOUND:
-		return "ERROR_FILE_NOT_FOUND"
-	case ERROR_ACCESS_DENIED:
-		return "ERROR_ACCESS_DENIED"
-	case ERROR_NOT_SUPPORTED:
-		return "ERROR_NOT_SUPPORTED"
-	case ERROR_INVALID_PARAMETER:
-		return "ERROR_INVALID_PARAMETER"
-	case ERROR_INVALID_NAME:
-		return "ERROR_INVALID_NAME"
-	case ERROR_INVALID_LEVEL:
-		return "ERROR_INVALID_LEVEL"
-	case ERROR_MORE_DATA:
-		return "ERROR_MORE_DATA"
-	case NERR_BufTooSmall:
-		return "NERR_BufTooSmall"
-	case NERR_NetNameNotFound:
-		return "NERR_NetNameNotFound"
-	case NERR_DeviceNotShared:
-		return "NERR_DeviceNotShared"
-	case NERR_ClientNameNotFound:
-		return "NERR_ClientNameNotFound"
-	case NERR_UserNotFound:
-		return "NERR_UserNotFound"
-	case NERR_DuplicateShare:
-		return "NERR_DuplicateShare"
-	default:
-		return fmt.Sprintf("%d", status)
 	}
 }
 

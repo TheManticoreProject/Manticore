@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -40,8 +41,8 @@ func NetrShareDelCommit(rpc ndr.Invoker, contextHandle mssrvs.SHARE_DEL_HANDLE) 
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return mssrvs.SHARE_DEL_HANDLE{}, fmt.Errorf("NetrShareDelCommit: %w", err)
 	}
-	if uint32(resp.Status) != srvsvc.NERR_Success && uint32(resp.Status) != srvsvc.ERROR_MORE_DATA {
-		return resp.ContextHandle, fmt.Errorf("NetrShareDelCommit failed: %s", srvsvc.StatusString(uint32(resp.Status)))
+	if status := win32.WIN32_ERROR(resp.Status); status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return resp.ContextHandle, fmt.Errorf("NetrShareDelCommit failed: %s", status)
 	}
 	return resp.ContextHandle, nil
 }

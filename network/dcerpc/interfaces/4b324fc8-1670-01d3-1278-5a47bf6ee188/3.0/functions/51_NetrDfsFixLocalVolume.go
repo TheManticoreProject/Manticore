@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
@@ -52,9 +53,9 @@ func NetrDfsFixLocalVolume(rpc ndr.Invoker, serverName, volumeName string, entry
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("NetrDfsFixLocalVolume: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return fmt.Errorf("NetrDfsFixLocalVolume failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return fmt.Errorf("NetrDfsFixLocalVolume failed: %s", status)
 	}
 	return nil
 }

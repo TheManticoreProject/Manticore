@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -56,9 +57,9 @@ func NetrServerTransportEnum(rpc ndr.Invoker, serverName string, info mssrvs.SER
 	if resp.ResumeHandle != nil {
 		outResume = uint32(*resp.ResumeHandle)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return resp.InfoStruct, uint32(resp.TotalEntries), outResume, fmt.Errorf("NetrServerTransportEnum failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return resp.InfoStruct, uint32(resp.TotalEntries), outResume, fmt.Errorf("NetrServerTransportEnum failed: %s", status)
 	}
 	return resp.InfoStruct, uint32(resp.TotalEntries), outResume, nil
 }

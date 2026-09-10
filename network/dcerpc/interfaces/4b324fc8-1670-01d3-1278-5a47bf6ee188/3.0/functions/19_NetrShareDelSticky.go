@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrShareDelStickyRequest is the [in] parameter set of NetrShareDelSticky: the optional
@@ -36,8 +37,8 @@ func NetrShareDelSticky(rpc ndr.Invoker, serverName string, netName string, rese
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("NetrShareDelSticky: %w", err)
 	}
-	if uint32(resp.Status) != srvsvc.NERR_Success && uint32(resp.Status) != srvsvc.ERROR_MORE_DATA {
-		return fmt.Errorf("NetrShareDelSticky failed: %s", srvsvc.StatusString(uint32(resp.Status)))
+	if status := win32.WIN32_ERROR(resp.Status); status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return fmt.Errorf("NetrShareDelSticky failed: %s", status)
 	}
 	return nil
 }

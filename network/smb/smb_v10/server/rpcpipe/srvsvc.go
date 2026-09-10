@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/rpcserver"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -83,7 +84,7 @@ func (s *srvsvcService) netrShareEnum(stub []byte) ([]byte, error) {
 				ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: ndr.DWORD(level)},
 			},
 			ResumeHandle: echoResumeHandle(request.ResumeHandle, 0),
-			Status:       ndr.DWORD(srvsvc.ERROR_INVALID_LEVEL),
+			Status:       ndr.DWORD(win32.ERROR_INVALID_LEVEL),
 		})
 	}
 
@@ -111,7 +112,7 @@ func (s *srvsvcService) netrShareEnum(stub []byte) ([]byte, error) {
 	response := &netrShareEnumResponse{
 		InfoStruct:   shareEnumStruct(level, sent),
 		TotalEntries: ndr.DWORD(len(remaining)),
-		Status:       ndr.DWORD(srvsvc.NERR_Success),
+		Status:       ndr.DWORD(win32.NERR_Success),
 	}
 	if truncated {
 		// ERROR_MORE_DATA with a resume handle is how the enumeration continues.
@@ -119,7 +120,7 @@ func (s *srvsvcService) netrShareEnum(stub []byte) ([]byte, error) {
 		// between two calls shifts what a resumed enumeration sees; SMB offers no
 		// way to hold an enumeration open across calls, so an index is the whole
 		// of what a resume handle can be.
-		response.Status = ndr.DWORD(srvsvc.ERROR_MORE_DATA)
+		response.Status = ndr.DWORD(win32.ERROR_MORE_DATA)
 		response.ResumeHandle = echoResumeHandle(request.ResumeHandle, uint32(from+len(sent)))
 	} else {
 		response.ResumeHandle = echoResumeHandle(request.ResumeHandle, 0)
