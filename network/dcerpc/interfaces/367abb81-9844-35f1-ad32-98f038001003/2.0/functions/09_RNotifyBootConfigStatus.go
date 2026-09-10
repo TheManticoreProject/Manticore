@@ -10,6 +10,7 @@ import (
 
 	svcctl "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/367abb81-9844-35f1-ad32-98f038001003/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rNotifyBootConfigStatusRequest carries the [in] parameters of RNotifyBootConfigStatus.
@@ -37,8 +38,8 @@ func RNotifyBootConfigStatus(rpc ndr.Invoker, lpMachineName *ndr.WSTR, bootAccep
 		err = fmt.Errorf("RNotifyBootConfigStatus: %w", err)
 		return
 	}
-	if uint32(resp.Status) != svcctl.StatusSuccess {
-		err = fmt.Errorf("RNotifyBootConfigStatus failed: %s", svcctl.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RNotifyBootConfigStatus failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
