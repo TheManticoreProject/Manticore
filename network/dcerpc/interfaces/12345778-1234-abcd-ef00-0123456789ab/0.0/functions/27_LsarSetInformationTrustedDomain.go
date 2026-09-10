@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -40,8 +41,8 @@ func LsarSetInformationTrustedDomain(rpc ndr.Invoker, trustedDomainHandle mslsad
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("LsarSetInformationTrustedDomain: %w", err)
 	}
-	if uint32(resp.Status) != lsarpc.StatusSuccess {
-		return fmt.Errorf("LsarSetInformationTrustedDomain failed: %s", lsarpc.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return fmt.Errorf("LsarSetInformationTrustedDomain failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return nil
 }

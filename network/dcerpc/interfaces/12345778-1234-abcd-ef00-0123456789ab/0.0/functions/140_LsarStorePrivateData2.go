@@ -10,6 +10,7 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -40,8 +41,8 @@ func LsarStorePrivateData2(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HANDLE, en
 		err = fmt.Errorf("LsarStorePrivateData2: %w", err)
 		return
 	}
-	if uint32(resp.Status) != lsarpc.StatusSuccess {
-		err = fmt.Errorf("LsarStorePrivateData2 failed: %s", lsarpc.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("LsarStorePrivateData2 failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }
