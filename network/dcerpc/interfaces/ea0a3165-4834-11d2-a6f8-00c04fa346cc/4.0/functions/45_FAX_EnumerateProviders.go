@@ -10,6 +10,7 @@ import (
 
 	fax "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ea0a3165-4834-11d2-a6f8-00c04fa346cc/4.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // fAX_EnumerateProvidersRequest carries the [in] parameters of FAX_EnumerateProviders.
@@ -38,7 +39,7 @@ func FAX_EnumerateProviders(rpc ndr.Invoker) (Buffer []byte, BufferSize ndr.DWOR
 	Buffer = resp.Buffer
 	BufferSize = resp.BufferSize
 	LpdwNumProviders = resp.LpdwNumProviders
-	if uint32(resp.Status) != fax.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("FAX_EnumerateProviders failed: %s", fax.StatusString(uint32(resp.Status)))
 	}
 	return
