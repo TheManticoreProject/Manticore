@@ -10,6 +10,7 @@ import (
 
 	atsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1ff70682-0a51-30e8-076d-740be8cee98b/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mstsch "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsch"
 )
 
@@ -49,8 +50,8 @@ func NetrJobEnum(rpc ndr.Invoker, serverName *ndr.WSTR, pEnumContainer mstsch.AT
 	PResumeHandle = resp.PResumeHandle
 	// ERROR_MORE_DATA is not a failure: it signals more entries remain and the caller
 	// should resume with the returned pResumeHandle ([MS-TSCH] 3.2.5.2.3).
-	if s := uint32(resp.Status); s != atsvc.StatusSuccess && s != atsvc.ErrorMoreData {
-		err = fmt.Errorf("NetrJobEnum failed: %s", atsvc.StatusString(uint32(resp.Status)))
+	if s := win32.WIN32_ERROR(resp.Status); s != win32.ERROR_SUCCESS && s != win32.ERROR_MORE_DATA {
+		err = fmt.Errorf("NetrJobEnum failed: %s", s.String())
 	}
 	return
 }

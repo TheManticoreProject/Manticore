@@ -10,6 +10,7 @@ import (
 
 	atsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1ff70682-0a51-30e8-076d-740be8cee98b/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrJobDelRequest carries the [in] parameters of NetrJobDel.
@@ -38,8 +39,8 @@ func NetrJobDel(rpc ndr.Invoker, serverName *ndr.WSTR, minJobId ndr.DWORD, maxJo
 		err = fmt.Errorf("NetrJobDel: %w", err)
 		return
 	}
-	if uint32(resp.Status) != atsvc.StatusSuccess {
-		err = fmt.Errorf("NetrJobDel failed: %s", atsvc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("NetrJobDel failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
