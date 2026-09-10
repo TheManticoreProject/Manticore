@@ -10,6 +10,7 @@ import (
 
 	inetinfo "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82ad4280-036b-11cf-972c-00aa006887b0/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // r_W3ClearStatistics2Request carries the [in] parameters of R_W3ClearStatistics2.
@@ -37,8 +38,8 @@ func R_W3ClearStatistics2(rpc ndr.Invoker, pszServer *ndr.WSTR, dwInstance ndr.D
 		err = fmt.Errorf("R_W3ClearStatistics2: %w", err)
 		return
 	}
-	if uint32(resp.Status) != inetinfo.ErrorSuccess {
-		err = fmt.Errorf("R_W3ClearStatistics2 failed: %s", inetinfo.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_W3ClearStatistics2 failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

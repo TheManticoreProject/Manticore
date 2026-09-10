@@ -61,7 +61,9 @@ func TestR_InetInfoGetVersion(t *testing.T) {
 }
 
 // TestR_InetInfoGetVersion_Error verifies a nonzero return code surfaces as an error
-// carrying the hex code (ERROR_ACCESS_DENIED, 0x00000005).
+// naming the code through the shared [MS-ERREF] 2.2 table (0x00000005 is
+// ERROR_ACCESS_DENIED). The descriptor's one-value subset used to render this as bare
+// hex.
 func TestR_InetInfoGetVersion_Error(t *testing.T) {
 	resp := []byte{
 		0x00, 0x00, 0x00, 0x00, // pdwVersion
@@ -71,8 +73,8 @@ func TestR_InetInfoGetVersion_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a nonzero return code")
 	}
-	if !bytes.Contains([]byte(err.Error()), []byte("0x00000005")) {
-		t.Errorf("error = %q, want it to contain 0x00000005", err.Error())
+	if !bytes.Contains([]byte(err.Error()), []byte("ERROR_ACCESS_DENIED")) {
+		t.Errorf("error = %q, want it to contain ERROR_ACCESS_DENIED", err.Error())
 	}
 }
 
