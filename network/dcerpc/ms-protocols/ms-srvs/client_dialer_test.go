@@ -6,6 +6,7 @@ import (
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -43,7 +44,7 @@ func TestNewUsesDialerToBindSrvsvc(t *testing.T) {
 			},
 		},
 		TotalEntries: 1,
-		Status:       ndr.DWORD(srvsvc.NERR_Success),
+		Status:       ndr.DWORD(win32.NERR_Success),
 	}
 	ft.queue(responsePDU(t, 2, stub(t, resp)))
 

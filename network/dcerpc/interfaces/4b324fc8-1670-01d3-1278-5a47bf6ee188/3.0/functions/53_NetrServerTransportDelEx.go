@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -40,8 +41,8 @@ func NetrServerTransportDelEx(rpc ndr.Invoker, serverName string, level uint32, 
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("NetrServerTransportDelEx: %w", err)
 	}
-	if status := uint32(resp.Status); status != srvsvc.NERR_Success {
-		return fmt.Errorf("NetrServerTransportDelEx failed: %s", srvsvc.StatusString(status))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		return fmt.Errorf("NetrServerTransportDelEx failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return nil
 }

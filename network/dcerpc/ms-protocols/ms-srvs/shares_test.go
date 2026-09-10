@@ -9,6 +9,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	srvstypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -109,7 +110,7 @@ func TestListShares(t *testing.T) {
 			},
 		},
 		TotalEntries: 2,
-		Status:       ndr.DWORD(srvsvc.NERR_Success),
+		Status:       ndr.DWORD(win32.NERR_Success),
 	}
 	ft.queue(responsePDU(t, 2, stub(t, resp)))
 
@@ -142,7 +143,7 @@ func TestListShares_AccessDenied(t *testing.T) {
 	c := boundClient(t, ft)
 	resp := &shareEnumResp{
 		InfoStruct: srvstypes.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: srvstypes.SHARE_ENUM_UNION{Tag: 1}},
-		Status:     ndr.DWORD(srvsvc.ERROR_ACCESS_DENIED),
+		Status:     ndr.DWORD(win32.ERROR_ACCESS_DENIED),
 	}
 	ft.queue(responsePDU(t, 2, stub(t, resp)))
 	if _, err := listShares(c); err == nil {

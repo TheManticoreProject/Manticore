@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netprPathCanonicalizeRequest is the [in] parameter set of NetprPathCanonicalize: the
@@ -49,9 +50,9 @@ func NetprPathCanonicalize(rpc ndr.Invoker, serverName, pathName string, outbufL
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return nil, 0, fmt.Errorf("NetprPathCanonicalize: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return resp.Outbuf, uint32(resp.PathType), fmt.Errorf("NetprPathCanonicalize failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return resp.Outbuf, uint32(resp.PathType), fmt.Errorf("NetprPathCanonicalize failed: %s", status)
 	}
 	return resp.Outbuf, uint32(resp.PathType), nil
 }

@@ -10,6 +10,7 @@ import (
 
 	srvsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4b324fc8-1670-01d3-1278-5a47bf6ee188/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mssrvs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-srvs"
 )
 
@@ -40,9 +41,9 @@ func NetrServerGetInfo(rpc ndr.Invoker, serverName string, level uint32) (mssrvs
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return mssrvs.SERVER_INFO{}, fmt.Errorf("NetrServerGetInfo: %w", err)
 	}
-	status := uint32(resp.Status)
-	if status != srvsvc.NERR_Success && status != srvsvc.ERROR_MORE_DATA {
-		return resp.InfoStruct, fmt.Errorf("NetrServerGetInfo failed: %s", srvsvc.StatusString(status))
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.NERR_Success && status != win32.ERROR_MORE_DATA {
+		return resp.InfoStruct, fmt.Errorf("NetrServerGetInfo failed: %s", status)
 	}
 	return resp.InfoStruct, nil
 }
