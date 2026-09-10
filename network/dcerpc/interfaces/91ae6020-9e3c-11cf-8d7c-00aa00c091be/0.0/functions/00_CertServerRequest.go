@@ -10,6 +10,7 @@ import (
 
 	ICertPassage "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/91ae6020-9e3c-11cf-8d7c-00aa00c091be/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mswcce "github.com/TheManticoreProject/Manticore/windows/protocols/ms-wcce"
 )
 
@@ -64,8 +65,8 @@ func CertServerRequest(rpc ndr.Invoker, dwFlags ndr.DWORD, pwszAuthority *ndr.WS
 	PctbCert = resp.PctbCert
 	PctbEncodedCert = resp.PctbEncodedCert
 	PctbDispositionMessage = resp.PctbDispositionMessage
-	if uint32(resp.Status) != ICertPassage.StatusSuccess {
-		err = fmt.Errorf("CertServerRequest failed: %s", ICertPassage.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("CertServerRequest failed: %s", ICertPassage.StatusString(uint32(status)))
 	}
 	return
 }
