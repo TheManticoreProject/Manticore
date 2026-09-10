@@ -10,6 +10,7 @@ import (
 
 	DnsServer "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/50abc2a4-574d-40b3-9d66-ee4fd5fba076/5.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdnsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dnsp"
 )
 
@@ -51,8 +52,8 @@ func R_DnssrvComplexOperation(rpc ndr.Invoker, pwszServerName *ndr.WSTR, pszZone
 	}
 	PdwTypeOut = resp.PdwTypeOut
 	PpDataOut = resp.PpDataOut
-	if uint32(resp.Status) != DnsServer.StatusSuccess {
-		err = fmt.Errorf("R_DnssrvComplexOperation failed: %s", DnsServer.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_DnssrvComplexOperation failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

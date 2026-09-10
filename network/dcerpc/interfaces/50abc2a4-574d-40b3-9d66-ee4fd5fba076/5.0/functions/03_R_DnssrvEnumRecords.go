@@ -10,6 +10,7 @@ import (
 
 	DnsServer "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/50abc2a4-574d-40b3-9d66-ee4fd5fba076/5.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // r_DnssrvEnumRecordsRequest carries the [in] parameters of R_DnssrvEnumRecords.
@@ -53,8 +54,8 @@ func R_DnssrvEnumRecords(rpc ndr.Invoker, pwszServerName *ndr.WSTR, pszZone *ndr
 	}
 	PdwBufferLength = resp.PdwBufferLength
 	PpBuffer = resp.PpBuffer
-	if uint32(resp.Status) != DnsServer.StatusSuccess {
-		err = fmt.Errorf("R_DnssrvEnumRecords failed: %s", DnsServer.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_DnssrvEnumRecords failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
