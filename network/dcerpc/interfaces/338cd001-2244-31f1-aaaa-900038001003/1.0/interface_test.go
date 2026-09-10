@@ -1,19 +1,60 @@
 package rpcinterface_338cd001224431f1aaaa900038001003_1_0
 
-import "testing"
+import (
+	"testing"
 
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(0) = %q, want ERROR_SUCCESS", got)
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
+
+// TestDocumentedStatusCodesResolveThroughWin32 pins the Win32 codes [MS-RRP] 3.1.5
+// documents for the winreg methods to the names the shared [MS-ERREF] 2.2 table gives
+// them. The interface no longer declares a subset of its own; the codes are looked up by
+// value in win32, so a code the interface never listed still renders by name and only a
+// value the specification leaves undefined falls back to hex.
+func TestDocumentedStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := []struct {
+		code win32.WIN32_ERROR
+		name string
+	}{
+		{0x00000000, "ERROR_SUCCESS"},
+		{0x00000002, "ERROR_FILE_NOT_FOUND"},
+		{0x00000005, "ERROR_ACCESS_DENIED"},
+		{0x00000006, "ERROR_INVALID_HANDLE"},
+		{0x00000057, "ERROR_INVALID_PARAMETER"},
+		{0x00000078, "ERROR_CALL_NOT_IMPLEMENTED"},
+		{0x0000007A, "ERROR_INSUFFICIENT_BUFFER"},
+		{0x000000A1, "ERROR_BAD_PATHNAME"},
+		{0x000000EA, "ERROR_MORE_DATA"},
+		{0x00000103, "ERROR_NO_MORE_ITEMS"},
+		{0x000003F9, "ERROR_NOT_REGISTRY_FILE"},
+		{0x000003FA, "ERROR_KEY_DELETED"},
+		{0x000003FB, "ERROR_NO_LOG_SPACE"},
+		{0x0000045B, "ERROR_SHUTDOWN_IN_PROGRESS"},
 	}
-	if got := StatusString(ErrorFileNotFound); got != "ERROR_FILE_NOT_FOUND" {
-		t.Errorf("StatusString(2) = %q", got)
+	for _, c := range documented {
+		if got := c.code.String(); got != c.name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", uint32(c.code), got, c.name)
+		}
 	}
-	if got := StatusString(ErrorMoreData); got != "ERROR_MORE_DATA" {
-		t.Errorf("StatusString(234) = %q", got)
+
+	// Outside the subset the interface used to carry: ERROR_KEY_HAS_CHILDREN (0x000003FC)
+	// and ERROR_BADKEY (0x000003F2) were rendered as undecoded hex before and now resolve
+	// by name.
+	for _, c := range []struct {
+		code win32.WIN32_ERROR
+		name string
+	}{
+		{0x000003FC, "ERROR_KEY_HAS_CHILDREN"},
+		{0x000003F2, "ERROR_BADKEY"},
+	} {
+		if got := c.code.String(); got != c.name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", uint32(c.code), got, c.name)
+		}
 	}
-	if got := StatusString(0x12345678); got != "0x12345678" {
-		t.Errorf("StatusString(unknown) = %q, want hex", got)
+
+	// A value the specification defines no name for still renders, as hex.
+	if got := win32.WIN32_ERROR(0x12345678).String(); got != "0x12345678" {
+		t.Errorf("win32.WIN32_ERROR(0x12345678).String() = %q, want hex", got)
 	}
 }
 
