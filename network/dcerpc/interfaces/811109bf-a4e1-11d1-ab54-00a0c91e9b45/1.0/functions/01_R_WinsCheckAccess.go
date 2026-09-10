@@ -10,6 +10,7 @@ import (
 
 	winsi2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/811109bf-a4e1-11d1-ab54-00a0c91e9b45/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // r_WinsCheckAccessRequest carries the [in] parameters of R_WinsCheckAccess.
@@ -34,8 +35,8 @@ func R_WinsCheckAccess(rpc ndr.Invoker) (Access ndr.DWORD, err error) {
 		return
 	}
 	Access = resp.Access
-	if uint32(resp.Status) != winsi2.StatusSuccess {
-		err = fmt.Errorf("R_WinsCheckAccess failed: %s", winsi2.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_WinsCheckAccess failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

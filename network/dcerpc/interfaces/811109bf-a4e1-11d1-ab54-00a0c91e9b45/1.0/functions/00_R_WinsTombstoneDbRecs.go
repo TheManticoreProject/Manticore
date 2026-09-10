@@ -10,6 +10,7 @@ import (
 
 	winsi2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/811109bf-a4e1-11d1-ab54-00a0c91e9b45/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msraiw "github.com/TheManticoreProject/Manticore/windows/protocols/ms-raiw"
 )
 
@@ -41,8 +42,8 @@ func R_WinsTombstoneDbRecs(rpc ndr.Invoker, pWinsAdd msraiw.WINSINTF_ADD_T, minV
 		err = fmt.Errorf("R_WinsTombstoneDbRecs: %w", err)
 		return
 	}
-	if uint32(resp.Status) != winsi2.StatusSuccess {
-		err = fmt.Errorf("R_WinsTombstoneDbRecs failed: %s", winsi2.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_WinsTombstoneDbRecs failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
