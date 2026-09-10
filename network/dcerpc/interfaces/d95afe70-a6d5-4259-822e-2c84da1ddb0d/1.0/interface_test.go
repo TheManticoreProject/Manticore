@@ -1,6 +1,10 @@
 package rpcinterface_d95afe70a6d54259822e2c84da1ddb0d_1_0
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax identifier for the WindowsShutdown interface
 // (d95afe70-a6d5-4259-822e-2c84da1ddb0d v1.0, [MS-RSP]).
@@ -33,20 +37,41 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString checks known mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	cases := map[uint32]string{
-		StatusSuccess:           "ERROR_SUCCESS",
-		ErrorAccessDenied:       "ERROR_ACCESS_DENIED",
-		ErrorShutdownInProgress: "ERROR_SHUTDOWN_IN_PROGRESS",
+// TestStatusCodesResolveThroughWin32 pins that the Win32 codes [MS-RSP] section 3.3.4
+// documents for WindowsShutdown resolve through the shared [MS-ERREF] 2.2 table under
+// their specification names, that a shutdown code the interface never enumerated now
+// renders by name rather than as undecoded hex, and that a value the specification
+// does not define still renders as hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000015: "ERROR_NOT_READY",
+		0x00000057: "ERROR_INVALID_PARAMETER",
+		0x0000045B: "ERROR_SHUTDOWN_IN_PROGRESS",
+		0x0000045C: "ERROR_NO_SHUTDOWN_IN_PROGRESS",
+		0x000004A6: "ERROR_SHUTDOWN_IS_SCHEDULED",
+		0x000004A7: "ERROR_SHUTDOWN_USERS_LOGGED_ON",
+		0x000004F7: "ERROR_MACHINE_LOCKED",
 	}
-	for code, want := range cases {
-		if got := StatusString(code); got != want {
-			t.Errorf("StatusString(0x%08x) = %q, want %q", code, got, want)
+	for code, name := range documented {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
 		}
 	}
-	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
-		t.Errorf("StatusString(unknown) = %q, want 0xdeadbeef", got)
+
+	// ERROR_SYSTEM_SHUTDOWN was outside the subset this interface used to declare, so a
+	// server reporting it produced bare hex; it resolves by name now.
+	if got := win32.WIN32_ERROR(0x00000281).String(); got != "ERROR_SYSTEM_SHUTDOWN" {
+		t.Errorf("win32.WIN32_ERROR(0x00000281).String() = %q, want ERROR_SYSTEM_SHUTDOWN", got)
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("win32.WIN32_ERROR(0xdeadbeef).String() = %q, want hex", got)
 	}
 }
 
