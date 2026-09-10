@@ -10,6 +10,7 @@ import (
 
 	lsacap "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/afc07e2e-311c-4435-808c-c483ffeec7c9/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mscapr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-capr"
 )
 
@@ -37,8 +38,8 @@ func LsarGetAvailableCAPIDs(rpc ndr.Invoker) (WrappedCAPIDs mscapr.LSAPR_WRAPPED
 		return
 	}
 	WrappedCAPIDs = resp.WrappedCAPIDs
-	if uint32(resp.Status) != lsacap.StatusSuccess {
-		err = fmt.Errorf("LsarGetAvailableCAPIDs failed: %s", lsacap.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("LsarGetAvailableCAPIDs failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }
