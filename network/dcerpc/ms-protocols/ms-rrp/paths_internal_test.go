@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 func TestSplitRegistryPath(t *testing.T) {
@@ -34,17 +34,17 @@ func TestRegNameTerminatorCounted(t *testing.T) {
 }
 
 func TestIsStatus(t *testing.T) {
-	err := fmt.Errorf("BaseRegEnumKey failed: %s", winreg.StatusString(winreg.ErrorNoMoreItems))
-	if !isStatus(err, winreg.ErrorNoMoreItems) {
+	err := fmt.Errorf("BaseRegEnumKey failed: %s", win32.ERROR_NO_MORE_ITEMS.String())
+	if !isStatus(err, win32.ERROR_NO_MORE_ITEMS) {
 		t.Error("isStatus did not match ERROR_NO_MORE_ITEMS")
 	}
-	if isStatus(err, winreg.ErrorAccessDenied) {
+	if isStatus(err, win32.ERROR_ACCESS_DENIED) {
 		t.Error("isStatus matched the wrong code")
 	}
-	if isStatus(nil, winreg.ErrorNoMoreItems) {
+	if isStatus(nil, win32.ERROR_NO_MORE_ITEMS) {
 		t.Error("isStatus(nil) should be false")
 	}
-	if isStatus(errors.New("plain"), winreg.ErrorMoreData) {
+	if isStatus(errors.New("plain"), win32.ERROR_MORE_DATA) {
 		t.Error("isStatus matched an unrelated error")
 	}
 }

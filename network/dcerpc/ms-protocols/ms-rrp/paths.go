@@ -6,6 +6,7 @@ import (
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
@@ -26,12 +27,12 @@ func regName(s string) msrrp.RRP_UNICODE_STRING {
 	return msdtyp.NewUnicodeString(s + "\x00")
 }
 
-// isStatus reports whether err carries the given winreg Win32 status code, matched by the
+// isStatus reports whether err carries the given Win32 status code, matched by the
 // mnemonic the interface stubs embed in their error text (e.g. ERROR_NO_MORE_ITEMS). This
 // lets enumeration/query loops treat the documented terminal codes as sentinels rather
 // than hard failures.
-func isStatus(err error, code uint32) bool {
-	return err != nil && strings.Contains(err.Error(), winreg.StatusString(code))
+func isStatus(err error, code win32.WIN32_ERROR) bool {
+	return err != nil && strings.Contains(err.Error(), code.String())
 }
 
 // splitRegistryPath splits "HKLM\\Software\\Foo" into the root mnemonic ("HKLM") and the
@@ -97,7 +98,7 @@ func (r *RemoteRegistry) queryValue(h Handle, valueName string) (RegistryValue, 
 		ln := ndr.DWORD(bufLen)
 		rTyp, rData, rcb, _, err := r.BaseRegQueryValue(h, regName(valueName), &typ, buf, &cb, &ln)
 		if err != nil {
-			if isStatus(err, winreg.ErrorMoreData) && rcb != nil && uint32(*rcb) > bufLen {
+			if isStatus(err, win32.ERROR_MORE_DATA) && rcb != nil && uint32(*rcb) > bufLen {
 				bufLen = uint32(*rcb)
 				continue
 			}
@@ -166,10 +167,10 @@ func (r *RemoteRegistry) EnumKeys(h Handle) ([]string, error) {
 		classIn := msrrp.RRP_UNICODE_STRING{MaximumLength: uint16(bufLen * 2), Buffer: make([]uint16, bufLen)}
 		nameOut, _, _, err := r.BaseRegEnumKey(h, ndr.DWORD(i), nameIn, &classIn, nil)
 		if err != nil {
-			if isStatus(err, winreg.ErrorNoMoreItems) {
+			if isStatus(err, win32.ERROR_NO_MORE_ITEMS) {
 				break
 			}
-			if isStatus(err, winreg.ErrorMoreData) && bufLen < maxBufLen {
+			if isStatus(err, win32.ERROR_MORE_DATA) && bufLen < maxBufLen {
 				// The name (or class) did not fit: grow the buffers and retry the same index.
 				bufLen *= 2
 				continue
@@ -209,10 +210,10 @@ func (r *RemoteRegistry) EnumValues(h Handle) ([]ValueEntry, error) {
 		ln := ndr.DWORD(dataLen)
 		nameOut, rTyp, rData, rcb, _, err := r.BaseRegEnumValue(h, ndr.DWORD(i), nameIn, &typ, buf, &cb, &ln)
 		if err != nil {
-			if isStatus(err, winreg.ErrorNoMoreItems) {
+			if isStatus(err, win32.ERROR_NO_MORE_ITEMS) {
 				break
 			}
-			if isStatus(err, winreg.ErrorMoreData) && rcb != nil && uint32(*rcb) > dataLen {
+			if isStatus(err, win32.ERROR_MORE_DATA) && rcb != nil && uint32(*rcb) > dataLen {
 				// The value's data is larger than the current buffer: grow it and retry the
 				// same index without advancing.
 				dataLen = uint32(*rcb)

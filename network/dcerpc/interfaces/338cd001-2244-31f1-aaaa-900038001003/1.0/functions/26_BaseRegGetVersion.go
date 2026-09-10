@@ -10,6 +10,7 @@ import (
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
 
@@ -38,8 +39,8 @@ func BaseRegGetVersion(rpc ndr.Invoker, hKey msrrp.RPC_HKEY) (LpdwVersion ndr.DW
 		return
 	}
 	LpdwVersion = resp.LpdwVersion
-	if uint32(resp.Status) != winreg.StatusSuccess {
-		err = fmt.Errorf("BaseRegGetVersion failed: %s", winreg.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("BaseRegGetVersion failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

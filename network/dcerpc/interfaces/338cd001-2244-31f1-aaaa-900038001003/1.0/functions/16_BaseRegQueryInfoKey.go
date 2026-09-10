@@ -10,6 +10,7 @@ import (
 
 	winreg "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/338cd001-2244-31f1-aaaa-900038001003/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msrrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrp"
 )
@@ -57,8 +58,8 @@ func BaseRegQueryInfoKey(rpc ndr.Invoker, hKey msrrp.RPC_HKEY, lpClassIn msrrp.R
 	LpcbMaxValueLen = resp.LpcbMaxValueLen
 	LpcbSecurityDescriptor = resp.LpcbSecurityDescriptor
 	LpftLastWriteTime = resp.LpftLastWriteTime
-	if uint32(resp.Status) != winreg.StatusSuccess {
-		err = fmt.Errorf("BaseRegQueryInfoKey failed: %s", winreg.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("BaseRegQueryInfoKey failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
