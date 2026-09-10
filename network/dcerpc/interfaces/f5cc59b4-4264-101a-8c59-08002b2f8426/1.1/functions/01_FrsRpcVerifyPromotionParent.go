@@ -10,6 +10,7 @@ import (
 
 	frsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f5cc59b4-4264-101a-8c59-08002b2f8426/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // frsRpcVerifyPromotionParentRequest carries the [in] parameters of FrsRpcVerifyPromotionParent.
@@ -41,8 +42,8 @@ func FrsRpcVerifyPromotionParent(rpc ndr.Invoker, parentAccount *ndr.WSTR, paren
 		err = fmt.Errorf("FrsRpcVerifyPromotionParent: %w", err)
 		return
 	}
-	if uint32(resp.Status) != frsrpc.StatusSuccess {
-		err = fmt.Errorf("FrsRpcVerifyPromotionParent failed: %s", frsrpc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("FrsRpcVerifyPromotionParent failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

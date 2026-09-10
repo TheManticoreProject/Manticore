@@ -2,9 +2,9 @@
 // syntax d049b186-814f-11d1-9a3c-00c04fc9b232 version 1.1 ([MS-FRS1]).
 //
 // This package holds only the interface-level descriptor (abstract syntax,
-// transport endpoint, opnums, opnum<->name maps, and status constants). The NDR
-// wire types live in windows/protocols/ms-frs1 and the method stubs in functions;
-// both depend on this package, never the reverse.
+// transport endpoint, opnums, and opnum<->name maps). The NDR wire types live in
+// windows/protocols/ms-frs1 and the method stubs in functions; both depend on this
+// package, never the reverse.
 package rpcinterface_d049b186814f11d19a3c00c04fc9b232_1_1
 
 // IDL source: [MS-FRS1] — this interface is translated from and verified
@@ -13,8 +13,6 @@ package rpcinterface_d049b186814f11d19a3c00c04fc9b232_1_1
 // A fetched copy is kept at ms-frs1.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -35,13 +33,23 @@ const (
 	OpnumNtFrsApi_Rpc_ForceReplication       uint16 = 10
 )
 
-// Status codes returned by this interface. FRSAPI methods return a Win32 error code
-// ([MS-ERREF] 2.2): 0 on success, and all nonzero values are equivalent failures unless
-// otherwise specified ([MS-FRS1] 3.2.4). Failed access checks yield ERROR_ACCESS_DENIED.
-const (
-	StatusSuccess     uint32 = 0x00000000 // ERROR_SUCCESS
-	ErrorAccessDenied uint32 = 0x00000005 // ERROR_ACCESS_DENIED
-)
+// The status codes this interface returns are not declared here. FRSAPI methods return a
+// Win32 error code ([MS-ERREF] 2.2): 0 on success, and all nonzero values are equivalent
+// failures unless otherwise specified ([MS-FRS1] 3.2.4); a failed access check yields
+// ERROR_ACCESS_DENIED. The whole of [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR type,
+// and a subset repeated here would cover a fraction of that 2703-code table while
+// drifting from it. Convert a returned status with win32.WIN32_ERROR(status) and compare
+// against win32.ERROR_SUCCESS and the rest.
+//
+// Both codes this descriptor used to declare have an [MS-ERREF] 2.2 row under the name
+// the specification uses, so neither stays local: StatusSuccess is win32.ERROR_SUCCESS
+// (0x00000000) and ErrorAccessDenied is win32.ERROR_ACCESS_DENIED (0x00000005).
+// StatusString went with them.
+//
+// The NtFrs service errors an FRSAPI method reports are the FRS_ERR_* family, which the
+// shared table carries at 0x00001F41..0x00001F51. They are unrelated to the FRS_ERROR_*
+// family [MS-FRS2] defines at 0x23xx, which [MS-ERREF] 2.2 has no rows for at all.
 
 // SyntaxID returns the NtFrsApi abstract syntax identifier:
 // d049b186-814f-11d1-9a3c-00c04fc9b232, version 1.1.
@@ -50,19 +58,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0xd049b186, B: 0x814f, C: 0x11d1, D: 0x9a3c, E: 0x00c04fc9b232},
 		MajorVersion: 1,
 		MinorVersion: 1,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "ERROR_SUCCESS"
-	case ErrorAccessDenied:
-		return "ERROR_ACCESS_DENIED"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

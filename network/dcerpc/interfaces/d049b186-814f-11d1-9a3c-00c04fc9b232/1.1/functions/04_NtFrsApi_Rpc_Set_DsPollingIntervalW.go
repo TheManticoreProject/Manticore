@@ -10,6 +10,7 @@ import (
 
 	frsapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/d049b186-814f-11d1-9a3c-00c04fc9b232/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // ntFrsApi_Rpc_Set_DsPollingIntervalWRequest carries the [in] parameters of NtFrsApi_Rpc_Set_DsPollingIntervalW.
@@ -35,8 +36,8 @@ func NtFrsApi_Rpc_Set_DsPollingIntervalW(rpc ndr.Invoker, useShortInterval ndr.D
 		err = fmt.Errorf("NtFrsApi_Rpc_Set_DsPollingIntervalW: %w", err)
 		return
 	}
-	if uint32(resp.Status) != frsapi.StatusSuccess {
-		err = fmt.Errorf("NtFrsApi_Rpc_Set_DsPollingIntervalW failed: %s", frsapi.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("NtFrsApi_Rpc_Set_DsPollingIntervalW failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
