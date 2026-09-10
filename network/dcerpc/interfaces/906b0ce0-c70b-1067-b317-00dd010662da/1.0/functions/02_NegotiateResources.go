@@ -10,6 +10,7 @@ import (
 
 	IXnRemote "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/906b0ce0-c70b-1067-b317-00dd010662da/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mscmpo "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmpo"
 )
 
@@ -46,8 +47,8 @@ func NegotiateResources(rpc ndr.Invoker, phContext mscmpo.PCONTEXT_HANDLE, resou
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return 0, fmt.Errorf("NegotiateResources: %w", err)
 	}
-	if uint32(resp.Status) != IXnRemote.StatusSuccess {
-		return uint32(resp.PdwcAccepted), fmt.Errorf("NegotiateResources failed: %s", IXnRemote.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		return uint32(resp.PdwcAccepted), fmt.Errorf("NegotiateResources failed: %s", status)
 	}
 	return uint32(resp.PdwcAccepted), nil
 }

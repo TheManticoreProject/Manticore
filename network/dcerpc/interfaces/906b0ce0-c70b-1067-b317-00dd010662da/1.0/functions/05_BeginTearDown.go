@@ -10,6 +10,7 @@ import (
 
 	IXnRemote "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/906b0ce0-c70b-1067-b317-00dd010662da/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mscmpo "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmpo"
 )
 
@@ -37,8 +38,8 @@ func BeginTearDown(rpc ndr.Invoker, contextHandle mscmpo.PCONTEXT_HANDLE, tearDo
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return fmt.Errorf("BeginTearDown: %w", err)
 	}
-	if uint32(resp.Status) != IXnRemote.StatusSuccess {
-		return fmt.Errorf("BeginTearDown failed: %s", IXnRemote.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		return fmt.Errorf("BeginTearDown failed: %s", status)
 	}
 	return nil
 }
