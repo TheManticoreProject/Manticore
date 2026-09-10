@@ -10,6 +10,7 @@ import (
 
 	WindowsShutdown "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/d95afe70-a6d5-4259-822e-2c84da1ddb0d/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrsp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rsp"
 )
 
@@ -44,8 +45,8 @@ func WsdrInitiateShutdown(rpc ndr.Invoker, lpMessage *msrsp.REG_UNICODE_STRING, 
 		err = fmt.Errorf("WsdrInitiateShutdown: %w", err)
 		return
 	}
-	if uint32(resp.Status) != WindowsShutdown.StatusSuccess {
-		err = fmt.Errorf("WsdrInitiateShutdown failed: %s", WindowsShutdown.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("WsdrInitiateShutdown failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

@@ -10,6 +10,7 @@ import (
 
 	InitShutdown "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/894de0c0-0d55-11d3-a322-00c04fa321a1/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // baseAbortShutdownRequest carries the [in] parameters of BaseAbortShutdown.
@@ -35,8 +36,8 @@ func BaseAbortShutdown(rpc ndr.Invoker, serverName *ndr.WSTR) (err error) {
 		err = fmt.Errorf("BaseAbortShutdown: %w", err)
 		return
 	}
-	if uint32(resp.Status) != InitShutdown.StatusSuccess {
-		err = fmt.Errorf("BaseAbortShutdown failed: %s", InitShutdown.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("BaseAbortShutdown failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
