@@ -10,6 +10,7 @@ import (
 
 	qmcomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/fdb3a030-065f-11d1-bb9b-00a024ea5525/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmp"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
@@ -45,7 +46,7 @@ func R_QMGetObjectProperties(rpc ndr.Invoker, pObjectFormat msmqmp.OBJECT_FORMAT
 		return
 	}
 	ApVar = resp.ApVar
-	if uint32(resp.Status) != qmcomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_QMGetObjectProperties failed: %s", qmcomm.StatusString(uint32(resp.Status)))
 	}
 	return

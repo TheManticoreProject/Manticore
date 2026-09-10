@@ -10,6 +10,7 @@ import (
 
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
 
@@ -44,7 +45,7 @@ func S_DSSetProps(rpc ndr.Invoker, dwObjectType ndr.DWORD, pwcsPathName ndr.WSTR
 		err = fmt.Errorf("S_DSSetProps: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dscomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("S_DSSetProps failed: %s", dscomm.StatusString(uint32(resp.Status)))
 	}
 	return

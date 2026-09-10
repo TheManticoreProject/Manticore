@@ -10,6 +10,7 @@ import (
 
 	qmcomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/fdb3a030-065f-11d1-bb9b-00a024ea5525/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
 
@@ -40,7 +41,7 @@ func R_QMEnlistTransaction(rpc ndr.Invoker, pUow msmqmq.XACTUOW, cbCookie ndr.DW
 		err = fmt.Errorf("R_QMEnlistTransaction: %w", err)
 		return
 	}
-	if uint32(resp.Status) != qmcomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_QMEnlistTransaction failed: %s", qmcomm.StatusString(uint32(resp.Status)))
 	}
 	return
