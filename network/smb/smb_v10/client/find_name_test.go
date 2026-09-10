@@ -38,7 +38,7 @@ func bothDirInfoEntry(name string, last bool, attrs uint32) []byte {
 func TestParseBothDirInfoStripsNameTerminator(t *testing.T) {
 	data := append(bothDirInfoEntry("ADFS", false, fileAttributeDirectory), bothDirInfoEntry("AppCompat", true, 0)...)
 
-	entries := parseBothDirInfo(data)
+	entries := parseBothDirInfo(data, false)
 	if len(entries) != 2 {
 		t.Fatalf("parsed %d entries, want 2", len(entries))
 	}
@@ -64,7 +64,7 @@ func TestParseBothDirInfoStripsUTF16Terminator(t *testing.T) {
 	binary.LittleEndian.PutUint32(buf[60:64], uint32(len(nameBytes)))
 	copy(buf[bothDirInfoFixedSize:], nameBytes)
 
-	entries := parseBothDirInfo(buf)
+	entries := parseBothDirInfo(buf, false)
 	if len(entries) != 1 {
 		t.Fatalf("parsed %d entries, want 1", len(entries))
 	}

@@ -164,8 +164,23 @@ func (c *NtCreateAndxRequest) Marshal() ([]byte, error) {
 	// NOT be prefixed with an SMB_STRING buffer-format byte. Marshalling it through
 	// SMB_STRING (ASCII) would prepend a spurious 0x04 byte, which servers reject with
 	// STATUS_OBJECT_NAME_INVALID.
+	//
+	// A Unicode FileName is 16-bit aligned relative to the start of the SMB header
+	// ([MS-CIFS] section 2.2.4.64.1). The data block begins at an odd offset —
+	// SMB_HEADER_SIZE(32) + WordCount(1) + 24 words(48) + ByteCount(2) = 83 — so a
+	// pad byte precedes the name, and its terminator is two bytes wide. Unmarshal
+	// already expects both; emitting neither made this the one direction that could
+	// parse a Unicode name but not produce one, and a server reading the name a byte
+	// out of phase sees every character byte-swapped.
+	if c.IsUnicode() && (ntCreateAndxDataOffset+len(rawDataContent))%2 != 0 {
+		rawDataContent = append(rawDataContent, 0x00)
+	}
 	rawDataContent = append(rawDataContent, []byte(c.FileName.Buffer)...)
-	rawDataContent = append(rawDataContent, 0x00)
+	if c.IsUnicode() {
+		rawDataContent = append(rawDataContent, 0x00, 0x00)
+	} else {
+		rawDataContent = append(rawDataContent, 0x00)
+	}
 
 	// Then marshal the parameters
 	rawParametersContent := []byte{}

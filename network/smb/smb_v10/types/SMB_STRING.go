@@ -3,7 +3,9 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"math"
+	"strings"
 )
 
 const (
@@ -58,6 +60,51 @@ func (s *SMB_STRING) SetString(str string) error {
 	s.Length = USHORT(len(str))
 
 	return nil
+}
+
+// SetStringWithEncoding stores str in the character encoding the enclosing message
+// declared, so Buffer always holds the bytes that will go on the wire.
+//
+// SetString stores the UTF-8 bytes of a Go string, which is correct only for the
+// OEM encoding. When SMB_FLAGS2_UNICODE is set the wire wants UTF-16LE, and a
+// caller that stores UTF-8 there sends mojibake for any character outside ASCII:
+// the bytes round-trip through an SMB1 peer that treats them as opaque, while a
+// Unicode-capable reader sees a different name.
+//
+// Parameters:
+//   - str: the string to store
+//   - unicode: whether the enclosing message set SMB_FLAGS2_UNICODE
+//
+// Returns:
+//   - An error if the encoded string does not fit the length field
+func (s *SMB_STRING) SetStringWithEncoding(str string, unicode bool) error {
+	if !unicode {
+		return s.SetString(str)
+	}
+
+	encoded := utf16.EncodeUTF16LE(str)
+	if len(encoded) > math.MaxUint16 {
+		return fmt.Errorf("string too long")
+	}
+	s.Buffer = []UCHAR(encoded)
+	s.Length = USHORT(len(encoded))
+	return nil
+}
+
+// StringWithEncoding returns the string Buffer holds, decoded from the character
+// encoding the enclosing message declared. It is the counterpart of
+// SetStringWithEncoding, and of the raw bytes UnmarshalWithEncoding leaves behind.
+//
+// Parameters:
+//   - unicode: whether the enclosing message set SMB_FLAGS2_UNICODE
+//
+// Returns:
+//   - The decoded string, without any trailing terminator
+func (s *SMB_STRING) StringWithEncoding(unicode bool) string {
+	if !unicode {
+		return strings.TrimRight(string(s.Buffer), "\x00")
+	}
+	return strings.TrimRight(utf16.DecodeUTF16LE([]byte(s.Buffer)), "\x00")
 }
 
 // Marshal serializes the SMB_STRING structure into a byte slice.

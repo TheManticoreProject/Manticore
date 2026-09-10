@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/binary"
 	"fmt"
+	mutf16 "github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -138,7 +139,7 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	}
 
 	// TRANS2_FIND_FIRST2.
-	respParams, respData, err := c.trans2(uint16(subcommands.TRANS2_FIND_FIRST2), buildFindFirst2Params(pattern), nil)
+	respParams, respData, err := c.trans2(uint16(subcommands.TRANS2_FIND_FIRST2), buildFindFirst2Params(pattern, c.useUnicode()), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -150,11 +151,11 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	searchCount := binary.LittleEndian.Uint16(respParams[2:4])
 	endOfSearch := binary.LittleEndian.Uint16(respParams[4:6])
 
-	entries := parseBothDirInfo(respData)
+	entries := parseBothDirInfo(respData, c.useUnicode())
 
 	// TRANS2_FIND_NEXT2 until the server reports end-of-search or returns nothing.
 	for endOfSearch == 0 && searchCount > 0 {
-		respParams, respData, err = c.trans2(uint16(subcommands.TRANS2_FIND_NEXT2), buildFindNext2Params(sid), nil)
+		respParams, respData, err = c.trans2(uint16(subcommands.TRANS2_FIND_NEXT2), buildFindNext2Params(sid, c.useUnicode()), nil)
 		if err != nil {
 			break
 		}
@@ -164,7 +165,7 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 		searchCount = binary.LittleEndian.Uint16(respParams[0:2])
 		endOfSearch = binary.LittleEndian.Uint16(respParams[2:4])
 
-		next := parseBothDirInfo(respData)
+		next := parseBothDirInfo(respData, c.useUnicode())
 		if len(next) == 0 {
 			break
 		}
@@ -493,7 +494,7 @@ func placeTrans2Fragment(dst, run []byte, displacement int, label string) (int, 
 // Each entry may represent a file or a directory.
 // FileName is decoded as OEM/ASCII because the client issues non-Unicode requests,
 // and its SMB_STRING terminator is stripped.
-func parseBothDirInfo(data []byte) []Entry {
+func parseBothDirInfo(data []byte, unicode bool) []Entry {
 	entries := []Entry{}
 
 	for pos := 0; pos+bothDirInfoFixedSize <= len(data); {
@@ -521,10 +522,14 @@ func parseBothDirInfo(data []byte) []Entry {
 			// decoded string so a UTF-16LE name's two-byte terminator is also
 			// removed if the request ever negotiates Unicode.
 			raw := data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+nameLen]
-			for len(raw) > 0 && raw[len(raw)-1] == 0x00 {
-				raw = raw[:len(raw)-1]
+			if unicode {
+				longName = decodeUTF16LE(raw)
+			} else {
+				for len(raw) > 0 && raw[len(raw)-1] == 0x00 {
+					raw = raw[:len(raw)-1]
+				}
+				longName = string(raw)
 			}
-			longName = string(raw)
 		}
 
 		entries = append(entries, Entry{
@@ -569,29 +574,44 @@ func (c *Client) findClose2(sid uint16) error {
 	return nil
 }
 
+// encodeTrans2Name renders a name for a TRANS2 parameter block in the encoding the
+// message declares, with the terminator that encoding needs.
+//
+// The names in these blocks sit at an even header-relative offset — the fixed
+// parameters ahead of them are 12 bytes for FIND_FIRST2/FIND_NEXT2 and 6 for the
+// path-information levels, on top of a parameter block the transaction aligns to
+// four — so a Unicode name needs no extra alignment byte here.
+func encodeTrans2Name(name string, unicode bool) []byte {
+	if unicode {
+		return append(mutf16.EncodeUTF16LE(name), 0x00, 0x00)
+	}
+	return append([]byte(name), 0x00)
+}
+
 // buildFindFirst2Params builds the TRANS2_FIND_FIRST2 transaction parameters.
-func buildFindFirst2Params(pattern string) []byte {
+func buildFindFirst2Params(pattern string, unicode bool) []byte {
 	b := []byte{}
 	b = binary.LittleEndian.AppendUint16(b, 0x0016) // SearchAttributes: include hidden/system/directory
 	b = binary.LittleEndian.AppendUint16(b, 512)    // SearchCount: max entries per response
 	b = binary.LittleEndian.AppendUint16(b, 0x0000) // Flags: none (the search is closed explicitly)
 	b = binary.LittleEndian.AppendUint16(b, smbFindFileBothDirectoryInfo)
 	b = binary.LittleEndian.AppendUint32(b, 0) // SearchStorageType
-	b = append(b, []byte(pattern)...)
-	b = append(b, 0x00) // null-terminated OEM pattern
+	b = append(b, encodeTrans2Name(pattern, unicode)...)
 	return b
 }
 
 // buildFindNext2Params builds the TRANS2_FIND_NEXT2 transaction parameters that
 // continue a search from the server's cursor.
-func buildFindNext2Params(sid uint16) []byte {
+func buildFindNext2Params(sid uint16, unicode bool) []byte {
 	b := []byte{}
 	b = binary.LittleEndian.AppendUint16(b, sid) // SID (search handle)
 	b = binary.LittleEndian.AppendUint16(b, 512) // SearchCount
 	b = binary.LittleEndian.AppendUint16(b, smbFindFileBothDirectoryInfo)
 	b = binary.LittleEndian.AppendUint32(b, 0)      // ResumeKey (unused; we did not request resume keys)
 	b = binary.LittleEndian.AppendUint16(b, 0x0008) // Flags: SMB_FIND_CONTINUE_FROM_LAST
-	b = append(b, 0x00)                             // FileName: empty (resume from server cursor)
+	// FileName: empty (resume from the server cursor), terminated as the
+	// declared encoding requires.
+	b = append(b, encodeTrans2Name("", unicode)...)
 	return b
 }
 
