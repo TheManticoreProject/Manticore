@@ -10,6 +10,7 @@ import (
 
 	IcaApi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5ca4a760-ebb1-11cf-8611-00a0245420ed/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -42,8 +43,8 @@ func RpcWinStationIsHelpAssistantSession(rpc ndr.Invoker, hServer mststs.SERVER_
 		return
 	}
 	PResult = resp.PResult
-	if uint32(resp.Status) != IcaApi.StatusSuccess {
-		err = fmt.Errorf("RpcWinStationIsHelpAssistantSession failed: %s", IcaApi.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcWinStationIsHelpAssistantSession failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

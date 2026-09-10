@@ -1,6 +1,10 @@
 package rpcinterface_5ca4a760ebb111cf861100a0245420ed_1_0
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax identifier for the IcaApi interface
 // (5ca4a760-ebb1-11cf-8611-00a0245420ed v1.0, [MS-TSTS]).
@@ -29,13 +33,38 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString checks the success mnemonic and the hex fallback.
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(StatusSuccess) = %q, want ERROR_SUCCESS", got)
+// TestStatusCodesResolveThroughWin32 pins that the Win32 codes [MS-TSTS] 3.7 reports in
+// the pResult [out] parameter resolve through the shared [MS-ERREF] 2.2 table under their
+// specification names, that a code this interface never enumerated now renders by name
+// rather than as undecoded hex, and that a value the specification does not define still
+// renders as hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000006: "ERROR_INVALID_HANDLE",
+		0x00000032: "ERROR_NOT_SUPPORTED",
+		0x00000057: "ERROR_INVALID_PARAMETER",
 	}
-	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
-		t.Errorf("StatusString(unknown) = %q, want 0xdeadbeef", got)
+	for code, name := range documented {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
+		}
+	}
+
+	// ERROR_CTX_WINSTATION_NOT_FOUND is the Terminal Services code a session lookup
+	// fails with. It was outside the subset this interface used to declare, so it
+	// rendered as hex; it resolves by name now.
+	if got := win32.WIN32_ERROR(0x00001B6E).String(); got != "ERROR_CTX_WINSTATION_NOT_FOUND" {
+		t.Errorf("win32.WIN32_ERROR(0x00001b6e).String() = %q, want ERROR_CTX_WINSTATION_NOT_FOUND", got)
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0x12345678).String(); got != "0x12345678" {
+		t.Errorf("win32.WIN32_ERROR(0x12345678).String() = %q, want hex", got)
 	}
 }
 
