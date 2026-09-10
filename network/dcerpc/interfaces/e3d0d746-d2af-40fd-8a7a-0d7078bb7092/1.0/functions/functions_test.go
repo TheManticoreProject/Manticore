@@ -7,6 +7,7 @@ import (
 	BitsPeerAuth "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3d0d746-d2af-40fd-8a7a-0d7078bb7092/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3d0d746-d2af-40fd-8a7a-0d7078bb7092/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // responder is an ndr.Invoker that records the marshalled request stub (so the on-the-wire
@@ -98,10 +99,10 @@ func TestExchangePublicKeysNilClientKey(t *testing.T) {
 // TestExchangePublicKeysErrorStatus verifies a nonzero HRESULT is surfaced as an error
 // and the (NULL) server key is not returned.
 func TestExchangePublicKeysErrorStatus(t *testing.T) {
-	r := &responder{resp: mustMarshal(t, &serverKeyStub{Status: BitsPeerAuth.StatusAccessDenied})}
+	r := &responder{resp: mustMarshal(t, &serverKeyStub{Status: uint32(hresult.E_ACCESSDENIED)})}
 	got, err := functions.ExchangePublicKeys(r, []byte{0x01})
 	if err == nil {
-		t.Fatalf("expected error for HRESULT 0x%08x, got nil (key=%x)", BitsPeerAuth.StatusAccessDenied, got)
+		t.Fatalf("expected error for HRESULT 0x%08x, got nil (key=%x)", uint32(hresult.E_ACCESSDENIED), got)
 	}
 	if got != nil {
 		t.Fatalf("server key should be nil on error, got %x", got)

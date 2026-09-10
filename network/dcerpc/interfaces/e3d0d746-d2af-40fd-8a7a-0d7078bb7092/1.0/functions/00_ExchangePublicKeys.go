@@ -10,6 +10,7 @@ import (
 
 	BitsPeerAuth "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3d0d746-d2af-40fd-8a7a-0d7078bb7092/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msbpau "github.com/TheManticoreProject/Manticore/windows/protocols/ms-bpau"
 )
 
@@ -54,8 +55,8 @@ func ExchangePublicKeys(rpc ndr.Invoker, clientKey []byte) ([]byte, error) {
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return nil, fmt.Errorf("ExchangePublicKeys: %w", err)
 	}
-	if uint32(resp.Status) != BitsPeerAuth.StatusSuccess {
-		return nil, fmt.Errorf("ExchangePublicKeys failed: %s", BitsPeerAuth.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		return nil, fmt.Errorf("ExchangePublicKeys failed: %s", BitsPeerAuth.StatusString(uint32(status)))
 	}
 	return resp.PServerKey, nil
 }
