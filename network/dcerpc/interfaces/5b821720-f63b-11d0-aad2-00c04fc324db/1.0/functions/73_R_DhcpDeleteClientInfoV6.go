@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
 )
 
@@ -38,7 +39,7 @@ func R_DhcpDeleteClientInfoV6(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, client
 		err = fmt.Errorf("R_DhcpDeleteClientInfoV6: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("R_DhcpDeleteClientInfoV6 failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
 	}
 	return

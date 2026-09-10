@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
 )
 
@@ -50,7 +51,7 @@ func R_DhcpEnumClasses(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, reservedMustB
 	ClassInfoArray = resp.ClassInfoArray
 	NRead = resp.NRead
 	NTotal = resp.NTotal
-	if uint32(resp.Status) != dhcpsrv2.StatusSuccess && !dhcpsrv2.StatusIsPagination(uint32(resp.Status)) {
+	if status := win32.WIN32_ERROR(resp.Status); status != win32.ERROR_SUCCESS && status != win32.ERROR_MORE_DATA && status != win32.ERROR_NO_MORE_ITEMS {
 		err = fmt.Errorf("R_DhcpEnumClasses failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
 	}
 	return

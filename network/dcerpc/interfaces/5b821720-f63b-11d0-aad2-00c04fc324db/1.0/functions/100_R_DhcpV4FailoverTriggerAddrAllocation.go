@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // r_DhcpV4FailoverTriggerAddrAllocationRequest carries the [in] parameters of R_DhcpV4FailoverTriggerAddrAllocation.
@@ -39,7 +40,7 @@ func R_DhcpV4FailoverTriggerAddrAllocation(rpc ndr.Invoker, serverIpAddress *ndr
 		err = fmt.Errorf("R_DhcpV4FailoverTriggerAddrAllocation: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("R_DhcpV4FailoverTriggerAddrAllocation failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
 	}
 	return
