@@ -10,6 +10,7 @@ import (
 
 	Witness "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ccd8c074-d0e5-4a40-92b4-d074faa6ba28/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msswn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-swn"
 )
 
@@ -35,8 +36,8 @@ func WitnessrUnRegister(rpc ndr.Invoker, pContext msswn.PCONTEXT_HANDLE) (err er
 		err = fmt.Errorf("WitnessrUnRegister: %w", err)
 		return
 	}
-	if uint32(resp.Status) != Witness.StatusSuccess {
-		err = fmt.Errorf("WitnessrUnRegister failed: %s", Witness.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("WitnessrUnRegister failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

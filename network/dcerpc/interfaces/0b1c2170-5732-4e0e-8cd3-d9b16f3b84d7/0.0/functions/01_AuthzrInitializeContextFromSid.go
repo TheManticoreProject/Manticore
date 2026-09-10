@@ -10,6 +10,7 @@ import (
 
 	authzr "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/0b1c2170-5732-4e0e-8cd3-d9b16f3b84d7/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msraa "github.com/TheManticoreProject/Manticore/windows/protocols/ms-raa"
 )
@@ -47,8 +48,8 @@ func AuthzrInitializeContextFromSid(rpc ndr.Invoker, flags ndr.DWORD, sid msdtyp
 		return
 	}
 	ContextHandle = resp.ContextHandle
-	if uint32(resp.Status) != authzr.StatusSuccess {
-		err = fmt.Errorf("AuthzrInitializeContextFromSid failed: %s", authzr.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("AuthzrInitializeContextFromSid failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

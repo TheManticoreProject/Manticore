@@ -7,9 +7,9 @@
 // <maj>.<min>/ directory.
 //
 // This package holds only the interface-level descriptor (abstract syntax, transport
-// endpoint, opnums, opnum<->name maps, status/version constants). NDR types live in the
-// windows/protocols/ms-swn package (imported as msswn) and method stubs in functions;
-// both depend on this package, never the reverse.
+// endpoint, opnums, opnum<->name maps, protocol-version constants). NDR types live in
+// the windows/protocols/ms-swn package (imported as msswn) and method stubs in
+// functions; both depend on this package, never the reverse.
 //
 // Transport ([MS-SWN] 2.1): the Service Witness Protocol is reached over RPC dynamic
 // endpoints, protocol sequence ncacn_ip_tcp (RPC over TCP/IP), with the endpoint resolved
@@ -24,8 +24,6 @@ package rpcinterface_ccd8c074d0e54a4092b4d074faa6ba28_1_1
 // A fetched copy is kept at ms-swn.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -54,19 +52,18 @@ const (
 	WitnessVersionV2 uint32 = 0x00020000 // Witness protocol version 2 (enables the *Ex methods)
 )
 
-// Status codes returned by this interface. Every Witnessr* method returns a Win32 error
-// code ([MS-ERREF] 2.2, transmitted as the DWORD return value); ERROR_SUCCESS (0)
-// indicates success. These are the codes [MS-SWN] (section 3.1.4) documents its methods
-// returning.
-const (
-	StatusSuccess           uint32 = 0x00000000 // ERROR_SUCCESS
-	StatusAccessDenied      uint32 = 0x00000005 // ERROR_ACCESS_DENIED
-	StatusInvalidParameter  uint32 = 0x00000057 // ERROR_INVALID_PARAMETER
-	StatusNotFound          uint32 = 0x00000490 // ERROR_NOT_FOUND
-	StatusRevisionMismatch  uint32 = 0x0000051A // ERROR_REVISION_MISMATCH
-	StatusNoSystemResources uint32 = 0x000005AA // ERROR_NO_SYSTEM_RESOURCES
-	StatusInvalidState      uint32 = 0x0000139F // ERROR_INVALID_STATE
-)
+// Every Witnessr* method returns a Win32 error code as its RPC return value ([MS-SWN]
+// section 3.1.4, transmitted as the DWORD return value): 0 (ERROR_SUCCESS) on success,
+// otherwise one of the standard Win32 codes of [MS-ERREF] section 2.2. Those codes are
+// not declared here. The whole of [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR type,
+// and a subset repeated here would cover a fraction of that 2703-code table while
+// drifting from it. Convert a returned status with win32.WIN32_ERROR(status) and compare
+// against win32.ERROR_SUCCESS and the rest. The codes [MS-SWN] names around witness
+// registration are not private to the protocol: every value this descriptor used to
+// declare has a row in [MS-ERREF] 2.2 under the name its comment carried, including
+// ERROR_REVISION_MISMATCH for a Version the server does not implement and
+// ERROR_INVALID_STATE for a registration it cannot serve, so nothing is kept local.
 
 // SyntaxID returns the Witness abstract syntax identifier:
 // ccd8c074-d0e5-4a40-92b4-d074faa6ba28, version 1.1.
@@ -75,29 +72,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0xccd8c074, B: 0xd0e5, C: 0x4a40, D: 0x92b4, E: 0xd074faa6ba28},
 		MajorVersion: 1,
 		MinorVersion: 1,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "ERROR_SUCCESS"
-	case StatusAccessDenied:
-		return "ERROR_ACCESS_DENIED"
-	case StatusInvalidParameter:
-		return "ERROR_INVALID_PARAMETER"
-	case StatusNotFound:
-		return "ERROR_NOT_FOUND"
-	case StatusRevisionMismatch:
-		return "ERROR_REVISION_MISMATCH"
-	case StatusNoSystemResources:
-		return "ERROR_NO_SYSTEM_RESOURCES"
-	case StatusInvalidState:
-		return "ERROR_INVALID_STATE"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 
