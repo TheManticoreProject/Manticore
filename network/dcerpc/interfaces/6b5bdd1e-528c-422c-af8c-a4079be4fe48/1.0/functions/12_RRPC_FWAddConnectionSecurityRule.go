@@ -10,6 +10,7 @@ import (
 
 	RemoteFW "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6b5bdd1e-528c-422c-af8c-a4079be4fe48/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msfasp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-fasp"
 )
 
@@ -40,8 +41,8 @@ func RRPC_FWAddConnectionSecurityRule(rpc ndr.Invoker, hPolicyStore msfasp.FW_PO
 		err = fmt.Errorf("RRPC_FWAddConnectionSecurityRule: %w", err)
 		return
 	}
-	if uint32(resp.Status) != RemoteFW.StatusSuccess {
-		err = fmt.Errorf("RRPC_FWAddConnectionSecurityRule failed: %s", RemoteFW.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RRPC_FWAddConnectionSecurityRule failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
