@@ -10,6 +10,7 @@ import (
 
 	IEventService "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f6beaff7-1e19-4fbb-9f8f-b89e2018337c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // evtRpcGetClassicLogDisplayNameRequest carries the [in] parameters of EvtRpcGetClassicLogDisplayName.
@@ -43,8 +44,8 @@ func EvtRpcGetClassicLogDisplayName(rpc ndr.Invoker, logName ndr.WSTR, locale nd
 		return
 	}
 	DisplayName = resp.DisplayName
-	if uint32(resp.Status) != IEventService.StatusSuccess {
-		err = fmt.Errorf("EvtRpcGetClassicLogDisplayName failed: %s", IEventService.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("EvtRpcGetClassicLogDisplayName failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

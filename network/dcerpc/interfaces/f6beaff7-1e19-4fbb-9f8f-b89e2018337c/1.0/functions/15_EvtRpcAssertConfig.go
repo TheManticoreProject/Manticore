@@ -10,6 +10,7 @@ import (
 
 	IEventService "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f6beaff7-1e19-4fbb-9f8f-b89e2018337c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // evtRpcAssertConfigRequest carries the [in] parameters of EvtRpcAssertConfig.
@@ -37,8 +38,8 @@ func EvtRpcAssertConfig(rpc ndr.Invoker, path ndr.WSTR, flags ndr.DWORD) (err er
 		err = fmt.Errorf("EvtRpcAssertConfig: %w", err)
 		return
 	}
-	if uint32(resp.Status) != IEventService.StatusSuccess {
-		err = fmt.Errorf("EvtRpcAssertConfig failed: %s", IEventService.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("EvtRpcAssertConfig failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
