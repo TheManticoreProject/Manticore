@@ -12,8 +12,6 @@ package rpcinterface_22e5386d8b124bf0b0ec6a1ea419e366_1_0
 // A fetched copy is kept at ms-lrec.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -33,14 +31,17 @@ const (
 	OpnumRpcNetEventCloseSession uint16 = 2
 )
 
-// Status codes returned by this interface. Every method that returns a DWORD returns a
-// Win32 error code ([MS-ERREF] 2.2): ERROR_SUCCESS on success, or a nonzero code on
-// failure. [MS-LREC] 3.1.4.2 enumerates no specific failure codes — "all error values
-// MUST be treated the same" — so only success is named; StatusString renders any other
-// code as hex.
-const (
-	StatusSuccess uint32 = 0x00000000 // ERROR_SUCCESS
-)
+// Every method that returns a DWORD returns a Win32 error code ([MS-ERREF] 2.2):
+// ERROR_SUCCESS on success, or a nonzero code on failure. Those codes are not declared
+// here. The whole of [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR type,
+// and a subset repeated here would cover a fraction of that 2703-code table while
+// drifting from it. Convert a returned status with win32.WIN32_ERROR(status) and compare
+// against win32.ERROR_SUCCESS and the rest. [MS-LREC] 3.1.4.2 enumerates no specific
+// failure codes — "all error values MUST be treated the same" — which is a rule about how
+// a client reacts to a failure, not a reason to leave the failure undecoded when it is
+// reported; the one value this interface used to declare has a row in [MS-ERREF] 2.2
+// under the name the declaration carried, so nothing is kept local.
 
 // SyntaxID returns the NetEventForwarder abstract syntax identifier:
 // 22e5386d-8b12-4bf0-b0ec-6a1ea419e366, version 1.0.
@@ -49,17 +50,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x22e5386d, B: 0x8b12, C: 0x4bf0, D: 0xb0ec, E: 0x6a1ea419e366},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "ERROR_SUCCESS"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 
