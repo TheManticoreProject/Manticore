@@ -10,6 +10,7 @@ import (
 
 	RemoteRead "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a9134dd-7b39-45ba-ad88-44d01ca47f28/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 	msmqrr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqrr"
 )
@@ -43,7 +44,7 @@ func R_MoveMessage(rpc ndr.Invoker, phContextFrom msmqrr.QUEUE_CONTEXT_HANDLE_NO
 		err = fmt.Errorf("R_MoveMessage: %w", err)
 		return
 	}
-	if uint32(resp.Status) != RemoteRead.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_MoveMessage failed: %s", RemoteRead.StatusString(uint32(resp.Status)))
 	}
 	return
