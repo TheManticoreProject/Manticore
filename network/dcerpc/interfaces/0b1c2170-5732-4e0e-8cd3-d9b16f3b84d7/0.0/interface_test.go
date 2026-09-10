@@ -1,6 +1,10 @@
 package rpcinterface_0b1c217057324e0e8cd3d9b16f3b84d7_0_0
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax identifier for the authzr interface
 // (0b1c2170-5732-4e0e-8cd3-d9b16f3b84d7 v0.0, [MS-RAA]).
@@ -50,19 +54,55 @@ func TestOpnumContiguous(t *testing.T) {
 	}
 }
 
-// TestStatusString checks known Win32 mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(0) = %q, want ERROR_SUCCESS", got)
+// TestStatusCodesResolveThroughWin32 pins that the eight Win32 codes [MS-RAA] section
+// 3.1.4 documents for authzr resolve through the shared [MS-ERREF] 2.2 table under their
+// specification names, that codes the descriptor never enumerated now render by name
+// rather than as undecoded hex, and that a value the specification does not define still
+// renders as hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000006: "ERROR_INVALID_HANDLE",
+		0x00000008: "ERROR_NOT_ENOUGH_MEMORY",
+		0x00000032: "ERROR_NOT_SUPPORTED",
+		0x00000057: "ERROR_INVALID_PARAMETER",
+		0x0000007A: "ERROR_INSUFFICIENT_BUFFER",
+		0x00000548: "ERROR_INVALID_SERVER_STATE",
 	}
-	if got := StatusString(ErrorAccessDenied); got != "ERROR_ACCESS_DENIED" {
-		t.Errorf("StatusString(5) = %q, want ERROR_ACCESS_DENIED", got)
+	if len(documented) != 8 {
+		t.Fatalf("documented table has %d entries, want the 8 codes the descriptor declared", len(documented))
 	}
-	if got := StatusString(ErrorInvalidParameter); got != "ERROR_INVALID_PARAMETER" {
-		t.Errorf("StatusString(0x57) = %q, want ERROR_INVALID_PARAMETER", got)
+	for code, name := range documented {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
+		}
 	}
-	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
-		t.Errorf("StatusString(unknown) = %q, want 0xdeadbeef", got)
+
+	// These sit outside the subset the descriptor used to declare, so a method returning
+	// one of them used to render as undecoded hex: ERROR_NONE_MAPPED is what a SID that
+	// resolves to no account produces in AuthzrInitializeContextFromSid, and
+	// ERROR_INVALID_DOMAIN_STATE is a single value past ERROR_INVALID_SERVER_STATE, which
+	// the subset did list. They resolve by name now.
+	outsideOldSubset := map[uint32]string{
+		0x0000000E: "ERROR_OUTOFMEMORY",
+		0x00000522: "ERROR_PRIVILEGE_NOT_HELD",
+		0x00000534: "ERROR_NONE_MAPPED",
+		0x00000549: "ERROR_INVALID_DOMAIN_STATE",
+		0x0000054F: "ERROR_INTERNAL_ERROR",
+	}
+	for code, name := range outsideOldSubset {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("win32.WIN32_ERROR(0xdeadbeef).String() = %q, want hex", got)
 	}
 }
 
