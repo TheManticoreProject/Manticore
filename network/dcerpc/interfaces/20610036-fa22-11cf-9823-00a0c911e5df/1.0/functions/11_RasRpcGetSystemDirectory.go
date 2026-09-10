@@ -10,6 +10,7 @@ import (
 
 	rasrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/20610036-fa22-11cf-9823-00a0c911e5df/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rasRpcGetSystemDirectoryRequest carries the [in] parameters of RasRpcGetSystemDirectory.
@@ -39,7 +40,7 @@ func RasRpcGetSystemDirectory(rpc ndr.Invoker, lpBuffer ndr.WSTR, uSize uint32) 
 		return
 	}
 	LpBuffer = resp.LpBuffer
-	if uint32(resp.Status) != rasrpc.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("RasRpcGetSystemDirectory failed: %s", rasrpc.StatusString(uint32(resp.Status)))
 	}
 	return

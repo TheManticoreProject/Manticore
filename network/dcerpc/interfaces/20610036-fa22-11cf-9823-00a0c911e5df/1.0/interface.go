@@ -12,9 +12,8 @@ package rpcinterface_20610036fa2211cf982300a0c911e5df_1_0
 // A fetched copy is kept at ms-rrasm.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -34,19 +33,24 @@ const (
 	OpnumRasRpcGetVersion              uint16 = 15
 )
 
-// Status codes. rasrpc methods return a Win32 error code (32-bit) as their return
-// value ([MS-RRASM] 3.3.4; [MS-ERREF] 2.2). The values below are the ones commonly
-// returned; any other code is rendered as hex by StatusString.
+// rasrpc methods return a Win32 error code (32-bit) as their return value
+// ([MS-RRASM] 3.3.4; [MS-ERREF] 2.2). Those codes are not declared here. The whole
+// of [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR
+// type, and a subset repeated here would cover a fraction of that 2703-code table
+// while drifting from it. Convert a returned status with win32.WIN32_ERROR(status)
+// and compare against win32.ERROR_SUCCESS and the rest.
+//
+// The RAS-specific code below is the exception. Remote Access errors live in the
+// 600..999 range that raserror.h owns (RASBASE is 600) and [MS-ERREF] 2.2 does not
+// cover that block at all: it assigns those values to unrelated errors of its own,
+// so the shared table decodes 0x0000025B as ERROR_MARSHALL_OVERFLOW, a
+// user/kernel marshaling buffer overflow, rather than as the RAS
+// ERROR_BUFFER_TOO_SMALL (603) this interface means by it. It stays declared here
+// and StatusString decodes it before deferring to the shared table for everything
+// else.
 const (
-	StatusSuccess            uint32 = 0x00000000 // ERROR_SUCCESS
-	StatusFileNotFound       uint32 = 0x00000002 // ERROR_FILE_NOT_FOUND
-	StatusAccessDenied       uint32 = 0x00000005 // ERROR_ACCESS_DENIED
-	StatusInvalidHandle      uint32 = 0x00000006 // ERROR_INVALID_HANDLE
-	StatusNotEnoughMemory    uint32 = 0x00000008 // ERROR_NOT_ENOUGH_MEMORY
-	StatusNotSupported       uint32 = 0x00000032 // ERROR_NOT_SUPPORTED
-	StatusInvalidParameter   uint32 = 0x00000057 // ERROR_INVALID_PARAMETER
-	StatusInsufficientBuffer uint32 = 0x0000007A // ERROR_INSUFFICIENT_BUFFER
-	StatusBufferTooSmall     uint32 = 0x0000025B // ERROR_BUFFER_TOO_SMALL
+	StatusBufferTooSmall uint32 = 0x0000025B // ERROR_BUFFER_TOO_SMALL (603), RASBASE+3 in raserror.h
 )
 
 // SyntaxID returns the rasrpc abstract syntax identifier:
@@ -59,30 +63,16 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the RAS-specific status code, whose value [MS-ERREF] 2.2
+// assigns to an unrelated error, and defers every other status to the shared
+// [MS-ERREF] 2.2 table, which names each code the specification defines and renders
+// hex only for values it does not.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "ERROR_SUCCESS"
-	case StatusFileNotFound:
-		return "ERROR_FILE_NOT_FOUND"
-	case StatusAccessDenied:
-		return "ERROR_ACCESS_DENIED"
-	case StatusInvalidHandle:
-		return "ERROR_INVALID_HANDLE"
-	case StatusNotEnoughMemory:
-		return "ERROR_NOT_ENOUGH_MEMORY"
-	case StatusNotSupported:
-		return "ERROR_NOT_SUPPORTED"
-	case StatusInvalidParameter:
-		return "ERROR_INVALID_PARAMETER"
-	case StatusInsufficientBuffer:
-		return "ERROR_INSUFFICIENT_BUFFER"
 	case StatusBufferTooSmall:
 		return "ERROR_BUFFER_TOO_SMALL"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return win32.WIN32_ERROR(status).String()
 	}
 }
 

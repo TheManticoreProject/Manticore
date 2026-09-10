@@ -10,6 +10,7 @@ import (
 
 	rasrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/20610036-fa22-11cf-9823-00a0c911e5df/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rasRpcGetVersionRequest carries the [in] parameters of RasRpcGetVersion.
@@ -37,7 +38,7 @@ func RasRpcGetVersion(rpc ndr.Invoker, pdwVersion ndr.DWORD) (PdwVersion ndr.DWO
 		return
 	}
 	PdwVersion = resp.PdwVersion
-	if uint32(resp.Status) != rasrpc.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("RasRpcGetVersion failed: %s", rasrpc.StatusString(uint32(resp.Status)))
 	}
 	return
