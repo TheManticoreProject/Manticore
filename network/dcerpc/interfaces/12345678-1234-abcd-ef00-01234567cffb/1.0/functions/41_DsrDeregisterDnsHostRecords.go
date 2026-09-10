@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -46,8 +47,8 @@ func DsrDeregisterDnsHostRecords(rpc ndr.Invoker, serverName *ndr.WSTR, dnsDomai
 		err = fmt.Errorf("DsrDeregisterDnsHostRecords: %w", err)
 		return
 	}
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("DsrDeregisterDnsHostRecords failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("DsrDeregisterDnsHostRecords failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }

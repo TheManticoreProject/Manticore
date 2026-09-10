@@ -13,6 +13,7 @@ import (
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0/functions"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 	nrpccrypto "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc/crypto"
 )
@@ -107,8 +108,8 @@ func Establish(rpc ndr.Invoker, cfg SecureChannelConfig) (*SecureChannel, error)
 	if err != nil {
 		return nil, fmt.Errorf("netlogon secure channel: NetrServerReqChallenge: %w", err)
 	}
-	if status != logon.StatusSuccess {
-		return nil, fmt.Errorf("netlogon secure channel: NetrServerReqChallenge: %s", logon.StatusString(status))
+	if nt_status.NT_STATUS(status) != nt_status.NT_STATUS_SUCCESS {
+		return nil, fmt.Errorf("netlogon secure channel: NetrServerReqChallenge: %s", nt_status.NT_STATUS(status).String())
 	}
 
 	flags := cfg.NegotiateFlags

@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // dsrGetSiteNameRequest carries the [in] parameters of DsrGetSiteName.
@@ -37,8 +38,8 @@ func DsrGetSiteName(rpc ndr.Invoker, computerName *ndr.WSTR) (SiteName ndr.WSTR,
 		return
 	}
 	SiteName = resp.SiteName
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("DsrGetSiteName failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("DsrGetSiteName failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }
