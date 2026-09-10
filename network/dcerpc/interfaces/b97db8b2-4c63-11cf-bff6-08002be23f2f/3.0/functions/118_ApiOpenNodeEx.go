@@ -10,6 +10,7 @@ import (
 
 	clusapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b97db8b2-4c63-11cf-bff6-08002be23f2f/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mscmrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-cmrp"
 )
 
@@ -45,8 +46,8 @@ func ApiOpenNodeEx(rpc ndr.Invoker, lpszNodeName ndr.WSTR, dwDesiredAccess ndr.D
 	LpdwGrantedAccess = resp.LpdwGrantedAccess
 	Status = resp.Status
 	Rpc_status = resp.Rpc_status
-	if uint32(resp.Status) != clusapi.StatusSuccess {
-		err = fmt.Errorf("ApiOpenNodeEx failed: %s", clusapi.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("ApiOpenNodeEx failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
