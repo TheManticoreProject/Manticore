@@ -10,6 +10,7 @@ import (
 
 	BackupKey "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/3dde7c30-165d-11d1-ab8f-00805f14db40/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
@@ -56,8 +57,8 @@ func BackuprKey(rpc ndr.Invoker, pguidActionAgent guid.GUID, pDataIn []uint8, cb
 	}
 	PpDataOut = resp.PpDataOut
 	PcbDataOut = resp.PcbDataOut
-	if uint32(resp.Status) != BackupKey.ErrorSuccess {
-		err = fmt.Errorf("BackuprKey failed: %s", BackupKey.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("BackuprKey failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
