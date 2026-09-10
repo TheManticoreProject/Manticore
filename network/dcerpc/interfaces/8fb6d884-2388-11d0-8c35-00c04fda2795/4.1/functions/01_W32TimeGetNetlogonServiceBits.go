@@ -10,6 +10,7 @@ import (
 
 	W32Time "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/8fb6d884-2388-11d0-8c35-00c04fda2795/4.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // w32TimeGetNetlogonServiceBitsRequest carries the [in] parameters of W32TimeGetNetlogonServiceBits.
@@ -33,8 +34,8 @@ func W32TimeGetNetlogonServiceBits(rpc ndr.Invoker) (err error) {
 		err = fmt.Errorf("W32TimeGetNetlogonServiceBits: %w", err)
 		return
 	}
-	if uint32(resp.Status) != W32Time.StatusSuccess {
-		err = fmt.Errorf("W32TimeGetNetlogonServiceBits failed: %s", W32Time.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("W32TimeGetNetlogonServiceBits failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
