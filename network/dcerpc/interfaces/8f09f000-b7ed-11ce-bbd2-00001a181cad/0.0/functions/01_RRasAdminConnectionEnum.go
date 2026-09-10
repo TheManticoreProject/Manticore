@@ -10,6 +10,7 @@ import (
 
 	dimsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/8f09f000-b7ed-11ce-bbd2-00001a181cad/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrrasm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrasm"
 )
 
@@ -50,8 +51,8 @@ func RRasAdminConnectionEnum(rpc ndr.Invoker, dwLevel ndr.DWORD, pInfoStruct msr
 	LpdwEntriesRead = resp.LpdwEntriesRead
 	LpdwTotalEntries = resp.LpdwTotalEntries
 	LpdwResumeHandle = resp.LpdwResumeHandle
-	if uint32(resp.Status) != dimsvc.StatusSuccess {
-		err = fmt.Errorf("RRasAdminConnectionEnum failed: %s", dimsvc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RRasAdminConnectionEnum failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

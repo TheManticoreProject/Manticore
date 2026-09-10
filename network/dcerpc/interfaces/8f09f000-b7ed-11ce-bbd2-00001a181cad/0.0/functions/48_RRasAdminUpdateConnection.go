@@ -10,6 +10,7 @@ import (
 
 	dimsvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/8f09f000-b7ed-11ce-bbd2-00001a181cad/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrrasm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rrasm"
 )
 
@@ -38,8 +39,8 @@ func RRasAdminUpdateConnection(rpc ndr.Invoker, hDimConnection ndr.DWORD, pServe
 		err = fmt.Errorf("RRasAdminUpdateConnection: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dimsvc.StatusSuccess {
-		err = fmt.Errorf("RRasAdminUpdateConnection failed: %s", dimsvc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RRasAdminUpdateConnection failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
