@@ -10,6 +10,7 @@ import (
 
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
@@ -33,7 +34,7 @@ func ElfrClearELFW(rpc ndr.Invoker, logHandle mseven.IELF_HANDLE, backupFileName
 		err = fmt.Errorf("ElfrClearELFW: %w", err)
 		return
 	}
-	if uint32(resp.Status) != eventlog.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("ElfrClearELFW failed: %s", eventlog.StatusString(uint32(resp.Status)))
 	}
 	return

@@ -2,9 +2,9 @@
 // syntax 82273fdc-e32a-18c3-3f78-827929dc23ea version 0.0 ([MS-EVEN]).
 //
 // This package holds only the interface-level descriptor (abstract syntax,
-// transport endpoint, opnums, opnum<->name maps, and status constants). The NDR
-// wire types live in windows/protocols/ms-even and the method stubs in functions;
-// both depend on this package, never the reverse.
+// transport endpoint, opnums, and opnum<->name maps). The NDR wire types live in
+// windows/protocols/ms-even and the method stubs in functions; both depend on this
+// package, never the reverse.
 package rpcinterface_82273fdce32a18c33f78827929dc23ea_0_0
 
 // IDL source: [MS-EVEN] — this interface is translated from and verified
@@ -13,9 +13,8 @@ package rpcinterface_82273fdce32a18c33f78827929dc23ea_0_0
 // A fetched copy is kept at ms-even.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -51,28 +50,22 @@ const (
 	OpnumElfrReportEventExA        uint16 = 26
 )
 
-// Status codes returned by this interface. The methods are declared to return
-// NTSTATUS, but the EventLog Remoting Protocol reports failures as Win32 error
-// codes ([MS-EVEN] 3.1.4; [MS-ERREF] 2.2/2.3). Both families are listed here.
+// The methods are declared to return NTSTATUS, but the EventLog Remoting Protocol
+// reports failures as Win32 error codes ([MS-EVEN] 3.1.4, [MS-ERREF] 2.2). Those
+// Win32 codes are not declared here: the whole of [MS-ERREF] 2.2 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR
+// type, and a subset repeated here would cover a fraction of that 2703-code table
+// while drifting from it. Convert a returned status with win32.WIN32_ERROR(status)
+// and compare against win32.ERROR_SUCCESS and the rest.
+//
+// The two NTSTATUS values below are the exception. A server may fail a read with
+// them directly, and they belong to [MS-ERREF] 2.3, which the Win32 table does not
+// cover: it has no row for 0xC0000023 or 0xC000000D, so it renders both as hex.
+// These stay declared here and StatusString decodes them before deferring to the
+// shared table for everything else.
 const (
-	StatusSuccess uint32 = 0x00000000 // ERROR_SUCCESS
-
-	// Win32 error codes ([MS-ERREF] 2.2).
-	ErrorFileNotFound        uint32 = 0x00000002 // ERROR_FILE_NOT_FOUND
-	ErrorAccessDenied        uint32 = 0x00000005 // ERROR_ACCESS_DENIED
-	ErrorInvalidHandle       uint32 = 0x00000006 // ERROR_INVALID_HANDLE
-	ErrorNotEnoughMemory     uint32 = 0x00000008 // ERROR_NOT_ENOUGH_MEMORY
-	ErrorHandleEOF           uint32 = 0x00000026 // ERROR_HANDLE_EOF (read past the last record)
-	ErrorInvalidParameter    uint32 = 0x00000057 // ERROR_INVALID_PARAMETER
-	ErrorInsufficientBuffer  uint32 = 0x0000007A // ERROR_INSUFFICIENT_BUFFER
-	ErrorEventlogFileCorrupt uint32 = 0x000005DC // ERROR_EVENTLOG_FILE_CORRUPT
-	ErrorEventlogCantStart   uint32 = 0x000005DD // ERROR_EVENTLOG_CANT_START
-	ErrorLogFileFull         uint32 = 0x000005DE // ERROR_LOG_FILE_FULL
-	ErrorEventlogFileChanged uint32 = 0x000005DF // ERROR_EVENTLOG_FILE_CHANGED
-
-	// NTSTATUS codes ([MS-ERREF] 2.3) that the server may return directly.
-	StatusBufferTooSmall   uint32 = 0xC0000023 // STATUS_BUFFER_TOO_SMALL
-	StatusInvalidParameter uint32 = 0xC000000D // STATUS_INVALID_PARAMETER
+	StatusBufferTooSmall   uint32 = 0xC0000023 // STATUS_BUFFER_TOO_SMALL, an [MS-ERREF] 2.3 NTSTATUS with no [MS-ERREF] 2.2 row
+	StatusInvalidParameter uint32 = 0xC000000D // STATUS_INVALID_PARAMETER, an [MS-ERREF] 2.3 NTSTATUS with no [MS-ERREF] 2.2 row
 )
 
 // SyntaxID returns the eventlog abstract syntax identifier:
@@ -85,40 +78,18 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the two NTSTATUS values this interface declares locally, which
+// [MS-ERREF] 2.2 has no row for, and defers every other status to the shared
+// [MS-ERREF] 2.2 table, which names each code the specification defines and renders
+// hex only for values it does not.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "ERROR_SUCCESS"
-	case ErrorFileNotFound:
-		return "ERROR_FILE_NOT_FOUND"
-	case ErrorAccessDenied:
-		return "ERROR_ACCESS_DENIED"
-	case ErrorInvalidHandle:
-		return "ERROR_INVALID_HANDLE"
-	case ErrorNotEnoughMemory:
-		return "ERROR_NOT_ENOUGH_MEMORY"
-	case ErrorHandleEOF:
-		return "ERROR_HANDLE_EOF"
-	case ErrorInvalidParameter:
-		return "ERROR_INVALID_PARAMETER"
-	case ErrorInsufficientBuffer:
-		return "ERROR_INSUFFICIENT_BUFFER"
-	case ErrorEventlogFileCorrupt:
-		return "ERROR_EVENTLOG_FILE_CORRUPT"
-	case ErrorEventlogCantStart:
-		return "ERROR_EVENTLOG_CANT_START"
-	case ErrorLogFileFull:
-		return "ERROR_LOG_FILE_FULL"
-	case ErrorEventlogFileChanged:
-		return "ERROR_EVENTLOG_FILE_CHANGED"
 	case StatusBufferTooSmall:
 		return "STATUS_BUFFER_TOO_SMALL"
 	case StatusInvalidParameter:
 		return "STATUS_INVALID_PARAMETER"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return win32.WIN32_ERROR(status).String()
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	eventlog "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82273fdc-e32a-18c3-3f78-827929dc23ea/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mseven "github.com/TheManticoreProject/Manticore/windows/protocols/ms-even"
 )
 
@@ -37,7 +38,7 @@ func ElfrOpenBELA(rpc ndr.Invoker, uNCServerName ndr.STR, backupFileName mseven.
 		return
 	}
 	LogHandle = resp.LogHandle
-	if uint32(resp.Status) != eventlog.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("ElfrOpenBELA failed: %s", eventlog.StatusString(uint32(resp.Status)))
 	}
 	return
