@@ -15,9 +15,8 @@ package rpcinterface_a8e0653c27444389a61d7373df8b2292_1_0
 // A fetched copy is kept at ms-fsrvp.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -42,18 +41,33 @@ const (
 	OpnumPrepareShadowCopySet          uint16 = 12
 )
 
-// Status codes. FSRVP methods return an HRESULT/error code: ZERO (0x00000000) on
-// success, common [MS-ERREF] HRESULTs, or the FSRVP-specific codes below
-// ([MS-FSRVP] section 2.2.4 Error Codes).
+// Status codes ([MS-FSRVP] section 2.2.4 Error Codes). FSRVP methods return an HRESULT:
+// ZERO (0x00000000) on success, a few common [MS-ERREF] HRESULTs, or one of the codes
+// the protocol defines for itself.
+//
+// The three common ones are gone from this block. E_INVALIDARG (0x80070057),
+// E_ACCESSDENIED (0x80070005) and E_OUTOFMEMORY (0x8007000E) each have a row in
+// [MS-ERREF] 2.1.1 under exactly that name, so they resolve through
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult and StatusString
+// defers to it for them.
+//
+// The FSRVP_E_* codes below cannot follow. Six of them sit at 0x8004 23xx, which is
+// FACILITY_ITF (4), the facility COM reserves for interface-specific meanings: an
+// interface may define whatever it likes there, [MS-FSRVP] does exactly that, and
+// [MS-ERREF] 2.1.1 has no row for any of 0x80042301, 0x80042308, 0x8004230C, 0x8004230D,
+// 0x80042316 or 0x8004231B — nor for 0x80042501. FSRVP_E_WAIT_TIMEOUT and
+// FSRVP_E_WAIT_FAILED are not HRESULTs at all but the Win32 wait results carried
+// verbatim, and 0x00000102 has its severity bit clear, so an HRESULT reading of it
+// reports success. All nine therefore stay declared here and StatusString decodes them
+// before deferring to the shared table for everything else.
 const (
+	// StatusSuccess is zero, the value [MS-FSRVP] 2.2.4 calls ZERO and the shared table
+	// calls S_OK. The method stubs compare the returned status against it rather than
+	// against hresult.HRESULT.IsSuccess, which is a range: IsSuccess accepts every
+	// success-severity value, FSRVP_E_WAIT_TIMEOUT among them.
 	StatusSuccess uint32 = 0x00000000
 
-	// Common [MS-ERREF] HRESULTs referenced by FSRVP method processing rules.
-	ErrorInvalidArg   uint32 = 0x80070057 // E_INVALIDARG
-	ErrorAccessDenied uint32 = 0x80070005 // E_ACCESSDENIED
-	ErrorOutOfMemory  uint32 = 0x8007000E // E_OUTOFMEMORY
-
-	// FSRVP-specific error codes ([MS-FSRVP] 2.2.4).
+	// Error codes [MS-FSRVP] defines for itself, which [MS-ERREF] 2.1.1 does not name.
 	FsrvpEBadState                uint32 = 0x80042301 // FSRVP_E_BAD_STATE
 	FsrvpENotSupported            uint32 = 0x8004230C // FSRVP_E_NOT_SUPPORTED
 	FsrvpEObjectAlreadyExists     uint32 = 0x8004230D // FSRVP_E_OBJECT_ALREADY_EXISTS
@@ -61,7 +75,7 @@ const (
 	FsrvpEShadowCopySetInProgress uint32 = 0x80042316 // FSRVP_E_SHADOW_COPY_SET_IN_PROGRESS
 	FsrvpEUnsupportedContext      uint32 = 0x8004231B // FSRVP_E_UNSUPPORTED_CONTEXT
 	FsrvpEShadowcopysetIdMismatch uint32 = 0x80042501 // FSRVP_E_SHADOWCOPYSET_ID_MISMATCH
-	FsrvpEWaitTimeout             uint32 = 0x00000102 // FSRVP_E_WAIT_TIMEOUT
+	FsrvpEWaitTimeout             uint32 = 0x00000102 // FSRVP_E_WAIT_TIMEOUT, success severity
 	FsrvpEWaitFailed              uint32 = 0xFFFFFFFF // FSRVP_E_WAIT_FAILED
 )
 
@@ -75,18 +89,15 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the codes [MS-FSRVP] 2.2.4 defines for itself, which [MS-ERREF]
+// 2.1.1 does not name — the FACILITY_ITF block the protocol fills with its own meanings,
+// and the two Win32 wait results it carries verbatim — and defers every other status to
+// the shared [MS-ERREF] 2.1.1 table, which names each HRESULT the specification defines
+// and renders hex only for a value it does not.
 func StatusString(status uint32) string {
 	switch status {
 	case StatusSuccess:
 		return "ZERO"
-	case ErrorInvalidArg:
-		return "E_INVALIDARG"
-	case ErrorAccessDenied:
-		return "E_ACCESSDENIED"
-	case ErrorOutOfMemory:
-		return "E_OUTOFMEMORY"
 	case FsrvpEBadState:
 		return "FSRVP_E_BAD_STATE"
 	case FsrvpENotSupported:
@@ -106,7 +117,7 @@ func StatusString(status uint32) string {
 	case FsrvpEWaitFailed:
 		return "FSRVP_E_WAIT_FAILED"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 

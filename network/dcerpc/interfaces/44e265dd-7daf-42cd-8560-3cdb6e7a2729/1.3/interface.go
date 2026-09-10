@@ -23,9 +23,9 @@ package rpcinterface_44e265dd7daf42cd85603cdb6e7a2729_1_3
 // A fetched copy is kept at ms-tsgu.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -49,13 +49,40 @@ const (
 	OpnumTsProxySendToServer     uint16 = 9
 )
 
-// Return codes ([MS-TSGU] 2.2.6 "Common Return Codes"). The HRESULT forms are returned
-// by the TsProxy* methods that return HRESULT; StatusSuccess (ERROR_SUCCESS) is 0.
+// Return codes ([MS-TSGU] 2.2.6 "Common Return Codes"). The values that reach a caller
+// through the DWORD return of these methods come from three different namespaces, and
+// only a few of them are values the shared tables can name.
+//
+// The E_PROXY_* HRESULTs are in FACILITY_WIN32 (7), so each wraps a Win32 code in the
+// 0x59D8..0x59F9 range that Terminal Services Gateway assigns for itself. [MS-ERREF]
+// 2.1.1 names five FACILITY_WIN32 values and none of these, and [MS-ERREF] 2.2 names no
+// code in that range either, so neither the HRESULT table nor the HRESULT_FROM_WIN32
+// derivation resolves them: hresult.HRESULT(0x800759D8).String() renders hex. They stay
+// declared here and StatusString decodes them.
+//
+// The E_PROXY_*_CODE values are not HRESULTs at all but HRESULT_CODE, the low 16 bits on
+// their own, returned over the RPC/HTTP transports. Their severity bit is clear, so
+// reading one as an HRESULT would report success; they stay declared here too.
+// E_PROXY_CONNECTIONABORTED_CODE is the one value of that block [MS-ERREF] 2.2 does
+// name — as ERROR_CONNECTION_ABORTED, the generic socket error rather than the gateway's
+// own meaning — so it keeps its [MS-TSGU] name here as well.
+//
+// Four values this block used to declare are gone. SEC_E_LOGON_DENIED (0x8009030C) is
+// named by [MS-ERREF] 2.1.1 and resolves as hresult.SEC_E_LOGON_DENIED. ERROR_ACCESS_DENIED
+// (0x00000005), ERROR_BAD_ARGUMENTS (0x000000A0) and ERROR_GRACEFUL_DISCONNECT
+// (0x000004CA) are Win32 codes rather than HRESULTs — an HRESULT reading of any of them
+// is a meaningless success-severity value — and [MS-ERREF] 2.2 names all three under
+// exactly those names in
+// github.com/TheManticoreProject/Manticore/windows/errors/win32.
 const (
-	// StatusSuccess is ERROR_SUCCESS: the requested operation succeeded.
+	// StatusSuccess is zero, which is ERROR_SUCCESS as a Win32 code and S_OK as an
+	// HRESULT. The method stubs compare the returned status against it rather than
+	// against hresult.HRESULT.IsSuccess, which is a range and would accept every
+	// success-severity value, the HRESULT_CODE block below included.
 	StatusSuccess uint32 = 0x00000000
 
-	// HRESULT values defined by [MS-TSGU].
+	// HRESULTs defined by [MS-TSGU] itself, in FACILITY_WIN32 over a Win32 code range
+	// [MS-ERREF] does not name.
 	E_PROXY_INTERNALERROR                       uint32 = 0x800759D8
 	E_PROXY_RAP_ACCESSDENIED                    uint32 = 0x800759DA
 	E_PROXY_NAP_ACCESSDENIED                    uint32 = 0x800759DB
@@ -66,12 +93,6 @@ const (
 	E_PROXY_COOKIE_BADPACKET                    uint32 = 0x800759F7
 	E_PROXY_COOKIE_AUTHENTICATION_ACCESS_DENIED uint32 = 0x800759F8
 	E_PROXY_UNSUPPORTED_AUTHENTICATION_METHOD   uint32 = 0x800759F9
-	SEC_E_LOGON_DENIED                          uint32 = 0x8009030C
-
-	// Win32 error codes also returned by the HRESULT-returning methods.
-	ERROR_ACCESS_DENIED       uint32 = 0x00000005
-	ERROR_BAD_ARGUMENTS       uint32 = 0x000000A0
-	ERROR_GRACEFUL_DISCONNECT uint32 = 0x000004CA
 
 	// DWORD (HRESULT_CODE) values returned only over the RPC/HTTP transports, chiefly by
 	// TsProxySetupReceivePipe and TsProxySendToServer ([MS-TSGU] 2.2.6).
@@ -98,8 +119,12 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the status values [MS-TSGU] defines for itself — the E_PROXY_*
+// HRESULTs, whose FACILITY_WIN32 code [MS-ERREF] leaves unnamed, and the HRESULT_CODE
+// values the receive-pipe and send-to-server methods return — and defers every other
+// value to the shared tables: the Win32 codes of [MS-TSGU] 2.2.6 to [MS-ERREF] 2.2, and
+// anything else to the [MS-ERREF] 2.1.1 HRESULT table, which names each value the
+// specification defines and renders hex for the rest.
 func StatusString(status uint32) string {
 	switch status {
 	case StatusSuccess:
@@ -124,14 +149,6 @@ func StatusString(status uint32) string {
 		return "E_PROXY_COOKIE_AUTHENTICATION_ACCESS_DENIED"
 	case E_PROXY_UNSUPPORTED_AUTHENTICATION_METHOD:
 		return "E_PROXY_UNSUPPORTED_AUTHENTICATION_METHOD"
-	case SEC_E_LOGON_DENIED:
-		return "SEC_E_LOGON_DENIED"
-	case ERROR_ACCESS_DENIED:
-		return "ERROR_ACCESS_DENIED"
-	case ERROR_BAD_ARGUMENTS:
-		return "ERROR_BAD_ARGUMENTS"
-	case ERROR_GRACEFUL_DISCONNECT:
-		return "ERROR_GRACEFUL_DISCONNECT"
 	case E_PROXY_CONNECTIONABORTED_CODE:
 		return "E_PROXY_CONNECTIONABORTED"
 	case E_PROXY_INTERNALERROR_CODE:
@@ -154,8 +171,10 @@ func StatusString(status uint32) string {
 		return "E_PROXY_SDR_NOT_SUPPORTED_BY_TS"
 	case E_PROXY_REAUTH_NAP_FAILED_CODE:
 		return "E_PROXY_REAUTH_NAP_FAILED"
+	case uint32(win32.ERROR_ACCESS_DENIED), uint32(win32.ERROR_BAD_ARGUMENTS), uint32(win32.ERROR_GRACEFUL_DISCONNECT):
+		return win32.WIN32_ERROR(status).String()
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 
