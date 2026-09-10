@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // schRpcSetSecurityRequest carries the [in] parameters of SchRpcSetSecurity.
@@ -38,7 +39,7 @@ func SchRpcSetSecurity(rpc ndr.Invoker, path ndr.WSTR, sddl ndr.WSTR, flags ndr.
 		err = fmt.Errorf("SchRpcSetSecurity: %w", err)
 		return
 	}
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcSetSecurity failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

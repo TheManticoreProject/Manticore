@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mstsch "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsch"
 )
 
@@ -53,7 +54,7 @@ func SchRpcRegisterTask(rpc ndr.Invoker, path *ndr.WSTR, xml ndr.WSTR, flags ndr
 	}
 	PActualPath = resp.PActualPath
 	PErrorInfo = resp.PErrorInfo
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcRegisterTask failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

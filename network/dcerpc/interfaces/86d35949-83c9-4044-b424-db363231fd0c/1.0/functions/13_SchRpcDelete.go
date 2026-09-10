@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // schRpcDeleteRequest carries the [in] parameters of SchRpcDelete.
@@ -36,7 +37,7 @@ func SchRpcDelete(rpc ndr.Invoker, path ndr.WSTR, flags ndr.DWORD) (err error) {
 		err = fmt.Errorf("SchRpcDelete: %w", err)
 		return
 	}
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcDelete failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return
