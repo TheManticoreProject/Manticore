@@ -11,8 +11,6 @@ package rpcinterface_ae33069ba2a846eea235ddfd339be281_1_0
 // A fetched copy is kept at ms-pan.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -29,17 +27,16 @@ const (
 	OpnumIRPCRemoteObject_Delete uint16 = 1
 )
 
-// Status codes. IRPCRemoteObject_Create returns an HRESULT: ZERO (S_OK, 0x00000000) on
-// success, or a common [MS-ERREF] HRESULT on failure ([MS-PAN] 3.1.2.4).
-// IRPCRemoteObject_Delete returns void. ([MS-ERREF] section 2.1.1.)
-const (
-	StatusSuccess uint32 = 0x00000000 // S_OK
-
-	// Common [MS-ERREF] HRESULTs a server may return.
-	ErrorAccessDenied uint32 = 0x80070005 // E_ACCESSDENIED
-	ErrorOutOfMemory  uint32 = 0x8007000E // E_OUTOFMEMORY
-	ErrorInvalidArg   uint32 = 0x80070057 // E_INVALIDARG
-)
+// The HRESULTs IRPCRemoteObject_Create returns ([MS-PAN] 3.1.2.4) are not declared here.
+// The whole of [MS-ERREF] 2.1.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult as the HRESULT type,
+// and the four values repeated here covered four of that 2928-value table while drifting
+// from it — [MS-PAN] 3.1.2.4 names no closed set, only "a common [MS-ERREF] HRESULT", so
+// the subset could name none of the rest. Convert a returned status with
+// hresult.HRESULT(status) and compare against hresult.S_OK;
+// hresult.HRESULT.IsSuccess covers the whole success range, since for an HRESULT success
+// is a severity bit rather than the single value zero. IRPCRemoteObject_Delete returns
+// void and carries no status at all.
 
 // SyntaxID returns the IRPCRemoteObject abstract syntax identifier:
 // ae33069b-a2a8-46ee-a235-ddfd339be281, version 1.0.
@@ -48,23 +45,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0xae33069b, B: 0xa2a8, C: 0x46ee, D: 0xa235, E: 0xddfd339be281},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "S_OK"
-	case ErrorAccessDenied:
-		return "E_ACCESSDENIED"
-	case ErrorOutOfMemory:
-		return "E_OUTOFMEMORY"
-	case ErrorInvalidArg:
-		return "E_INVALIDARG"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

@@ -1,6 +1,10 @@
 package rpcinterface_ae33069ba2a846eea235ddfd339be281_1_0
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
+)
 
 // TestSyntaxID checks the abstract syntax UUID and version match [MS-PAN] Appendix A.2.
 func TestSyntaxID(t *testing.T) {
@@ -32,16 +36,39 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString spot-checks the HRESULT mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	cases := map[uint32]string{
-		StatusSuccess:     "S_OK",
-		ErrorAccessDenied: "E_ACCESSDENIED",
-		0xdeadbeef:        "0xdeadbeef",
+// TestStatusCodesResolveThroughHRESULT pins that the four HRESULTs this interface used to
+// declare resolve through the shared [MS-ERREF] 2.1.1 table under the names the
+// specification gives them, that the table names common HRESULTs the old subset could
+// only render as hex, and that a value the specification does not define still renders as
+// hex.
+func TestStatusCodesResolveThroughHRESULT(t *testing.T) {
+	documented := map[hresult.HRESULT]string{
+		0x00000000: "S_OK",
+		0x80070005: "E_ACCESSDENIED",
+		0x8007000E: "E_OUTOFMEMORY",
+		0x80070057: "E_INVALIDARG",
 	}
-	for status, want := range cases {
-		if got := StatusString(status); got != want {
-			t.Errorf("StatusString(0x%08x) = %q, want %q", status, got, want)
+	for code, name := range documented {
+		if got := code.String(); got != name {
+			t.Errorf("hresult.HRESULT(0x%08x).String() = %q, want %q", uint32(code), got, name)
 		}
+		if resolved, defined := hresult.FromName(name); !defined || resolved != code {
+			t.Errorf("hresult.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, uint32(code))
+		}
+	}
+
+	// E_FAIL and E_UNEXPECTED are common [MS-ERREF] HRESULTs of the kind [MS-PAN] 3.1.2.4
+	// allows and the old subset did not declare, so they rendered as hex; they resolve by
+	// name now.
+	for code, name := range map[hresult.HRESULT]string{0x80004005: "E_FAIL", 0x8000FFFF: "E_UNEXPECTED"} {
+		if got := code.String(); got != name {
+			t.Errorf("hresult.HRESULT(0x%08x).String() = %q, want %q", uint32(code), got, name)
+		}
+	}
+
+	// A value [MS-ERREF] 2.1.1 does not define, and whose facility is not FACILITY_WIN32
+	// either, still renders as hex.
+	if got := hresult.HRESULT(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("hresult.HRESULT(0xdeadbeef).String() = %q, want hex", got)
 	}
 }
