@@ -10,6 +10,7 @@ import (
 
 	remotesp "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/2f5f6521-ca47-1068-b319-00dd010662db/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mstrp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-trp"
 )
 
@@ -39,8 +40,8 @@ func RemoteSPAttach(rpc ndr.Invoker) (PphContext mstrp.PCONTEXT_HANDLE_TYPE2, er
 		return
 	}
 	PphContext = resp.PphContext
-	if uint32(resp.Return) != remotesp.StatusSuccess {
-		err = fmt.Errorf("RemoteSPAttach failed: %s", remotesp.StatusString(uint32(resp.Return)))
+	if win32.WIN32_ERROR(resp.Return) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RemoteSPAttach failed: %s", win32.WIN32_ERROR(resp.Return).String())
 	}
 	return
 }
