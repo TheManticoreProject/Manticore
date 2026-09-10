@@ -38,6 +38,12 @@ func (c *Client) Negotiate() error {
 	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 	req.Capabilities = capabilities.SMB2_GLOBAL_CAP_LARGE_MTU | capabilities.SMB2_GLOBAL_CAP_ENCRYPTION
 
+	// Retain what was offered: the secure-negotiate validation performed after a
+	// tree connect replays these exact values for the server to confirm.
+	c.Connection.OfferedDialects = append([]dialects.Dialect(nil), req.Dialects...)
+	c.Connection.ClientCapabilities = req.Capabilities
+	c.Connection.ClientSecurityMode = req.SecurityMode
+
 	// SMB 3.1.1 negotiate contexts: pre-auth integrity (SHA-512 + random salt)
 	// and encryption ciphers in preference order (AES-128-GCM, then AES-128-CCM).
 	salt := make([]byte, preauthSaltLength)
