@@ -10,6 +10,7 @@ import (
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
@@ -44,8 +45,8 @@ func RpcGetJobNamedPropertyValue(rpc ndr.Invoker, hPrinter msrprn.PRINTER_HANDLE
 		return
 	}
 	PValue = resp.PValue
-	if uint32(resp.Status) != winspool.StatusSuccess {
-		err = fmt.Errorf("RpcGetJobNamedPropertyValue failed: %s", winspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcGetJobNamedPropertyValue failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
