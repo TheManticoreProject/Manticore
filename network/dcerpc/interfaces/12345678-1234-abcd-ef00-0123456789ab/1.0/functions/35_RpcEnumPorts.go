@@ -10,6 +10,7 @@ import (
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // rpcEnumPortsRequest carries the [in] parameters of RpcEnumPorts.
@@ -47,8 +48,8 @@ func RpcEnumPorts(rpc ndr.Invoker, pName *ndr.WSTR, level ndr.DWORD, pPort []uin
 	PPort = resp.PPort
 	PcbNeeded = resp.PcbNeeded
 	PcReturned = resp.PcReturned
-	if uint32(resp.Status) != winspool.StatusSuccess {
-		err = fmt.Errorf("RpcEnumPorts failed: %s", winspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcEnumPorts failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

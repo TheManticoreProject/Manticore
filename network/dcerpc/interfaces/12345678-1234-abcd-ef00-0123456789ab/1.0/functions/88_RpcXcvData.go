@@ -10,6 +10,7 @@ import (
 
 	winspool "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-0123456789ab/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msrprn "github.com/TheManticoreProject/Manticore/windows/protocols/ms-rprn"
 )
 
@@ -52,8 +53,8 @@ func RpcXcvData(rpc ndr.Invoker, hXcv msrprn.PRINTER_HANDLE, pszDataName ndr.WST
 	POutputData = resp.POutputData
 	PcbOutputNeeded = resp.PcbOutputNeeded
 	PdwStatus = resp.PdwStatus
-	if uint32(resp.Status) != winspool.StatusSuccess {
-		err = fmt.Errorf("RpcXcvData failed: %s", winspool.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("RpcXcvData failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
