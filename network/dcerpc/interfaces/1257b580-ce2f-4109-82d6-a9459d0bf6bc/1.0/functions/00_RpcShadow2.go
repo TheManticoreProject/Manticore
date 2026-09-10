@@ -10,6 +10,7 @@ import (
 
 	SessEnvPublicRpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1257b580-ce2f-4109-82d6-a9459d0bf6bc/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -46,8 +47,8 @@ func RpcShadow2(rpc ndr.Invoker, targetSessionId ndr.DWORD, eRequestControl msts
 	}
 	PePermission = resp.PePermission
 	PszInvitation = resp.PszInvitation
-	if uint32(resp.Status) != SessEnvPublicRpc.StatusSuccess {
-		err = fmt.Errorf("RpcShadow2 failed: %s", SessEnvPublicRpc.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcShadow2 failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }

@@ -10,6 +10,7 @@ import (
 
 	RCMListener "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/497d95a6-2d27-4bf5-9bbd-a6046957133c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -36,8 +37,8 @@ func RpcStopListener(rpc ndr.Invoker, hListener mststs.HLISTENER) (err error) {
 		err = fmt.Errorf("RpcStopListener: %w", err)
 		return
 	}
-	if uint32(resp.Status) != RCMListener.StatusSuccess {
-		err = fmt.Errorf("RpcStopListener failed: %s", RCMListener.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcStopListener failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }

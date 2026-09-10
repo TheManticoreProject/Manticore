@@ -10,6 +10,7 @@ import (
 
 	TermSrvNotification "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/11899a43-2b68-4a76-92e3-a3d6ad8c26ce/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -40,8 +41,8 @@ func RpcUnRegisterAsyncNotification(rpc ndr.Invoker, phNotify mststs.NOTIFY_HAND
 		return
 	}
 	PhNotify = resp.PhNotify
-	if uint32(resp.Status) != TermSrvNotification.StatusSuccess {
-		err = fmt.Errorf("RpcUnRegisterAsyncNotification failed: %s", TermSrvNotification.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcUnRegisterAsyncNotification failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
