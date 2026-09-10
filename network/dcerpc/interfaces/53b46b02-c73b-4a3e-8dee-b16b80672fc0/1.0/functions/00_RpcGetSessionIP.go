@@ -10,6 +10,7 @@ import (
 
 	TSVIPPublic "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/53b46b02-c73b-4a3e-8dee-b16b80672fc0/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -40,8 +41,8 @@ func RpcGetSessionIP(rpc ndr.Invoker, family uint16, sessionId ndr.DWORD) (PpVIP
 		return
 	}
 	PpVIPSession = resp.PpVIPSession
-	if uint32(resp.Status) != TSVIPPublic.StatusSuccess {
-		err = fmt.Errorf("RpcGetSessionIP failed: %s", TSVIPPublic.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcGetSessionIP failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
