@@ -118,7 +118,6 @@
 //   - Named pipes, over TRANSACTION: a pipe is opened on a pipe share like a
 //     file, and TRANS_TRANSACT_NMPIPE writes a message to the handle and returns
 //     the answer. That write-then-read is the operation MS-RPC travels over, so a
-//     PipeHandler is all an RPC service needs to be reachable over SMB1.
 //     PipeHandler is all an RPC service needs to be reachable over SMB1. An answer
 //     too large for one response is collected with TRANS_READ_NMPIPE,
 //     TRANS_PEEK_NMPIPE or SMB_COM_READ_ANDX on the same handle.
