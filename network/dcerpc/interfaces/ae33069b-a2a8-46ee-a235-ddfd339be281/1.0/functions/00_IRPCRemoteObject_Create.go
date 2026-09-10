@@ -10,6 +10,7 @@ import (
 
 	IRPCRemoteObject "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/ae33069b-a2a8-46ee-a235-ddfd339be281/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mspan "github.com/TheManticoreProject/Manticore/windows/protocols/ms-pan"
 )
 
@@ -40,8 +41,8 @@ func IRPCRemoteObject_Create(rpc ndr.Invoker) (PpRemoteObj mspan.PRPCREMOTEOBJEC
 		return
 	}
 	PpRemoteObj = resp.PpRemoteObj
-	if uint32(resp.Status) != IRPCRemoteObject.StatusSuccess {
-		err = fmt.Errorf("IRPCRemoteObject_Create failed: %s", IRPCRemoteObject.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("IRPCRemoteObject_Create failed: %s", status)
 	}
 	return
 }

@@ -10,6 +10,7 @@ import (
 
 	trkwks "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/300f3532-38cc-11d0-a3f0-0020af6b0add/1.2"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msdltw "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dltw"
 )
 
@@ -56,8 +57,8 @@ func LnkSearchMachine(rpc ndr.Invoker, restrictions ndr.DWORD, pdroidBirthLast m
 	PdroidNext = resp.PdroidNext
 	PmcidNext = resp.PmcidNext
 	PtszPath = resp.PtszPath
-	if !trkwks.StatusIsSuccess(uint32(resp.Status)) {
-		err = fmt.Errorf("LnkSearchMachine failed: %s", trkwks.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); !status.IsSuccess() {
+		err = fmt.Errorf("LnkSearchMachine failed: %s", trkwks.StatusString(uint32(status)))
 	}
 	return
 }

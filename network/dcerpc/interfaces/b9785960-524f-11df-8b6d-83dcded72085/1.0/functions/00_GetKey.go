@@ -10,6 +10,7 @@ import (
 
 	ISDKey "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/b9785960-524f-11df-8b6d-83dcded72085/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 )
@@ -69,8 +70,8 @@ func GetKey(rpc ndr.Invoker, cbTargetSD ndr.DWORD, pbTargetSD []byte, pRootKeyID
 	}
 	PcbOut = resp.PcbOut
 	PpbOut = resp.PpbOut
-	if uint32(resp.Status) != ISDKey.StatusSuccess {
-		err = fmt.Errorf("GetKey failed: %s", ISDKey.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); status != hresult.S_OK {
+		err = fmt.Errorf("GetKey failed: %s", status)
 	}
 	return
 }

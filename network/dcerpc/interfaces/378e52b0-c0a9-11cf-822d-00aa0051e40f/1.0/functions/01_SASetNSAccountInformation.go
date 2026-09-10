@@ -10,6 +10,7 @@ import (
 
 	sasec "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/378e52b0-c0a9-11cf-822d-00aa0051e40f/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // sASetNSAccountInformationRequest carries the [in] parameters of SASetNSAccountInformation.
@@ -38,8 +39,8 @@ func SASetNSAccountInformation(rpc ndr.Invoker, handle *ndr.WSTR, pwszAccount *n
 		err = fmt.Errorf("SASetNSAccountInformation: %w", err)
 		return
 	}
-	if !sasec.IsSuccess(uint32(resp.Status)) {
-		err = fmt.Errorf("SASetNSAccountInformation failed: %s", sasec.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); !status.IsSuccess() {
+		err = fmt.Errorf("SASetNSAccountInformation failed: %s", status)
 	}
 	return
 }

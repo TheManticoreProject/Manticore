@@ -13,8 +13,6 @@ package rpcinterface_b9785960524f11df8b6d83dcded72085_1_0
 // A fetched copy is kept at ms-gkdi.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -32,29 +30,31 @@ const (
 	OpnumGetKey uint16 = 0
 )
 
-// GetKey returns an HRESULT ([MS-GKDI] section 3.1.4.1): zero on success,
-// nonzero on failure. The specification enumerates no further status table, so
-// only S_OK is named here; StatusString renders any other value as hex.
+// The HRESULT GetKey returns ([MS-GKDI] 3.1.4.1) is not declared here. The
+// whole of [MS-ERREF] 2.1.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult as the
+// HRESULT type, and the specification enumerates no status table of its own for
+// this method beyond zero on success and nonzero on failure, so a local
+// declaration could only ever have held S_OK. Convert a returned status with
+// hresult.HRESULT(status) and compare against hresult.S_OK;
+// hresult.HRESULT.IsSuccess covers the whole success range, since for an
+// HRESULT success is a severity bit rather than the single value zero.
 //
-// This is an HRESULT, not a Win32 error code, so the code stays declared here
-// rather than being referenced from
-// github.com/TheManticoreProject/Manticore/windows/errors/win32 the way an
-// interface that reports a WIN32_ERROR does. HRESULTs are [MS-ERREF] section
-// 2.1; the WIN32_ERROR table is [MS-ERREF] section 2.2, and the two spaces
-// disagree on both halves of the range. A failing GetKey returns a value with
-// the severity bit set, typically an HRESULT_FROM_WIN32 wrapping in the
-// 0x8007xxxx range ([MS-ERREF] 2.1.2), and the shared table's highest code is
-// 0x00003BC3, so it can name no GKDI failure at all: routing this return
-// through it would buy nothing. At the low end it would actively mislead. An
-// HRESULT with the severity bit clear is a success code, S_FALSE being
-// 0x00000001, and [MS-ERREF] 2.2 assigns that value to ERROR_INVALID_FUNCTION,
-// "Incorrect function." Naming this interface's status out of that table would
-// therefore report a successful key retrieval as an invalid-function failure.
-// The fallback in StatusString stays hexadecimal for the same reason: 0x00000002
-// reads as ERROR_FILE_NOT_FOUND there and has no such meaning here.
-const (
-	StatusSuccess uint32 = 0x00000000 // S_OK
-)
+// This interface waited for that table rather than joining the migration to
+// github.com/TheManticoreProject/Manticore/windows/errors/win32, and the reason
+// is worth keeping on the record, because the two error spaces disagree by
+// value at both ends of the range. At the low end they collide: an HRESULT with
+// the severity bit clear is a success, S_FALSE being 0x00000001, and [MS-ERREF]
+// 2.2 assigns that same value to ERROR_INVALID_FUNCTION, "Incorrect function."
+// Naming this return out of the Win32 table would have reported a successful key
+// retrieval as an invalid-function failure, and it would have compiled and
+// passed. At the high end that table does not reach at all: a failing GetKey
+// returns a severity-set value, in practice an HRESULT_FROM_WIN32 wrapping in
+// the 0x8007xxxx range ([MS-ERREF] 2.1.2) or a cryptographic 0x8009xxxx value,
+// and the Win32 table tops out at 0x00003BC3. The HRESULT table names both ends
+// correctly, including the FACILITY_WIN32 wrappings, which it derives from the
+// Win32 code the low half carries ([MS-ERREF] 2.1.2) — so 0x8007000D reports
+// HRESULT_FROM_WIN32(ERROR_INVALID_DATA) rather than the bare Win32 name.
 
 // SyntaxID returns the ISDKey abstract syntax identifier:
 // b9785960-524f-11df-8b6d-83dcded72085, version 1.0.
@@ -63,20 +63,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0xb9785960, B: 0x524f, C: 0x11df, D: 0x8b6d, E: 0x83dcded72085},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value. An unrecognized status stays hexadecimal rather than being resolved
-// through windows/errors/win32, which would name an HRESULT out of the Win32
-// table: 0x00000001 would read as ERROR_INVALID_FUNCTION where the HRESULT space
-// means S_FALSE.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "S_OK"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

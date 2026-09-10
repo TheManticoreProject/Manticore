@@ -3,30 +3,51 @@ package rpcinterface_b9785960524f11df8b6d83dcded72085_1_0
 import (
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "S_OK" {
-		t.Errorf("StatusString(0) = %q, want S_OK", got)
+// TestStatusResolvesThroughHRESULTNotWin32 replaces the test that pinned this interface's
+// status out of the Win32 migration. The table it was waiting for now exists, so the
+// status resolves through windows/errors/hresult — and the reason it must still never be
+// resolved through windows/errors/win32 is unchanged, so both halves are asserted here.
+//
+// GetKey is declared HRESULT in the [MS-GKDI] IDL and section 3.1.4.1 documents zero for
+// success and a nonzero value for failure. HRESULTs are [MS-ERREF] section 2.1 and the
+// WIN32_ERROR table is [MS-ERREF] section 2.2, and the two spaces disagree by value at
+// both ends of the range.
+func TestStatusResolvesThroughHRESULTNotWin32(t *testing.T) {
+	// The success value [MS-GKDI] 3.1.4.1 documents resolves by name through the HRESULT
+	// table, which is what the removed local constant and StatusString stood in for.
+	if got := hresult.S_OK.String(); got != "S_OK" {
+		t.Errorf("hresult.S_OK.String() = %q, want S_OK", got)
 	}
-	if got := StatusString(0x80070005); got != "0x80070005" {
-		t.Errorf("StatusString(unknown) = %q, want hex fallback", got)
+	if uint32(hresult.S_OK) != 0x00000000 {
+		t.Errorf("hresult.S_OK = 0x%08x, want 0x00000000 ([MS-GKDI] 3.1.4.1)", uint32(hresult.S_OK))
 	}
-}
+	if err := hresult.S_OK.Error(); err != nil {
+		t.Errorf("hresult.S_OK.Error() = %v, want nil", err)
+	}
 
-// TestStatusIsHRESULTNotWin32 pins this interface's status to the HRESULT space it comes
-// from, so that a later pass does not route it through windows/errors/win32. GetKey is
-// declared HRESULT in the IDL and [MS-GKDI] section 3.1.4.1 documents zero for success and
-// a nonzero value for failure; HRESULTs are [MS-ERREF] section 2.1 and the WIN32_ERROR
-// table is [MS-ERREF] section 2.2, and the two spaces disagree at both ends of the range.
-func TestStatusIsHRESULTNotWin32(t *testing.T) {
-	if StatusSuccess != 0x00000000 {
-		t.Errorf("StatusSuccess = 0x%08x, want 0x00000000 (S_OK, [MS-GKDI] 3.1.4.1)", StatusSuccess)
+	// Failures GetKey can actually return now carry names instead of bare hex: the
+	// FACILITY_WIN32 wrappings the shared table derives from the Win32 code in their low
+	// half, and the cryptographic facility a key-service failure comes from.
+	failures := map[hresult.HRESULT]string{
+		0x80070005: "E_ACCESSDENIED",
+		0x8007000D: "HRESULT_FROM_WIN32(ERROR_INVALID_DATA)",
+		0x80090005: "NTE_BAD_DATA",
+	}
+	for code, name := range failures {
+		if got := code.String(); got != name {
+			t.Errorf("hresult.HRESULT(0x%08x).String() = %q, want %q", uint32(code), got, name)
+		}
+		if code.IsSuccess() {
+			t.Errorf("hresult.HRESULT(0x%08x).IsSuccess() = true, want false", uint32(code))
+		}
 	}
 
-	// The Win32 table names neither HRESULT mnemonic, so a migration would have nothing
-	// to migrate this interface's status to.
+	// The Win32 table names neither HRESULT mnemonic, so it never had anything to migrate
+	// this interface's status to.
 	for _, name := range []string{"S_OK", "S_FALSE"} {
 		if code, defined := win32.FromName(name); defined {
 			t.Errorf("win32.FromName(%q) resolved to 0x%08x; %s is an HRESULT and the Win32 table must not claim it", name, uint32(code), name)
@@ -42,20 +63,31 @@ func TestStatusIsHRESULTNotWin32(t *testing.T) {
 	} else if entry.Name != "ERROR_INVALID_FUNCTION" {
 		t.Errorf("win32 names 0x00000001 %q, want ERROR_INVALID_FUNCTION: the collision this interface must keep out of its status reporting", entry.Name)
 	}
+	if got := hresult.S_FALSE.String(); got != "S_FALSE" {
+		t.Errorf("hresult.S_FALSE.String() = %q, want S_FALSE: the HRESULT table is the one that reads 0x00000001 correctly", got)
+	}
+	if !hresult.S_FALSE.IsSuccess() {
+		t.Error("hresult.S_FALSE.IsSuccess() = false, want true: success is a severity bit, not zero alone")
+	}
 
-	// At the high end the table simply does not reach. A failing GetKey returns an HRESULT
-	// with the severity bit set, typically an HRESULT_FROM_WIN32 wrapping in the 0x8007xxxx
-	// range ([MS-ERREF] 2.1.2), and the shared table names none of those values.
+	// At the high end the Win32 table simply does not reach, which is the other half of
+	// why it could name no GKDI failure.
 	for _, code := range []uint32{0x80070005, 0x8007000D, 0x80090005} {
 		if _, defined := win32.Lookup(win32.WIN32_ERROR(code)); defined {
 			t.Errorf("win32 names 0x%08x; the [MS-ERREF] 2.2 table must not claim an HRESULT failure", code)
 		}
 	}
 
-	// StatusString renders only the HRESULT name and never falls through to the Win32
-	// table: 0x00000002 is ERROR_FILE_NOT_FOUND there and has no meaning here.
-	if got := StatusString(0x00000002); got != "0x00000002" {
-		t.Errorf("StatusString(0x00000002) = %q, want 0x00000002: the HRESULT return must not be named out of the Win32 table", got)
+	// A value neither table defines still renders as hex, and 0x00000002 — which the Win32
+	// table calls ERROR_FILE_NOT_FOUND — is a success-severity HRESULT here, not a failure.
+	if got := hresult.HRESULT(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("hresult.HRESULT(0xdeadbeef).String() = %q, want hex", got)
+	}
+	if got := hresult.HRESULT(0x00000002).String(); got != "0x00000002" {
+		t.Errorf("hresult.HRESULT(0x00000002).String() = %q, want hex: the HRESULT space assigns it no name", got)
+	}
+	if !hresult.HRESULT(0x00000002).IsSuccess() {
+		t.Error("hresult.HRESULT(0x00000002).IsSuccess() = false, want true: severity bit clear is success")
 	}
 }
 

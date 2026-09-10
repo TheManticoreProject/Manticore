@@ -10,6 +10,7 @@ import (
 
 	sasec "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/378e52b0-c0a9-11cf-822d-00aa0051e40f/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // sAGetAccountInformationRequest carries the [in]/[in,out] parameters of
@@ -49,8 +50,8 @@ func SAGetAccountInformation(rpc ndr.Invoker, handle *ndr.WSTR, pwszJobName ndr.
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return "", fmt.Errorf("SAGetAccountInformation: %w", err)
 	}
-	if !sasec.IsSuccess(uint32(resp.Status)) {
-		return "", fmt.Errorf("SAGetAccountInformation failed: %s", sasec.StatusString(uint32(resp.Status)))
+	if status := hresult.HRESULT(resp.Status); !status.IsSuccess() {
+		return "", fmt.Errorf("SAGetAccountInformation failed: %s", status)
 	}
 	return decodeWideBuffer(resp.WszBuffer), nil
 }
