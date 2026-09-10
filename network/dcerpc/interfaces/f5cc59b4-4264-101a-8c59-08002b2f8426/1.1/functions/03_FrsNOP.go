@@ -10,6 +10,7 @@ import (
 
 	frsrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/f5cc59b4-4264-101a-8c59-08002b2f8426/1.1"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // frsNOPRequest carries the [in] parameters of FrsNOP.
@@ -26,8 +27,8 @@ func FrsNOP(rpc ndr.Invoker) (err error) {
 		err = fmt.Errorf("FrsNOP: %w", err)
 		return
 	}
-	if uint32(resp.Status) != frsrpc.StatusSuccess {
-		err = fmt.Errorf("FrsNOP failed: %s", frsrpc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("FrsNOP failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

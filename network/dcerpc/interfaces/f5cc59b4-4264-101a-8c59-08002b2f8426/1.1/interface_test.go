@@ -1,6 +1,10 @@
 package rpcinterface_f5cc59b44264101a8c5908002b2f8426_1_1
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax: f5cc59b4-4264-101a-8c59-08002b2f8426 v1.1.
 func TestSyntaxID(t *testing.T) {
@@ -46,17 +50,45 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString spot-checks the mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	cases := map[uint32]string{
-		StatusSuccess:           "ERROR_SUCCESS",
-		ErrorAccessDenied:       "ERROR_ACCESS_DENIED",
-		ErrorCallNotImplemented: "ERROR_CALL_NOT_IMPLEMENTED",
-		0xdeadbeef:              "0xdeadbeef",
+// TestStatusCodesResolveThroughWin32 pins that the three status codes this descriptor
+// used to declare resolve through the shared [MS-ERREF] 2.2 table under the names the
+// specification gives them, that FRS codes the descriptor never enumerated now render by
+// name rather than as undecoded hex, and that a value the specification does not define
+// still renders as hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	// The retired subset: StatusSuccess, ErrorAccessDenied, ErrorCallNotImplemented.
+	retired := map[uint32]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000078: "ERROR_CALL_NOT_IMPLEMENTED",
 	}
-	for code, want := range cases {
-		if got := StatusString(code); got != want {
-			t.Errorf("StatusString(0x%08x) = %q, want %q", code, got, want)
+	for code, name := range retired {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
 		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
+		}
+	}
+
+	// The NtFrs service errors [MS-ERREF] 2.2 carries at 0x00001F41..0x00001F51 sat
+	// outside the subset this interface declared, so they rendered as bare hex; they
+	// resolve by name now. These two are the promotion-path failures FrsRpc reports.
+	beyondSubset := map[uint32]string{
+		0x00001F49: "FRS_ERR_PARENT_INSUFFICIENT_PRIV",
+		0x00001F4A: "FRS_ERR_PARENT_AUTHENTICATION",
+	}
+	for code, name := range beyondSubset {
+		if got := win32.WIN32_ERROR(code).String(); got != name {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", code, got, name)
+		}
+		if resolved, defined := win32.FromName(name); !defined || uint32(resolved) != code {
+			t.Errorf("win32.FromName(%q) = 0x%08x, %v; want 0x%08x, true", name, uint32(resolved), defined, code)
+		}
+	}
+
+	// A value [MS-ERREF] 2.2 does not define still renders as hex.
+	if got := win32.WIN32_ERROR(0xdeadbeef).String(); got != "0xdeadbeef" {
+		t.Errorf("win32.WIN32_ERROR(0xdeadbeef).String() = %q, want 0xdeadbeef", got)
 	}
 }
