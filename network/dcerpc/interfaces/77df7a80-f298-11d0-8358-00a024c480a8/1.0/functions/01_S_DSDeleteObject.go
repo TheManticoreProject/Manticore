@@ -10,6 +10,7 @@ import (
 
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // s_DSDeleteObjectRequest carries the [in] parameters of S_DSDeleteObject.
@@ -37,7 +38,7 @@ func S_DSDeleteObject(rpc ndr.Invoker, dwObjectType ndr.DWORD, pwcsPathName ndr.
 		err = fmt.Errorf("S_DSDeleteObject: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dscomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("S_DSDeleteObject failed: %s", dscomm.StatusString(uint32(resp.Status)))
 	}
 	return

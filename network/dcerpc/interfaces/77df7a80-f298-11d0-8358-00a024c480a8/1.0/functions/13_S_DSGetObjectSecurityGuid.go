@@ -10,6 +10,7 @@ import (
 
 	dscomm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/77df7a80-f298-11d0-8358-00a024c480a8/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	msmqds "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqds"
 )
@@ -55,7 +56,7 @@ func S_DSGetObjectSecurityGuid(rpc ndr.Invoker, dwObjectType ndr.DWORD, pGuid ms
 	LpnLengthNeeded = resp.LpnLengthNeeded
 	PbServerSignature = resp.PbServerSignature
 	PdwServerSignatureSize = resp.PdwServerSignatureSize
-	if uint32(resp.Status) != dscomm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("S_DSGetObjectSecurityGuid failed: %s", dscomm.StatusString(uint32(resp.Status)))
 	}
 	return
