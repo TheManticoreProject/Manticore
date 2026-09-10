@@ -10,6 +10,7 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mslsat "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsat"
 )
 
@@ -54,11 +55,11 @@ func LsarLookupSids3(rpc ndr.Invoker, sidEnumBuffer mslsat.LSAPR_SID_ENUM_BUFFER
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return nil, mslsat.LSAPR_TRANSLATED_NAMES_EX{}, 0, fmt.Errorf("LsarLookupSids3: %w", err)
 	}
-	status := uint32(resp.Status)
+	status := nt_status.NT_STATUS(resp.Status)
 	switch status {
-	case lsarpc.StatusSuccess, lsarpc.StatusSomeNotMapped, lsarpc.StatusNoneMapped:
+	case nt_status.NT_STATUS_SUCCESS, nt_status.NT_STATUS_SOME_NOT_MAPPED, nt_status.NT_STATUS_NONE_MAPPED:
 		return resp.ReferencedDomains, resp.TranslatedNames, uint32(resp.MappedCount), nil
 	default:
-		return resp.ReferencedDomains, resp.TranslatedNames, uint32(resp.MappedCount), fmt.Errorf("LsarLookupSids3 failed: %s", lsarpc.StatusString(status))
+		return resp.ReferencedDomains, resp.TranslatedNames, uint32(resp.MappedCount), fmt.Errorf("LsarLookupSids3 failed: %s", status)
 	}
 }

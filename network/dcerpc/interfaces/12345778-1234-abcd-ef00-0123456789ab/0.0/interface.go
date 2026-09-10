@@ -8,8 +8,8 @@
 // the nested 0.0/ directory) rather than after the pipe.
 //
 // This package holds only the interface-level descriptor: the abstract syntax
-// identifier, the transport endpoint (PipeName), the opnum constants, and the status
-// and access-mask values shared across methods. The NDR types live in the structures
+// identifier, the transport endpoint (PipeName), the opnum constants and the
+// access-mask values shared across methods. The NDR types live in the structures
 // subpackage and the method stubs in the functions subpackage; both depend on this
 // package, never the reverse.
 //
@@ -28,8 +28,6 @@ package rpcinterface_123457781234abcdef000123456789ab_0_0
 // A fetched copy is kept at ms-lsad.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -163,23 +161,10 @@ const (
 	TrustedQueryAuth          uint32 = 0x00000040
 )
 
-// Common NTSTATUS codes returned by these methods ([MS-LSAD] return values and
-// [MS-ERREF] 2.3.1).
-const (
-	StatusSuccess            uint32 = 0x00000000
-	StatusMoreEntries        uint32 = 0x00000105
-	StatusNoMoreEntries      uint32 = 0x8000001A
-	StatusObjectNameNotFound uint32 = 0xC0000034
-	StatusAccessDenied       uint32 = 0xC0000022
-	StatusInvalidParameter   uint32 = 0xC000000D
-	StatusInvalidHandle      uint32 = 0xC0000008
-	StatusNoSuchPrivilege    uint32 = 0xC0000060
-	StatusNoSuchDomain       uint32 = 0xC00000DF
-	StatusNoneMapped         uint32 = 0xC0000073
-	StatusSomeNotMapped      uint32 = 0x00000107
-	StatusInvalidSid         uint32 = 0xC0000078
-	StatusNotSupported       uint32 = 0xC00000BB
-)
+// The NTSTATUS codes these methods return are not declared here. The whole of
+// [MS-ERREF] 2.3.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/nt_status, and a subset
+// repeated here would cover a fraction of that table and drift from it.
 
 // SyntaxID returns the lsarpc abstract syntax identifier:
 // 12345778-1234-abcd-ef00-0123456789ab, version 0.0.
@@ -188,41 +173,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x12345778, B: 0x1234, C: 0xabcd, D: 0xef00, E: 0x0123456789ab},
 		MajorVersion: 0,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the hex
-// value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "STATUS_SUCCESS"
-	case StatusMoreEntries:
-		return "STATUS_MORE_ENTRIES"
-	case StatusNoMoreEntries:
-		return "STATUS_NO_MORE_ENTRIES"
-	case StatusSomeNotMapped:
-		return "STATUS_SOME_NOT_MAPPED"
-	case StatusObjectNameNotFound:
-		return "STATUS_OBJECT_NAME_NOT_FOUND"
-	case StatusAccessDenied:
-		return "STATUS_ACCESS_DENIED"
-	case StatusInvalidParameter:
-		return "STATUS_INVALID_PARAMETER"
-	case StatusInvalidHandle:
-		return "STATUS_INVALID_HANDLE"
-	case StatusNoSuchPrivilege:
-		return "STATUS_NO_SUCH_PRIVILEGE"
-	case StatusNoSuchDomain:
-		return "STATUS_NO_SUCH_DOMAIN"
-	case StatusNoneMapped:
-		return "STATUS_NONE_MAPPED"
-	case StatusInvalidSid:
-		return "STATUS_INVALID_SID"
-	case StatusNotSupported:
-		return "STATUS_NOT_SUPPORTED"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

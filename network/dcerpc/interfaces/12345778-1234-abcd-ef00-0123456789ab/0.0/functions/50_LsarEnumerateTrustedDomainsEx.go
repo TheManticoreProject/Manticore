@@ -10,6 +10,7 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -50,10 +51,10 @@ func LsarEnumerateTrustedDomainsEx(rpc ndr.Invoker, policyHandle mslsad.LSAPR_HA
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return enumerationContext, mslsad.LSAPR_TRUSTED_ENUM_BUFFER_EX{}, fmt.Errorf("LsarEnumerateTrustedDomainsEx: %w", err)
 	}
-	switch uint32(resp.Status) {
-	case lsarpc.StatusSuccess, lsarpc.StatusMoreEntries, lsarpc.StatusNoMoreEntries:
+	switch status := nt_status.NT_STATUS(resp.Status); status {
+	case nt_status.NT_STATUS_SUCCESS, nt_status.NT_STATUS_MORE_ENTRIES, nt_status.NT_STATUS_NO_MORE_ENTRIES:
 		return uint32(resp.EnumerationContext), resp.EnumerationBuffer, nil
 	default:
-		return uint32(resp.EnumerationContext), resp.EnumerationBuffer, fmt.Errorf("LsarEnumerateTrustedDomainsEx failed: %s", lsarpc.StatusString(uint32(resp.Status)))
+		return uint32(resp.EnumerationContext), resp.EnumerationBuffer, fmt.Errorf("LsarEnumerateTrustedDomainsEx failed: %s", status)
 	}
 }

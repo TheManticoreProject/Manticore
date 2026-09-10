@@ -10,6 +10,7 @@ import (
 
 	lsarpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345778-1234-abcd-ef00-0123456789ab/0.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	mslsad "github.com/TheManticoreProject/Manticore/windows/protocols/ms-lsad"
 )
 
@@ -31,8 +32,8 @@ func LsarOpenPolicy2(rpc ndr.Invoker, desiredAccess uint32) (mslsad.LSAPR_HANDLE
 	if err := rpc.Invoke(req, &resp); err != nil {
 		return mslsad.LSAPR_HANDLE{}, fmt.Errorf("LsarOpenPolicy2: %w", err)
 	}
-	if uint32(resp.Status) != lsarpc.StatusSuccess {
-		return resp.Handle, fmt.Errorf("LsarOpenPolicy2 failed: %s", lsarpc.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		return resp.Handle, fmt.Errorf("LsarOpenPolicy2 failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return resp.Handle, nil
 }

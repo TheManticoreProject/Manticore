@@ -55,7 +55,7 @@ func classify(t *testing.T, method string, err error) (bool, bool) {
 		strings.Contains(msg, "dcerpc call") || strings.Contains(msg, "fault") ||
 		strings.Contains(msg, "unmarshal") || strings.Contains(msg, "decode")
 	// Our method wrappers report a decoded NTSTATUS as "<Method> failed: <status>".
-	appStatus := strings.Contains(msg, "failed: STATUS_") || strings.Contains(msg, "failed: 0x")
+	appStatus := strings.Contains(msg, "failed: NT_STATUS_") || strings.Contains(msg, "failed: 0x")
 	if appStatus && !transport {
 		t.Logf("[server status] %s -> %v", method, err)
 		return true, false
