@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // schRpcGetTaskInfoRequest carries the [in] parameters of SchRpcGetTaskInfo.
@@ -40,7 +41,7 @@ func SchRpcGetTaskInfo(rpc ndr.Invoker, path ndr.WSTR, flags ndr.DWORD) (PEnable
 	}
 	PEnabled = resp.PEnabled
 	PState = resp.PState
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcGetTaskInfo failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

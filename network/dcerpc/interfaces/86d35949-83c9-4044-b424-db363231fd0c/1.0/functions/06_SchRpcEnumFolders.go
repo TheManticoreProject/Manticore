@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // schRpcEnumFoldersRequest carries the [in] parameters of SchRpcEnumFolders.
@@ -46,7 +47,7 @@ func SchRpcEnumFolders(rpc ndr.Invoker, path ndr.WSTR, flags ndr.DWORD, pStartIn
 	PStartIndex = resp.PStartIndex
 	PcNames = resp.PcNames
 	PNames = resp.PNames
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcEnumFolders failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

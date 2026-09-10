@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -39,7 +40,7 @@ func SchRpcStopInstance(rpc ndr.Invoker, guid guid.GUID, flags ndr.DWORD) (err e
 		err = fmt.Errorf("SchRpcStopInstance: %w", err)
 		return
 	}
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcStopInstance failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return

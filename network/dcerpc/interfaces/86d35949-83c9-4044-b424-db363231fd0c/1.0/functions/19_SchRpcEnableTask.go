@@ -10,6 +10,7 @@ import (
 
 	schrpc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/86d35949-83c9-4044-b424-db363231fd0c/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 )
 
 // schRpcEnableTaskRequest carries the [in] parameters of SchRpcEnableTask.
@@ -36,7 +37,7 @@ func SchRpcEnableTask(rpc ndr.Invoker, path ndr.WSTR, enabled ndr.DWORD) (err er
 		err = fmt.Errorf("SchRpcEnableTask: %w", err)
 		return
 	}
-	if !schrpc.IsSuccess(uint32(resp.Status)) {
+	if !hresult.HRESULT(resp.Status).IsSuccess() {
 		err = fmt.Errorf("SchRpcEnableTask failed: %s", schrpc.StatusString(uint32(resp.Status)))
 	}
 	return
