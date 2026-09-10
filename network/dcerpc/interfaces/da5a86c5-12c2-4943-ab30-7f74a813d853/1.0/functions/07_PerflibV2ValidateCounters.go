@@ -10,6 +10,7 @@ import (
 
 	PerflibV2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/da5a86c5-12c2-4943-ab30-7f74a813d853/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mspcq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-pcq"
 )
 
@@ -49,8 +50,8 @@ func PerflibV2ValidateCounters(rpc ndr.Invoker, hQuery mspcq.RPC_HQUERY, dwInSiz
 		return
 	}
 	LpData = resp.LpData
-	if uint32(resp.Status) != PerflibV2.StatusSuccess {
-		err = fmt.Errorf("PerflibV2ValidateCounters failed: %s", PerflibV2.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("PerflibV2ValidateCounters failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

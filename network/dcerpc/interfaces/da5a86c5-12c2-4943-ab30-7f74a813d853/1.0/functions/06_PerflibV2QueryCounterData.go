@@ -10,6 +10,7 @@ import (
 
 	PerflibV2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/da5a86c5-12c2-4943-ab30-7f74a813d853/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mspcq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-pcq"
 )
 
@@ -49,8 +50,8 @@ func PerflibV2QueryCounterData(rpc ndr.Invoker, hQuery mspcq.RPC_HQUERY, dwInSiz
 	PdwOutSize = resp.PdwOutSize
 	PdwRtnSize = resp.PdwRtnSize
 	LpData = resp.LpData
-	if s := uint32(resp.Status); s != PerflibV2.StatusSuccess && s != PerflibV2.ErrorNotEnoughMemory {
-		err = fmt.Errorf("PerflibV2QueryCounterData failed: %s", PerflibV2.StatusString(s))
+	if s := win32.WIN32_ERROR(resp.Status); s != win32.ERROR_SUCCESS && s != win32.ERROR_NOT_ENOUGH_MEMORY {
+		err = fmt.Errorf("PerflibV2QueryCounterData failed: %s", s.String())
 	}
 	return
 }

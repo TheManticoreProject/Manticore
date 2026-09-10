@@ -10,6 +10,7 @@ import (
 
 	inetinfo "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/82ad4280-036b-11cf-972c-00aa006887b0/2.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msirp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-irp"
 )
 
@@ -42,8 +43,8 @@ func R_InetInfoGetServerCapabilities(rpc ndr.Invoker, pszServer *ndr.WSTR, dwRes
 		return
 	}
 	PpCap = resp.PpCap
-	if uint32(resp.Status) != inetinfo.ErrorSuccess {
-		err = fmt.Errorf("R_InetInfoGetServerCapabilities failed: %s", inetinfo.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("R_InetInfoGetServerCapabilities failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
