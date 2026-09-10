@@ -10,6 +10,7 @@ import (
 
 	TermSrvEnumeration "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/88143fd0-c28d-4b2b-8fef-8d882f6a9390/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	mststs "github.com/TheManticoreProject/Manticore/windows/protocols/ms-tsts"
 )
 
@@ -38,8 +39,8 @@ func RpcFilterByCallersName(rpc ndr.Invoker, hEnum mststs.ENUM_HANDLE) (err erro
 		err = fmt.Errorf("RpcFilterByCallersName: %w", err)
 		return
 	}
-	if uint32(resp.Status) != TermSrvEnumeration.StatusSuccess {
-		err = fmt.Errorf("RpcFilterByCallersName failed: %s", TermSrvEnumeration.StatusString(uint32(resp.Status)))
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
+		err = fmt.Errorf("RpcFilterByCallersName failed: %s", hresult.HRESULT(resp.Status).String())
 	}
 	return
 }
