@@ -35,6 +35,23 @@ const (
 // GetKey returns an HRESULT ([MS-GKDI] section 3.1.4.1): zero on success,
 // nonzero on failure. The specification enumerates no further status table, so
 // only S_OK is named here; StatusString renders any other value as hex.
+//
+// This is an HRESULT, not a Win32 error code, so the code stays declared here
+// rather than being referenced from
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 the way an
+// interface that reports a WIN32_ERROR does. HRESULTs are [MS-ERREF] section
+// 2.1; the WIN32_ERROR table is [MS-ERREF] section 2.2, and the two spaces
+// disagree on both halves of the range. A failing GetKey returns a value with
+// the severity bit set, typically an HRESULT_FROM_WIN32 wrapping in the
+// 0x8007xxxx range ([MS-ERREF] 2.1.2), and the shared table's highest code is
+// 0x00003BC3, so it can name no GKDI failure at all: routing this return
+// through it would buy nothing. At the low end it would actively mislead. An
+// HRESULT with the severity bit clear is a success code, S_FALSE being
+// 0x00000001, and [MS-ERREF] 2.2 assigns that value to ERROR_INVALID_FUNCTION,
+// "Incorrect function." Naming this interface's status out of that table would
+// therefore report a successful key retrieval as an invalid-function failure.
+// The fallback in StatusString stays hexadecimal for the same reason: 0x00000002
+// reads as ERROR_FILE_NOT_FOUND there and has no such meaning here.
 const (
 	StatusSuccess uint32 = 0x00000000 // S_OK
 )
@@ -50,7 +67,10 @@ func SyntaxID() syntax.SyntaxID {
 }
 
 // StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// hex value. An unrecognized status stays hexadecimal rather than being resolved
+// through windows/errors/win32, which would name an HRESULT out of the Win32
+// table: 0x00000001 would read as ERROR_INVALID_FUNCTION where the HRESULT space
+// means S_FALSE.
 func StatusString(status uint32) string {
 	switch status {
 	case StatusSuccess:
