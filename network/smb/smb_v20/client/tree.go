@@ -56,6 +56,16 @@ func (c *Client) TreeConnect(shareName string) error {
 		TreeId:     treeId,
 		ShareType:  treeConnectResponse.ShareType,
 	}
+	// A dialect below 3.1.1 has no pre-authentication integrity, so the NEGOTIATE
+	// exchange that produced this connection was unprotected. Have the server
+	// restate it under the session's signature now that one exists; a downgrade
+	// that altered the original cannot be reproduced ([MS-SMB2] 3.2.5.5).
+	if c.requiresSecureNegotiateValidation() {
+		if err := c.validateNegotiateInfo(); err != nil {
+			return err
+		}
+	}
+
 	if c.Connection.TreeConnectTable == nil {
 		c.Connection.TreeConnectTable = make(map[uint32]*TreeConnect)
 	}

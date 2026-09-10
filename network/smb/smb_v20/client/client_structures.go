@@ -85,6 +85,15 @@ type Connection struct {
 	// Dialect is the SMB2 dialect selected during negotiation.
 	Dialect dialects.Dialect
 
+	// OfferedDialects, ClientCapabilities and ClientSecurityMode record what this
+	// client put in its NEGOTIATE request. The secure-negotiate validation after a
+	// tree connect asks the server to restate them, so they have to survive the
+	// exchange: comparing the server's answer against the values it sent back
+	// would confirm nothing.
+	OfferedDialects    []dialects.Dialect
+	ClientCapabilities capabilities.Capabilities
+	ClientSecurityMode securitymode.SecurityMode
+
 	// Cipher is the encryption algorithm the server selected in the SMB 3.1.1
 	// SMB2_ENCRYPTION_CAPABILITIES negotiate context (e.g. AES-128-GCM). It is 0
 	// when encryption was not negotiated. For the 3.0/3.0.2 dialects it is
