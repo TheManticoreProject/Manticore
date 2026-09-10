@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
@@ -47,8 +48,8 @@ func DsrGetDcNameEx(rpc ndr.Invoker, computerName *ndr.WSTR, domainName *ndr.WST
 		return
 	}
 	DomainControllerInfo = resp.DomainControllerInfo
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("DsrGetDcNameEx failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("DsrGetDcNameEx failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }

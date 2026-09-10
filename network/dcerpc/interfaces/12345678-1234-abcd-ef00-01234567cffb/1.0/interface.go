@@ -4,9 +4,9 @@
 //
 // An RPC interface is identified by its UUID and version, never by the named pipe it is
 // reached over. This package holds only the interface-level descriptor (abstract syntax,
-// transport endpoint, opnums, opnum<->name maps, status and negotiate-flag constants). NDR
-// types live in windows/protocols/ms-nrpc and method stubs in functions; both depend on
-// this package, never the reverse.
+// transport endpoint, opnums, opnum<->name maps and negotiate-flag constants). NDR types
+// live in windows/protocols/ms-nrpc and method stubs in functions; both depend on this
+// package, never the reverse.
 package rpcinterface_123456781234abcdef0001234567cffb_1_0
 
 // IDL source: [MS-NRPC] — this interface is translated from and verified
@@ -15,8 +15,6 @@ package rpcinterface_123456781234abcdef0001234567cffb_1_0
 // A fetched copy is kept at ms-nrpc.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -82,21 +80,10 @@ const (
 	OpnumNetrServerAuthenticateKerberos      uint16 = 59
 )
 
-// NTSTATUS values returned by Netlogon methods ([MS-ERREF] 2.3). Netlogon returns NTSTATUS
-// (not the Win32 error_status_t that MS-RRP uses). StatusSuccess is the canonical success
-// value; StatusAccessDenied is what the server returns for a rejected secure-channel
-// credential.
-const (
-	StatusSuccess           uint32 = 0x00000000 // STATUS_SUCCESS
-	StatusInvalidParameter  uint32 = 0xC000000D // STATUS_INVALID_PARAMETER
-	StatusAccessDenied      uint32 = 0xC0000022 // STATUS_ACCESS_DENIED
-	StatusNoSuchUser        uint32 = 0xC0000064 // STATUS_NO_SUCH_USER
-	StatusNoTrustSAMAccount uint32 = 0xC000018B // STATUS_NO_TRUST_SAM_ACCOUNT
-	StatusNotSupported      uint32 = 0xC00000BB // STATUS_NOT_SUPPORTED
-	StatusMoreEntries       uint32 = 0x00000105 // STATUS_MORE_ENTRIES
-	StatusNoMoreEntries     uint32 = 0x8000001A // STATUS_NO_MORE_ENTRIES
-	StatusDowngradeDetected uint32 = 0xC0000388 // STATUS_DOWNGRADE_DETECTED
-)
+// Netlogon methods return NTSTATUS ([MS-ERREF] 2.3.1), not the Win32 error_status_t that
+// MS-RRP uses. The codes are not declared here: the whole of [MS-ERREF] 2.3.1 lives in
+// github.com/TheManticoreProject/Manticore/windows/errors/nt_status, and a subset here
+// would cover a fraction of that table and drift from it.
 
 // SyntaxID returns the logon abstract syntax identifier:
 // 12345678-1234-abcd-ef00-01234567cffb, version 1.0.
@@ -105,33 +92,6 @@ func SyntaxID() syntax.SyntaxID {
 		UUID:         guid.GUID{A: 0x12345678, B: 0x1234, C: 0xabcd, D: 0xef00, E: 0x01234567cffb},
 		MajorVersion: 1,
 		MinorVersion: 0,
-	}
-}
-
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
-func StatusString(status uint32) string {
-	switch status {
-	case StatusSuccess:
-		return "STATUS_SUCCESS"
-	case StatusInvalidParameter:
-		return "STATUS_INVALID_PARAMETER"
-	case StatusAccessDenied:
-		return "STATUS_ACCESS_DENIED"
-	case StatusNoSuchUser:
-		return "STATUS_NO_SUCH_USER"
-	case StatusNoTrustSAMAccount:
-		return "STATUS_NO_TRUST_SAM_ACCOUNT"
-	case StatusNotSupported:
-		return "STATUS_NOT_SUPPORTED"
-	case StatusMoreEntries:
-		return "STATUS_MORE_ENTRIES"
-	case StatusNoMoreEntries:
-		return "STATUS_NO_MORE_ENTRIES"
-	case StatusDowngradeDetected:
-		return "STATUS_DOWNGRADE_DETECTED"
-	default:
-		return fmt.Sprintf("0x%08x", status)
 	}
 }
 

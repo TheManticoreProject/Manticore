@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
@@ -48,8 +49,8 @@ func NetrGetForestTrustInformation(rpc ndr.Invoker, serverName *ndr.WSTR, comput
 	}
 	ReturnAuthenticator = resp.ReturnAuthenticator
 	ForestTrustInfo = resp.ForestTrustInfo
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("NetrGetForestTrustInformation failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("NetrGetForestTrustInformation failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }

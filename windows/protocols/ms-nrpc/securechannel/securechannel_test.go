@@ -14,6 +14,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 	netlogon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 	nrpccrypto "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc/crypto"
 )
@@ -93,7 +94,7 @@ type scriptInvoker struct {
 	sessionKey      [16]byte
 	aes             bool
 	echoFlags       uint32
-	reqStatus       uint32
+	reqStatus       nt_status.NT_STATUS
 	forgeServer     bool
 	opnums          []uint16
 	auth3Stub       []byte
@@ -125,7 +126,7 @@ func (s *scriptInvoker) Invoke(in ndr.Call, out any) error {
 		if s.forgeServer {
 			cred[0] ^= 0xff
 		}
-		b, err := ndr.Marshal(&authenticate3Resp{ServerCredential: cred, NegotiateFlags: ndr.DWORD(s.echoFlags), Status: ndr.DWORD(netlogon.StatusSuccess)})
+		b, err := ndr.Marshal(&authenticate3Resp{ServerCredential: cred, NegotiateFlags: ndr.DWORD(s.echoFlags), Status: ndr.DWORD(nt_status.NT_STATUS_SUCCESS)})
 		if err != nil {
 			return err
 		}
@@ -136,7 +137,7 @@ func (s *scriptInvoker) Invoke(in ndr.Call, out any) error {
 
 // establishFixture builds a scripted invoker and config for a fixed client/server challenge
 // and password, for the AES suite (aes=true) or the legacy strong-key suite (aes=false).
-func establishFixture(aes, forge bool, reqStatus uint32) (*scriptInvoker, SecureChannelConfig, msnrpc.NETLOGON_CREDENTIAL, [16]byte) {
+func establishFixture(aes, forge bool, reqStatus nt_status.NT_STATUS) (*scriptInvoker, SecureChannelConfig, msnrpc.NETLOGON_CREDENTIAL, [16]byte) {
 	clientChallenge := msnrpc.NETLOGON_CREDENTIAL{1, 2, 3, 4, 5, 6, 7, 8}
 	serverChallenge := msnrpc.NETLOGON_CREDENTIAL{8, 7, 6, 5, 4, 3, 2, 1}
 	const password = "Machine$Pass1"
@@ -164,7 +165,7 @@ func establishFixture(aes, forge bool, reqStatus uint32) (*scriptInvoker, Secure
 // TestEstablishHappyPathAES verifies the handshake sequence, the derived session key, the
 // seeded stored credential, and the credential the client sent in NetrServerAuthenticate3.
 func TestEstablishHappyPathAES(t *testing.T) {
-	inv, cfg, clientChallenge, sk := establishFixture(true, false, netlogon.StatusSuccess)
+	inv, cfg, clientChallenge, sk := establishFixture(true, false, nt_status.NT_STATUS_SUCCESS)
 
 	sc, err := Establish(inv, cfg)
 	if err != nil {
@@ -195,7 +196,7 @@ func TestEstablishHappyPathAES(t *testing.T) {
 // TestEstablishHappyPathRC4 exercises the legacy strong-key suite selection end to end
 // (offline): the session key is strong-key-derived and the credential is DES-based.
 func TestEstablishHappyPathRC4(t *testing.T) {
-	inv, cfg, _, sk := establishFixture(false, false, netlogon.StatusSuccess)
+	inv, cfg, _, sk := establishFixture(false, false, nt_status.NT_STATUS_SUCCESS)
 	sc, err := Establish(inv, cfg)
 	if err != nil {
 		t.Fatalf("Establish (RC4 suite): %v", err)
@@ -211,7 +212,7 @@ func TestEstablishHappyPathRC4(t *testing.T) {
 // TestEstablishRejectsForgedServerCredential confirms Establish fails when the server does
 // not prove knowledge of the shared secret.
 func TestEstablishRejectsForgedServerCredential(t *testing.T) {
-	inv, cfg, _, _ := establishFixture(true, true, netlogon.StatusSuccess)
+	inv, cfg, _, _ := establishFixture(true, true, nt_status.NT_STATUS_SUCCESS)
 	if _, err := Establish(inv, cfg); err == nil {
 		t.Fatal("Establish accepted a forged server credential")
 	}
@@ -220,7 +221,7 @@ func TestEstablishRejectsForgedServerCredential(t *testing.T) {
 // TestEstablishRejectsBadSecret confirms Establish validates the machine secret before
 // issuing any RPC: a wrong-length NTHash and a missing secret both fail fast.
 func TestEstablishRejectsBadSecret(t *testing.T) {
-	inv, cfg, _, _ := establishFixture(true, false, netlogon.StatusSuccess)
+	inv, cfg, _, _ := establishFixture(true, false, nt_status.NT_STATUS_SUCCESS)
 
 	bad := cfg
 	bad.NTHash = make([]byte, 10)
@@ -241,7 +242,7 @@ func TestEstablishRejectsBadSecret(t *testing.T) {
 // TestEstablishPassTheHash confirms a raw 16-byte NTHash (no password) drives the same
 // session key as the equivalent password, i.e. the pass-the-hash path works.
 func TestEstablishPassTheHash(t *testing.T) {
-	inv, cfg, _, sk := establishFixture(true, false, netlogon.StatusSuccess)
+	inv, cfg, _, sk := establishFixture(true, false, nt_status.NT_STATUS_SUCCESS)
 	h := nt.NTHash(cfg.Password)
 	cfg.Password = ""
 	cfg.NTHash = h[:]
@@ -259,7 +260,7 @@ func TestEstablishPassTheHash(t *testing.T) {
 // TestEstablishReqChallengeStatusError confirms a non-success ReqChallenge status aborts the
 // handshake before NetrServerAuthenticate3 is called.
 func TestEstablishReqChallengeStatusError(t *testing.T) {
-	inv, cfg, _, _ := establishFixture(true, false, netlogon.StatusAccessDenied)
+	inv, cfg, _, _ := establishFixture(true, false, nt_status.NT_STATUS_ACCESS_DENIED)
 	if _, err := Establish(inv, cfg); err == nil {
 		t.Fatal("Establish ignored a failed NetrServerReqChallenge status")
 	}

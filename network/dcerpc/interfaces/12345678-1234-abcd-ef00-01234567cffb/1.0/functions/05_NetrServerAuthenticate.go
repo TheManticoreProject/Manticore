@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	msnrpc "github.com/TheManticoreProject/Manticore/windows/protocols/ms-nrpc"
 )
 
@@ -46,8 +47,8 @@ func NetrServerAuthenticate(rpc ndr.Invoker, primaryName *ndr.WSTR, accountName 
 		return
 	}
 	ServerCredential = resp.ServerCredential
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("NetrServerAuthenticate failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("NetrServerAuthenticate failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }

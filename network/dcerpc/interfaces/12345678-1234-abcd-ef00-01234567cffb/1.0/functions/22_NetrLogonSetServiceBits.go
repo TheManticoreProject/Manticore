@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // netrLogonSetServiceBitsRequest carries the [in] parameters of NetrLogonSetServiceBits.
@@ -39,8 +40,8 @@ func NetrLogonSetServiceBits(rpc ndr.Invoker, serverName *ndr.WSTR, serviceBitsO
 		err = fmt.Errorf("NetrLogonSetServiceBits: %w", err)
 		return
 	}
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("NetrLogonSetServiceBits failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("NetrLogonSetServiceBits failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }

@@ -10,6 +10,7 @@ import (
 
 	logon "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/12345678-1234-abcd-ef00-01234567cffb/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // opnumUnused47Request carries the [in] parameters of OpnumUnused47.
@@ -32,8 +33,8 @@ func OpnumUnused47(rpc ndr.Invoker) (err error) {
 		err = fmt.Errorf("OpnumUnused47: %w", err)
 		return
 	}
-	if uint32(resp.Status) != logon.StatusSuccess {
-		err = fmt.Errorf("OpnumUnused47 failed: %s", logon.StatusString(uint32(resp.Status)))
+	if nt_status.NT_STATUS(resp.Status) != nt_status.NT_STATUS_SUCCESS {
+		err = fmt.Errorf("OpnumUnused47 failed: %s", nt_status.NT_STATUS(resp.Status).String())
 	}
 	return
 }
