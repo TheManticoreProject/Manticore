@@ -1,19 +1,59 @@
 package rpcinterface_4fc742e04a1011cf827300aa004ae673_3_0
 
-import "testing"
+import (
+	"testing"
 
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(0) = %q, want ERROR_SUCCESS", got)
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
+
+// TestDocumentedStatusCodesResolveThroughWin32 pins the NET_API_STATUS codes [MS-DFSNM]
+// documents to the shared [MS-ERREF] 2.2 table: each resolves under the symbolic name
+// the specification gives it, and each renders under a name rather than a number.
+func TestDocumentedStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[string]win32.WIN32_ERROR{
+		"NERR_Success":            0,
+		"ERROR_SUCCESS":           0,
+		"ERROR_FILE_NOT_FOUND":    2,
+		"ERROR_ACCESS_DENIED":     5,
+		"ERROR_NOT_ENOUGH_MEMORY": 8,
+		"ERROR_NOT_SUPPORTED":     50,
+		"ERROR_FILE_EXISTS":       80,
+		"ERROR_INVALID_PARAMETER": 87,
+		"ERROR_INVALID_NAME":      123,
+		"ERROR_DIR_NOT_EMPTY":     145,
+		"ERROR_ALREADY_EXISTS":    183,
+		"ERROR_NOT_FOUND":         1168,
 	}
-	if got := StatusString(ErrorAccessDenied); got != "ERROR_ACCESS_DENIED" {
-		t.Errorf("StatusString(0x5) = %q, want ERROR_ACCESS_DENIED", got)
+	for name, code := range documented {
+		got, defined := win32.FromName(name)
+		if !defined {
+			t.Errorf("win32.FromName(%q) is undefined", name)
+			continue
+		}
+		if got != code {
+			t.Errorf("win32.FromName(%q) = %d, want %d", name, got, code)
+		}
+		if rendered := code.String(); rendered == "" || rendered[0] == '0' {
+			t.Errorf("win32.WIN32_ERROR(%d).String() = %q, want a symbolic name", code, rendered)
+		}
 	}
-	if got := StatusString(ErrorNotFound); got != "ERROR_NOT_FOUND" {
-		t.Errorf("StatusString(0x490) = %q, want ERROR_NOT_FOUND", got)
+}
+
+// TestStatusCodeOutsideOldSubsetRendersByName covers what the interface's private
+// subset could not: a Win32 error netdfs can return that the subset never listed now
+// decodes to its name instead of an undecoded number, while a value [MS-ERREF] 2.2
+// leaves undefined still renders as hexadecimal.
+func TestStatusCodeOutsideOldSubsetRendersByName(t *testing.T) {
+	// NERR_DfsNoSuchVolume (2662) and ERROR_INVALID_LEVEL (124) were outside the
+	// interface's old subset and used to print as "0x00000a66" and "0x0000007c".
+	if got := win32.WIN32_ERROR(2662).String(); got != "NERR_DfsNoSuchVolume" {
+		t.Errorf("win32.WIN32_ERROR(2662).String() = %q, want NERR_DfsNoSuchVolume", got)
 	}
-	if got := StatusString(0x12345678); got != "0x12345678" {
-		t.Errorf("StatusString(unknown) = %q, want hex fallback", got)
+	if got := win32.WIN32_ERROR(124).String(); got != "ERROR_INVALID_LEVEL" {
+		t.Errorf("win32.WIN32_ERROR(124).String() = %q, want ERROR_INVALID_LEVEL", got)
+	}
+	if got := win32.WIN32_ERROR(0x12345678).String(); got != "0x12345678" {
+		t.Errorf("win32.WIN32_ERROR(0x12345678).String() = %q, want hexadecimal", got)
 	}
 }
 

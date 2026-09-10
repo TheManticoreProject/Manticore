@@ -10,6 +10,7 @@ import (
 
 	netdfs "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/4fc742e0-4a10-11cf-8273-00aa004ae673/3.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // netrDfsRemoveRootTargetRequest carries the [in] parameters of NetrDfsRemoveRootTarget.
@@ -39,8 +40,8 @@ func NetrDfsRemoveRootTarget(rpc ndr.Invoker, pDfsPath *ndr.WSTR, pTargetPath *n
 		err = fmt.Errorf("NetrDfsRemoveRootTarget: %w", err)
 		return
 	}
-	if uint32(resp.Status) != netdfs.StatusSuccess {
-		err = fmt.Errorf("NetrDfsRemoveRootTarget failed: %s", netdfs.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrDfsRemoveRootTarget failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
