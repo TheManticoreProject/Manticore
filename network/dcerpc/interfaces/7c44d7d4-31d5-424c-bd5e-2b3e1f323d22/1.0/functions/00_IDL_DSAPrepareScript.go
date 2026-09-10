@@ -10,6 +10,7 @@ import (
 
 	dsaop "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/7c44d7d4-31d5-424c-bd5e-2b3e1f323d22/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
@@ -42,8 +43,8 @@ func IDL_DSAPrepareScript(rpc ndr.Invoker, dwInVersion ndr.DWORD, pmsgIn msdrsr.
 	}
 	PdwOutVersion = resp.PdwOutVersion
 	PmsgOut = resp.PmsgOut
-	if uint32(resp.Status) != dsaop.StatusSuccess {
-		err = fmt.Errorf("IDL_DSAPrepareScript failed: %s", dsaop.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("IDL_DSAPrepareScript failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
