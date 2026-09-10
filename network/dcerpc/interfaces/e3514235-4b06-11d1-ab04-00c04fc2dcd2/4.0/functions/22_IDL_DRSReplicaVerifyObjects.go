@@ -10,6 +10,7 @@ import (
 
 	drsuapi "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/e3514235-4b06-11d1-ab04-00c04fc2dcd2/4.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdrsr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
 
@@ -42,8 +43,8 @@ func IDL_DRSReplicaVerifyObjects(rpc ndr.Invoker, hDrs msdrsr.DRS_HANDLE, dwVers
 		err = fmt.Errorf("IDL_DRSReplicaVerifyObjects: %w", err)
 		return
 	}
-	if uint32(resp.Status) != drsuapi.StatusSuccess {
-		err = fmt.Errorf("IDL_DRSReplicaVerifyObjects failed: %s", drsuapi.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
+		err = fmt.Errorf("IDL_DRSReplicaVerifyObjects failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }

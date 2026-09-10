@@ -1,6 +1,10 @@
 package rpcinterface_e35142354b0611d1ab0400c04fc2dcd2_4_0
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
+)
 
 // TestSyntaxID pins the abstract syntax identifier for the drsuapi interface
 // (e3514235-4b06-11d1-ab04-00c04fc2dcd2 v4.0, [MS-DRSR]).
@@ -32,15 +36,48 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString checks a couple of mnemonics and the hex fallback.
-func TestStatusString(t *testing.T) {
-	if got := StatusString(StatusSuccess); got != "ERROR_SUCCESS" {
-		t.Errorf("StatusString(0) = %q, want ERROR_SUCCESS", got)
+// TestStatusCodesResolveThroughWin32 pins that the status codes this interface
+// documents render under their [MS-ERREF] 2.2 names through the shared win32
+// table, that DRA codes the package's own curated subset never listed —
+// ERROR_DS_DRA_SCHEMA_MISMATCH among them — now render by name rather than as a
+// bare hex value, and that a value the specification does not define still falls
+// back to hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	documented := map[win32.WIN32_ERROR]string{
+		0x00000000: "ERROR_SUCCESS",
+		0x00000005: "ERROR_ACCESS_DENIED",
+		0x00000032: "ERROR_NOT_SUPPORTED",
+		0x00000057: "ERROR_INVALID_PARAMETER",
+		0x000020F5: "ERROR_DS_DRA_INVALID_PARAMETER",
+		0x000020F6: "ERROR_DS_DRA_BUSY",
+		0x000020F7: "ERROR_DS_DRA_BAD_DN",
+		0x000020F8: "ERROR_DS_DRA_BAD_NC",
+		0x000020F9: "ERROR_DS_DRA_DN_EXISTS",
+		0x000020FA: "ERROR_DS_DRA_INTERNAL_ERROR",
+		0x000020FE: "ERROR_DS_DRA_OUT_OF_MEM",
+		0x00002105: "ERROR_DS_DRA_ACCESS_DENIED",
 	}
-	if got := StatusString(ErrorDsDraAccessDenied); got != "ERROR_DS_DRA_ACCESS_DENIED" {
-		t.Errorf("StatusString(0x2105) = %q, want ERROR_DS_DRA_ACCESS_DENIED", got)
+	for code, want := range documented {
+		if got := code.String(); got != want {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", uint32(code), got, want)
+		}
 	}
-	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
-		t.Errorf("StatusString(unknown) = %q, want 0xdeadbeef", got)
+
+	// DRA codes outside the curated subset this package used to carry. These came
+	// back as a bare hex value before the migration and now resolve by name.
+	beyondTheSubset := map[win32.WIN32_ERROR]string{
+		0x000020E2: "ERROR_DS_DRA_SCHEMA_MISMATCH",
+		0x00002108: "ERROR_DS_DRA_SOURCE_DISABLED",
+		0x0000210C: "ERROR_DS_DRA_MISSING_PARENT",
+		0x00002160: "ERROR_DS_DRA_EARLIER_SCHEMA_CONFLICT",
+	}
+	for code, want := range beyondTheSubset {
+		if got := code.String(); got != want {
+			t.Errorf("win32.WIN32_ERROR(0x%08x).String() = %q, want %q", uint32(code), got, want)
+		}
+	}
+
+	if got := win32.WIN32_ERROR(0xDEADBEEF).String(); got != "0xdeadbeef" {
+		t.Errorf("win32.WIN32_ERROR(0xDEADBEEF).String() = %q, want 0xdeadbeef", got)
 	}
 }
