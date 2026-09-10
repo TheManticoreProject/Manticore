@@ -40,6 +40,20 @@ const (
 // NSI_S_OK (0); most methods treat every nonzero value as an undifferentiated failure.
 // The one documented exception is I_nsi_lookup_next ([MS-RPCL] 3.1.4.3), which also
 // returns NSI_S_NO_MORE_BINDINGS to mark the (successful) end of the enumeration.
+//
+// These are Name Service Interface status codes, not [MS-ERREF] 2.2 Win32 error codes, so
+// they are declared here rather than referenced from
+// github.com/TheManticoreProject/Manticore/windows/errors/win32 the way an interface that
+// reports a WIN32_ERROR does. The two spaces collide by value and disagree on meaning:
+// [MS-ERREF] 2.2 assigns 0x00000001 to ERROR_INVALID_FUNCTION ("Incorrect function."),
+// and its own code for the condition NSI_S_NO_MORE_BINDINGS reports is a different value
+// entirely, RPC_S_NO_MORE_BINDINGS = 0x0000070E ("There are no more bindings."). Naming
+// this interface's 0x00000001 out of that table would turn a locator's normal
+// end-of-enumeration into an invalid-function failure. The shared table names neither NSI
+// code, and the specification documents no others: every method's status is defined in
+// terms of NSI_S_OK, I_nsi_ping_locator's 32-bit error_status_t included ([MS-RPCL]
+// 3.1.4.5), so the whole interface reports one NSI status space and windows/errors/win32
+// does not apply to any of it.
 const (
 	// StatusSuccess (NSI_S_OK) indicates the method completed successfully.
 	StatusSuccess uint32 = 0x00000000
@@ -63,7 +77,9 @@ func SyntaxID() syntax.SyntaxID {
 }
 
 // StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// hex value. An unrecognized status stays hexadecimal rather than being resolved through
+// windows/errors/win32, which would name an NSI code out of the Win32 table: 0x00000002
+// would read as ERROR_FILE_NOT_FOUND, a meaning the locator never assigns it.
 func StatusString(status uint32) string {
 	switch status {
 	case NSI_S_OK:
