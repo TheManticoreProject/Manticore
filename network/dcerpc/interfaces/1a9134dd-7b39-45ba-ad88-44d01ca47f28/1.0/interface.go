@@ -12,9 +12,8 @@ package rpcinterface_1a9134dd7b3945baad8844d01ca47f28_1_0
 // A fetched copy is kept at ms-mqmq.idl in the interface directory.
 
 import (
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -45,16 +44,27 @@ const (
 )
 
 // Status codes returned by the HRESULT-returning methods of this interface. The values are
-// the Message Queuing result codes ([MS-MQMQ] section 2.4, mqerror.h). MQ_OK is success; per
-// [MS-MQRR] the client treats every failure HRESULT identically. Only the codes the
-// [MS-MQRR] method sections enumerate for remote-read/cursor/transaction operations are
-// listed here; StatusString falls back to the hex value for any other code.
+// the Message Queuing result codes ([MS-MQMQ] section 2.4, mqerror.h). They are HRESULTs in
+// FACILITY_MSMQ (0x00E), and [MS-ERREF] section 2.1.1 carries no row for that facility at
+// all: the table names nothing in 0xC00E____ or 0x400E____ and no value whose name begins
+// MQ_. So none of these can be read out of
+// github.com/TheManticoreProject/Manticore/windows/errors/hresult, and they stay declared
+// here, decoded by StatusString before it defers to the shared table.
+//
+// MQ_OK is the one exception, and it is gone from this block: its value is 0x00000000, which
+// the shared package declares as hresult.S_OK, so the stubs compare a returned status against
+// that constant. They compare for equality with it rather than testing IsSuccess, which
+// preserves the behaviour they have always had — [MS-MQRR] documents MQ_OK as the success
+// value of every one of these methods and requires the client to treat every other result
+// identically, so a success-severity value that is not MQ_OK, such as one of the
+// MQ_INFORMATION_* codes in 0x400E____, is still reported as a failure.
+//
+// Only the codes the [MS-MQRR] method sections enumerate for remote-read/cursor/transaction
+// operations are listed here; StatusString defers every other value to the shared table.
 //
 // Note: R_GetServerPort (opnum 0) does NOT return an HRESULT — its DWORD result is the RPC
 // port on which the server receives remote-read requests (0x00000000 signals failure).
 const (
-	StatusSuccess uint32 = 0x00000000 // MQ_OK
-
 	MQ_ERROR                          uint32 = 0xC00E0001
 	MQ_ERROR_QUEUE_NOT_FOUND          uint32 = 0xC00E0003
 	MQ_ERROR_QUEUE_NOT_ACTIVE         uint32 = 0xC00E0004
@@ -88,12 +98,14 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString returns a mnemonic for the documented status codes, otherwise the
-// hex value.
+// StatusString names the FACILITY_MSMQ result codes above, which [MS-ERREF] section 2.1.1
+// does not carry, and defers every other status to the shared HRESULT table. The deferral is
+// correct because an MSMQ result code genuinely is an HRESULT and only its facility is absent
+// from the specification's table: 0x00000000 renders as S_OK, a FACILITY_WIN32 value renders
+// through the Win32 code it wraps, and a value the table does not define renders as hex,
+// exactly as it did before.
 func StatusString(status uint32) string {
 	switch status {
-	case StatusSuccess:
-		return "MQ_OK"
 	case MQ_ERROR:
 		return "MQ_ERROR"
 	case MQ_ERROR_QUEUE_NOT_FOUND:
@@ -137,7 +149,7 @@ func StatusString(status uint32) string {
 	case MQ_ERROR_MESSAGE_NOT_FOUND:
 		return "MQ_ERROR_MESSAGE_NOT_FOUND"
 	default:
-		return fmt.Sprintf("0x%08x", status)
+		return hresult.HRESULT(status).String()
 	}
 }
 

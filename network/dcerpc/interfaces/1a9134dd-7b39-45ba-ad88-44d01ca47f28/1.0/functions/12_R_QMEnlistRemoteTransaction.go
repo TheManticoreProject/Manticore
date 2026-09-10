@@ -10,6 +10,7 @@ import (
 
 	RemoteRead "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a9134dd-7b39-45ba-ad88-44d01ca47f28/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqmq "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqmq"
 )
 
@@ -44,7 +45,7 @@ func R_QMEnlistRemoteTransaction(rpc ndr.Invoker, pTransactionId msmqmq.XACTUOW,
 		err = fmt.Errorf("R_QMEnlistRemoteTransaction: %w", err)
 		return
 	}
-	if uint32(resp.Status) != RemoteRead.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_QMEnlistRemoteTransaction failed: %s", RemoteRead.StatusString(uint32(resp.Status)))
 	}
 	return

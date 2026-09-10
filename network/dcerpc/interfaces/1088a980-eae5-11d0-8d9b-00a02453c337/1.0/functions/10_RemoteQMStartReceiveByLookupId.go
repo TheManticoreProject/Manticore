@@ -10,6 +10,7 @@ import (
 
 	qm2qm "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1088a980-eae5-11d0-8d9b-00a02453c337/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqqp "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqqp"
 )
 
@@ -43,7 +44,7 @@ func RemoteQMStartReceiveByLookupId(rpc ndr.Invoker, lookupId uint64, lpRemoteRe
 	}
 	PphContext = resp.PphContext
 	LpRemoteReadDesc2 = resp.LpRemoteReadDesc2
-	if uint32(resp.Status) != qm2qm.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("RemoteQMStartReceiveByLookupId failed: %s", qm2qm.StatusString(uint32(resp.Status)))
 	}
 	return

@@ -10,6 +10,7 @@ import (
 
 	RemoteRead "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/1a9134dd-7b39-45ba-ad88-44d01ca47f28/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
 	msmqrr "github.com/TheManticoreProject/Manticore/windows/protocols/ms-mqrr"
 )
 
@@ -42,7 +43,7 @@ func R_EndTransactionalReceive(rpc ndr.Invoker, phContext msmqrr.QUEUE_CONTEXT_H
 		err = fmt.Errorf("R_EndTransactionalReceive: %w", err)
 		return
 	}
-	if uint32(resp.Status) != RemoteRead.StatusSuccess {
+	if hresult.HRESULT(resp.Status) != hresult.S_OK {
 		err = fmt.Errorf("R_EndTransactionalReceive failed: %s", RemoteRead.StatusString(uint32(resp.Status)))
 	}
 	return
