@@ -77,6 +77,11 @@ func (m *Message) Marshal() ([]byte, error) {
 	blocks := [][]byte{}
 	written := 0
 	for command := m.Command; command != nil; command = command.GetNextCommand() {
+		// Propagate the message's Unicode setting (SMB_FLAGS2_UNICODE) so the
+		// command encodes its string fields to the width the header declares.
+		// Unmarshal already does this for the receive side; without it here a
+		// command built for a Unicode message is still serialized as OEM.
+		command.SetUnicode(m.Header.Flags2.IsUnicode())
 		if command.GetNextCommand() != nil && !command.IsAndX() {
 			return nil, fmt.Errorf(
 				"command 0x%02X is followed in an AndX chain but is not an AndX command",

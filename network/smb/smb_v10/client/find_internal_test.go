@@ -33,7 +33,7 @@ func TestParseBothDirInfo(t *testing.T) {
 	dir := makeBothDirInfoEntry("subdir", "SUBDIR", 0, fileAttributeDirectory, tick, tick, tick, tick, uint32(bothDirInfoFixedSize+len("subdir")))
 	file := makeBothDirInfoEntry("report.txt", "REPORT~1.TXT", 4096, 0x20, tick+10_000_000, tick, tick, tick, 0)
 
-	entries := parseBothDirInfo(append(dir, file...))
+	entries := parseBothDirInfo(append(dir, file...), false)
 
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2", len(entries))
@@ -64,12 +64,12 @@ func TestParseBothDirInfo(t *testing.T) {
 }
 
 func TestParseBothDirInfoEmpty(t *testing.T) {
-	if got := parseBothDirInfo(nil); len(got) != 0 {
-		t.Errorf("parseBothDirInfo(nil) = %d entries, want 0", len(got))
+	if got := parseBothDirInfo(nil, false); len(got) != 0 {
+		t.Errorf("parseBothDirInfo(nil, false) = %d entries, want 0", len(got))
 	}
 	// A truncated buffer (shorter than the fixed portion) yields no entries and no panic.
-	if got := parseBothDirInfo(make([]byte, bothDirInfoFixedSize-1)); len(got) != 0 {
-		t.Errorf("parseBothDirInfo(truncated) = %d entries, want 0", len(got))
+	if got := parseBothDirInfo(make([]byte, bothDirInfoFixedSize-1), false); len(got) != 0 {
+		t.Errorf("parseBothDirInfo(truncated, false) = %d entries, want 0", len(got))
 	}
 }
 
@@ -156,7 +156,7 @@ func TestDecodeUTF16LE(t *testing.T) {
 }
 
 func TestBuildFindFirst2Params(t *testing.T) {
-	b := buildFindFirst2Params("\\*")
+	b := buildFindFirst2Params("\\*", false)
 	// SearchAttributes, SearchCount, Flags, InformationLevel, SearchStorageType(4), pattern, NUL
 	if len(b) != 2+2+2+2+4+len("\\*")+1 {
 		t.Fatalf("unexpected length %d", len(b))
@@ -173,7 +173,7 @@ func TestBuildFindFirst2Params(t *testing.T) {
 }
 
 func TestBuildFindNext2Params(t *testing.T) {
-	b := buildFindNext2Params(0x1234)
+	b := buildFindNext2Params(0x1234, false)
 	if binary.LittleEndian.Uint16(b[0:2]) != 0x1234 {
 		t.Errorf("SID = 0x%04x, want 0x1234", binary.LittleEndian.Uint16(b[0:2]))
 	}

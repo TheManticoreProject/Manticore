@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -35,6 +36,15 @@ func fileIODump(label string, data []byte) {
 	}
 }
 
+// useUnicode reports whether names must be carried as UTF-16LE, which is so
+// whenever the server advertised CAP_UNICODE in its NEGOTIATE response.
+func (c *Client) useUnicode() bool {
+	if c.Connection == nil || c.Connection.Server == nil {
+		return false
+	}
+	return c.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
+}
+
 // newFileIOMessage builds a message pre-populated with the header fields common to
 // every file-I/O command issued on the currently selected tree/session.
 func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
@@ -42,6 +52,14 @@ func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
 	msg.Header.Command = command
 	msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
 	msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED)
+	// Carry names as Unicode whenever the server negotiated it. Dropping the flag
+	// after authentication puts every path on the wire as OEM, which cannot
+	// represent a non-ASCII name: the bytes round-trip through SMB1 because both
+	// directions treat them as opaque, while the name the server actually stores
+	// is not the one that was asked for.
+	if c.useUnicode() {
+		msg.Header.Flags2 |= flags2.FLAGS2_UNICODE
+	}
 	msg.Header.SetPID(msg.Header.GetPID())
 	msg.Header.MID = c.Connection.MaxMpxCount
 	msg.Header.TID = c.Session.TreeID
@@ -111,10 +129,12 @@ func (c *Client) OpenFile(path string, desiredAccess, shareAccess, createDisp, c
 	cmd.ImpersonationLevel = types.ULONG(0x00000002)
 	// FILE_ATTRIBUTE_NORMAL
 	cmd.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(0x00000080)
-	if err := cmd.FileName.SetString(smbPath); err != nil {
+	if err := cmd.FileName.SetStringWithEncoding(smbPath, c.useUnicode()); err != nil {
 		return 0, fmt.Errorf("failed to set file name: %v", err)
 	}
-	cmd.NameLength = types.USHORT(len(smbPath))
+	// NameLength counts the bytes the name occupies on the wire, which is twice
+	// the character count once the name is UTF-16LE.
+	cmd.NameLength = types.USHORT(len(cmd.FileName.Buffer))
 
 	msg.AddCommand(cmd)
 

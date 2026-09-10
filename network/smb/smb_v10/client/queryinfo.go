@@ -52,12 +52,12 @@ func (c *Client) QueryPathInformation(path string, infoLevel uint16) ([]byte, er
 		return nil, fmt.Errorf("no session established")
 	}
 
-	// Parameters: InformationLevel(2) + Reserved(4) + FileName (OEM, null-terminated).
+	// Parameters: InformationLevel(2) + Reserved(4) + FileName, in the encoding the
+	// message declares.
 	params := []byte{}
 	params = binary.LittleEndian.AppendUint16(params, infoLevel)
 	params = binary.LittleEndian.AppendUint32(params, 0) // Reserved
-	params = append(params, []byte(normalizeSMBPath(path))...)
-	params = append(params, 0x00)
+	params = append(params, encodeTrans2Name(normalizeSMBPath(path), c.useUnicode())...)
 
 	_, data, err := c.trans2(uint16(subcommands.TRANS2_QUERY_PATH_INFORMATION), params, nil)
 	if err != nil {
@@ -126,12 +126,12 @@ func (c *Client) SetPathInformation(path string, infoLevel uint16, data []byte) 
 		return fmt.Errorf("no session established")
 	}
 
-	// Parameters: InformationLevel(2) + Reserved(4) + FileName (OEM, null-terminated).
+	// Parameters: InformationLevel(2) + Reserved(4) + FileName, in the encoding the
+	// message declares.
 	params := []byte{}
 	params = binary.LittleEndian.AppendUint16(params, infoLevel)
 	params = binary.LittleEndian.AppendUint32(params, 0) // Reserved
-	params = append(params, []byte(normalizeSMBPath(path))...)
-	params = append(params, 0x00)
+	params = append(params, encodeTrans2Name(normalizeSMBPath(path), c.useUnicode())...)
 
 	_, _, err := c.trans2(uint16(subcommands.TRANS2_SET_PATH_INFORMATION), params, data)
 	return err

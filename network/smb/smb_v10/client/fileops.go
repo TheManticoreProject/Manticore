@@ -22,7 +22,7 @@ func (c *Client) DeleteFile(pattern string) error {
 
 	cmd := commands.NewDeleteRequest()
 	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
-	if err := cmd.FileName.SetString(pattern); err != nil {
+	if err := cmd.FileName.SetStringWithEncoding(pattern, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set file name: %v", err)
 	}
 
@@ -53,10 +53,10 @@ func (c *Client) RenameFile(oldPath, newPath string) error {
 
 	cmd := commands.NewRenameRequest()
 	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
-	if err := cmd.OldFileName.SetString(oldPath); err != nil {
+	if err := cmd.OldFileName.SetStringWithEncoding(oldPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set old file name: %v", err)
 	}
-	if err := cmd.NewFileName.SetString(newPath); err != nil {
+	if err := cmd.NewFileName.SetStringWithEncoding(newPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set new file name: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func (c *Client) CreateDirectory(path string) error {
 	msg := c.newFileIOMessage(codes.SMB_COM_CREATE_DIRECTORY)
 
 	cmd := commands.NewCreateDirectoryRequest()
-	if err := cmd.DirectoryName.SetString(path); err != nil {
+	if err := cmd.DirectoryName.SetStringWithEncoding(path, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set directory name: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func (c *Client) DeleteDirectory(path string) error {
 	msg := c.newFileIOMessage(codes.SMB_COM_DELETE_DIRECTORY)
 
 	cmd := commands.NewDeleteDirectoryRequest()
-	if err := cmd.DirectoryName.SetString(path); err != nil {
+	if err := cmd.DirectoryName.SetStringWithEncoding(path, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set directory name: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func (c *Client) CheckDirectory(path string) error {
 	msg := c.newFileIOMessage(codes.SMB_COM_CHECK_DIRECTORY)
 
 	cmd := commands.NewCheckDirectoryRequest()
-	if err := cmd.DirectoryName.SetString(path); err != nil {
+	if err := cmd.DirectoryName.SetStringWithEncoding(path, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set directory name: %v", err)
 	}
 
