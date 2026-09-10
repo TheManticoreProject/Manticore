@@ -3,6 +3,7 @@ package rpcinterface_6bffd098a1123610983346c3f87e345a_1_0
 import (
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -62,18 +63,33 @@ func TestOpnumNameRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStatusString checks known codes render mnemonics and unknown codes fall back to hex.
-func TestStatusString(t *testing.T) {
-	cases := map[uint32]string{
-		StatusSuccess:          "ERROR_SUCCESS",
-		ErrorAccessDenied:      "ERROR_ACCESS_DENIED",
-		ErrorMoreData:          "ERROR_MORE_DATA",
-		NerrSetupAlreadyJoined: "NERR_SetupAlreadyJoined",
-		0x12345678:             "0x12345678",
+// TestStatusCodesResolveThroughWin32 checks that the NET_API_STATUS codes this
+// interface documents in [MS-WKST] 3.2.4 resolve through the shared [MS-ERREF]
+// 2.2 table under their specification names, that a code outside the subset the
+// interface used to declare now renders by name instead of as undecoded hex, and
+// that a value the specification does not define still falls back to hex.
+func TestStatusCodesResolveThroughWin32(t *testing.T) {
+	cases := map[win32.WIN32_ERROR]string{
+		// 0x00000000 carries both names in the specification; the table renders
+		// the ERROR_* one, and win32.NERR_Success is the same value.
+		win32.NERR_Success:              "ERROR_SUCCESS",
+		win32.ERROR_ACCESS_DENIED:       "ERROR_ACCESS_DENIED",
+		win32.ERROR_MORE_DATA:           "ERROR_MORE_DATA",
+		win32.ERROR_INVALID_DOMAIN_ROLE: "ERROR_INVALID_DOMAIN_ROLE",
+		win32.NERR_SetupAlreadyJoined:   "NERR_SetupAlreadyJoined",
+		win32.NERR_WkstaNotStarted:      "NERR_WkstaNotStarted",
+
+		// Outside the subset that used to live in interface.go: these rendered as
+		// "0x000004ba" and "0x00000102" before, and now carry their names.
+		win32.WIN32_ERROR(0x000004BA): "ERROR_INVALID_COMPUTERNAME",
+		win32.WIN32_ERROR(0x00000102): "WAIT_TIMEOUT",
+
+		// Not defined by the specification at all: still hex.
+		win32.WIN32_ERROR(0x12345678): "0x12345678",
 	}
 	for code, want := range cases {
-		if got := StatusString(code); got != want {
-			t.Errorf("StatusString(0x%08x) = %q, want %q", code, got, want)
+		if got := code.String(); got != want {
+			t.Errorf("WIN32_ERROR(0x%08x).String() = %q, want %q", uint32(code), got, want)
 		}
 	}
 }

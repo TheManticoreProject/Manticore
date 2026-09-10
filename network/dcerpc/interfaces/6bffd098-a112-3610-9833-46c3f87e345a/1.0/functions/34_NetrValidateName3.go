@@ -10,6 +10,7 @@ import (
 
 	wkssvc "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6bffd098-a112-3610-9833-46c3f87e345a/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	mswkst "github.com/TheManticoreProject/Manticore/windows/protocols/ms-wkst"
 )
 
@@ -43,8 +44,8 @@ func NetrValidateName3(rpc ndr.Invoker, serverName *ndr.WSTR, nameToValidate ndr
 		err = fmt.Errorf("NetrValidateName3: %w", err)
 		return
 	}
-	if uint32(resp.Status) != wkssvc.StatusSuccess {
-		err = fmt.Errorf("NetrValidateName3 failed: %s", wkssvc.StatusString(uint32(resp.Status)))
+	if win32.WIN32_ERROR(resp.Status) != win32.NERR_Success {
+		err = fmt.Errorf("NetrValidateName3 failed: %s", win32.WIN32_ERROR(resp.Status).String())
 	}
 	return
 }
