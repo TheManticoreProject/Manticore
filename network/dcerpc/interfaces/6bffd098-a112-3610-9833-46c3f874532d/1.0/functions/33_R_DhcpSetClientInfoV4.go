@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6bffd098-a112-3610-9833-46c3f874532d/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
 )
 
@@ -38,7 +39,7 @@ func R_DhcpSetClientInfoV4(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, clientInf
 		err = fmt.Errorf("R_DhcpSetClientInfoV4: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dhcpsrv.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("R_DhcpSetClientInfoV4 failed: %s", dhcpsrv.StatusString(uint32(resp.Status)))
 	}
 	return

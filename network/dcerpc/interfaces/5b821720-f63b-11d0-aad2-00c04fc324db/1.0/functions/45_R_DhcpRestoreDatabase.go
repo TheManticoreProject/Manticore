@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv2 "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/5b821720-f63b-11d0-aad2-00c04fc324db/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
 // r_DhcpRestoreDatabaseRequest carries the [in] parameters of R_DhcpRestoreDatabase.
@@ -37,7 +38,7 @@ func R_DhcpRestoreDatabase(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, path ndr.
 		err = fmt.Errorf("R_DhcpRestoreDatabase: %w", err)
 		return
 	}
-	if uint32(resp.Status) != dhcpsrv2.StatusSuccess {
+	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
 		err = fmt.Errorf("R_DhcpRestoreDatabase failed: %s", dhcpsrv2.StatusString(uint32(resp.Status)))
 	}
 	return

@@ -10,6 +10,7 @@ import (
 
 	dhcpsrv "github.com/TheManticoreProject/Manticore/network/dcerpc/interfaces/6bffd098-a112-3610-9833-46c3f874532d/1.0"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
+	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	msdhcpm "github.com/TheManticoreProject/Manticore/windows/protocols/ms-dhcpm"
 )
 
@@ -50,7 +51,7 @@ func R_DhcpEnumSubnetClients(rpc ndr.Invoker, serverIpAddress *ndr.WSTR, subnetA
 	ClientInfo = resp.ClientInfo
 	ClientsRead = resp.ClientsRead
 	ClientsTotal = resp.ClientsTotal
-	if uint32(resp.Status) != dhcpsrv.StatusSuccess && !dhcpsrv.StatusIsPagination(uint32(resp.Status)) {
+	if status := win32.WIN32_ERROR(resp.Status); status != win32.ERROR_SUCCESS && status != win32.ERROR_MORE_DATA && status != win32.ERROR_NO_MORE_ITEMS {
 		err = fmt.Errorf("R_DhcpEnumSubnetClients failed: %s", dhcpsrv.StatusString(uint32(resp.Status)))
 	}
 	return
