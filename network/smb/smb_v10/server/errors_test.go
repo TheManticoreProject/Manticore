@@ -121,6 +121,32 @@ func TestDOSErrorDecomposesCIFSStatus(t *testing.T) {
 	}
 }
 
+// TestDOSErrorTabulatesSMBNoSupport covers the one [MS-CIFS] composite that
+// cannot be decomposed. NT_STATUS_SMB_NO_SUPPORT is ERRSRV/ERRnosupport, but its
+// ErrorCode is 0xFFFF, so the value's top byte is 0xFF and the decomposition in
+// DOSError — which requires a zero top byte to tell a composite apart from a
+// real [MS-ERREF] NTSTATUS — cannot claim it. It is tabulated instead, and
+// without that entry a client which did not negotiate NT status codes would be
+// told ERRSRV/ERRsrverror for a subcommand the specification says to refuse with
+// ERRnosupport.
+func TestDOSErrorTabulatesSMBNoSupport(t *testing.T) {
+	got, ok := DOSError(nt_status.NT_STATUS_SMB_NO_SUPPORT)
+	if !ok {
+		t.Fatal("DOSError(NT_STATUS_SMB_NO_SUPPORT) reported no mapping")
+	}
+	if want := (SMBStatus{ERRSRV, 0xFFFF}); got != want {
+		t.Fatalf("DOSError(NT_STATUS_SMB_NO_SUPPORT) = %s/0x%04X, want %s/0x%04X",
+			got.Class, got.Code, want.Class, want.Code)
+	}
+	if got == unmappedError {
+		t.Fatal("it fell through to the generic ERRSRV/ERRsrverror")
+	}
+	// It is still wire-identical to the NTSTATUS, like every other composite.
+	if encoded := got.Encode(); encoded != uint32(nt_status.NT_STATUS_SMB_NO_SUPPORT) {
+		t.Fatalf("re-encoding gives 0x%08X, want 0x%08X", encoded, uint32(nt_status.NT_STATUS_SMB_NO_SUPPORT))
+	}
+}
+
 // TestDOSErrorUnmapped asserts an NTSTATUS with no legacy equivalent reports
 // that fact and still yields something valid to send.
 func TestDOSErrorUnmapped(t *testing.T) {
