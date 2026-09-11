@@ -28,7 +28,7 @@ type clientDetachResponse struct {
 	PphContext mstrp.PCONTEXT_HANDLE_TYPE
 }
 
-// ClientDetach calls ClientDetach (opnum 2) ([MS-TRP] 3.2.4.3). It closes the tapsrv
+// ClientDetach calls ClientDetach (opnum 2) ([MS-TRP] 3.1.4.3). It closes the tapsrv
 // session identified by the context handle and frees the server-side state. The server
 // returns the handle nulled out (IsZero); transport-level failures surface through err.
 func ClientDetach(rpc ndr.Invoker, pphContext mstrp.PCONTEXT_HANDLE_TYPE) (PphContext mstrp.PCONTEXT_HANDLE_TYPE, err error) {

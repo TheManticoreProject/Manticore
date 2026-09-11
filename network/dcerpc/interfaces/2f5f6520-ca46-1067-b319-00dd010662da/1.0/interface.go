@@ -35,7 +35,7 @@ const (
 )
 
 // ClientAttach returns 0 on success and otherwise a nonzero error code "as specified in
-// [MS-ERREF]" ([MS-TRP] 3.2.4.1); the void methods (ClientRequest, ClientDetach) carry
+// [MS-ERREF]" ([MS-TRP] 3.1.4.1); the void methods (ClientRequest, ClientDetach) carry
 // their result inside the packed TAPI buffer rather than as an RPC return value. Those
 // codes are not declared here. The whole of [MS-ERREF] 2.2 lives in
 // github.com/TheManticoreProject/Manticore/windows/errors/win32 as the WIN32_ERROR type,

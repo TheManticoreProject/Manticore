@@ -41,7 +41,7 @@ const (
 )
 
 // RemoteSPAttach returns 0 on success and otherwise a nonzero error code "as specified in
-// [MS-ERREF]" ([MS-TRP] 3.1.4.1); the void methods (RemoteSPEventProc, RemoteSPDetach)
+// [MS-ERREF]" ([MS-TRP] 3.3.4.1); the void methods (RemoteSPEventProc, RemoteSPDetach)
 // carry no RPC return value. Those codes are not declared here. The whole of [MS-ERREF]
 // 2.2 lives in github.com/TheManticoreProject/Manticore/windows/errors/win32 as the
 // WIN32_ERROR type, and a subset repeated here would cover a fraction of that 2703-code

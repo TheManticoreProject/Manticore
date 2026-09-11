@@ -9,7 +9,7 @@ import (
 )
 
 // TestRemoteSPEventProc_BufferWireShape pins the wire layout of RemoteSPEventProc's
-// pBuffer ([MS-TRP] 3.1.4.2): a top-level conformant-varying byte array transmitted inline
+// pBuffer ([MS-TRP] 3.3.4.2): a top-level conformant-varying byte array transmitted inline
 // (no referent id) whose maximum_count and actual_count both equal lSize, followed by the
 // lSize field itself. lSize is derived from the slice length so the count and elements
 // cannot disagree.

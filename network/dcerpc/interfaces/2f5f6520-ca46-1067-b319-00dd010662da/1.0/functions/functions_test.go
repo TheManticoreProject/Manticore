@@ -10,7 +10,7 @@ import (
 )
 
 // TestClientRequest_BufferWireShape pins the independent-bounds wire layout of
-// ClientRequest's pBuffer ([MS-TRP] 3.2.4.2): a top-level [ref] conformant-varying byte
+// ClientRequest's pBuffer ([MS-TRP] 3.1.4.2): a top-level [ref] conformant-varying byte
 // array whose maximum_count is lNeededSize (capacity) and actual_count is plUsedSize (the
 // valid length), with no referent id. This matches the reference wire encoding used by
 // interop implementations.
