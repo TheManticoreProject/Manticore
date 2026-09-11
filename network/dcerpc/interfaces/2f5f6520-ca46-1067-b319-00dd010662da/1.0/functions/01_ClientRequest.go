@@ -16,7 +16,7 @@ import (
 // clientRequestRequest carries the [in]/[in,out] parameters of ClientRequest.
 //
 // pBuffer is a top-level [ref] pointer to a conformant-varying byte array with
-// independent bounds ([MS-TRP] 3.2.4.2): its maximum_count comes from lNeededSize (the
+// independent bounds ([MS-TRP] 3.1.4.2): its maximum_count comes from lNeededSize (the
 // buffer capacity) and its actual_count from plUsedSize (the number of bytes actually
 // carried). Modeling it [ref] (not [unique]) suppresses both a referent id and the
 // hoisting of maximum_count ahead of the preceding context handle, matching the wire.
@@ -44,7 +44,7 @@ type clientRequestResponse struct {
 	PlUsedSize ndr.DWORD
 }
 
-// ClientRequest calls ClientRequest (opnum 1) ([MS-TRP] 3.2.4.2). The client sends a
+// ClientRequest calls ClientRequest (opnum 1) ([MS-TRP] 3.1.4.2). The client sends a
 // packed TAPI request in pBuffer; the server processes it and returns the (possibly
 // updated) buffer in place. lNeededSize is the total capacity of pBuffer and plUsedSize
 // the number of valid bytes; both are [in,out]. The returned buffer and used size are

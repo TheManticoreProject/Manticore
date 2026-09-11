@@ -28,7 +28,7 @@ type remoteSPDetachResponse struct {
 	PphContext mstrp.PCONTEXT_HANDLE_TYPE2
 }
 
-// RemoteSPDetach calls RemoteSPDetach (opnum 2) ([MS-TRP] 3.1.4.3). The telephony server
+// RemoteSPDetach calls RemoteSPDetach (opnum 2) ([MS-TRP] 3.3.4.3). The telephony server
 // invokes it on the client to tear down the reverse binding established by RemoteSPAttach
 // and free the associated state. The callee returns the handle nulled out (IsZero);
 // transport-level failures surface through err.

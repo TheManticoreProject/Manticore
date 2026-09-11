@@ -14,7 +14,7 @@ import (
 )
 
 // remoteSPEventProcRequest carries the [in] parameters of RemoteSPEventProc. pBuffer is a
-// top-level conformant-varying byte array ([MS-TRP] 3.1.4.2) whose maximum_count and
+// top-level conformant-varying byte array ([MS-TRP] 3.3.4.2) whose maximum_count and
 // actual_count both come from lSize; it is transmitted inline (no referent id).
 type remoteSPEventProcRequest struct {
 	PhContext mstrp.PCONTEXT_HANDLE_TYPE2
@@ -32,7 +32,7 @@ func (*remoteSPEventProcRequest) Opnum() uint16 { return remotesp.OpnumRemoteSPE
 type remoteSPEventProcResponse struct {
 }
 
-// RemoteSPEventProc calls RemoteSPEventProc (opnum 1) ([MS-TRP] 3.1.4.2). The telephony
+// RemoteSPEventProc calls RemoteSPEventProc (opnum 1) ([MS-TRP] 3.3.4.2). The telephony
 // server invokes it on the client to push an asynchronous TAPI event: pBuffer holds the
 // packed event data of lSize bytes for the session identified by phContext. It returns no
 // value; transport-level failures surface through err.

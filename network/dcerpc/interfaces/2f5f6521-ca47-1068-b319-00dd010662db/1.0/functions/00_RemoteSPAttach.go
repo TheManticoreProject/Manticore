@@ -27,7 +27,7 @@ type remoteSPAttachResponse struct {
 	Return     ndr.DWORD `ndr:"retval"`
 }
 
-// RemoteSPAttach calls RemoteSPAttach (opnum 0) ([MS-TRP] 3.1.4.1). In the protocol the
+// RemoteSPAttach calls RemoteSPAttach (opnum 0) ([MS-TRP] 3.3.4.1). In the protocol the
 // telephony server is the RPC client for the remotesp interface: it calls RemoteSPAttach
 // on the client (which hosts the remotesp server) to establish a reverse binding for
 // event delivery. On success the callee returns the remotesp context handle. The method

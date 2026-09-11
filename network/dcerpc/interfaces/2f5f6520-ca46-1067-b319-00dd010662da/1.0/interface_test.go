@@ -72,7 +72,7 @@ func TestStatusCodesResolveThroughWin32(t *testing.T) {
 		}
 	}
 
-	// The two values [MS-TRP] 3.2.4.1 names for this return are not Win32 error codes:
+	// The two values [MS-TRP] 3.1.4.1 names for this return are not Win32 error codes:
 	// LINEERR_OPERATIONFAILED is a TAPI code in the 0x8000xxxx block and -19 is a raw
 	// negative. [MS-ERREF] 2.2 covers neither, so both stay hexadecimal exactly as they
 	// did before and neither can be misnamed out of the shared table.
