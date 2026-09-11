@@ -210,13 +210,12 @@ func TestReservedSubcommandsUseTheirMandatedStatus(t *testing.T) {
 	_, client := fileServer(t, fs, false)
 
 	t.Run("TRANS2_SET_FS_INFORMATION", func(t *testing.T) {
-		// STATUS_SMB_NO_SUPPORT has no constant in windows/errors/nt_status, so the
-		// closest available is used; what matters here is that it is not the
-		// generic STATUS_NOT_IMPLEMENTED.
+		// [MS-CIFS] 2.2.6.5 mandates STATUS_SMB_NO_SUPPORT for this subcommand,
+		// not the generic refusal its neighbours receive.
 		_, _, status := sendTrans2(t, client, subcommands.TRANS2_SET_FS_INFORMATION, make([]byte, 4), nil)
-		if status != uint32(nt_status.NT_STATUS_NOT_SUPPORTED) {
-			t.Errorf("it reported 0x%08X, want STATUS_NOT_SUPPORTED (0x%08X)",
-				status, uint32(nt_status.NT_STATUS_NOT_SUPPORTED))
+		if status != uint32(nt_status.NT_STATUS_SMB_NO_SUPPORT) {
+			t.Errorf("it reported 0x%08X, want STATUS_SMB_NO_SUPPORT (0x%08X)",
+				status, uint32(nt_status.NT_STATUS_SMB_NO_SUPPORT))
 		}
 		if status == uint32(nt_status.NT_STATUS_NOT_IMPLEMENTED) {
 			t.Error("it fell through to the table's generic refusal")

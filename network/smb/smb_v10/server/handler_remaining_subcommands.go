@@ -142,17 +142,17 @@ func handleTrans2CreateDirectory(
 // than left to fall through to STATUS_NOT_IMPLEMENTED because the specification
 // names a different status for it than for its neighbours.
 //
-// STATUS_SMB_NO_SUPPORT has no constant in windows/errors/nt_status, so the closest
-// available is used: NT_STATUS_NOT_SUPPORTED, which carries the same meaning and
-// maps to a not-supported legacy code. Nothing sends this subcommand — it is
-// reserved — so the difference is a conformance detail rather than a live one.
+// The status is NT_STATUS_SMB_NO_SUPPORT, the [MS-CIFS] extension value that is
+// wire-identical to the ERRSRV/ERRnosupport pair the specification names. Nothing
+// sends this subcommand — it is reserved — so the refusal is a conformance
+// detail rather than a live path.
 func handleTrans2SetFsInformation(
 	conn *Connection,
 	_ *message.Message,
 	_ *transactionReassembly,
 ) ([]byte, []byte, nt_status.NT_STATUS) {
 	logger.Debugf("SMB1 server: %s sent TRANS2_SET_FS_INFORMATION, which is reserved and refused", conn.Remote)
-	return nil, nil, nt_status.NT_STATUS_NOT_SUPPORTED
+	return nil, nil, nt_status.NT_STATUS_SMB_NO_SUPPORT
 }
 
 // handleNtTransactCreate answers NT_TRANSACT_CREATE, the NT_TRANSACT open.

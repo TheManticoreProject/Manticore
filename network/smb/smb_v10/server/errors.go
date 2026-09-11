@@ -144,6 +144,13 @@ var dosErrors = map[nt_status.NT_STATUS]SMBStatus{
 	nt_status.NT_STATUS_NONEXISTENT_SECTOR:    {ERRHRD, 0x001B}, // ERRbadsector
 	nt_status.NT_STATUS_WRONG_VOLUME:          {ERRHRD, 0x0022}, // ERRwrongdisk
 	nt_status.NT_STATUS_DISK_FULL:             {ERRHRD, 0x0027}, // ERRdiskfull
+
+	// NT_STATUS_SMB_NO_SUPPORT is tabulated rather than decomposed. It is a
+	// [MS-CIFS] composite like the others, but its ErrorCode is 0xFFFF, so its
+	// top byte is 0xFF and the decomposition below — which requires a zero top
+	// byte to tell a composite from a real [MS-ERREF] NTSTATUS — cannot claim
+	// it. Without this entry it would fall through to ERRSRV/ERRsrverror.
+	nt_status.NT_STATUS_SMB_NO_SUPPORT: {ERRSRV, 0xFFFF}, // ERRnosupport
 }
 
 // unmappedError is the pair sent for an NTSTATUS with no tabulated SMBSTATUS
