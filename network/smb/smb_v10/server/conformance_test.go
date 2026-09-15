@@ -414,14 +414,19 @@ func TestConformanceUnservedCommandsAreRefused(t *testing.T) {
 // TestConformanceClientAPI walks the client's entry points against the server and
 // asserts each one behaves as the table says.
 func TestConformanceClientAPI(t *testing.T) {
-	for _, policy := range []SigningPolicy{SigningDisabled, SigningRequired} {
+	for _, policy := range []SigningPolicy{SigningDisabled, SigningEnabled, SigningRequired} {
 		policy := policy
 		t.Run(policy.String(), func(t *testing.T) {
 			_, client := pipedClient(t, conformanceConfig(policy), true)
 
-			// Signing must be active exactly when the policy requires it, since
-			// every assertion below then runs over signed messages.
-			if wantSigning := policy == SigningRequired; client.Connection.IsSigningActive != wantSigning {
+			// Signing must be active for every policy that offers it, not only
+			// the one that demands it: the client asks for signing with
+			// SMB_FLAGS2_SECURITY_SIGNATURE under both, and a server that only
+			// offers it arms signing on being asked. Leaving it inactive under
+			// SigningEnabled made the server reject the first request that
+			// followed, so every assertion below is also the check that the
+			// connection survives.
+			if wantSigning := policy != SigningDisabled; client.Connection.IsSigningActive != wantSigning {
 				t.Fatalf("signing active = %t, want %t under policy %s",
 					client.Connection.IsSigningActive, wantSigning, policy)
 			}

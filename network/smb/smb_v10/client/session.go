@@ -358,22 +358,33 @@ func (s *Session) SessionSetup() error {
 
 	requestStep2Msg.AddCommand(sessionSetupStep2Cmd)
 
-	// Determine whether to activate SMB message signing. Signing is activated only
-	// when the server requires it; the MAC key is the session key derived from the
-	// NTLM exchange above. The AUTHENTICATE request is the first signed message
-	// (sequence number 0) and bootstraps signing for the connection.
+	// Determine whether to activate SMB message signing. Signing is activated
+	// whenever the server offers it, whether it enables or requires it: the
+	// header of this request already carries SMB_FLAGS2_SECURITY_SIGNATURE in
+	// both cases, which is how a client asks a server that merely enables
+	// signing to turn it on ([MS-SMB] 3.2.5.2). Signing only when the server
+	// demands it leaves the request unsigned after asking for signing, and a
+	// server that took the request at its word then rejects everything that
+	// follows. The SMB2 client makes the same decision the same way.
+	//
+	// The MAC key is the session key derived from the NTLM exchange above. The
+	// AUTHENTICATE request is the first signed message (sequence number 0) and
+	// bootstraps signing for the connection.
 	signingKey := authCtx.GetSessionKey()
-	signingRequired := s.Client.Connection.Server.SigningState == SigningStateRequired
-	if signingRequired && len(signingKey) == 0 {
+	signingState := s.Client.Connection.Server.SigningState
+	if signingState == SigningStateRequired && len(signingKey) == 0 {
 		return fmt.Errorf("server requires SMB signing but no session key was derived (signing requires the NTLMv2/extended-security path)")
 	}
+	// A server that only enables signing leaves it to the client, so an exchange
+	// that derived no key simply does not sign rather than failing.
+	signMessages := signingState != SigningStateDisabled && len(signingKey) != 0
 
 	marshalledStep2, err := requestStep2Msg.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshal step 2 message: %v", err)
 	}
 
-	if signingRequired {
+	if signMessages {
 		s.Client.Connection.SigningSessionKey = signingKey
 		s.Client.Connection.IsSigningActive = true
 		signing.Sign(signingKey, marshalledStep2, 0)

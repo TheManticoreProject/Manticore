@@ -937,3 +937,55 @@ func TestSecondSessionKeepsTheConnectionSigning(t *testing.T) {
 		t.Fatalf("an echo on the second session answered 0x%08X, want success", response.Header.Status)
 	}
 }
+
+// TestClientSignsWhenServerOnlyEnablesSigning is the regression guard for a
+// client that asked for signing and then did not sign. The client sets
+// SMB_FLAGS2_SECURITY_SIGNATURE on its session setup whenever the server offers
+// signing, which is how a client asks a server that merely enables it to turn it
+// on ([MS-SMB] 3.2.5.2). While signing was activated only for a server that
+// *required* it, the server armed signing on being asked and the client kept
+// sending unsigned requests, so the first request after session setup failed
+// verification and the connection was closed.
+func TestClientSignsWhenServerOnlyEnablesSigning(t *testing.T) {
+	_, client := pipedClient(t, conformanceConfig(SigningEnabled), true)
+
+	if client.Connection.Server.SigningState != smb1client.SigningStateEnabled {
+		t.Fatalf("server signing state = %q, want %q",
+			client.Connection.Server.SigningState, smb1client.SigningStateEnabled)
+	}
+	if !client.Connection.IsSigningActive {
+		t.Fatal("signing is inactive against a server that enables it")
+	}
+	if len(client.Connection.SigningSessionKey) == 0 {
+		t.Fatal("signing is active with no session key")
+	}
+
+	// The connection is what proves it: a request that did not verify would be
+	// answered by the server closing the connection rather than by an error.
+	payload := []byte("signed")
+	echoed, err := client.Echo(payload)
+	if err != nil {
+		t.Fatalf("Echo() over a signing-enabled connection error = %v", err)
+	}
+	if !bytes.Equal(echoed, payload) {
+		t.Fatalf("Echo() returned %q, want %q", echoed, payload)
+	}
+}
+
+// TestClientDoesNotSignWhenServerDisablesSigning is the other side of the same
+// decision: a server that does not offer signing gets none, so the fix above
+// cannot have turned signing on unconditionally.
+func TestClientDoesNotSignWhenServerDisablesSigning(t *testing.T) {
+	_, client := pipedClient(t, conformanceConfig(SigningDisabled), true)
+
+	if client.Connection.Server.SigningState != smb1client.SigningStateDisabled {
+		t.Fatalf("server signing state = %q, want %q",
+			client.Connection.Server.SigningState, smb1client.SigningStateDisabled)
+	}
+	if client.Connection.IsSigningActive {
+		t.Error("signing is active against a server that does not offer it")
+	}
+	if _, err := client.Echo([]byte("unsigned")); err != nil {
+		t.Fatalf("Echo() over an unsigned connection error = %v", err)
+	}
+}
