@@ -3,6 +3,7 @@ package client
 import (
 	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"net"
+	"sync/atomic"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
@@ -86,6 +87,11 @@ type Connection struct {
 
 	// PIDMIDList is the list of outstanding SMB commands
 	PIDMIDList []interface{}
+
+	// messageIDCounter hands out the MID of each request sent on this
+	// connection, via nextMID. Its zero value is usable, so a Connection built
+	// as a struct literal needs no initialisation.
+	messageIDCounter atomic.Uint32
 
 	// SearchOpenTable is the list of SearchOpens representing open file searches
 	SearchOpenTable []interface{}
