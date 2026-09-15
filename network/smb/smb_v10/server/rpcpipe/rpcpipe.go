@@ -82,7 +82,7 @@ var (
 //	srv.AddShare(&server.Share{
 //	    Name:  "IPC$",
 //	    Type:  server.ShareTypeNamedPipe,
-//	    Pipes: rpcpipe.ForServer(srv, rpcpipe.Options{ServerName: "MANTICORE"}),
+//	    Pipes: rpcpipe.ForServer(srv, rpcpipe.Options{ServerName: "FILESERVER"}),
 //	})
 //
 // A Handler is safe for concurrent use, which it has to be: one is reachable from

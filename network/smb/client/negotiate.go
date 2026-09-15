@@ -193,8 +193,6 @@ func finishSMB1(t transport.Transport, ip net.IP, host string, port int, opts Op
 	}
 
 	engine := smb1.NewFromTransport(t, ip, port)
-	engine.NativeOS = "Manticore"
-	engine.NativeLanMan = "Manticore"
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}

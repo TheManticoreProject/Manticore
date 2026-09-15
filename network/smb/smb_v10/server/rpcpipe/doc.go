@@ -14,7 +14,7 @@
 //	srv.AddShare(&server.Share{
 //	    Name:  "IPC$",
 //	    Type:  server.ShareTypeNamedPipe,
-//	    Pipes: rpcpipe.ForServer(srv, rpcpipe.Options{ServerName: "MANTICORE"}),
+//	    Pipes: rpcpipe.ForServer(srv, rpcpipe.Options{ServerName: "FILESERVER"}),
 //	})
 //
 // It is a package of its own rather than part of the server. The server has no

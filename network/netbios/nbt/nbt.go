@@ -20,7 +20,16 @@ const (
 
 	// fallbackCallingName is the CALLING name used when the local hostname
 	// cannot be determined.
-	fallbackCallingName = "MANTICORE"
+	//
+	// It reaches the wire in a NetBIOS SESSION REQUEST (RFC 1002 4.3.2), so it
+	// describes the sender to anyone reading the exchange. A generic workstation
+	// name says nothing; the project name it previously carried identified the
+	// implementation outright.
+	//
+	// This is a literal here rather than a field of the SMB fingerprint profile
+	// on purpose: NetBIOS sits below SMB, and having the transport reach up into
+	// an SMB package for one string would invert that.
+	fallbackCallingName = "WORKSTATION"
 
 	// NetBIOSSuffixWorkstation and NetBIOSSuffixServer are the one-byte service
 	// suffixes appended to the 16th byte of a NetBIOS name: the calling name is
