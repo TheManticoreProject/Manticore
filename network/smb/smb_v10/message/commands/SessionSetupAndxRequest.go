@@ -236,8 +236,20 @@ func (c *SessionSetupAndxRequest) Marshal() ([]byte, error) {
 		rawDataContent = append(rawDataContent, c.SecurityBlob...)
 		c.SecurityBlobLength = types.USHORT(len(c.SecurityBlob))
 
+		// A Unicode NativeOS MUST start on a 2-byte boundary from the start of the
+		// SMB header ([MS-SMB] 2.2.4.6.1), and so must NativeLanMan. The data
+		// block begins at SMB_HEADER_SIZE(32) + WordCount(1) + 24 words(48 -> 24
+		// bytes of words for WordCount 0x0C) + ByteCount(2), an odd offset, so a
+		// security blob of even length leaves the strings misaligned unless a pad
+		// byte is emitted here. Without it a peer reads every character a byte out
+		// of phase and the identity this client reports is unintelligible.
+		if c.IsUnicode() && (sessionSetupAndxDataOffset+len(rawDataContent))%2 != 0 {
+			c.Pad = []types.UCHAR{0x00}
+			rawDataContent = append(rawDataContent, 0x00)
+		}
+
 		// Marshalling data NativeOS
-		if c.Capabilities.HasCapability(capabilities.CAP_UNICODE) {
+		if c.IsUnicode() {
 			rawDataContent = append(rawDataContent, utf16.EncodeUTF16LE(c.NativeOS)...)
 			rawDataContent = append(rawDataContent, []byte{0, 0}...)
 		} else {
@@ -245,8 +257,9 @@ func (c *SessionSetupAndxRequest) Marshal() ([]byte, error) {
 			rawDataContent = append(rawDataContent, []byte{0}...)
 		}
 
-		// Marshalling data NativeLanMan
-		if c.Capabilities.HasCapability(capabilities.CAP_UNICODE) {
+		// NativeLanMan follows a NUL-terminated string of even length, so it
+		// inherits the alignment established above.
+		if c.IsUnicode() {
 			rawDataContent = append(rawDataContent, utf16.EncodeUTF16LE(c.NativeLanMan)...)
 			rawDataContent = append(rawDataContent, []byte{0, 0}...)
 		} else {
@@ -490,15 +503,24 @@ func (c *SessionSetupAndxRequest) Unmarshal(rawData []byte) (int, error) {
 		c.SecurityBlob = rawDataContent[offset : offset+int(c.SecurityBlobLength)]
 		offset += int(c.SecurityBlobLength)
 
+		// Mirror of Marshal: skip the alignment byte a Unicode NativeOS is padded
+		// to, then read a terminator of the width the encoding actually uses.
+		// Scanning for a single NUL in a UTF-16LE string ends it at the high half
+		// of its first character.
+		if c.IsUnicode() && (sessionSetupAndxDataOffset+offset)%2 != 0 && offset < len(rawDataContent) {
+			c.Pad = []types.UCHAR{rawDataContent[offset]}
+			offset++
+		}
+
 		// Unmarshalling data NativeOS
-		nativeOSdata, bytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		nativeOSdata, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
 		offset += bytesRead
-		c.NativeOS = string(nativeOSdata)
+		c.NativeOS = decodeNativeString(nativeOSdata, c.IsUnicode())
 
 		// Unmarshalling data NativeLanMan
-		nativeLanMandata, bytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		nativeLanMandata, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
 		offset += bytesRead
-		c.NativeLanMan = string(nativeLanMandata)
+		c.NativeLanMan = decodeNativeString(nativeLanMandata, c.IsUnicode())
 	} else {
 		// Unmarshalling data OEMPassword
 		// OEMPasswordLen is client-controlled, so the bound has to cover the
