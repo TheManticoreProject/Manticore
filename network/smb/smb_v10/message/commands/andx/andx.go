@@ -24,11 +24,23 @@ func NewAndX() *AndX {
 	}
 }
 
-// GetParameters returns the parameters of the AndX structure
+// GetParameters returns the AndX block as the words a Parameters structure
+// carries it in.
+//
+// Parameters is a byte-transparent container: it splits every word high byte
+// first and reassembles it the same way, so a word holds two consecutive wire
+// bytes rather than a 16-bit value. AndXCommand and AndXReserved are single
+// bytes and pack into the first word directly. AndXOffset is a little-endian
+// USHORT ([MS-CIFS] 2.2.3.4), so its two bytes are packed in wire order here —
+// returning the field as a value put it on the wire with its bytes reversed.
+//
 // Returns:
-// - A byte array containing the parameters of the AndX structure
+// - The words of the AndX block, in wire order
 func (a *AndX) GetParameters() []uint16 {
-	return []uint16{uint16(a.AndXCommand)<<8 | uint16(a.AndXReserved), a.AndXOffset}
+	return []uint16{
+		uint16(a.AndXCommand)<<8 | uint16(a.AndXReserved),
+		uint16(a.AndXOffset&0x00FF)<<8 | uint16(a.AndXOffset>>8),
+	}
 }
 
 // Marshal marshals the AndX structure into a byte array
