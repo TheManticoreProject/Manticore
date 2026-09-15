@@ -33,8 +33,8 @@ func (c *Client) TreeConnect(shareName string) error {
 	if c.useUnicode() {
 		requestMsg.Header.Flags2 |= flags2.FLAGS2_UNICODE
 	}
-	requestMsg.Header.SetPID(requestMsg.Header.GetPID())
-	requestMsg.Header.MID = c.Connection.MaxMpxCount
+	requestMsg.Header.SetPID(clientProcessID)
+	requestMsg.Header.MID = c.Connection.nextMID()
 	requestMsg.Header.TID = 65535
 	requestMsg.Header.UID = c.Session.SessionUID
 

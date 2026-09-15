@@ -76,8 +76,8 @@ func (s *Session) SessionSetup() error {
 	}
 
 	// Set process ID and multiplex ID
-	requestStep1Msg.Header.SetPID(0)
-	requestStep1Msg.Header.MID = 0
+	requestStep1Msg.Header.SetPID(clientProcessID)
+	requestStep1Msg.Header.MID = s.Client.Connection.nextMID()
 	requestStep1Msg.Header.TID = 65535
 	requestStep1Msg.Header.UID = 0
 
@@ -293,7 +293,9 @@ func (s *Session) SessionSetup() error {
 	requestStep2Msg.Header.Flags = requestStep1Msg.Header.Flags
 	requestStep2Msg.Header.Flags2 = requestStep1Msg.Header.Flags2
 	requestStep2Msg.Header.SetPID(requestStep1Msg.Header.GetPID())
-	requestStep2Msg.Header.MID = requestStep1Msg.Header.MID
+	// The second leg is a request in its own right and takes its own MID; only
+	// the PID is shared, because both legs come from the same process.
+	requestStep2Msg.Header.MID = s.Client.Connection.nextMID()
 	requestStep2Msg.Header.TID = requestStep1Msg.Header.TID
 	// Here we need to set the UID to the UID of the response message
 	requestStep2Msg.Header.UID = responseMsg.Header.UID

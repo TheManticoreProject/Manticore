@@ -60,8 +60,8 @@ func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
 	if c.useUnicode() {
 		msg.Header.Flags2 |= flags2.FLAGS2_UNICODE
 	}
-	msg.Header.SetPID(msg.Header.GetPID())
-	msg.Header.MID = c.Connection.MaxMpxCount
+	msg.Header.SetPID(clientProcessID)
+	msg.Header.MID = c.Connection.nextMID()
 	msg.Header.TID = c.Session.TreeID
 	msg.Header.UID = c.Session.SessionUID
 	return msg
