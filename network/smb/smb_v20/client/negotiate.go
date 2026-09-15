@@ -4,15 +4,9 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 )
-
-// preauthSaltLength is the length of the salt the client places in the SMB 3.1.1
-// SMB2_PREAUTH_INTEGRITY_CAPABILITIES negotiate context; Windows uses 32 bytes.
-const preauthSaltLength = 32
 
 // Negotiate performs the SMB2 NEGOTIATE exchange, offering the full range of
 // SMB 2.0.2 through 3.1.1 dialects and capturing the server's chosen dialect,
@@ -26,17 +20,15 @@ const preauthSaltLength = 32
 //
 // NEGOTIATE uses MessageId 0 and SessionId 0, as required by the spec.
 func (c *Client) Negotiate() error {
+	profile := c.profile()
+
 	req := commands.NewNegotiateRequest()
-	req.AddDialect(dialects.SMB2_DIALECT_2_0_2)
-	req.AddDialect(dialects.SMB2_DIALECT_2_1_0)
-	req.AddDialect(dialects.SMB2_DIALECT_3_0_0)
-	req.AddDialect(dialects.SMB2_DIALECT_3_0_2)
-	req.AddDialect(dialects.SMB2_DIALECT_3_1_1)
+	for _, dialect := range profile.Dialects {
+		req.AddDialect(dialect)
+	}
 	req.ClientGuid = c.ClientGuid
-	// Advertise signing support and the SMB 3.x capabilities (large MTU,
-	// encryption) so the server may negotiate up to 3.1.1.
-	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
-	req.Capabilities = capabilities.SMB2_GLOBAL_CAP_LARGE_MTU | capabilities.SMB2_GLOBAL_CAP_ENCRYPTION
+	req.SecurityMode = profile.SecurityMode
+	req.Capabilities = profile.Capabilities
 
 	// Retain what was offered: the secure-negotiate validation performed after a
 	// tree connect replays these exact values for the server to confirm.
@@ -46,16 +38,13 @@ func (c *Client) Negotiate() error {
 
 	// SMB 3.1.1 negotiate contexts: pre-auth integrity (SHA-512 + random salt)
 	// and encryption ciphers in preference order (AES-128-GCM, then AES-128-CCM).
-	salt := make([]byte, preauthSaltLength)
+	salt := make([]byte, profile.PreauthSaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return fmt.Errorf("negotiate: failed to generate pre-auth salt: %w", err)
 	}
 	req.Contexts = []*commands.NegotiateContext{
 		commands.NewPreauthIntegrityContext(salt),
-		commands.NewEncryptionContext([]uint16{
-			commands.SMB2_ENCRYPTION_AES128_GCM,
-			commands.SMB2_ENCRYPTION_AES128_CCM,
-		}),
+		commands.NewEncryptionContext(profile.Ciphers),
 	}
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the

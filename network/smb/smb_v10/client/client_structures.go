@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"net"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
@@ -10,13 +11,17 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
-// Default NativeOS / NativeLanMan strings sent in SESSION_SETUP_ANDX when the caller
-// leaves Client.NativeOS / Client.NativeLanMan empty. They must be non-empty: strict
-// servers (e.g. Windows Server 2016) reject a session setup with empty values. The
-// exact strings are informational only.
-const (
-	DefaultNativeOS     = "Unix"
-	DefaultNativeLanMan = "Samba"
+var (
+	// DefaultNativeOS and DefaultNativeLanMan are the informational strings sent
+	// in SESSION_SETUP_ANDX when the caller leaves Client.NativeOS /
+	// Client.NativeLanMan empty. They must be non-empty: strict servers reject a
+	// session setup whose native strings are blank.
+	//
+	// They come from the fingerprint profile rather than being literals here,
+	// because they reach the wire and describe the sender. They previously read
+	// "Unix" and "Samba", which named a different implementation than this one.
+	DefaultNativeOS     = fingerprint.Default().NativeOS
+	DefaultNativeLanMan = fingerprint.Default().NativeLanMan
 )
 
 // DefaultMaxBufferSize is the client's own maximum receive buffer, declared in

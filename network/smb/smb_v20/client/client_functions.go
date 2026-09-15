@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"net"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
@@ -11,6 +12,11 @@ import (
 func newClient(t transport.Transport, host net.IP, port int) *Client {
 	return &Client{
 		Transport: t,
+		Profile:   fingerprint.Default(),
+		// A client that never sets this sends sixteen zero bytes, which no
+		// conforming client does and which identifies the sender as one that
+		// never populated the field.
+		ClientGuid: fingerprint.MachineGuid(),
 		Connection: &Connection{
 			Server:           &Server{Host: host, Port: port},
 			SessionTable:     make(map[uint64]*Session),
@@ -98,4 +104,14 @@ func (c *Client) EnableEncryption() error {
 // IsEncryptionActive reports whether the current session encrypts its traffic.
 func (c *Client) IsEncryptionActive() bool {
 	return c.Session != nil && c.Session.EncryptData
+}
+
+// profile returns the values this client puts on the wire, falling back to the
+// package default so a Client built as a bare struct literal — which the tests
+// do — still emits a coherent set rather than zero values.
+func (c *Client) profile() *fingerprint.Profile {
+	if c.Profile == nil {
+		c.Profile = fingerprint.Default()
+	}
+	return c.Profile
 }

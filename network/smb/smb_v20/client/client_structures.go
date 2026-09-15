@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"net"
 	"sync"
 
@@ -23,8 +24,14 @@ type Client struct {
 	// Session is the authenticated session, once established.
 	Session *Session
 
-	// ClientGuid is a per-client GUID sent in SMB2 NEGOTIATE.
+	// ClientGuid is a per-client GUID sent in SMB2 NEGOTIATE. It defaults to the
+	// process-stable GUID from the fingerprint package; set it explicitly to
+	// present a persisted one.
 	ClientGuid [16]byte
+
+	// Profile supplies the values this client puts on the wire. It is never nil
+	// on a client built by a constructor here.
+	Profile *fingerprint.Profile
 
 	// Workstation is the client workstation name used during NTLM authentication.
 	Workstation string

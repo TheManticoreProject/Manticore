@@ -74,8 +74,6 @@ func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
 func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb1.NewClientUsingTCPTransport(ip, port)
 	// The SMB1 session setup requires the NativeOS / NativeLanMan fields to be set.
-	engine.NativeOS = "Manticore"
-	engine.NativeLanMan = "Manticore"
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
