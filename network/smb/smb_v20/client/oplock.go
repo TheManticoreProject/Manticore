@@ -40,8 +40,8 @@ func (c *Client) WaitOplockBreak() (*OplockBreak, error) {
 	if !msg.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("oplock break is not an SMB2 message (ProtocolId % x)", msg.Header.ProtocolId)
 	}
-	if c.Session != nil && c.Session.SigningActive && msg.Header.Flags.IsSigned() {
-		if !verifySignature(c.Session.SigningKey, raw) {
+	if c.Session != nil && c.Session.SigningActive {
+		if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 			return nil, fmt.Errorf("oplock break failed SMB2 signature verification")
 		}
 	}
