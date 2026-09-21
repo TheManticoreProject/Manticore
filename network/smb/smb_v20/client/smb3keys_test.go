@@ -24,7 +24,7 @@ func TestSMB30KeyDerivationKnownAnswer(t *testing.T) {
 	sessionKey := mustHex(t, "7CD451825D0450D235424E44BA6E78CC")
 
 	s := &Session{SessionKey: sessionKey}
-	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_0_0, nil, 0)
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_0_0, nil, 0, -1)
 
 	cases := []struct {
 		name string
@@ -51,7 +51,7 @@ func TestSMB311KeyDerivationKnownAnswer(t *testing.T) {
 		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
 
 	s := &Session{SessionKey: sessionKey}
-	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, 0)
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, 0, -1)
 
 	cases := []struct {
 		name string
@@ -81,7 +81,7 @@ func TestSMB311AES256KeyDerivation(t *testing.T) {
 		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
 
 	s := &Session{SessionKey: sessionKey}
-	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, commands.SMB2_ENCRYPTION_AES256_GCM)
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, commands.SMB2_ENCRYPTION_AES256_GCM, -1)
 
 	if len(s.SigningKey) != 16 {
 		t.Errorf("SigningKey length = %d, want 16", len(s.SigningKey))
@@ -110,5 +110,36 @@ func TestSMB311AES256KeyDerivation(t *testing.T) {
 	enc128 := mustHex(t, "629BCBC54422A0F572B97F45989B6073")
 	if bytes.Equal(s.EncryptionKey[:16], enc128) {
 		t.Error("EncryptionKey first 16 bytes equal the AES-128 derivation; L=256 should produce different PRF output")
+	}
+}
+
+// TestSMB311GMACSigning256BitKey verifies that when AES-GMAC is the negotiated
+// signing algorithm the signing key is 32 bytes while all other keys retain
+// their normal lengths. The 256-bit signing key must also differ from the
+// 128-bit one (the L value changes the PRF output).
+func TestSMB311GMACSigning256BitKey(t *testing.T) {
+	sessionKey := mustHex(t, "270E1BA896585EEB7AF3472D3B4C75A7")
+	preauth := mustHex(t, "0DD13628CC3ED218EF9DF9772D436D0887AB9814BFAE63A80AA845F36909DB79"+
+		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
+
+	s := &Session{SessionKey: sessionKey}
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, 0, commands.SMB2_SIGNING_ALG_AES_GMAC)
+
+	if len(s.SigningKey) != 32 {
+		t.Errorf("SigningKey length = %d, want 32 for AES-GMAC", len(s.SigningKey))
+	}
+	if len(s.ApplicationKey) != 16 {
+		t.Errorf("ApplicationKey length = %d, want 16", len(s.ApplicationKey))
+	}
+	if len(s.EncryptionKey) != 16 {
+		t.Errorf("EncryptionKey length = %d, want 16 (AES-128 cipher)", len(s.EncryptionKey))
+	}
+	if len(s.DecryptionKey) != 16 {
+		t.Errorf("DecryptionKey length = %d, want 16 (AES-128 cipher)", len(s.DecryptionKey))
+	}
+
+	sign128 := mustHex(t, "73FE7A9A77BEF0BDE49C650D8CCB5F76")
+	if bytes.Equal(s.SigningKey[:16], sign128) {
+		t.Error("SigningKey first 16 bytes equal the AES-CMAC derivation; L=256 should produce different PRF output")
 	}
 }

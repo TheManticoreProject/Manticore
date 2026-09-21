@@ -66,6 +66,11 @@ var defaultProfile = Profile{
 	// because they are not exercised end to end.
 	Ciphers: []uint16{0x0002, 0x0001},
 
+	// AES-GMAC, then AES-CMAC. AES-GMAC is faster (hardware-accelerated GCM)
+	// and available from Windows Server 2022 / Windows 11. Offering both lets
+	// the server pick GMAC when it can, falling back to CMAC otherwise.
+	SigningAlgorithms: []uint16{0x0002, 0x0001}, // AES-GMAC, AES-CMAC
+
 	// [MS-SMB2] 2.2.3.1.1; 32 bytes is what Windows sends.
 	PreauthSaltLength: 32,
 }

@@ -107,6 +107,12 @@ type Connection struct {
 	// implicitly AES-128-CCM.
 	Cipher uint16
 
+	// SigningAlgorithmId is the signing algorithm the server selected in the
+	// SMB2_SIGNING_CAPABILITIES negotiate context. It is -1 when no signing
+	// capabilities context was present (the server falls back to the dialect
+	// default). Values: 0 = HMAC-SHA256, 1 = AES-128-CMAC, 2 = AES-GMAC.
+	SigningAlgorithmId int
+
 	// PreauthIntegrityHashId is the pre-authentication integrity hash algorithm
 	// the server selected for the SMB 3.1.1 dialect (SHA-512).
 	PreauthIntegrityHashId uint16

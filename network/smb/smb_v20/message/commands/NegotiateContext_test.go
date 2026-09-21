@@ -61,6 +61,44 @@ func TestNewTransportCapabilitiesContextZero(t *testing.T) {
 	}
 }
 
+func TestNewSigningCapabilitiesContext(t *testing.T) {
+	ctx := NewSigningCapabilitiesContext([]uint16{SMB2_SIGNING_ALG_AES_GMAC, SMB2_SIGNING_ALG_AES_CMAC})
+	if ctx.ContextType != SMB2_SIGNING_CAPABILITIES {
+		t.Errorf("ContextType = 0x%04x, want 0x%04x", ctx.ContextType, SMB2_SIGNING_CAPABILITIES)
+	}
+	// 2-byte count + 2 algorithms × 2 bytes = 6 bytes
+	if len(ctx.Data) != 6 {
+		t.Fatalf("Data length = %d, want 6", len(ctx.Data))
+	}
+	count := binary.LittleEndian.Uint16(ctx.Data[0:2])
+	if count != 2 {
+		t.Errorf("algorithm count = %d, want 2", count)
+	}
+	alg0 := binary.LittleEndian.Uint16(ctx.Data[2:4])
+	alg1 := binary.LittleEndian.Uint16(ctx.Data[4:6])
+	if alg0 != SMB2_SIGNING_ALG_AES_GMAC {
+		t.Errorf("algorithm[0] = 0x%04x, want AES-GMAC", alg0)
+	}
+	if alg1 != SMB2_SIGNING_ALG_AES_CMAC {
+		t.Errorf("algorithm[1] = 0x%04x, want AES-CMAC", alg1)
+	}
+}
+
+func TestSelectedSigningAlgorithm(t *testing.T) {
+	// Server responds with a single algorithm
+	ctx := NewSigningCapabilitiesContext([]uint16{SMB2_SIGNING_ALG_AES_GMAC})
+	got := SelectedSigningAlgorithm([]*NegotiateContext{ctx})
+	if got != SMB2_SIGNING_ALG_AES_GMAC {
+		t.Errorf("SelectedSigningAlgorithm = %d, want %d", got, SMB2_SIGNING_ALG_AES_GMAC)
+	}
+
+	// No signing capabilities context → -1
+	got = SelectedSigningAlgorithm([]*NegotiateContext{})
+	if got != -1 {
+		t.Errorf("SelectedSigningAlgorithm on empty = %d, want -1", got)
+	}
+}
+
 func TestNetnameContextRoundTrip(t *testing.T) {
 	original := []*NegotiateContext{
 		NewPreauthIntegrityContext(make([]byte, 32)),

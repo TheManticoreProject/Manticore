@@ -89,7 +89,7 @@ func sp800108CounterKDF(ki, label, context []byte, bits int) []byte {
 // DecryptionKey is the key it uses to decrypt the server's replies. When the
 // negotiated cipher is AES-256-CCM or AES-256-GCM the encryption and decryption
 // keys are 256 bits; all other keys remain 128 bits.
-func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte, cipher uint16) {
+func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte, cipher uint16, signingAlg int) {
 	key := session.SessionKey
 
 	switch dialect {
@@ -103,7 +103,11 @@ func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []by
 		if cipher == commands.SMB2_ENCRYPTION_AES256_CCM || cipher == commands.SMB2_ENCRYPTION_AES256_GCM {
 			cipherBits = 256
 		}
-		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning311, preauthHash, 128)
+		signingBits := 128
+		if signingAlg == commands.SMB2_SIGNING_ALG_AES_GMAC {
+			signingBits = 256
+		}
+		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning311, preauthHash, signingBits)
 		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp311, preauthHash, 128)
 		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelC2SCipher, preauthHash, cipherBits)
 		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelS2CCipher, preauthHash, cipherBits)
