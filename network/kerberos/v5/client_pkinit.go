@@ -18,13 +18,13 @@ import (
 // msDS-KeyCredentialLink). A subsequent GetTGT performs the PKINIT AS exchange
 // instead of password/hash pre-authentication.
 //
-// By default the client offers MODP group 14 (2048-bit) and falls back to group
-// 2 (1024-bit); use WithPKINITGroups to override.
+// By default the client offers MODP group 14 (2048-bit). Use WithPKINITGroups
+// to explicitly enable a different group for legacy interoperability.
 func (c *KerberosClient) WithPKINIT(priv *rsa.PrivateKey, certDER []byte) *KerberosClient {
 	c.pkinitPriv = priv
 	c.pkinitCert = certDER
 	if len(c.pkinitGroups) == 0 {
-		c.pkinitGroups = []pkinit.DHGroup{pkinit.MODPGroup14(), pkinit.MODPGroup2()}
+		c.pkinitGroups = []pkinit.DHGroup{pkinit.MODPGroup14()}
 	}
 	return c
 }
@@ -105,7 +105,7 @@ func (c *KerberosClient) pkinitConfigured() bool {
 func (c *KerberosClient) getTGTPKINIT() error {
 	groups := c.pkinitGroups
 	if len(groups) == 0 {
-		groups = []pkinit.DHGroup{pkinit.MODPGroup14(), pkinit.MODPGroup2()}
+		groups = []pkinit.DHGroup{pkinit.MODPGroup14()}
 	}
 	var lastErr error
 	for _, group := range groups {
