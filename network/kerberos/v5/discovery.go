@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,23 @@ import (
 // (see kdcSendEndpoints). The SRV target host and port are honoured, so a KDC
 // on a non-standard port is reached correctly.
 
+// parseKDCEndpoint splits a KDC address into a host and port. It accepts bare
+// hostnames ("dc.corp.local"), host:port ("dc.corp.local:8888"), IP literals
+// ("10.0.0.1"), IP:port ("10.0.0.1:8888"), and bracketed IPv6 with port
+// ("[::1]:8888"). A bare host or IP without an explicit port defaults to
+// defaultKDCPort (88).
+func parseKDCEndpoint(addr string) kdcEndpoint {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return kdcEndpoint{host: addr, port: defaultKDCPort}
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return kdcEndpoint{host: host, port: defaultKDCPort}
+	}
+	return kdcEndpoint{host: host, port: port}
+}
+
 // endpointsForRealm returns the ordered list of KDC endpoints to contact for the
 // given realm. Resolution order mirrors resolveKDCForRealm — explicit
 // WithRealmKDC overrides, then the client's own configured KDC for its home
@@ -27,17 +45,17 @@ func (c *KerberosClient) endpointsForRealm(realm string) ([]kdcEndpoint, error) 
 	realm = strings.ToUpper(realm)
 
 	if host, ok := c.realmKDCs[realm]; ok && host != "" {
-		return []kdcEndpoint{{host: host, port: defaultKDCPort}}, nil
+		return []kdcEndpoint{parseKDCEndpoint(host)}, nil
 	}
 	if realm == strings.ToUpper(c.realm) && c.kdcHost != "" {
-		return []kdcEndpoint{{host: c.kdcHost, port: defaultKDCPort}}, nil
+		return []kdcEndpoint{parseKDCEndpoint(c.kdcHost)}, nil
 	}
 	if c.kdcResolver != nil {
 		host, err := c.kdcResolver(realm)
 		if err != nil {
 			return nil, err
 		}
-		return []kdcEndpoint{{host: host, port: defaultKDCPort}}, nil
+		return []kdcEndpoint{parseKDCEndpoint(host)}, nil
 	}
 	return c.discoverKDCEndpoints(realm)
 }
