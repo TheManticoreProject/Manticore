@@ -140,6 +140,11 @@ func (c *Client) decryptMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("transform: frame shorter than TRANSFORM_HEADER")
 	}
 
+	headerSessionId := binary.LittleEndian.Uint64(data[transformSessionIDOffset:])
+	if headerSessionId != c.Session.SessionId {
+		return nil, fmt.Errorf("transform: TRANSFORM_HEADER SessionId %d does not match session %d", headerSessionId, c.Session.SessionId)
+	}
+
 	_, open, nonceLen, _, err := aeadForCipher(c.Connection.Cipher, c.Session.DecryptionKey)
 	if err != nil {
 		return nil, err
