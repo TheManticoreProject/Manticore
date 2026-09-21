@@ -62,9 +62,10 @@ var defaultProfile = Profile{
 
 	SecurityMode: securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED,
 
-	// AES-128-GCM before AES-128-CCM. The AES-256 ciphers are not offered
-	// because they are not exercised end to end.
-	Ciphers: []uint16{0x0002, 0x0001},
+	// AES-256-GCM, AES-128-GCM, AES-256-CCM, AES-128-CCM. GCM is preferred
+	// within each key size for its hardware acceleration; 256-bit variants
+	// are offered first for stronger encryption when the server supports them.
+	Ciphers: []uint16{0x0004, 0x0002, 0x0003, 0x0001},
 
 	// [MS-SMB2] 2.2.3.1.1; 32 bytes is what Windows sends.
 	PreauthSaltLength: 32,

@@ -121,17 +121,21 @@ func TestTransformHeaderRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		cipher uint16
+		key    string
 	}{
-		{"AES-128-GCM", commands.SMB2_ENCRYPTION_AES128_GCM},
-		{"AES-128-CCM", commands.SMB2_ENCRYPTION_AES128_CCM},
+		{"AES-128-GCM", commands.SMB2_ENCRYPTION_AES128_GCM, "629BCBC54422A0F572B97F45989B6073"},
+		{"AES-128-CCM", commands.SMB2_ENCRYPTION_AES128_CCM, "629BCBC54422A0F572B97F45989B6073"},
+		{"AES-256-GCM", commands.SMB2_ENCRYPTION_AES256_GCM, "629BCBC54422A0F572B97F45989B6073A1B2C3D4E5F60718293A4B5C6D7E8F90"},
+		{"AES-256-CCM", commands.SMB2_ENCRYPTION_AES256_CCM, "629BCBC54422A0F572B97F45989B6073A1B2C3D4E5F60718293A4B5C6D7E8F90"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			keyBytes := mustHex(t, tc.key)
 			c := &Client{Connection: &Connection{Server: &Server{}, Dialect: dialects.SMB2_DIALECT_3_1_1, Cipher: tc.cipher}}
 			c.Session = &Session{
 				Client:        c,
 				SessionId:     0x1234567890,
-				EncryptionKey: mustHex(t, "629BCBC54422A0F572B97F45989B6073"),
-				DecryptionKey: mustHex(t, "629BCBC54422A0F572B97F45989B6073"),
+				EncryptionKey: keyBytes,
+				DecryptionKey: keyBytes,
 				EncryptData:   true,
 			}
 
