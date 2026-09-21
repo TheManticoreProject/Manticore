@@ -213,8 +213,12 @@ func writeTCPFramed(w io.Writer, msg []byte) error {
 	packet := make([]byte, 4+len(msg))
 	binary.BigEndian.PutUint32(packet[:4], uint32(len(msg)))
 	copy(packet[4:], msg)
-	if _, err := w.Write(packet); err != nil {
+	n, err := w.Write(packet)
+	if err != nil {
 		return fmt.Errorf("kerberos: TCP send: %w", err)
+	}
+	if n != len(packet) {
+		return fmt.Errorf("kerberos: TCP send: wrote %d of %d bytes: %w", n, len(packet), io.ErrShortWrite)
 	}
 	return nil
 }
