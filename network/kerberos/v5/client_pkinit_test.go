@@ -346,8 +346,8 @@ func TestWithPKINITConfiguration(t *testing.T) {
 	if !c.pkinitConfigured() {
 		t.Fatal("pkinitConfigured should be true after WithPKINIT")
 	}
-	if len(c.pkinitGroups) != 2 {
-		t.Errorf("default PKINIT groups = %d, want 2 (MODP14, MODP2)", len(c.pkinitGroups))
+	if len(c.pkinitGroups) != 1 || c.pkinitGroups[0].ID != "modp14" {
+		t.Errorf("default PKINIT groups = %#v, want only MODP14", c.pkinitGroups)
 	}
 	if key, etype := c.PKINITReplyKey(); key != nil || etype != 0 {
 		t.Errorf("PKINITReplyKey should be empty before a successful exchange, got (%x, %d)", key, etype)
