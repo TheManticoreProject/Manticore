@@ -121,12 +121,6 @@ const (
 // from it. Convert a returned status with win32.WIN32_ERROR(status) and compare against
 // win32.ERROR_SUCCESS and the rest.
 
-// ErrorSplNoStartdoc is the one status value this interface still declares itself:
-// [MS-ERREF] 2.2 has no row for 0x00000E15, so the shared table cannot name it. The
-// specification places ERROR_SPL_NO_STARTDOC at 0x00000BBB, which win32 does name, and
-// 0x00000E15 is deliberately not folded onto that near miss.
-const ErrorSplNoStartdoc uint32 = 0x00000E15 // ERROR_SPL_NO_STARTDOC, no [MS-ERREF] 2.2 row
-
 // SyntaxID returns the winspool abstract syntax identifier:
 // 12345678-1234-abcd-ef00-0123456789ab, version 1.0.
 func SyntaxID() syntax.SyntaxID {
@@ -137,13 +131,9 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString names the one status value this interface declares locally and defers
-// every other code to the shared [MS-ERREF] 2.2 table, which names each code the
-// specification defines and renders hex only for one it does not.
+// StatusString defers every status code to the shared [MS-ERREF] 2.2 table, which
+// names each code the specification defines and renders hex for any it does not.
 func StatusString(status uint32) string {
-	if status == ErrorSplNoStartdoc {
-		return "ERROR_SPL_NO_STARTDOC"
-	}
 	return win32.WIN32_ERROR(status).String()
 }
 

@@ -65,25 +65,19 @@ func TestStatusCodesResolveThroughWin32(t *testing.T) {
 	}
 }
 
-// TestStatusStringKeepsTheLocalCode pins the one value this interface still decodes
-// itself. [MS-ERREF] 2.2 has no row for 0x00000E15 - it places ERROR_SPL_NO_STARTDOC at
-// 0x00000BBB - so the shared table renders it as hex and StatusString names it.
-func TestStatusStringKeepsTheLocalCode(t *testing.T) {
-	if ErrorSplNoStartdoc != 0x00000E15 {
-		t.Errorf("ErrorSplNoStartdoc = 0x%08x, want 0x00000e15", ErrorSplNoStartdoc)
-	}
-	if got := StatusString(ErrorSplNoStartdoc); got != "ERROR_SPL_NO_STARTDOC" {
-		t.Errorf("StatusString(0x00000e15) = %q, want ERROR_SPL_NO_STARTDOC", got)
-	}
-	if got := win32.WIN32_ERROR(ErrorSplNoStartdoc).String(); got != "0x00000e15" {
-		t.Errorf("win32.WIN32_ERROR(0x00000e15).String() = %q, want hex", got)
-	}
-	// Every other code defers to the shared table.
+// TestStatusStringDelegatesEverything verifies that StatusString routes all codes
+// through the shared [MS-ERREF] 2.2 table — including ERROR_SPL_NO_STARTDOC at
+// its correct value 0x00000BBB and unknown codes as hex.
+func TestStatusStringDelegatesEverything(t *testing.T) {
 	if got := StatusString(0x00000BBB); got != "ERROR_SPL_NO_STARTDOC" {
 		t.Errorf("StatusString(0x00000bbb) = %q, want ERROR_SPL_NO_STARTDOC", got)
 	}
 	if got := StatusString(0x00000BB8); got != "ERROR_UNKNOWN_PRINT_MONITOR" {
 		t.Errorf("StatusString(0x00000bb8) = %q, want ERROR_UNKNOWN_PRINT_MONITOR", got)
+	}
+	// 0x00000E15 has no row in [MS-ERREF] 2.2 and renders as hex.
+	if got := StatusString(0x00000E15); got != "0x00000e15" {
+		t.Errorf("StatusString(0x00000e15) = %q, want hex", got)
 	}
 	if got := StatusString(0x12345678); got != "0x12345678" {
 		t.Errorf("StatusString(0x12345678) = %q, want hex fallback", got)
