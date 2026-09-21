@@ -43,8 +43,9 @@ func RMIBEntryGetNext(rpc ndr.Invoker, dwPid ndr.DWORD, dwRoutingPid ndr.DWORD, 
 		return
 	}
 	PInfoStuct = resp.PInfoStuct
-	if win32.WIN32_ERROR(resp.Status) != win32.ERROR_SUCCESS {
-		err = fmt.Errorf("RMIBEntryGetNext failed: %s", win32.WIN32_ERROR(resp.Status).String())
+	status := win32.WIN32_ERROR(resp.Status)
+	if status != win32.ERROR_SUCCESS && status != win32.ERROR_NO_MORE_ITEMS {
+		err = fmt.Errorf("RMIBEntryGetNext failed: %s", status.String())
 	}
 	return
 }
