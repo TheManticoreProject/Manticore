@@ -114,27 +114,14 @@ func TestStatusStringKeepsMSMQFacilityAndDefersTheRest(t *testing.T) {
 	}
 }
 
-// TestStatusStringKeepsTheCitedNTSTATUS pins the second reason StatusString still has a
-// local table. STATUS_INVALID_PARAMETER is not an HRESULT: it is the NTSTATUS 0xC000000D
-// that [MS-MQQP] cites directly, named by [MS-ERREF] section 2.3.1. Read as an HRESULT the
-// same value is FACILITY_NULL code 0x000D, which [MS-ERREF] 2.1.1 does not define, so the
-// shared HRESULT table cannot name it and the local arm has to.
-func TestStatusStringKeepsTheCitedNTSTATUS(t *testing.T) {
-	if STATUS_INVALID_PARAMETER != 0xC000000D {
-		t.Fatalf("STATUS_INVALID_PARAMETER = 0x%08x, want 0xc000000d", STATUS_INVALID_PARAMETER)
+// TestStatusStringRoutesNTSTATUSThroughNTStatusTable verifies that STATUS_INVALID_PARAMETER
+// (0xC000000D), an NTSTATUS cited directly by [MS-MQQP], resolves through the nt_status
+// table rather than being hardcoded locally.
+func TestStatusStringRoutesNTSTATUSThroughNTStatusTable(t *testing.T) {
+	if got := StatusString(0xC000000D); got != nt_status.NT_STATUS_INVALID_PARAMETER.String() {
+		t.Errorf("StatusString(0xc000000d) = %q, want %q", got, nt_status.NT_STATUS_INVALID_PARAMETER.String())
 	}
-	if got := StatusString(STATUS_INVALID_PARAMETER); got != "STATUS_INVALID_PARAMETER" {
-		t.Errorf("StatusString(0xc000000d) = %q, want STATUS_INVALID_PARAMETER", got)
-	}
-	if entry, defined := hresult.Lookup(hresult.HRESULT(STATUS_INVALID_PARAMETER)); defined {
+	if entry, defined := hresult.Lookup(hresult.HRESULT(0xC000000D)); defined {
 		t.Errorf("hresult.Lookup(0xc000000d) resolves to %q; [MS-ERREF] 2.1.1 carries no such row", entry.Name)
-	}
-	if facility := (STATUS_INVALID_PARAMETER >> 16) & 0x07FF; facility != 0x000 {
-		t.Errorf("as an HRESULT 0xc000000d has facility 0x%03x, want FACILITY_NULL (0x000)", facility)
-	}
-	// The NTSTATUS table is the one that carries the value, under its own NT_-prefixed
-	// spelling of the name, so routing this arm there would change what StatusString renders.
-	if got := nt_status.NT_STATUS(STATUS_INVALID_PARAMETER).String(); got != "NT_STATUS_INVALID_PARAMETER" {
-		t.Errorf("nt_status.NT_STATUS(0xc000000d).String() = %q, want NT_STATUS_INVALID_PARAMETER", got)
 	}
 }

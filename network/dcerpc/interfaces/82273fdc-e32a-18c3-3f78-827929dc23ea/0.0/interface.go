@@ -14,6 +14,7 @@ package rpcinterface_82273fdce32a18c33f78827929dc23ea_0_0
 
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
@@ -58,15 +59,11 @@ const (
 // while drifting from it. Convert a returned status with win32.WIN32_ERROR(status)
 // and compare against win32.ERROR_SUCCESS and the rest.
 //
-// The two NTSTATUS values below are the exception. A server may fail a read with
-// them directly, and they belong to [MS-ERREF] 2.3, which the Win32 table does not
-// cover: it has no row for 0xC0000023 or 0xC000000D, so it renders both as hex.
-// These stay declared here and StatusString decodes them before deferring to the
-// shared table for everything else.
-const (
-	StatusBufferTooSmall   uint32 = 0xC0000023 // STATUS_BUFFER_TOO_SMALL, an [MS-ERREF] 2.3 NTSTATUS with no [MS-ERREF] 2.2 row
-	StatusInvalidParameter uint32 = 0xC000000D // STATUS_INVALID_PARAMETER, an [MS-ERREF] 2.3 NTSTATUS with no [MS-ERREF] 2.2 row
-)
+// A server may also return STATUS_BUFFER_TOO_SMALL (0xC0000023) or
+// STATUS_INVALID_PARAMETER (0xC000000D) directly. These are NTSTATUS values from
+// [MS-ERREF] 2.3, not Win32 codes; StatusString routes them through the nt_status
+// table. Compare with nt_status.NT_STATUS_BUFFER_TOO_SMALL and
+// nt_status.NT_STATUS_INVALID_PARAMETER.
 
 // SyntaxID returns the eventlog abstract syntax identifier:
 // 82273fdc-e32a-18c3-3f78-827929dc23ea, version 0.0.
@@ -78,19 +75,14 @@ func SyntaxID() syntax.SyntaxID {
 	}
 }
 
-// StatusString names the two NTSTATUS values this interface declares locally, which
-// [MS-ERREF] 2.2 has no row for, and defers every other status to the shared
-// [MS-ERREF] 2.2 table, which names each code the specification defines and renders
-// hex only for values it does not.
+// StatusString routes NTSTATUS values (severity bit set) through the [MS-ERREF] 2.3
+// table and Win32 codes through the [MS-ERREF] 2.2 table, rendering hex for any
+// value neither table defines.
 func StatusString(status uint32) string {
-	switch status {
-	case StatusBufferTooSmall:
-		return "STATUS_BUFFER_TOO_SMALL"
-	case StatusInvalidParameter:
-		return "STATUS_INVALID_PARAMETER"
-	default:
-		return win32.WIN32_ERROR(status).String()
+	if status&0x80000000 != 0 {
+		return nt_status.NT_STATUS(status).String()
 	}
+	return win32.WIN32_ERROR(status).String()
 }
 
 // OpnumToName maps each on-the-wire opnum to its method name; the single source of
