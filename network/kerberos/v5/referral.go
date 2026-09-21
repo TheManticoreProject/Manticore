@@ -233,6 +233,9 @@ func (c *KerberosClient) tgsExchange(
 	if encRep.Nonce != nonce {
 		return nil, nil, nil, fmt.Errorf("kerberos: TGS-REP nonce mismatch: got %d, want %d", encRep.Nonce, nonce)
 	}
+	if err := c.validateKDCReplyIdentity("TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+		return nil, nil, nil, err
+	}
 
 	return &tgsRep, &encRep, nil, nil
 }
@@ -311,4 +314,19 @@ func principalNameEqualFold(a, b messages.PrincipalName) bool {
 		}
 	}
 	return true
+}
+
+// validateKDCReplyIdentity binds a decrypted KDC reply to the client exchange
+// and verifies that its encrypted server identity matches the outer ticket.
+func (c *KerberosClient) validateKDCReplyIdentity(replyType, clientRealm string, clientName messages.PrincipalName, ticket messages.Ticket, serverRealm string, serverName messages.PrincipalName) error {
+	expectedClient := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}}
+	if !strings.EqualFold(clientRealm, c.realm) || !principalNameEqualFold(clientName, expectedClient) {
+		return fmt.Errorf("kerberos: %s client identity %s@%s does not match %s@%s",
+			replyType, strings.Join(clientName.NameString, "/"), clientRealm, c.username, c.realm)
+	}
+	if !strings.EqualFold(ticket.Realm, serverRealm) || !principalNameEqualFold(ticket.SName, serverName) {
+		return fmt.Errorf("kerberos: %s ticket service %s@%s does not match encrypted reply service %s@%s",
+			replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm, strings.Join(serverName.NameString, "/"), serverRealm)
+	}
+	return nil
 }

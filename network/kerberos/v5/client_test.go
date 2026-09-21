@@ -132,6 +132,56 @@ func TestProcessASRepNonceMismatch(t *testing.T) {
 	}
 }
 
+func TestProcessASRepRejectsIdentityMismatch(t *testing.T) {
+	keyHex := "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	key, _ := hex.DecodeString(keyHex)
+	const etype = messages.ETypeAES256CTSHMACSHA196
+	const nonce = 1234
+	baseWire := buildASRep(t, etype, key, nonce, bytes.Repeat([]byte{0x42}, 32))
+
+	tests := []struct {
+		name   string
+		mutate func(*messages.ASRep)
+	}{
+		{
+			name: "client principal",
+			mutate: func(rep *messages.ASRep) {
+				rep.CName = messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{"mallory"}}
+			},
+		},
+		{
+			name: "ticket service",
+			mutate: func(rep *messages.ASRep) {
+				rep.Ticket.SName = messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", "OTHER.LOCAL"}}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rep messages.ASRep
+			if _, err := rep.Unmarshal(baseWire); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(&rep)
+			wire, err := rep.Marshal()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			c := NewClient("alice", "corp.local", "10.0.0.1")
+			if err := c.WithAESKey(keyHex); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.processASRep(wire, etype, "", nil, nonce); err == nil {
+				t.Fatal("accepted an AS-REP with inconsistent identity")
+			}
+			if c.hasTGT {
+				t.Fatal("stored a TGT from an inconsistent AS-REP")
+			}
+		})
+	}
+}
+
 // TestPickETypeFromError exercises the PREAUTH_REQUIRED etype/salt negotiation:
 // with a password credential (AES256/AES128/RC4) the strongest advertised etype
 // and its salt/s2kparams are chosen, whether the e-data is a SEQUENCE OF PA-DATA
