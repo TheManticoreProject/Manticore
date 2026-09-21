@@ -150,6 +150,10 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		}
 	}
 
+	if encrypt && !wasEncrypted {
+		return nil, fmt.Errorf("%s: session requires encryption but response was not encrypted", label)
+	}
+
 	segments, err := compoundSegments(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
