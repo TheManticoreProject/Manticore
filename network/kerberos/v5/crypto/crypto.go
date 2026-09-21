@@ -7,12 +7,16 @@ package kerbcrypto
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 )
+
+// maxS2KIterations bounds work requested by unauthenticated ETYPE-INFO2 data.
+const maxS2KIterations uint32 = 1_000_000
 
 // Key usage constants per RFC 4120 Section 7.5.1, re-exported from the iana
 // leaf package so callers can keep using kerbcrypto.KeyUsage* while iana
@@ -58,40 +62,44 @@ func StringToKey(etype int, password, salt string, params []byte) ([]byte, error
 		return rc4HMACStringToKey(password), nil
 
 	case iana.ETypeAES128CTSHMACSHA196:
-		iter_count := aesDefaultIterCount
-		if len(params) >= 4 {
-			// S2KParams contains a 4-byte big-endian iteration count
-			iter_count = int(params[0])<<24 | int(params[1])<<16 | int(params[2])<<8 | int(params[3])
-			if iter_count <= 0 {
-				iter_count = aesDefaultIterCount
-			}
+		iterCount, err := s2kIterationCount(params, aesDefaultIterCount)
+		if err != nil {
+			return nil, err
 		}
-		return aesStringToKey(password, salt, iter_count, 16)
+		return aesStringToKey(password, salt, iterCount, 16)
 
 	case iana.ETypeAES256CTSHMACSHA196:
-		iter_count := aesDefaultIterCount
-		if len(params) >= 4 {
-			iter_count = int(params[0])<<24 | int(params[1])<<16 | int(params[2])<<8 | int(params[3])
-			if iter_count <= 0 {
-				iter_count = aesDefaultIterCount
-			}
+		iterCount, err := s2kIterationCount(params, aesDefaultIterCount)
+		if err != nil {
+			return nil, err
 		}
-		return aesStringToKey(password, salt, iter_count, 32)
+		return aesStringToKey(password, salt, iterCount, 32)
 
 	case iana.ETypeAES128CTSHMACSHA256, iana.ETypeAES256CTSHMACSHA384:
 		p, _ := aes2ParamsFor(etype)
-		iter_count := aes8009DefaultIterCount
-		if len(params) >= 4 {
-			iter_count = int(params[0])<<24 | int(params[1])<<16 | int(params[2])<<8 | int(params[3])
-			if iter_count <= 0 {
-				iter_count = aes8009DefaultIterCount
-			}
+		iterCount, err := s2kIterationCount(params, aes8009DefaultIterCount)
+		if err != nil {
+			return nil, err
 		}
-		return aes2StringToKey(password, salt, iter_count, p)
+		return aes2StringToKey(password, salt, iterCount, p)
 
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedEType, etype)
 	}
+}
+
+func s2kIterationCount(params []byte, defaultCount int) (int, error) {
+	if len(params) < 4 {
+		return defaultCount, nil
+	}
+	count := binary.BigEndian.Uint32(params[:4])
+	if count == 0 {
+		return defaultCount, nil
+	}
+	if count > maxS2KIterations {
+		return 0, fmt.Errorf("kerbcrypto: S2K iteration count %d exceeds maximum %d", count, maxS2KIterations)
+	}
+	return int(count), nil
 }
 
 // Encrypt encrypts plaintext with the given key, etype, and key usage number.

@@ -3,6 +3,7 @@ package kerbcrypto
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
@@ -252,6 +253,22 @@ func TestUnsupportedEType(t *testing.T) {
 	_, err = Decrypt(99, []byte{0}, 1, []byte("x"))
 	if err == nil {
 		t.Error("Decrypt: expected error for unsupported etype")
+	}
+}
+
+func TestStringToKeyRejectsExcessiveIterationCount(t *testing.T) {
+	params := []byte{0xff, 0xff, 0xff, 0xff}
+	for _, etype := range []int{
+		iana.ETypeAES128CTSHMACSHA196,
+		iana.ETypeAES256CTSHMACSHA196,
+		iana.ETypeAES128CTSHMACSHA256,
+		iana.ETypeAES256CTSHMACSHA384,
+	} {
+		t.Run(fmt.Sprintf("etype-%d", etype), func(t *testing.T) {
+			if _, err := StringToKey(etype, "Password", "REALMuser", params); err == nil {
+				t.Fatal("StringToKey accepted an excessive iteration count")
+			}
+		})
 	}
 }
 
