@@ -98,13 +98,25 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		return nil, fmt.Errorf("failed to marshal %s: %w", label, err)
 	}
 
-	if c.Session != nil && c.Session.SigningActive {
+	// When the session encrypts data, the compound frame is wrapped in an SMB2
+	// TRANSFORM_HEADER instead of being signed — the AEAD tag supersedes the
+	// per-message signatures (MS-SMB2 3.1.4.4). Otherwise sign each segment
+	// individually when signing is active.
+	encrypt := c.Session != nil && c.Session.EncryptData
+	if !encrypt && c.Session != nil && c.Session.SigningActive {
 		if err := signCompound(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled); err != nil {
 			return nil, fmt.Errorf("failed to sign %s: %w", label, err)
 		}
 	}
 
-	if _, err := c.Transport.Send(marshalled); err != nil {
+	wire := marshalled
+	if encrypt {
+		if wire, err = c.encryptMessage(marshalled); err != nil {
+			return nil, fmt.Errorf("failed to encrypt %s: %w", label, err)
+		}
+	}
+
+	if _, err := c.Transport.Send(wire); err != nil {
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
 
@@ -116,6 +128,16 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		if err != nil {
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 		}
+
+		// Decrypt an encrypted response before probing its header.
+		if isTransformHeader(raw) {
+			plaintext, derr := c.decryptMessage(raw)
+			if derr != nil {
+				return nil, fmt.Errorf("%s: %w", label, derr)
+			}
+			raw = plaintext
+		}
+
 		probe := header.NewHeader()
 		if _, err := probe.Unmarshal(raw); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
