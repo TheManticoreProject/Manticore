@@ -286,11 +286,11 @@ func TestLiveKerberos_S4U(t *testing.T) {
 	if err := c.GetTGT(); err != nil {
 		t.Fatalf("GetTGT: %v", err)
 	}
-	_, selfRaw, _, err := c.S4U2Self(impersonate, e.Realm)
+	_, selfRaw, _, _, err := c.S4U2Self(impersonate, e.Realm)
 	if err != nil {
 		t.Fatalf("S4U2Self(%q): %v", impersonate, err)
 	}
-	ticket, proxyRaw, _, err := c.S4U2Proxy(targetSPN, selfRaw)
+	ticket, proxyRaw, _, _, err := c.S4U2Proxy(targetSPN, selfRaw)
 	if err != nil {
 		t.Fatalf("S4U2Proxy(%q): %v", targetSPN, err)
 	}

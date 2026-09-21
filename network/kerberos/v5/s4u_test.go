@@ -145,18 +145,38 @@ func TestS4U2ProxyRequestShape(t *testing.T) {
 // TestS4UInputValidation covers the guard clauses on the exported S4U methods.
 func TestS4UInputValidation(t *testing.T) {
 	noTGT := NewClient("svc", "corp.local", "10.0.0.1").WithPassword("x")
-	if _, _, _, err := noTGT.S4U2Self("victim", ""); err == nil {
+	if _, _, _, _, err := noTGT.S4U2Self("victim", ""); err == nil {
 		t.Error("S4U2Self without a TGT should error")
 	}
-	if _, _, _, err := noTGT.S4U2Proxy("cifs/target", []byte{1}); err == nil {
+	if _, _, _, _, err := noTGT.S4U2Proxy("cifs/target", []byte{1}); err == nil {
 		t.Error("S4U2Proxy without a TGT should error")
 	}
 
 	c := fakeTGTClient(t)
-	if _, _, _, err := c.S4U2Self("", ""); err == nil {
+	if _, _, _, _, err := c.S4U2Self("", ""); err == nil {
 		t.Error("S4U2Self with an empty impersonation user should error")
 	}
-	if _, _, _, err := c.S4U2Proxy("cifs/target", nil); err == nil {
+	if _, _, _, _, err := c.S4U2Proxy("cifs/target", nil); err == nil {
 		t.Error("S4U2Proxy without the S4U2Self ticket should error")
+	}
+}
+
+func TestS4UResultReturnsSessionKeyEType(t *testing.T) {
+	wantRaw := []byte{1, 2, 3}
+	wantKey := []byte{4, 5, 6}
+	rep := messages.TGSRep{
+		Ticket:    messages.Ticket{EncPart: messages.EncryptedData{EType: iana.ETypeRC4HMAC}},
+		TicketRaw: wantRaw,
+	}
+	encRep := messages.EncTGSRepPart{
+		Key: messages.EncryptionKey{KeyType: iana.ETypeAES256CTSHMACSHA196, KeyValue: wantKey},
+	}
+
+	_, raw, key, etype := s4uResult(&rep, &encRep)
+	if !bytes.Equal(raw, wantRaw) || !bytes.Equal(key, wantKey) {
+		t.Fatal("S4U result did not preserve the ticket bytes and session key")
+	}
+	if etype != iana.ETypeAES256CTSHMACSHA196 {
+		t.Fatalf("S4U result enctype = %d, want session-key enctype %d", etype, iana.ETypeAES256CTSHMACSHA196)
 	}
 }

@@ -11,6 +11,10 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/sfu"
 )
 
+func s4uResult(tgsRep *messages.TGSRep, encTGSRep *messages.EncTGSRepPart) (messages.Ticket, []byte, []byte, int) {
+	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, encTGSRep.Key.KeyType
+}
+
 // buildS4U2SelfTGSReq constructs the TGS-REQ for an S4U2Self exchange: a normal
 // PA-TGS-REQ (AP-REQ over the service's own TGT), a PA-FOR-USER element naming
 // the impersonated user (keyed-checksummed with the service's TGT session key),
@@ -79,53 +83,55 @@ func (c *KerberosClient) buildS4U2SelfTGSReq(impersonateUser, impersonateRealm s
 //
 // GetTGT must have succeeded first (the client must hold its service TGT). If
 // impersonateRealm is empty the client's realm is used. Returns the service
-// ticket, its raw APPLICATION[1] bytes, and the ticket session key.
-func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (messages.Ticket, []byte, []byte, error) {
+// ticket, its raw APPLICATION[1] bytes, the ticket session key, and the session
+// key's encryption type.
+func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (messages.Ticket, []byte, []byte, int, error) {
 	if !c.hasTGT {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}
 	if impersonateUser == "" {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Self requires a user to impersonate")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self requires a user to impersonate")
 	}
 
 	nonce := randomNonce()
 	tgsReq, err := c.buildS4U2SelfTGSReq(impersonateUser, impersonateRealm, nonce)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	tgsReqBytes, err := tgsReq.Marshal()
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal S4U2Self TGS-REQ: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: marshal S4U2Self TGS-REQ: %w", err)
 	}
 	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	var krbErr messages.KRBError
 	if _, parseErr := krbErr.Unmarshal(resp); parseErr == nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Self error %d: %s", krbErr.ErrorCode, krbErr.EText)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self error %d: %s", krbErr.ErrorCode, krbErr.EText)
 	}
 
 	var tgsRep messages.TGSRep
 	if _, err := tgsRep.Unmarshal(resp); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse S4U2Self TGS-REP: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse S4U2Self TGS-REP: %w", err)
 	}
 
 	encPlain, err := kerbcrypto.Decrypt(c.sessionEType, c.sessionKey, kerbcrypto.KeyUsageTGSRepEncSessionKey, tgsRep.EncPart.Cipher)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: decrypt S4U2Self TGS-REP enc-part: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: decrypt S4U2Self TGS-REP enc-part: %w", err)
 	}
 	var encTGSRep messages.EncTGSRepPart
 	if _, err := encTGSRep.Unmarshal(encPlain); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse S4U2Self EncTGSRepPart: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse S4U2Self EncTGSRepPart: %w", err)
 	}
 	if encTGSRep.Nonce != nonce {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Self nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
 
-	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, nil
+	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)
+	return ticket, raw, key, etype, nil
 }
 
 // buildS4U2ProxyTGSReq constructs the TGS-REQ for an S4U2Proxy exchange: a
@@ -182,56 +188,58 @@ func (c *KerberosClient) buildS4U2ProxyTGSReq(sname messages.PrincipalName, s4u2
 // to this service (the S4U2Self result). The request sets the cname-in-addl-tkt
 // KDC option, carries that ticket in additional-tickets, and includes
 // PA-PAC-OPTIONS with the resource-based-constrained-delegation bit. Returns the
-// service ticket to the target, its raw bytes, and the ticket session key.
-func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (messages.Ticket, []byte, []byte, error) {
+// service ticket to the target, its raw bytes, the ticket session key, and the
+// session key's encryption type.
+func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (messages.Ticket, []byte, []byte, int, error) {
 	if !c.hasTGT {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}
 	if len(s4u2selfTicketRaw) == 0 {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Proxy requires the S4U2Self service ticket")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy requires the S4U2Self service ticket")
 	}
 
 	sname, err := parseSPN(targetSPN, c.realm)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse target SPN %q: %w", targetSPN, err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse target SPN %q: %w", targetSPN, err)
 	}
 
 	nonce := randomNonce()
 	tgsReq, err := c.buildS4U2ProxyTGSReq(sname, s4u2selfTicketRaw, nonce)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	tgsReqBytes, err := tgsReq.Marshal()
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal S4U2Proxy TGS-REQ: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: marshal S4U2Proxy TGS-REQ: %w", err)
 	}
 	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	var krbErr messages.KRBError
 	if _, parseErr := krbErr.Unmarshal(resp); parseErr == nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Proxy error %d: %s", krbErr.ErrorCode, krbErr.EText)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy error %d: %s", krbErr.ErrorCode, krbErr.EText)
 	}
 
 	var tgsRep messages.TGSRep
 	if _, err := tgsRep.Unmarshal(resp); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse S4U2Proxy TGS-REP: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse S4U2Proxy TGS-REP: %w", err)
 	}
 
 	encPlain, err := kerbcrypto.Decrypt(c.sessionEType, c.sessionKey, kerbcrypto.KeyUsageTGSRepEncSessionKey, tgsRep.EncPart.Cipher)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: decrypt S4U2Proxy TGS-REP enc-part: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: decrypt S4U2Proxy TGS-REP enc-part: %w", err)
 	}
 	var encTGSRep messages.EncTGSRepPart
 	if _, err := encTGSRep.Unmarshal(encPlain); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse S4U2Proxy EncTGSRepPart: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse S4U2Proxy EncTGSRepPart: %w", err)
 	}
 	if encTGSRep.Nonce != nonce {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: S4U2Proxy nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
 
-	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, nil
+	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)
+	return ticket, raw, key, etype, nil
 }
