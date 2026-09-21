@@ -29,6 +29,13 @@ func keytabBytes(t *testing.T, entries map[int][]byte) []byte {
 	return data
 }
 
+func TestWithKeytabRejectsNil(t *testing.T) {
+	c := NewClient("alice", "corp.local", "10.0.0.1")
+	if err := c.WithKeytab(nil, 0); err == nil {
+		t.Fatal("WithKeytab(nil) returned nil error")
+	}
+}
+
 // TestWithKeytabBytesPrefersAES256 confirms WithKeytabBytes selects the strongest
 // usable enctype (AES256 > AES128 > RC4) and configures the client credential
 // with it.

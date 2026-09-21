@@ -66,6 +66,9 @@ func (c *KerberosClient) LoadTGTFromKirbiFile(path string) error {
 // if the cache holds none, the first credential is used. Username and realm are
 // taken from the credential's client principal.
 func (c *KerberosClient) LoadTGTFromCCache(cc *ccache.CCache) error {
+	if cc == nil {
+		return fmt.Errorf("kerberos: nil ccache")
+	}
 	ticketRaw, info, err := selectCCacheCred(cc, true)
 	if err != nil {
 		return err

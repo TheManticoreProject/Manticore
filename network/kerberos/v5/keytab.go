@@ -41,6 +41,9 @@ func credentialFromKeytabEntry(e *keytab.Entry, username, realm string) (*creden
 // principal of the selected entry populates the client's username. Pass etype > 0
 // to force a specific enctype instead of the strongest.
 func (c *KerberosClient) WithKeytab(kt *keytab.Keytab, etype int) error {
+	if kt == nil {
+		return fmt.Errorf("kerberos: nil keytab")
+	}
 	principal := ""
 	if c.username != "" {
 		principal = c.username + "@" + c.realm
