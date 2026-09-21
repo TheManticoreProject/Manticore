@@ -53,11 +53,12 @@ var defaultProfile = Profile{
 		dialects.SMB2_DIALECT_3_1_1,
 	},
 
-	// Deliberately short of what a Windows client advertises. The bits omitted
-	// here — DFS, persistent handles — stand for features this client does not
+	// Deliberately short of what a Windows client advertises. The bit omitted
+	// here — persistent handles — stands for a feature this client does not
 	// implement, and claiming a capability that is then refused is a louder
 	// difference than not claiming it.
-	Capabilities: capabilities.SMB2_GLOBAL_CAP_LARGE_MTU |
+	Capabilities: capabilities.SMB2_GLOBAL_CAP_DFS |
+		capabilities.SMB2_GLOBAL_CAP_LARGE_MTU |
 		capabilities.SMB2_GLOBAL_CAP_MULTI_CHANNEL |
 		capabilities.SMB2_GLOBAL_CAP_ENCRYPTION |
 		capabilities.SMB2_GLOBAL_CAP_LEASING |
