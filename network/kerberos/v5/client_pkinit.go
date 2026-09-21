@@ -271,6 +271,10 @@ func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, 
 			lastErr = fmt.Errorf("kerberos: PKINIT AS-REP nonce mismatch")
 			continue
 		}
+		if err := c.validateKDCReplyIdentity("PKINIT AS-REP", asRep.CRealm, asRep.CName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
+			lastErr = err
+			continue
+		}
 
 		c.tgtTicket = asRep.Ticket
 		c.tgtTicketRaw = asRep.TicketRaw

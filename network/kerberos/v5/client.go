@@ -647,6 +647,9 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 	if enc_as_rep.Nonce != request_nonce {
 		return fmt.Errorf("kerberos: AS-REP nonce mismatch: got %d, want %d", enc_as_rep.Nonce, request_nonce)
 	}
+	if err := c.validateKDCReplyIdentity("AS-REP", as_rep.CRealm, as_rep.CName, as_rep.Ticket, enc_as_rep.SRealm, enc_as_rep.SName); err != nil {
+		return err
+	}
 
 	c.tgtTicket = as_rep.Ticket
 	c.tgtTicketRaw = as_rep.TicketRaw

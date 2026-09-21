@@ -176,6 +176,20 @@ func TestPrincipalNameEqualFold(t *testing.T) {
 	}
 }
 
+func TestValidateKDCReplyIdentity(t *testing.T) {
+	c := NewClient("alice", "corp.local", "10.0.0.1")
+	client := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{"ALICE"}}
+	service := srvName("cifs", "host.corp.local")
+	ticket := messages.Ticket{Realm: "CORP.LOCAL", SName: service}
+
+	if err := c.validateKDCReplyIdentity("TGS-REP", "CORP.LOCAL", client, ticket, "corp.local", srvName("CIFS", "HOST.CORP.LOCAL")); err != nil {
+		t.Fatalf("rejected a case-only canonicalization: %v", err)
+	}
+	if err := c.validateKDCReplyIdentity("TGS-REP", "CORP.LOCAL", client, ticket, "CORP.LOCAL", srvName("ldap", "host.corp.local")); err == nil {
+		t.Fatal("accepted inconsistent encrypted and outer service identities")
+	}
+}
+
 // mustSvrReferralData builds a DER PA-SVR-REFERRAL-DATA containing only the
 // referred-realm [0] (a GeneralString), matching what a KDC sends.
 func mustSvrReferralData(t *testing.T, realm string) []byte {

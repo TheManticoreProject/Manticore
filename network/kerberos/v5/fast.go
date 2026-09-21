@@ -351,6 +351,9 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	if encASRep.Nonce != requestNonce {
 		return fmt.Errorf("kerberos: FAST AS-REP nonce mismatch: got %d, want %d", encASRep.Nonce, requestNonce)
 	}
+	if err := c.validateKDCReplyIdentity("FAST AS-REP", asRep.CRealm, asRep.CName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
+		return err
+	}
 
 	c.tgtTicket = asRep.Ticket
 	c.tgtTicketRaw = asRep.TicketRaw

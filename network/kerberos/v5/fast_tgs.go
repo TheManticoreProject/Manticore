@@ -276,6 +276,9 @@ func (c *KerberosClient) processFASTTGSRep(resp []byte, ctx *fastTGSContext) (*m
 	if encRep.Nonce != ctx.nonce {
 		return nil, nil, nil, nil, fmt.Errorf("kerberos: FAST TGS-REP nonce mismatch: got %d, want %d", encRep.Nonce, ctx.nonce)
 	}
+	if err := c.validateKDCReplyIdentity("FAST TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	return &tgsRep, &encRep, nil, nil, nil
 }
 
