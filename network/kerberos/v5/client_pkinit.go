@@ -40,8 +40,8 @@ func (c *KerberosClient) WithPKINITGroups(groups ...pkinit.DHGroup) *KerberosCli
 // a subsequent GetTGT verifies the KDC's CMS SignedData signature on the AS-REP
 // and requires the signer certificate to be byte-identical to certDER (RFC 4556
 // §3.2.4). This covers a self-signed KDC certificate directly; to trust a CA
-// instead, use WithPKINITAnchors. By default (no anchor and no opt-out) the KDC
-// signature is not verified.
+// instead, use WithPKINITAnchors. PKINIT exchanges require a trust anchor or an
+// explicit call to InsecureSkipPKINITKDCSignatureCheck.
 func (c *KerberosClient) WithPKINITKDCCert(certDER []byte) *KerberosClient {
 	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {
@@ -72,9 +72,8 @@ func (c *KerberosClient) InsecureSkipPKINITKDCSignatureCheck() *KerberosClient {
 }
 
 // pkinitVerifyOptions builds the SignedData verification policy from the
-// configured anchors / opt-out. It returns nil when neither an anchor nor the
-// opt-out is configured, which leaves the KDC signature unverified (the legacy
-// default) while still gating the exchange on AS-REP decryption.
+// configured anchors / opt-out. It rejects an exchange when neither policy is
+// configured so signature verification cannot be disabled implicitly.
 func (c *KerberosClient) pkinitVerifyOptions() (*pkinit.VerifyOptions, error) {
 	if c.pkinitKDCCertErr != nil {
 		return nil, c.pkinitKDCCertErr
@@ -85,7 +84,7 @@ func (c *KerberosClient) pkinitVerifyOptions() (*pkinit.VerifyOptions, error) {
 	if c.pkinitSkipKDCSigCheck {
 		return &pkinit.VerifyOptions{InsecureSkipSignatureCheck: true}, nil
 	}
-	return nil, nil
+	return nil, fmt.Errorf("kerberos: PKINIT requires a KDC trust anchor or explicit insecure signature-check opt-out")
 }
 
 // PKINITReplyKey returns the AS reply key derived from the PKINIT Diffie-Hellman
