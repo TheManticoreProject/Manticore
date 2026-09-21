@@ -14,6 +14,7 @@ package rpcinterface_1088a980eae511d08d9b00a02453c337_1_0
 import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/windows/errors/hresult"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -55,14 +56,12 @@ const (
 // MQ_OK, such as one of the MQ_INFORMATION_* codes in 0x400E____, is still reported as a
 // failure.
 //
-// STATUS_INVALID_PARAMETER stays for a second, unrelated reason: it is not an HRESULT at all
-// but the NTSTATUS 0xC000000D that [MS-MQQP] cites directly, and [MS-ERREF] section 2.3.1 is
-// the table that names it. Read as an HRESULT the same value is FACILITY_NULL code 0x000D,
-// which [MS-ERREF] 2.1.1 does not define, so deferring it to the shared HRESULT table would
-// render it as bare hex; the local arm keeps naming it.
+// STATUS_INVALID_PARAMETER (0xC000000D) is not an HRESULT but an NTSTATUS cited directly
+// by [MS-MQQP]. StatusString routes values with the NTSTATUS severity bit through the
+// nt_status table. Compare with nt_status.NT_STATUS_INVALID_PARAMETER.
 //
 // Only the codes the [MS-MQQP] method sections enumerate are listed here; StatusString
-// defers every other value to the shared HRESULT table.
+// defers every other value to the shared HRESULT or NTSTATUS table.
 //
 // Note the two exceptions among the opnums: RemoteQMGetQMQMServerPort (opnum 7) does NOT
 // return an HRESULT — its DWORD result is a TCP/SPX port, with 0x00000000 signalling failure
@@ -72,8 +71,6 @@ const (
 	MQ_ERROR_INVALID_PARAMETER uint32 = 0xC00E0006
 	MQ_ERROR_INVALID_HANDLE    uint32 = 0xC00E0007
 	MQ_ERROR_IO_TIMEOUT        uint32 = 0xC00E001B
-
-	STATUS_INVALID_PARAMETER uint32 = 0xC000000D
 )
 
 // SyntaxID returns the qm2qm abstract syntax identifier:
@@ -87,11 +84,10 @@ func SyntaxID() syntax.SyntaxID {
 }
 
 // StatusString names the FACILITY_MSMQ result codes above, which [MS-ERREF] section 2.1.1
-// does not carry, along with the one NTSTATUS the specification cites, and defers every other
-// status to the shared HRESULT table. The deferral is correct because an MSMQ result code
-// genuinely is an HRESULT and only its facility is absent from the specification's table:
-// 0x00000000 renders as S_OK, a FACILITY_WIN32 value renders through the Win32 code it wraps,
-// and a value the table does not define renders as hex, exactly as it did before.
+// does not carry, and defers every other status to the shared HRESULT or NTSTATUS table.
+// Values with the severity bit set that are not known MSMQ codes are routed through the
+// NTSTATUS table first (catching STATUS_INVALID_PARAMETER and any other NTSTATUS the server
+// may return), falling back to the HRESULT table otherwise.
 func StatusString(status uint32) string {
 	switch status {
 	case MQ_ERROR:
@@ -102,9 +98,12 @@ func StatusString(status uint32) string {
 		return "MQ_ERROR_INVALID_HANDLE"
 	case MQ_ERROR_IO_TIMEOUT:
 		return "MQ_ERROR_IO_TIMEOUT"
-	case STATUS_INVALID_PARAMETER:
-		return "STATUS_INVALID_PARAMETER"
 	default:
+		if _, defined := hresult.Lookup(hresult.HRESULT(status)); !defined {
+			if name := nt_status.NT_STATUS(status).Name(); name != "" {
+				return name
+			}
+		}
 		return hresult.HRESULT(status).String()
 	}
 }

@@ -3,6 +3,7 @@ package rpcinterface_82273fdce32a18c33f78827929dc23ea_0_0
 import (
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/errors/win32"
 )
 
@@ -91,30 +92,19 @@ func TestStatusCodesResolveThroughWin32(t *testing.T) {
 	}
 }
 
-// TestStatusStringKeepsTheNTStatusCodes pins the two values this interface still
-// decodes itself. Both are [MS-ERREF] 2.3 NTSTATUS codes with no row in the
-// [MS-ERREF] 2.2 Win32 table, so the shared table renders them as hex and
-// StatusString names them; everything else defers to the shared table.
-func TestStatusStringKeepsTheNTStatusCodes(t *testing.T) {
-	if StatusBufferTooSmall != 0xC0000023 {
-		t.Errorf("StatusBufferTooSmall = 0x%08x, want 0xc0000023", StatusBufferTooSmall)
+// TestStatusStringRoutesNTStatusThroughNTStatusTable verifies that the two NTSTATUS
+// values this interface can return are routed through the nt_status table, Win32
+// codes go through the win32 table, and unknown values render as hex.
+func TestStatusStringRoutesNTStatusThroughNTStatusTable(t *testing.T) {
+	// The two NTSTATUS values resolve through the nt_status table.
+	if got := StatusString(0xC0000023); got != nt_status.NT_STATUS_BUFFER_TOO_SMALL.String() {
+		t.Errorf("StatusString(0xc0000023) = %q, want %q", got, nt_status.NT_STATUS_BUFFER_TOO_SMALL.String())
 	}
-	if StatusInvalidParameter != 0xC000000D {
-		t.Errorf("StatusInvalidParameter = 0x%08x, want 0xc000000d", StatusInvalidParameter)
+	if got := StatusString(0xC000000D); got != nt_status.NT_STATUS_INVALID_PARAMETER.String() {
+		t.Errorf("StatusString(0xc000000d) = %q, want %q", got, nt_status.NT_STATUS_INVALID_PARAMETER.String())
 	}
-	if got := StatusString(StatusBufferTooSmall); got != "STATUS_BUFFER_TOO_SMALL" {
-		t.Errorf("StatusString(0xc0000023) = %q, want STATUS_BUFFER_TOO_SMALL", got)
-	}
-	if got := StatusString(StatusInvalidParameter); got != "STATUS_INVALID_PARAMETER" {
-		t.Errorf("StatusString(0xc000000d) = %q, want STATUS_INVALID_PARAMETER", got)
-	}
-	if got := win32.WIN32_ERROR(StatusBufferTooSmall).String(); got != "0xc0000023" {
-		t.Errorf("win32.WIN32_ERROR(0xc0000023).String() = %q, want hex", got)
-	}
-	if got := win32.WIN32_ERROR(StatusInvalidParameter).String(); got != "0xc000000d" {
-		t.Errorf("win32.WIN32_ERROR(0xc000000d).String() = %q, want hex", got)
-	}
-	// Every other code defers to the shared table.
+
+	// Win32 codes still resolve through the win32 table.
 	if got := StatusString(0x00000000); got != "ERROR_SUCCESS" {
 		t.Errorf("StatusString(0x00000000) = %q, want ERROR_SUCCESS", got)
 	}
@@ -124,7 +114,9 @@ func TestStatusStringKeepsTheNTStatusCodes(t *testing.T) {
 	if got := StatusString(0x0000000D); got != "ERROR_INVALID_DATA" {
 		t.Errorf("StatusString(0x0000000d) = %q, want ERROR_INVALID_DATA", got)
 	}
-	if got := StatusString(0xdeadbeef); got != "0xdeadbeef" {
+
+	// NTSTATUS with severity bit set but not in the table renders as hex via nt_status.
+	if got := StatusString(0xDEADBEEF); got != "0xdeadbeef" {
 		t.Errorf("StatusString(0xdeadbeef) = %q, want hex fallback", got)
 	}
 }
