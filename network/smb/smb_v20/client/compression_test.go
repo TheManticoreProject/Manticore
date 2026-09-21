@@ -161,3 +161,116 @@ func TestSelectedCompressionAlgorithmsEmpty(t *testing.T) {
 		t.Errorf("expected nil, got %v", algs)
 	}
 }
+
+func TestCompressionChainedPayloadHeaderRoundTrip(t *testing.T) {
+	h := &CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: 512,
+		CompressionAlgorithm:          commands.SMB2_COMPRESSION_PATTERN_V1,
+	}
+	wire := MarshalCompressionChainedPayloadHeader(h)
+	if len(wire) != chainedPayloadHeaderSize {
+		t.Fatalf("wire length = %d, want %d", len(wire), chainedPayloadHeaderSize)
+	}
+	if wire[6] != 0 || wire[7] != 0 {
+		t.Errorf("reserved = %02x %02x, want 00 00", wire[6], wire[7])
+	}
+
+	parsed, err := ParseCompressionChainedPayloadHeader(wire)
+	if err != nil {
+		t.Fatalf("ParseCompressionChainedPayloadHeader: %v", err)
+	}
+	if parsed.OriginalCompressedSegmentSize != 512 {
+		t.Errorf("OriginalCompressedSegmentSize = %d, want 512", parsed.OriginalCompressedSegmentSize)
+	}
+	if parsed.CompressionAlgorithm != commands.SMB2_COMPRESSION_PATTERN_V1 {
+		t.Errorf("CompressionAlgorithm = 0x%04x, want 0x%04x", parsed.CompressionAlgorithm, commands.SMB2_COMPRESSION_PATTERN_V1)
+	}
+}
+
+func TestParseCompressionChainedPayloadHeaderTooShort(t *testing.T) {
+	_, err := ParseCompressionChainedPayloadHeader(make([]byte, 4))
+	if err == nil {
+		t.Error("expected error for short data")
+	}
+}
+
+func TestWalkCompressionChainSingleNone(t *testing.T) {
+	payload := []byte("hello world")
+	hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: uint32(len(payload)),
+		CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+	})
+	data := append(hdr, payload...)
+
+	segs, err := WalkCompressionChain(data)
+	if err != nil {
+		t.Fatalf("WalkCompressionChain: %v", err)
+	}
+	if len(segs) != 1 {
+		t.Fatalf("got %d segments, want 1", len(segs))
+	}
+	if !bytes.Equal(segs[0].CompressedData, payload) {
+		t.Errorf("data = %q, want %q", segs[0].CompressedData, payload)
+	}
+}
+
+func TestWalkCompressionChainPatternV1ThenLZ77(t *testing.T) {
+	patData := CompressPatternV1(bytes.Repeat([]byte{0xCC}, 128))
+	patHdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: 128,
+		CompressionAlgorithm:          commands.SMB2_COMPRESSION_PATTERN_V1,
+	})
+	lzPayload := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+	lzHdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: 256,
+		CompressionAlgorithm:          commands.SMB2_COMPRESSION_LZ77,
+	})
+
+	var data []byte
+	data = append(data, patHdr...)
+	data = append(data, patData...)
+	data = append(data, lzHdr...)
+	data = append(data, lzPayload...)
+
+	segs, err := WalkCompressionChain(data)
+	if err != nil {
+		t.Fatalf("WalkCompressionChain: %v", err)
+	}
+	if len(segs) != 2 {
+		t.Fatalf("got %d segments, want 2", len(segs))
+	}
+	if segs[0].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_PATTERN_V1 {
+		t.Errorf("seg[0] algorithm = 0x%04x, want Pattern_V1", segs[0].Header.CompressionAlgorithm)
+	}
+	if len(segs[0].CompressedData) != 4 {
+		t.Errorf("seg[0] data len = %d, want 4", len(segs[0].CompressedData))
+	}
+	if segs[1].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_LZ77 {
+		t.Errorf("seg[1] algorithm = 0x%04x, want LZ77", segs[1].Header.CompressionAlgorithm)
+	}
+	if !bytes.Equal(segs[1].CompressedData, lzPayload) {
+		t.Errorf("seg[1] data = %v, want %v", segs[1].CompressedData, lzPayload)
+	}
+}
+
+func TestWalkCompressionChainTruncated(t *testing.T) {
+	hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: 1000,
+		CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+	})
+	data := append(hdr, []byte{0x01, 0x02}...)
+	_, err := WalkCompressionChain(data)
+	if err == nil {
+		t.Error("expected error for truncated segment")
+	}
+}
+
+func TestWalkCompressionChainEmpty(t *testing.T) {
+	segs, err := WalkCompressionChain(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(segs) != 0 {
+		t.Errorf("got %d segments for empty input, want 0", len(segs))
+	}
+}
