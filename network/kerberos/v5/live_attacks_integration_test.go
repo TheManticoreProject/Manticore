@@ -420,12 +420,12 @@ func TestLiveKerberos_RBCD(t *testing.T) {
 	if err := atk.GetTGT(); err != nil {
 		t.Fatalf("attacker GetTGT: %v", err)
 	}
-	_, selfRaw, _, err := atk.S4U2Self("Administrator", e.Realm)
+	_, selfRaw, _, _, err := atk.S4U2Self("Administrator", e.Realm)
 	if err != nil {
 		t.Fatalf("S4U2Self(Administrator): %v", err)
 	}
 	targetSPN := "cifs/" + tgtFQDN
-	ticket, proxyRaw, _, err := atk.S4U2Proxy(targetSPN, selfRaw)
+	ticket, proxyRaw, _, _, err := atk.S4U2Proxy(targetSPN, selfRaw)
 	if err != nil {
 		t.Fatalf("S4U2Proxy(%q) over RBCD: %v", targetSPN, err)
 	}
