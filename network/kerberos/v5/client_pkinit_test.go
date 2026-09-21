@@ -125,7 +125,7 @@ func TestProcessPKINITASRepAgilityKDF(t *testing.T) {
 	serverNonce := bytes.Repeat([]byte{0x5A}, pkinit.DHNonceLen)
 	paValue := synthPKINITReplyPAWithKDF(t, kdcKP.Y, serverNonce, asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 6, 2})
 
-	c := NewClient("alice", "corp.local", "")
+	c := NewClient("alice", "corp.local", "").InsecureSkipPKINITKDCSignatureCheck()
 
 	const etype = messages.ETypeAES128CTSHMACSHA256 // 19, AES-SHA2
 	keyLen := kerbcrypto.KeyLen(etype)
@@ -242,8 +242,21 @@ func pkinitExchange(t *testing.T) (c *KerberosClient, pkReq *pkinit.Request, paV
 	keyMaterial := append(append(append([]byte{}, shared...), pkReq.ClientDHNonce...), serverNonce...)
 	replyKey = pkinit.OctetString2Key(keyMaterial, kerbcrypto.KeyLen(messages.ETypeAES256CTSHMACSHA196))
 
-	c = NewClient("alice", "corp.local", "")
+	c = NewClient("alice", "corp.local", "").InsecureSkipPKINITKDCSignatureCheck()
 	return c, pkReq, paValue, replyKey
+}
+
+func TestProcessPKINITASRepRequiresTrustPolicy(t *testing.T) {
+	_, pkReq, paValue, replyKey := pkinitExchange(t)
+	c := NewClient("alice", "corp.local", "")
+	wire := buildPKINITASRep(t, messages.ETypeAES256CTSHMACSHA196, replyKey, 1, bytes.Repeat([]byte{0x42}, 32), paValue)
+
+	if err := c.processPKINITASRep(wire, pkReq, 1, []byte("req-body")); err == nil {
+		t.Fatal("processPKINITASRep accepted a reply without an explicit trust policy")
+	}
+	if c.hasTGT {
+		t.Error("hasTGT must not be set when the trust policy is missing")
+	}
 }
 
 // TestProcessPKINITASRepSuccess drives the PKINIT AS-REP processing end to end
