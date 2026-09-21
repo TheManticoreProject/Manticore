@@ -230,6 +230,16 @@ type Session struct {
 	// per-message signing is superseded by the AEAD authentication tag.
 	EncryptData bool
 
+	// IsGuest is set when the server returned SMB2_SESSION_FLAG_IS_GUEST,
+	// indicating the credentials were accepted as a guest. Signing and
+	// encryption are disabled for guest sessions (MS-SMB2 3.2.5.3.1).
+	IsGuest bool
+
+	// IsNull is set when the server returned SMB2_SESSION_FLAG_IS_NULL,
+	// indicating anonymous authentication. Signing and encryption are
+	// disabled for anonymous sessions (MS-SMB2 3.2.5.3.1).
+	IsNull bool
+
 	// nonceCounter provides the monotonically increasing nonce for the SMB2
 	// TRANSFORM_HEADER of each encrypted message, ensuring a nonce is never
 	// reused within the session (MS-SMB2 3.2.4.1.8).
@@ -255,4 +265,15 @@ type TreeConnect struct {
 
 	// ShareType is the type of share (disk/pipe/print) from the TREE_CONNECT response.
 	ShareType uint8
+
+	// ShareFlags are the server-reported properties for this share (caching,
+	// DFS, encryption, compression, ...) from the TREE_CONNECT response.
+	ShareFlags uint32
+
+	// ShareCapabilities are the server-reported capabilities for this share
+	// (DFS, continuous availability, scale-out, ...) from the TREE_CONNECT response.
+	ShareCapabilities uint32
+
+	// MaximalAccess is the maximum access the authenticated user has on this share.
+	MaximalAccess uint32
 }

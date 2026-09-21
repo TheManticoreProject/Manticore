@@ -213,29 +213,41 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 		}
 	}
 
-	// SMB 3.x: derive the signing/encryption/application keys from the session key
-	// via the SP800-108 KDF, using the per-session pre-auth hash as the 3.1.1 KDF
-	// context. For the 2.x dialects the session key remains the signing key.
-	if isSMB3Dialect(c.Connection.Dialect) {
-		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
+	// Check whether the server authenticated the client as a guest or
+	// anonymously. Per MS-SMB2 3.2.5.3.1 both cases disable signing and
+	// encryption: the session key is meaningless.
+	session.IsGuest = setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_GUEST != 0
+	session.IsNull = setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_NULL != 0
 
-		// The server signs the final SESSION_SETUP response with the derived signing
-		// key; verify it to confirm the key hierarchy is correct.
-		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
-			c.Session = nil
-			return fmt.Errorf("kerberos session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
+	if session.IsGuest || session.IsNull {
+		session.SessionKey = make([]byte, 16)
+		session.SigningKey = session.SessionKey
+		session.SigningActive = false
+	} else {
+		// SMB 3.x: derive the signing/encryption/application keys from the session key
+		// via the SP800-108 KDF, using the per-session pre-auth hash as the 3.1.1 KDF
+		// context. For the 2.x dialects the session key remains the signing key.
+		if isSMB3Dialect(c.Connection.Dialect) {
+			session.PreauthHash = sessionHash
+			deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
+
+			// The server signs the final SESSION_SETUP response with the derived signing
+			// key; verify it to confirm the key hierarchy is correct.
+			if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
+				c.Session = nil
+				return fmt.Errorf("kerberos session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
+			}
+
+			// Honour a server that requires encryption for the whole session.
+			if setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
+				session.EncryptData = true
+			}
 		}
 
-		// Honour a server that requires encryption for the whole session.
-		if setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
-			session.EncryptData = true
-		}
+		// Session established: activate signing for subsequent requests when the server
+		// enables or requires it.
+		session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
 	}
-
-	// Session established: activate signing for subsequent requests when the server
-	// enables or requires it.
-	session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
 
 	if c.Connection.SessionTable == nil {
 		c.Connection.SessionTable = make(map[uint64]*Session)

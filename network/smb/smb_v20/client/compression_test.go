@@ -116,6 +116,14 @@ func TestDecompressPatternV1TooShort(t *testing.T) {
 	}
 }
 
+func TestDecompressPatternV1ReservedByteNonZero(t *testing.T) {
+	// Pattern_V1: pattern(1) + reserved(1) + count(2). Reserved MUST be zero.
+	_, err := DecompressPatternV1([]byte{0xAA, 0xFF, 0x03, 0x00})
+	if err == nil {
+		t.Error("expected error for non-zero reserved byte")
+	}
+}
+
 func TestCompressionNegotiateContext(t *testing.T) {
 	algs := []uint16{
 		commands.SMB2_COMPRESSION_LZ77_HUFFMAN,

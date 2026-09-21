@@ -9,9 +9,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/filesystem"
 )
 
-// DFS share flag from TREE_CONNECT response ShareFlags (MS-SMB2 2.2.10).
-const SMB2_SHAREFLAG_DFS = 0x00000001
-
 // DFS referral header flags (MS-DFSC 2.2.4).
 const (
 	DFS_REFERRAL_HEADER_FLAG_REFERRAL_SERVERS uint32 = 0x00000001

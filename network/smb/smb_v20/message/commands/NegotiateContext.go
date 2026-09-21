@@ -163,11 +163,9 @@ const SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY = 0x00000001
 // carrying the server name as a null-terminated UTF-16LE string (MS-SMB2
 // 2.2.3.1.4). Virtual-hosted servers use this to select the correct node.
 func NewNetnameContext(serverName string) *NegotiateContext {
-	runes := []rune(serverName)
-	data := make([]byte, 2*len(runes))
-	for i, r := range runes {
-		binary.LittleEndian.PutUint16(data[2*i:], uint16(r))
-	}
+	encoded := utf16LEEncode(serverName)
+	data := make([]byte, len(encoded)+2) // +2 for UTF-16 null terminator
+	copy(data, encoded)
 	return &NegotiateContext{ContextType: SMB2_NETNAME_NEGOTIATE_CONTEXT_ID, Data: data}
 }
 
@@ -242,7 +240,7 @@ func SelectedCipher(contexts []*NegotiateContext) uint16 {
 // SMB2_PREAUTH_INTEGRITY_CAPABILITIES context in the list, or 0 if none.
 func SelectedPreauthHash(contexts []*NegotiateContext) uint16 {
 	for _, ctx := range contexts {
-		if ctx.ContextType == SMB2_PREAUTH_INTEGRITY_CAPABILITIES && len(ctx.Data) >= 8 {
+		if ctx.ContextType == SMB2_PREAUTH_INTEGRITY_CAPABILITIES && len(ctx.Data) >= 6 {
 			return binary.LittleEndian.Uint16(ctx.Data[4:6])
 		}
 	}

@@ -93,6 +93,9 @@ func DecompressPatternV1(data []byte) ([]byte, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("Pattern_V1 data too short: %d bytes, need 4", len(data))
 	}
+	if data[1] != 0 {
+		return nil, fmt.Errorf("Pattern_V1 reserved byte is 0x%02x, want 0x00", data[1])
+	}
 	pattern := data[0]
 	count := int(binary.LittleEndian.Uint16(data[2:4]))
 	out := make([]byte, count)
@@ -100,4 +103,106 @@ func DecompressPatternV1(data []byte) ([]byte, error) {
 		out[i] = pattern
 	}
 	return out, nil
+}
+
+// Chained compression payload header (MS-SMB2 2.2.42.1).
+const chainedPayloadHeaderSize = 8
+
+// CompressionChainedPayloadHeader is a single segment header in a chained
+// compression transform (MS-SMB2 2.2.42.1). When the parent
+// CompressionTransformHeader has SMB2_COMPRESSION_FLAG_CHAINED set, the payload
+// is a sequence of these headers, each followed by its compressed segment.
+//
+// Wire layout: OriginalCompressedSegmentSize(4) + CompressionAlgorithm(2) +
+// Reserved(2).
+type CompressionChainedPayloadHeader struct {
+	OriginalCompressedSegmentSize uint32
+	CompressionAlgorithm          uint16
+}
+
+// MarshalCompressionChainedPayloadHeader encodes a chained payload header. The
+// caller appends the compressed segment data after these 8 bytes.
+func MarshalCompressionChainedPayloadHeader(h *CompressionChainedPayloadHeader) []byte {
+	buf := make([]byte, chainedPayloadHeaderSize)
+	binary.LittleEndian.PutUint32(buf[0:4], h.OriginalCompressedSegmentSize)
+	binary.LittleEndian.PutUint16(buf[4:6], h.CompressionAlgorithm)
+	// buf[6:8] reserved, zero
+	return buf
+}
+
+// ParseCompressionChainedPayloadHeader decodes a chained payload header.
+func ParseCompressionChainedPayloadHeader(data []byte) (*CompressionChainedPayloadHeader, error) {
+	if len(data) < chainedPayloadHeaderSize {
+		return nil, fmt.Errorf("chained payload header too short: %d bytes, need %d", len(data), chainedPayloadHeaderSize)
+	}
+	return &CompressionChainedPayloadHeader{
+		OriginalCompressedSegmentSize: binary.LittleEndian.Uint32(data[0:4]),
+		CompressionAlgorithm:          binary.LittleEndian.Uint16(data[4:6]),
+	}, nil
+}
+
+// CompressionChainedSegment is one segment of a chained compressed payload:
+// the per-segment header and the compressed data that follows it.
+type CompressionChainedSegment struct {
+	Header         CompressionChainedPayloadHeader
+	CompressedData []byte
+}
+
+// chainedSegmentDataLen returns the number of compressed-data bytes that follow
+// a chained payload header, based on the algorithm. For NONE, the data is
+// uncompressed and its length equals OriginalCompressedSegmentSize. For
+// Pattern_V1, the output is always 4 bytes. For other algorithms (LZ77, LZNT1,
+// LZ77+Huffman) the compressed size is not encoded in the header, so the
+// segment must be the last in the chain and extends to the end of the buffer;
+// -1 signals this "rest of buffer" case.
+func chainedSegmentDataLen(alg uint16, origSize uint32) int {
+	switch alg {
+	case 0x0000: // SMB2_COMPRESSION_NONE
+		return int(origSize)
+	case 0x0004: // SMB2_COMPRESSION_PATTERN_V1
+		return 4
+	default:
+		return -1
+	}
+}
+
+// WalkCompressionChain parses the chained payload of a chained compression
+// transform (Flags == SMB2_COMPRESSION_FLAG_CHAINED). data starts immediately
+// after the 16-byte CompressionTransformHeader. Each segment with a
+// deterministic compressed size (NONE, Pattern_V1) is split out individually;
+// the final segment — whose compressed length is "rest of buffer" — gets all
+// remaining bytes.
+func WalkCompressionChain(data []byte) ([]CompressionChainedSegment, error) {
+	var segments []CompressionChainedSegment
+	offset := 0
+	for offset < len(data) {
+		if len(data)-offset < chainedPayloadHeaderSize {
+			return nil, fmt.Errorf("chained segment at offset %d too short for header", offset)
+		}
+		hdr, err := ParseCompressionChainedPayloadHeader(data[offset:])
+		if err != nil {
+			return nil, err
+		}
+		offset += chainedPayloadHeaderSize
+
+		dataLen := chainedSegmentDataLen(hdr.CompressionAlgorithm, hdr.OriginalCompressedSegmentSize)
+		if dataLen < 0 {
+			segments = append(segments, CompressionChainedSegment{
+				Header:         *hdr,
+				CompressedData: data[offset:],
+			})
+			break
+		}
+
+		end := offset + dataLen
+		if end > len(data) {
+			return nil, fmt.Errorf("chained segment at offset %d: data length %d exceeds buffer", offset-chainedPayloadHeaderSize, dataLen)
+		}
+		segments = append(segments, CompressionChainedSegment{
+			Header:         *hdr,
+			CompressedData: data[offset:end],
+		})
+		offset = end
+	}
+	return segments, nil
 }

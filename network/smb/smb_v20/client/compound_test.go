@@ -127,6 +127,79 @@ func TestSendReceiveCompoundEnforcesSigning(t *testing.T) {
 	})
 }
 
+func TestSendReceiveCompoundEncryption(t *testing.T) {
+	keyHex := "629BCBC54422A0F572B97F45989B6073"
+	keyBytes := mustHex(t, keyHex)
+
+	encryptingClient := func(ft *fakeTransport) *Client {
+		c := newTestClient(ft)
+		c.Connection.Dialect = dialects.SMB2_DIALECT_3_1_1
+		c.Connection.Cipher = commands.SMB2_ENCRYPTION_AES128_GCM
+		c.Session = &Session{
+			Client:        c,
+			SessionId:     0x99,
+			TreeId:        0x5,
+			SigningActive:  true,
+			SigningKey:     keyBytes,
+			EncryptionKey: keyBytes,
+			DecryptionKey: keyBytes,
+			EncryptData:   true,
+		}
+		c.Connection.SessionTable[0x99] = c.Session
+		return c
+	}
+
+	t.Run("encrypted compound round-trip", func(t *testing.T) {
+		plainResponse := createQueryCloseResponse(t, []byte{0xDE, 0xAD})
+
+		// Build a client just to encrypt the response (simulating the server).
+		serverC := encryptingClient(&fakeTransport{})
+		encrypted, err := serverC.encryptMessage(plainResponse)
+		if err != nil {
+			t.Fatalf("encryptMessage: %v", err)
+		}
+
+		ft := &fakeTransport{responses: [][]byte{encrypted}}
+		c := encryptingClient(ft)
+
+		got, err := c.CreateQueryInfoClose("x", 0x00100081, 0x07, 0x00000001, 0, commands.SMB2_0_INFO_FILE, 0x12, 0)
+		if err != nil {
+			t.Fatalf("CreateQueryInfoClose: %v", err)
+		}
+		if !bytes.Equal(got, []byte{0xDE, 0xAD}) {
+			t.Errorf("query output = % x, want de ad", got)
+		}
+
+		// The sent frame must be encrypted (TRANSFORM_HEADER, not raw SMB2).
+		if len(ft.sent) != 1 {
+			t.Fatalf("expected 1 frame sent, got %d", len(ft.sent))
+		}
+		if !isTransformHeader(ft.sent[0]) {
+			t.Errorf("sent frame is not encrypted (missing TRANSFORM_HEADER)")
+		}
+	})
+
+	t.Run("encrypted compound skips signature verification", func(t *testing.T) {
+		// The plaintext response is NOT signed — on an encrypted session the
+		// AEAD tag supersedes per-segment signatures. The compound path must
+		// accept it.
+		plainResponse := createQueryCloseResponse(t, []byte{0x01})
+
+		serverC := encryptingClient(&fakeTransport{})
+		encrypted, err := serverC.encryptMessage(plainResponse)
+		if err != nil {
+			t.Fatalf("encryptMessage: %v", err)
+		}
+
+		ft := &fakeTransport{responses: [][]byte{encrypted}}
+		c := encryptingClient(ft)
+
+		if _, err := c.CreateQueryInfoClose("x", 0x00100081, 0x07, 0x00000001, 0, commands.SMB2_0_INFO_FILE, 0x12, 0); err != nil {
+			t.Fatalf("expected encrypted (unsigned) compound to be accepted, got: %v", err)
+		}
+	})
+}
+
 func TestSendUnrelatedCompound(t *testing.T) {
 	queryOut1 := []byte{0xAA, 0xBB}
 	queryOut2 := []byte{0xCC, 0xDD}
@@ -248,4 +321,65 @@ func TestCreateQueryInfoCloseSurfacesSegmentError(t *testing.T) {
 	if _, err := c.CreateQueryInfoClose("x", 0x00100081, 0x07, 0x00000001, 0, commands.SMB2_0_INFO_FILE, 0x12, 0); err == nil {
 		t.Fatal("expected an error when the QUERY_INFO segment fails")
 	}
+}
+
+// TestSendReceiveCompoundEncrypts verifies that when EncryptData is set the
+// compound request is wrapped in a TRANSFORM_HEADER and the encrypted compound
+// response is correctly decrypted.
+func TestSendReceiveCompoundEncrypts(t *testing.T) {
+	key := mustHex(t, "629BCBC54422A0F572B97F45989B6073")
+
+	encryptingClient := func() (*Client, *fakeTransport) {
+		ft := &fakeTransport{}
+		c := newTestClient(ft)
+		c.Connection.Dialect = dialects.SMB2_DIALECT_3_1_1
+		c.Connection.Cipher = commands.SMB2_ENCRYPTION_AES128_GCM
+		c.Session = &Session{
+			Client:        c,
+			SessionId:     0x99,
+			TreeId:        0x5,
+			EncryptionKey: key,
+			DecryptionKey: key,
+			EncryptData:   true,
+		}
+		c.Connection.SessionTable[0x99] = c.Session
+		return c, ft
+	}
+
+	t.Run("request is encrypted", func(t *testing.T) {
+		c, ft := encryptingClient()
+		raw := createQueryCloseResponse(t, []byte{0x01})
+		enc, err := c.encryptMessage(raw)
+		if err != nil {
+			t.Fatalf("encryptMessage: %v", err)
+		}
+		ft.responses = [][]byte{enc}
+		if _, err := c.CreateQueryInfoClose("x", 0x00100081, 0x07, 0x00000001, 0, commands.SMB2_0_INFO_FILE, 0x12, 0); err != nil {
+			t.Fatalf("CreateQueryInfoClose: %v", err)
+		}
+		if len(ft.sent) != 1 {
+			t.Fatalf("expected 1 sent frame, got %d", len(ft.sent))
+		}
+		if !isTransformHeader(ft.sent[0]) {
+			t.Fatal("compound request must be encrypted (TRANSFORM_HEADER) when EncryptData is set")
+		}
+	})
+
+	t.Run("encrypted response decrypted", func(t *testing.T) {
+		c, ft := encryptingClient()
+		want := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+		raw := createQueryCloseResponse(t, want)
+		enc, err := c.encryptMessage(raw)
+		if err != nil {
+			t.Fatalf("encryptMessage: %v", err)
+		}
+		ft.responses = [][]byte{enc}
+		got, err := c.CreateQueryInfoClose("x", 0x00100081, 0x07, 0x00000001, 0, commands.SMB2_0_INFO_FILE, 0x12, 0)
+		if err != nil {
+			t.Fatalf("CreateQueryInfoClose: %v", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("query output = % x, want % x", got, want)
+		}
+	})
 }

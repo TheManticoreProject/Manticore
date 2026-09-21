@@ -44,10 +44,24 @@ func (c *Client) Cancel() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal cancel: %w", err)
 	}
-	if c.Session != nil && c.Session.SigningActive {
+
+	// When the session encrypts data, the CANCEL is wrapped in an SMB2
+	// TRANSFORM_HEADER instead of being signed — the AEAD tag supersedes the
+	// per-message signature (MS-SMB2 3.2.4.24). Otherwise sign in place when
+	// signing is active.
+	encrypt := c.Session != nil && c.Session.EncryptData
+	if !encrypt && c.Session != nil && c.Session.SigningActive {
 		signMessageForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
 	}
-	if _, err := c.Transport.Send(marshalled); err != nil {
+
+	wire := marshalled
+	if encrypt {
+		if wire, err = c.encryptMessage(marshalled); err != nil {
+			return fmt.Errorf("failed to encrypt cancel: %w", err)
+		}
+	}
+
+	if _, err := c.Transport.Send(wire); err != nil {
 		return fmt.Errorf("failed to send cancel: %w", err)
 	}
 	return nil
