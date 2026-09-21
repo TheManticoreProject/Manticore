@@ -5,11 +5,18 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 )
 
-// smb2DialectString2002 is the SMB2 dialect marker offered in a multi-protocol
-// SMB_COM_NEGOTIATE to advertise SMB 2.0.2 (the engine's current ceiling). The
-// "SMB 2.???" wildcard, which declares 2.1+ support and triggers a follow-up
-// native SMB2 negotiate, will be added when 2.1+/3.x engines exist.
-const smb2DialectString2002 = "SMB 2.002"
+const (
+	// smb2DialectString2002 is the SMB2 dialect marker offered in a multi-protocol
+	// SMB_COM_NEGOTIATE to advertise exactly SMB 2.0.2. The server returns a
+	// concrete 2.0.2 negotiate response with no follow-up needed.
+	smb2DialectString2002 = "SMB 2.002"
+
+	// smb2DialectStringWildcard is the SMB2 wildcard marker offered in a
+	// multi-protocol SMB_COM_NEGOTIATE to advertise support for SMB 2.1 and above
+	// (including 3.x). The server returns dialect revision 0x02FF (the wildcard)
+	// and expects a follow-up native SMB2 negotiate offering specific dialects.
+	smb2DialectStringWildcard = "SMB 2.???"
+)
 
 // smb2DialectFor maps an abstract protocol version to its concrete SMB2 wire
 // dialect revision. ok is false for SMB1 (which has no 16-bit revision) and for

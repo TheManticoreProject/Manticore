@@ -13,16 +13,18 @@ import (
 	smb1flags "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	smb1flags2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
+	smb2dialects "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	smb2msg "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	smb2commands "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
 
 // engineSupportsSMB2 reports whether the SMB2 engine can drive version v. The
-// engine negotiates SMB 2.0.2; the 2.0 family marker and 2.1 map onto it, while
-// 3.x is not yet supported (a dedicated engine arrives in Phase 7).
+// engine handles all dialects from SMB 2.0.2 through 3.1.1, including 3.x
+// negotiate contexts (pre-auth integrity, encryption, signing, compression).
 func engineSupportsSMB2(v smb.SMBProtocolVersion) bool {
 	switch v {
-	case smb.SMB_VERSION_2_0, smb.SMB_VERSION_2_0_2, smb.SMB_VERSION_2_1:
+	case smb.SMB_VERSION_2_0, smb.SMB_VERSION_2_0_2, smb.SMB_VERSION_2_1,
+		smb.SMB_VERSION_3_0, smb.SMB_VERSION_3_0_2, smb.SMB_VERSION_3_1_1:
 		return true
 	}
 	return false
@@ -58,7 +60,6 @@ func dialStrictOrder(host string, ip net.IP, port int, opts Options, prefs []smb
 			triedSMB2 = true
 			c, err = dialSMB2(ip, host, port, opts)
 		default:
-			// e.g. SMB 3.x — no engine yet; skip.
 			continue
 		}
 
@@ -75,19 +76,23 @@ func dialStrictOrder(host string, ip net.IP, port int, opts Options, prefs []smb
 	return nil, fmt.Errorf("no preferred dialect accepted by %s: %w", host, lastErr)
 }
 
-// wantedFamilies reports which engine families a preference list calls for: SMB1
-// when SMB_VERSION_1_0 is present, and SMB2 when any engine-supported SMB2 dialect
-// is present. Unsupported versions (3.x) contribute nothing.
-func wantedFamilies(prefs []smb.SMBProtocolVersion) (smb1, smb2 bool) {
+// wantedFamilies reports which engine families a preference list calls for, and
+// whether the "SMB 2.???" wildcard is needed. The wildcard is required when any
+// dialect above 2.0.2 is wanted, because the "SMB 2.002" marker can only
+// negotiate 2.0.2.
+func wantedFamilies(prefs []smb.SMBProtocolVersion) (wantSMB1, wantSMB2, needWildcard bool) {
 	for _, v := range prefs {
 		switch {
 		case v == smb.SMB_VERSION_1_0:
-			smb1 = true
+			wantSMB1 = true
 		case engineSupportsSMB2(v):
-			smb2 = true
+			wantSMB2 = true
+			if v != smb.SMB_VERSION_2_0 && v != smb.SMB_VERSION_2_0_2 {
+				needWildcard = true
+			}
 		}
 	}
-	return smb1, smb2
+	return wantSMB1, wantSMB2, needWildcard
 }
 
 // dialHighestInSet performs a single SMB1 multi-protocol negotiate — one request
@@ -96,21 +101,18 @@ func wantedFamilies(prefs []smb.SMBProtocolVersion) (smb1, smb2 bool) {
 // dispatched on its protocol marker; an SMB2 wildcard reply triggers a second,
 // native SMB2 negotiate to pin the concrete dialect.
 func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []smb.SMBProtocolVersion) (*Client, error) {
-	wantSMB1, wantSMB2 := wantedFamilies(prefs)
+	wantSMB1, wantSMB2, needWildcard := wantedFamilies(prefs)
 	if !wantSMB1 && !wantSMB2 {
 		return nil, fmt.Errorf("no supported protocol version in preference list for %s", host)
 	}
 
 	t := transport.NewTransport("tcp")
-	// Bound the connect/negotiate exchange so an unresponsive server fails the
-	// dial instead of blocking forever; finishSMB1/finishSMB2 lift the bound
-	// once the dialect is established.
 	t.SetTimeout(opts.dialTimeout())
 	if err := t.Connect(ip, port); err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 	}
 
-	raw, offered, err := sendMultiProtocolNegotiate(t, wantSMB1, wantSMB2)
+	raw, offered, err := sendMultiProtocolNegotiate(t, wantSMB1, wantSMB2, needWildcard)
 	if err != nil {
 		t.Close()
 		return nil, err
@@ -141,9 +143,11 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 
 // sendMultiProtocolNegotiate builds and sends an SMB1 SMB_COM_NEGOTIATE offering
 // the requested dialect markers, and returns the raw response together with the
-// negotiate request command (its offered dialect list is needed to resolve an
-// SMB1 selection). The wildcard "SMB 2.???" marker advertises SMB2 support.
-func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2 bool) ([]byte, *smb1commands.NegotiateRequest, error) {
+// negotiate request command (its offered dialect list is needed to resolve an SMB1
+// selection). When needWildcard is true the "SMB 2.???" marker is offered instead
+// of "SMB 2.002", which makes the server return the wildcard dialect (0x02FF) and
+// expect a follow-up native SMB2 negotiate that offers specific 2.1+/3.x dialects.
+func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2, needWildcard bool) ([]byte, *smb1commands.NegotiateRequest, error) {
 	req := smb1msg.NewMessage()
 	req.Header.SetFlags(smb1flags.FLAGS_CANONICALIZED_PATHS | smb1flags.FLAGS_CASE_INSENSITIVE)
 	req.Header.SetFlags2(smb1flags2.FLAGS2_UNICODE | smb1flags2.FLAGS2_NT_STATUS_ERROR_CODES | smb1flags2.FLAGS2_EXTENDED_SECURITY | smb1flags2.FLAGS2_LONG_NAMES_ALLOWED)
@@ -153,13 +157,11 @@ func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2 bool) 
 		neg.Dialects.AddDialect(smb1dialects.DIALECT_NT_LM_0_12)
 	}
 	if wantSMB2 {
-		// The SMB2 engine's ceiling is SMB 2.0.2, so offer the "SMB 2.002" marker
-		// rather than the "SMB 2.???" wildcard. A wildcard offer declares 2.1+
-		// support, after which the server replies with the wildcard revision and
-		// expects a follow-up negotiate offering 2.1+ — a 2.0.2-only follow-up is
-		// reset by Windows Server. "SMB 2.002" makes the server return a concrete
-		// SMB 2.0.2 negotiate response directly, needing no second leg.
-		neg.Dialects.AddDialect(smb2DialectString2002)
+		if needWildcard {
+			neg.Dialects.AddDialect(smb2DialectStringWildcard)
+		} else {
+			neg.Dialects.AddDialect(smb2DialectString2002)
+		}
 	}
 	req.AddCommand(neg)
 
@@ -205,10 +207,14 @@ func finishSMB1(t transport.Transport, ip net.IP, host string, port int, opts Op
 }
 
 // finishSMB2 parses the SMB2 negotiate response and hands the live transport to
-// the SMB2 engine. Because the multi-protocol negotiate offers the "SMB 2.002"
-// marker, the server returns a concrete SMB 2.0.2 negotiate response, which is
-// applied directly. A dialect the engine cannot drive is rejected rather than
-// applied.
+// the SMB2 engine.
+//
+// Two paths:
+//   - Concrete dialect (2.0.2 through 3.1.1): the response is applied directly.
+//   - Wildcard (0x02FF): the server responded to the "SMB 2.???" marker and
+//     expects a follow-up native SMB2 negotiate. The engine sends its own
+//     NEGOTIATE offering the full dialect range (2.0.2–3.1.1) with 3.1.1
+//     contexts, and the server's reply pins the concrete dialect.
 func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Options, raw []byte) (*Client, error) {
 	respMsg := smb2msg.NewMessage()
 	if _, err := respMsg.Header.Unmarshal(raw); err != nil {
@@ -225,16 +231,28 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 		return nil, fmt.Errorf("unexpected SMB2 negotiate response command: %T", respMsg.Command)
 	}
 
-	if v, ok := versionForSMB2Dialect(resp.DialectRevision); !ok || !engineSupportsSMB2(v) {
-		t.Close()
-		return nil, fmt.Errorf("server selected SMB2 dialect 0x%04x, which the engine cannot drive", uint16(resp.DialectRevision))
-	}
-
 	engine := smb2.NewFromTransport(t, ip, port)
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
-	engine.ApplyNegotiateResponse(resp)
+
+	if resp.DialectRevision == smb2dialects.SMB2_DIALECT_WILDCARD {
+		// Wildcard response — perform a follow-up native SMB2 negotiate on the
+		// same transport. The engine's Negotiate() offers the full profile dialect
+		// list (2.0.2–3.1.1) with pre-auth integrity, encryption, and signing
+		// negotiate contexts.
+		if err := engine.Negotiate(); err != nil {
+			t.Close()
+			return nil, fmt.Errorf("follow-up SMB2 negotiate after wildcard: %w", err)
+		}
+	} else {
+		if v, ok := versionForSMB2Dialect(resp.DialectRevision); !ok || !engineSupportsSMB2(v) {
+			t.Close()
+			return nil, fmt.Errorf("server selected SMB2 dialect 0x%04x, which the engine cannot drive", uint16(resp.DialectRevision))
+		}
+		engine.ApplyNegotiateResponse(resp)
+	}
+
 	t.SetTimeout(0) // negotiation is done; lift the per-attempt bound
 	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
 }
