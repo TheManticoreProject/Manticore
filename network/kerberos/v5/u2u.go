@@ -8,6 +8,10 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
+func u2uResult(tgsRep *messages.TGSRep, encTGSRep *messages.EncTGSRepPart) (messages.Ticket, []byte, []byte, int) {
+	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, encTGSRep.Key.KeyType
+}
+
 // buildU2UTGSReq constructs the TGS-REQ for a user-to-user exchange: a normal
 // PA-TGS-REQ (AP-REQ over the client's TGT), the ENC-TKT-IN-SKEY KDC option, the
 // target user's TGT in additional-tickets, and the target user as sname. It is
@@ -61,54 +65,56 @@ func (c *KerberosClient) buildU2UTGSReq(targetUser, targetRealm string, targetTG
 // USE-SESSION-KEY option.
 //
 // GetTGT must have succeeded first (for the client's own TGT). Returns the
-// service ticket, its raw bytes, and the ticket session key.
-func (c *KerberosClient) GetTGSU2U(targetUser, targetRealm string, targetTGTRaw []byte) (messages.Ticket, []byte, []byte, error) {
+// service ticket, its raw bytes, the ticket session key, and the session key's
+// encryption type.
+func (c *KerberosClient) GetTGSU2U(targetUser, targetRealm string, targetTGTRaw []byte) (messages.Ticket, []byte, []byte, int, error) {
 	if !c.hasTGT {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: no TGT: call GetTGT first")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: no TGT: call GetTGT first")
 	}
 	if targetUser == "" {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: U2U requires a target user")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: U2U requires a target user")
 	}
 	if len(targetTGTRaw) == 0 {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: U2U requires the target user's TGT")
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: U2U requires the target user's TGT")
 	}
 
 	nonce := randomNonce()
 	tgsReq, err := c.buildU2UTGSReq(targetUser, targetRealm, targetTGTRaw, nonce)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	tgsReqBytes, err := tgsReq.Marshal()
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: marshal U2U TGS-REQ: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: marshal U2U TGS-REQ: %w", err)
 	}
 	resp, err := c.sendToRealm(c.realm, tgsReqBytes)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, err
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	var krbErr messages.KRBError
 	if _, parseErr := krbErr.Unmarshal(resp); parseErr == nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: U2U error %d: %s", krbErr.ErrorCode, krbErr.EText)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: U2U error %d: %s", krbErr.ErrorCode, krbErr.EText)
 	}
 
 	var tgsRep messages.TGSRep
 	if _, err := tgsRep.Unmarshal(resp); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse U2U TGS-REP: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse U2U TGS-REP: %w", err)
 	}
 
 	encPlain, err := kerbcrypto.Decrypt(c.sessionEType, c.sessionKey, kerbcrypto.KeyUsageTGSRepEncSessionKey, tgsRep.EncPart.Cipher)
 	if err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: decrypt U2U TGS-REP enc-part: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: decrypt U2U TGS-REP enc-part: %w", err)
 	}
 	var encTGSRep messages.EncTGSRepPart
 	if _, err := encTGSRep.Unmarshal(encPlain); err != nil {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: parse U2U EncTGSRepPart: %w", err)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: parse U2U EncTGSRepPart: %w", err)
 	}
 	if encTGSRep.Nonce != nonce {
-		return messages.Ticket{}, nil, nil, fmt.Errorf("kerberos: U2U nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
+		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: U2U nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
 
-	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, nil
+	ticket, raw, key, etype := u2uResult(&tgsRep, &encTGSRep)
+	return ticket, raw, key, etype, nil
 }

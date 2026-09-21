@@ -5,6 +5,7 @@ import (
 	"encoding/asn1"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
@@ -90,14 +91,29 @@ func TestU2URequestShape(t *testing.T) {
 
 func TestGetTGSU2UValidatesInputs(t *testing.T) {
 	c := NewClient("svc", "corp.local", "10.0.0.1").WithPassword("x")
-	if _, _, _, err := c.GetTGSU2U("victim", "", []byte{1}); err == nil {
+	if _, _, _, _, err := c.GetTGSU2U("victim", "", []byte{1}); err == nil {
 		t.Error("expected error without a TGT")
 	}
 	c2 := fakeTGTClient(t)
-	if _, _, _, err := c2.GetTGSU2U("", "", []byte{1}); err == nil {
+	if _, _, _, _, err := c2.GetTGSU2U("", "", []byte{1}); err == nil {
 		t.Error("expected error with empty target user")
 	}
-	if _, _, _, err := c2.GetTGSU2U("victim", "", nil); err == nil {
+	if _, _, _, _, err := c2.GetTGSU2U("victim", "", nil); err == nil {
 		t.Error("expected error with no target TGT")
+	}
+}
+
+func TestU2UResultReturnsSessionKeyEType(t *testing.T) {
+	rep := messages.TGSRep{
+		Ticket:    messages.Ticket{EncPart: messages.EncryptedData{EType: iana.ETypeRC4HMAC}},
+		TicketRaw: []byte{1, 2, 3},
+	}
+	encRep := messages.EncTGSRepPart{
+		Key: messages.EncryptionKey{KeyType: iana.ETypeAES256CTSHMACSHA196, KeyValue: []byte{4, 5, 6}},
+	}
+
+	_, _, _, etype := u2uResult(&rep, &encRep)
+	if etype != iana.ETypeAES256CTSHMACSHA196 {
+		t.Fatalf("U2U result enctype = %d, want session-key enctype %d", etype, iana.ETypeAES256CTSHMACSHA196)
 	}
 }

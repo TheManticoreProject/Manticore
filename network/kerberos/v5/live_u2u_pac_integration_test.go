@@ -47,11 +47,11 @@ func TestLiveKerberos_U2UAndPACDecode(t *testing.T) {
 
 	// Present the client's own TGT as the additional ticket; the KDC issues a
 	// service ticket to the account encrypted under the TGT session key.
-	ticket, ticketRaw, key, err := c.GetTGSU2U(user, "", c.tgtTicketRaw)
+	ticket, ticketRaw, key, keyEType, err := c.GetTGSU2U(user, "", c.tgtTicketRaw)
 	if err != nil {
 		t.Fatalf("GetTGSU2U(self): %v", err)
 	}
-	if len(ticketRaw) == 0 || len(key) == 0 {
+	if len(ticketRaw) == 0 || len(key) == 0 || keyEType == 0 {
 		t.Fatal("GetTGSU2U(self) returned an empty ticket/key")
 	}
 	t.Logf("[ok] U2U ticket to self: sname=%v", ticket.SName.NameString)

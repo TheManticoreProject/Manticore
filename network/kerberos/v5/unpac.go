@@ -31,7 +31,7 @@ func (c *KerberosClient) UnPACTheHash() (lmHash, ntHash []byte, err error) {
 	}
 
 	// U2U service ticket to self, encrypted under our own TGT session key.
-	ticket, _, _, err := c.GetTGSU2U(c.username, "", c.tgtTicketRaw)
+	ticket, _, _, _, err := c.GetTGSU2U(c.username, "", c.tgtTicketRaw)
 	if err != nil {
 		return nil, nil, fmt.Errorf("kerberos: UnPACTheHash: U2U to self: %w", err)
 	}
