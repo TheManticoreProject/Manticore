@@ -167,6 +167,10 @@ func (c *Client) WaitBreakNotification() (*BreakNotification, error) {
 		wasEncrypted = true
 	}
 
+	if c.Session != nil && c.Session.EncryptData && !wasEncrypted {
+		return nil, fmt.Errorf("break notification: session requires encryption but notification was not encrypted")
+	}
+
 	msg := message.NewMessage()
 	if _, err := msg.Header.Unmarshal(raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal break notification header: %w", err)
