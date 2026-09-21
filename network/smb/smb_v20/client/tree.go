@@ -16,8 +16,14 @@ func (c *Client) TreeConnect(shareName string) error {
 	}
 
 	req := commands.NewTreeConnectRequest()
-	// SMB2 tree-connect paths are the full UNC form \\server\share.
-	req.Path = fmt.Sprintf("\\\\%s\\%s", c.Connection.Server.Host.String(), shareName)
+	// SMB2 tree-connect paths are the full UNC form \\server\share. Prefer the
+	// original hostname so virtual-hosted servers see a consistent name between
+	// negotiate (NETNAME context) and tree-connect.
+	host := c.Connection.ServerName
+	if host == "" {
+		host = c.Connection.Server.Host.String()
+	}
+	req.Path = fmt.Sprintf("\\\\%s\\%s", host, shareName)
 
 	msg := c.newRequest(req)
 	// TreeId MUST be 0 in a TREE_CONNECT request.
@@ -58,6 +64,9 @@ func (c *Client) TreeConnect(shareName string) error {
 		ShareFlags:        treeConnectResponse.ShareFlags,
 		ShareCapabilities: treeConnectResponse.Capabilities,
 		MaximalAccess:     treeConnectResponse.MaximalAccess,
+		CompressData: isSMB3Dialect(c.Connection.Dialect) &&
+			treeConnectResponse.ShareFlags&commands.SMB2_SHAREFLAG_COMPRESS_DATA != 0 &&
+			len(c.Connection.CompressionAlgorithms) > 0,
 	}
 	// A dialect below 3.1.1 has no pre-authentication integrity, so the NEGOTIATE
 	// exchange that produced this connection was unprotected. Have the server
