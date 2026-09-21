@@ -218,7 +218,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	// context. For the 2.x dialects the session key remains the signing key.
 	if isSMB3Dialect(c.Connection.Dialect) {
 		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash)
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher)
 
 		// The server signs the final SESSION_SETUP response with the derived signing
 		// key; verify it to confirm the key hierarchy is correct.

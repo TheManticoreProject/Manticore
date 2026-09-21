@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
 
 // preauthHashLength is the size of the SMB 3.1.1 pre-authentication integrity
@@ -49,16 +50,17 @@ var (
 	kdfLabelS2CCipher  = []byte("SMBS2CCipherKey\x00")
 )
 
-// sp800108CounterKDF derives a 128-bit key using the NIST SP800-108 KDF in
-// counter mode with HMAC-SHA256 as the PRF, as required by MS-SMB2 3.1.4.2 for
-// the SMB 3.x key hierarchy. The counter width r is 32 bits and the output
-// length L is 128 bits, so a single PRF invocation produces the whole key.
+// sp800108CounterKDF derives a key of the requested bit-length using the NIST
+// SP800-108 KDF in counter mode with HMAC-SHA256 as the PRF, as required by
+// MS-SMB2 3.1.4.2 for the SMB 3.x key hierarchy. The counter width r is 32
+// bits and bits is the desired output length L (128 or 256). Since HMAC-SHA256
+// produces 256 bits per iteration, a single PRF invocation suffices for both.
 //
 // The fixed input string is [i]_32 || Label || 0x00 || Context || [L]_32 with
-// i = 1 and L = 128 (both 32-bit big-endian). The MS-SMB2 Label/Context byte
-// strings already carry their own trailing NUL, and the KDF inserts the
-// mandatory 0x00 separator between the label and the context.
-func sp800108CounterKDF(ki, label, context []byte) []byte {
+// i = 1 (32-bit big-endian). The MS-SMB2 Label/Context byte strings already
+// carry their own trailing NUL, and the KDF inserts the mandatory 0x00
+// separator between the label and the context.
+func sp800108CounterKDF(ki, label, context []byte, bits int) []byte {
 	mac := hmac.New(sha256.New, ki)
 
 	var counter [4]byte
@@ -70,10 +72,10 @@ func sp800108CounterKDF(ki, label, context []byte) []byte {
 	mac.Write(context)
 
 	var length [4]byte
-	binary.BigEndian.PutUint32(length[:], 128)
+	binary.BigEndian.PutUint32(length[:], uint32(bits))
 	mac.Write(length[:])
 
-	return mac.Sum(nil)[:16]
+	return mac.Sum(nil)[:bits/8]
 }
 
 // deriveSMB3Keys computes the SMB 3.x signing, encryption, decryption, and
@@ -84,21 +86,27 @@ func sp800108CounterKDF(ki, label, context []byte) []byte {
 // (unlike the 2.x dialects, where the two are identical).
 //
 // EncryptionKey is the key this client uses to encrypt the messages it sends;
-// DecryptionKey is the key it uses to decrypt the server's replies.
-func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte) {
+// DecryptionKey is the key it uses to decrypt the server's replies. When the
+// negotiated cipher is AES-256-CCM or AES-256-GCM the encryption and decryption
+// keys are 256 bits; all other keys remain 128 bits.
+func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte, cipher uint16) {
 	key := session.SessionKey
 
 	switch dialect {
 	case dialects.SMB2_DIALECT_3_0_0, dialects.SMB2_DIALECT_3_0_2:
-		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning30, kdfContextSign30)
-		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp30, kdfContextApp30)
-		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerIn)
-		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerOut)
+		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning30, kdfContextSign30, 128)
+		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp30, kdfContextApp30, 128)
+		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerIn, 128)
+		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerOut, 128)
 	case dialects.SMB2_DIALECT_3_1_1:
-		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning311, preauthHash)
-		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp311, preauthHash)
-		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelC2SCipher, preauthHash)
-		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelS2CCipher, preauthHash)
+		cipherBits := 128
+		if cipher == commands.SMB2_ENCRYPTION_AES256_CCM || cipher == commands.SMB2_ENCRYPTION_AES256_GCM {
+			cipherBits = 256
+		}
+		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning311, preauthHash, 128)
+		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp311, preauthHash, 128)
+		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelC2SCipher, preauthHash, cipherBits)
+		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelS2CCipher, preauthHash, cipherBits)
 	}
 }
 
