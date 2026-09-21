@@ -45,7 +45,7 @@ func (c *Client) Cancel() error {
 		return fmt.Errorf("failed to marshal cancel: %w", err)
 	}
 	if c.Session != nil && c.Session.SigningActive {
-		signMessage(c.Session.SigningKey, marshalled)
+		signMessageForDialect(c.Connection.Dialect, c.Session.SigningKey, marshalled)
 	}
 	if _, err := c.Transport.Send(marshalled); err != nil {
 		return fmt.Errorf("failed to send cancel: %w", err)
