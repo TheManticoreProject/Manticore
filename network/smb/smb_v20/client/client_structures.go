@@ -276,4 +276,8 @@ type TreeConnect struct {
 
 	// MaximalAccess is the maximum access the authenticated user has on this share.
 	MaximalAccess uint32
+
+	// CompressData is set when the server reports SMB2_SHAREFLAG_COMPRESS_DATA
+	// and compression algorithms were negotiated (MS-SMB2 3.2.5.5).
+	CompressData bool
 }
