@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
@@ -48,17 +49,19 @@ func compoundSegments(buf []byte) ([][]byte, error) {
 	return segments, nil
 }
 
-// signCompound signs each segment of a marshalled compound buffer in place. Each
-// compounded PDU carries its own signature computed over its own region (header,
-// body, and inter-segment padding for non-final segments), so they are signed
-// individually rather than over the whole buffer.
-func signCompound(key, buf []byte) error {
+// signCompound signs each segment of a marshalled compound buffer in place using
+// the algorithm mandated by the negotiated dialect (AES-128-CMAC for SMB 3.x,
+// HMAC-SHA256 for SMB 2.x). Each compounded PDU carries its own signature
+// computed over its own region (header, body, and inter-segment padding for
+// non-final segments), so they are signed individually rather than over the
+// whole buffer.
+func signCompound(dialect dialects.Dialect, key, buf []byte) error {
 	segments, err := compoundSegments(buf)
 	if err != nil {
 		return err
 	}
 	for _, seg := range segments {
-		signMessage(key, seg)
+		signMessageForDialect(dialect, key, seg)
 	}
 	return nil
 }
@@ -95,7 +98,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 	}
 
 	if c.Session != nil && c.Session.SigningActive {
-		if err := signCompound(c.Session.SigningKey, marshalled); err != nil {
+		if err := signCompound(c.Connection.Dialect, c.Session.SigningKey, marshalled); err != nil {
 			return nil, fmt.Errorf("failed to sign %s: %w", label, err)
 		}
 	}
@@ -139,7 +142,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		// Enforce signing per segment, with the same exemptions as the
 		// single-message path (MS-SMB2 3.2.5.1.3).
 		if c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
-			if !verifySignature(c.Session.SigningKey, seg) {
+			if !verifySignatureForDialect(c.Connection.Dialect, c.Session.SigningKey, seg) {
 				return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
@@ -115,7 +116,7 @@ func TestSendReceiveCompoundEnforcesSigning(t *testing.T) {
 
 	t.Run("signed compound accepted", func(t *testing.T) {
 		raw := createQueryCloseResponse(t, []byte{0x01})
-		if err := signCompound(key, raw); err != nil {
+		if err := signCompound(dialects.SMB2_DIALECT_2_0_2, key, raw); err != nil {
 			t.Fatalf("signCompound: %v", err)
 		}
 		ft := &fakeTransport{responses: [][]byte{raw}}
