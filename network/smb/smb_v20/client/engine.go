@@ -111,6 +111,13 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 			wasEncrypted = true
 		}
 
+		// MS-SMB2 3.2.5.1.1: when the session requires encryption, reject any
+		// response that was not wrapped in a TRANSFORM_HEADER. Accepting an
+		// unencrypted response would let an attacker strip the encryption layer.
+		if encrypt && !wasEncrypted {
+			return nil, fmt.Errorf("%s: session requires encryption but response was not encrypted", label)
+		}
+
 		response = message.NewMessage()
 		if _, err = response.Header.Unmarshal(raw); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
