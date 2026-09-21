@@ -59,6 +59,55 @@ func serviceTicket(t *testing.T, etype int, serviceKey, sessionKey []byte, clien
 	return raw
 }
 
+// serviceTicketCustom builds a synthetic ticket like serviceTicket but lets the
+// caller override Flags, AuthTime, StartTime, and EndTime via the tmpl parameter.
+// Fields not set on tmpl fall back to the same defaults serviceTicket uses.
+func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte, clientName messages.PrincipalName, clientRealm string, tmpl messages.EncTicketPart) []byte {
+	t.Helper()
+	now := time.Now().UTC()
+	encPart := messages.EncTicketPart{
+		Flags:  tmpl.Flags,
+		Key:    messages.EncryptionKey{KeyType: etype, KeyValue: sessionKey},
+		CRealm: clientRealm,
+		CName:  clientName,
+	}
+	if encPart.Flags.BitLength == 0 {
+		encPart.Flags = asn1.BitString{Bytes: []byte{0x40, 0, 0, 0}, BitLength: 32}
+	}
+	if tmpl.AuthTime.IsZero() {
+		encPart.AuthTime = now
+	} else {
+		encPart.AuthTime = tmpl.AuthTime
+	}
+	if tmpl.EndTime.IsZero() {
+		encPart.EndTime = now.Add(8 * time.Hour)
+	} else {
+		encPart.EndTime = tmpl.EndTime
+	}
+	if !tmpl.StartTime.IsZero() {
+		encPart.StartTime = tmpl.StartTime
+	}
+	plain, err := encPart.Marshal()
+	if err != nil {
+		t.Fatalf("marshal EncTicketPart: %v", err)
+	}
+	cipher, err := kerbcrypto.Encrypt(etype, serviceKey, kerbcrypto.KeyUsageKDCRepTicket, plain)
+	if err != nil {
+		t.Fatalf("encrypt ticket enc-part: %v", err)
+	}
+	tkt := messages.Ticket{
+		TktVno:  messages.KerberosV5,
+		Realm:   clientRealm,
+		SName:   messages.PrincipalName{NameType: iana.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}},
+		EncPart: messages.EncryptedData{EType: etype, Cipher: cipher},
+	}
+	raw, err := tkt.Marshal()
+	if err != nil {
+		t.Fatalf("marshal ticket: %v", err)
+	}
+	return raw
+}
+
 func randKey(t *testing.T, n int) []byte {
 	t.Helper()
 	k := make([]byte, n)
@@ -421,6 +470,71 @@ func TestAcceptSecContextClockSkew(t *testing.T) {
 	}
 	if _, _, err := AcceptSecContext(token, skewed); err == nil {
 		t.Error("expected an out-of-skew authenticator to be rejected")
+	}
+}
+
+func TestAcceptSecContextExpiredTicket(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"expired"}}
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		AuthTime: time.Now().UTC().Add(-10 * time.Hour),
+		EndTime:  time.Now().UTC().Add(-2 * time.Hour),
+	})
+
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+		t.Error("expected an expired ticket to be rejected")
+	}
+}
+
+func TestAcceptSecContextNotYetValidTicket(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"future"}}
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		StartTime: time.Now().UTC().Add(2 * time.Hour),
+		EndTime:   time.Now().UTC().Add(10 * time.Hour),
+	})
+
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+		t.Error("expected a not-yet-valid ticket to be rejected")
+	}
+}
+
+func TestAcceptSecContextInvalidFlagTicket(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"postdated"}}
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		Flags: messages.NewKerberosFlags(messages.TicketFlagForwardable, messages.TicketFlagInvalid),
+	})
+
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+		t.Error("expected a ticket with the INVALID flag to be rejected")
 	}
 }
 
