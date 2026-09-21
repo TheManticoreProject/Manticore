@@ -133,6 +133,30 @@ func parseNegotiateContexts(data []byte, headerRelativeOffset int, count int) ([
 	return contexts, nil
 }
 
+// SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY is the only flag defined for the
+// SMB2_TRANSPORT_CAPABILITIES negotiate context (MS-SMB2 2.2.3.1.6).
+const SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY = 0x00000001
+
+// NewNetnameContext builds an SMB2_NETNAME_NEGOTIATE_CONTEXT_ID context
+// carrying the server name as a null-terminated UTF-16LE string (MS-SMB2
+// 2.2.3.1.4). Virtual-hosted servers use this to select the correct node.
+func NewNetnameContext(serverName string) *NegotiateContext {
+	runes := []rune(serverName)
+	data := make([]byte, 2*len(runes))
+	for i, r := range runes {
+		binary.LittleEndian.PutUint16(data[2*i:], uint16(r))
+	}
+	return &NegotiateContext{ContextType: SMB2_NETNAME_NEGOTIATE_CONTEXT_ID, Data: data}
+}
+
+// NewTransportCapabilitiesContext builds an SMB2_TRANSPORT_CAPABILITIES context
+// with the given flags (MS-SMB2 2.2.3.1.6).
+func NewTransportCapabilitiesContext(flags uint32) *NegotiateContext {
+	data := make([]byte, 4)
+	binary.LittleEndian.PutUint32(data, flags)
+	return &NegotiateContext{ContextType: SMB2_TRANSPORT_CAPABILITIES, Data: data}
+}
+
 // SelectedCipher returns the cipher ID from an SMB2_ENCRYPTION_CAPABILITIES
 // context in the list (the server echoes its single chosen cipher), or 0 if
 // none is present.

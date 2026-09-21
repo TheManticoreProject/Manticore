@@ -36,15 +36,23 @@ func (c *Client) Negotiate() error {
 	c.Connection.ClientCapabilities = req.Capabilities
 	c.Connection.ClientSecurityMode = req.SecurityMode
 
-	// SMB 3.1.1 negotiate contexts: pre-auth integrity (SHA-512 + random salt)
-	// and encryption ciphers in preference order (AES-128-GCM, then AES-128-CCM).
+	// SMB 3.1.1 negotiate contexts: pre-auth integrity (SHA-512 + random salt),
+	// encryption ciphers in preference order, the server's hostname (so a
+	// virtual-hosted server can select the correct node), and transport-level
+	// security acceptance.
 	salt := make([]byte, profile.PreauthSaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return fmt.Errorf("negotiate: failed to generate pre-auth salt: %w", err)
 	}
+	serverName := c.Connection.ServerName
+	if serverName == "" && c.Connection.Server.Host != nil {
+		serverName = c.Connection.Server.Host.String()
+	}
 	req.Contexts = []*commands.NegotiateContext{
 		commands.NewPreauthIntegrityContext(salt),
 		commands.NewEncryptionContext(profile.Ciphers),
+		commands.NewNetnameContext(serverName),
+		commands.NewTransportCapabilitiesContext(commands.SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY),
 	}
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the
