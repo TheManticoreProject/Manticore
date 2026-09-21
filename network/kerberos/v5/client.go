@@ -1,6 +1,7 @@
 package kerberos
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -36,6 +37,12 @@ type KerberosClient struct {
 	kdcHost  string
 
 	cred *credentials.Credential
+
+	// operationContext and operationTimeout control KDC discovery, dialing, and
+	// I/O. A nil context uses context.Background; a non-positive timeout uses the
+	// package default.
+	operationContext context.Context
+	operationTimeout time.Duration
 
 	// Populated after a successful GetTGT call.
 	tgtTicket    messages.Ticket
@@ -165,6 +172,33 @@ func NewClient(username, realm, kdcHost string) *KerberosClient {
 		realm:    strings.ToUpper(realm),
 		kdcHost:  kdcHost,
 	}
+}
+
+// WithContext sets the context observed by KDC discovery and transport. Cancel
+// it to interrupt an in-flight operation. Passing nil restores Background.
+func (c *KerberosClient) WithContext(ctx context.Context) *KerberosClient {
+	c.operationContext = ctx
+	return c
+}
+
+// WithTimeout sets the total deadline for each KDC discovery or transport
+// operation, including endpoint and address failover. A non-positive duration
+// restores the default timeout.
+func (c *KerberosClient) WithTimeout(timeout time.Duration) *KerberosClient {
+	c.operationTimeout = timeout
+	return c
+}
+
+func (c *KerberosClient) contextAndTimeout() (context.Context, time.Duration) {
+	ctx := c.operationContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timeout := c.operationTimeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+	return ctx, timeout
 }
 
 // WithPassword configures a password credential for GetTGT.
@@ -500,7 +534,8 @@ func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kdcSendEndpoints(c.resolver, endpoints, msg)
+	ctx, timeout := c.contextAndTimeout()
+	return kdcSendEndpointsContext(ctx, c.resolver, endpoints, msg, timeout)
 }
 
 // pickETypeFromError extracts the preferred etype, salt and S2KParams from the

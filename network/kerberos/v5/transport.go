@@ -48,14 +48,23 @@ func (e kdcEndpoint) String() string {
 // next endpoint is not tried, because a protocol error (e.g. PREAUTH_REQUIRED)
 // would be identical from every replica.
 func kdcSendEndpoints(resolver *net.Resolver, endpoints []kdcEndpoint, msg []byte) ([]byte, error) {
+	return kdcSendEndpointsContext(context.Background(), resolver, endpoints, msg, defaultTimeout)
+}
+
+func kdcSendEndpointsContext(ctx context.Context, resolver *net.Resolver, endpoints []kdcEndpoint, msg []byte, timeout time.Duration) ([]byte, error) {
 	if len(endpoints) == 0 {
 		return nil, fmt.Errorf("kerberos: no KDC endpoints to contact")
 	}
+	ctx, cancel := kdcOperationContext(ctx, timeout)
+	defer cancel()
 	var lastErr error
 	for _, ep := range endpoints {
-		resp, err := kdcSend(resolver, ep.host, ep.port, msg)
+		resp, err := kdcSendContext(ctx, resolver, ep.host, ep.port, msg, 0)
 		if err == nil {
 			return resp, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		lastErr = fmt.Errorf("kerberos: KDC %s: %w", ep, err)
 	}
@@ -73,15 +82,24 @@ func kdcSendEndpoints(resolver *net.Resolver, endpoints []kdcEndpoint, msg []byt
 // KRB-ERROR replies are complete protocol responses and are returned directly.
 // UDP has no length prefix; TCP uses the RFC 4120 4-byte big-endian prefix.
 func kdcSend(resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
-	addrs, err := resolveKDCAddrs(resolver, kdc_host)
+	return kdcSendContext(context.Background(), resolver, kdc_host, kdc_port, msg, defaultTimeout)
+}
+
+func kdcSendContext(ctx context.Context, resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := kdcOperationContext(ctx, timeout)
+	defer cancel()
+	addrs, err := resolveKDCAddrsContext(ctx, resolver, kdc_host)
 	if err != nil {
 		return nil, err
 	}
 	var lastErr error
 	for _, addr := range addrs {
-		resp, err := kdcSendAddr(addr, kdc_port, msg)
+		resp, err := kdcSendAddrContext(ctx, addr, kdc_port, msg, 0)
 		if err == nil {
 			return resp, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		lastErr = err
 	}
@@ -91,13 +109,22 @@ func kdcSend(resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte) 
 // kdcSendAddr sends msg to a single already-resolved IP address, applying the
 // UDP-first / TCP-fallback policy described on kdcSend.
 func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
+	return kdcSendAddrContext(context.Background(), ip, kdc_port, msg, defaultTimeout)
+}
+
+func kdcSendAddrContext(ctx context.Context, ip string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := kdcOperationContext(ctx, timeout)
+	defer cancel()
 	if len(msg) <= udpMaxSize {
-		resp, err := kdcSendUDP(ip, kdc_port, msg)
+		resp, err := kdcSendUDPContext(ctx, ip, kdc_port, msg, 0)
 		if !shouldRetryOverTCP(resp, err) {
 			return resp, nil
 		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 	}
-	return kdcSendTCP(ip, kdc_port, msg)
+	return kdcSendTCPContext(ctx, ip, kdc_port, msg, 0)
 }
 
 // shouldRetryOverTCP decides, from a UDP attempt's result, whether the request
@@ -139,14 +166,18 @@ func krbErrorCode(resp []byte) (int, bool) {
 // returning both IPv4 (A) and IPv6 (AAAA) addresses so either family can be
 // reached.
 func resolveKDCAddrs(resolver *net.Resolver, host string) ([]string, error) {
+	ctx, cancel := kdcOperationContext(context.Background(), defaultTimeout)
+	defer cancel()
+	return resolveKDCAddrsContext(ctx, resolver, host)
+}
+
+func resolveKDCAddrsContext(ctx context.Context, resolver *net.Resolver, host string) ([]string, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		return []string{host}, nil
 	}
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-	defer cancel()
 	ipAddrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: resolve KDC host %q: %w", host, err)
@@ -163,43 +194,80 @@ func resolveKDCAddrs(resolver *net.Resolver, host string) ([]string, error) {
 
 // kdcSendUDP sends msg over UDP and returns the raw response (no length prefix).
 func kdcSendUDP(kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
-	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(kdc_host, strconv.Itoa(kdc_port)))
+	return kdcSendUDPContext(context.Background(), kdc_host, kdc_port, msg, defaultTimeout)
+}
+
+func kdcSendUDPContext(ctx context.Context, kdc_host string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := kdcOperationContext(ctx, timeout)
+	defer cancel()
+	addr := net.JoinHostPort(kdc_host, strconv.Itoa(kdc_port))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", addr)
 	if err != nil {
-		return nil, err
-	}
-	conn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		return nil, err
+		return nil, contextTransportError(ctx, err)
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(defaultTimeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	setContextDeadline(ctx, conn)
 
 	if _, err := conn.Write(msg); err != nil {
-		return nil, fmt.Errorf("kerberos: UDP send: %w", err)
+		return nil, fmt.Errorf("kerberos: UDP send: %w", contextTransportError(ctx, err))
 	}
 
 	buf := make([]byte, 65535)
 	n, err := conn.Read(buf)
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: UDP recv: %w", err)
+		return nil, fmt.Errorf("kerberos: UDP recv: %w", contextTransportError(ctx, err))
 	}
 	return buf[:n], nil
 }
 
 // kdcSendTCP sends msg over TCP using the RFC 4120 4-byte big-endian length prefix.
 func kdcSendTCP(kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
+	return kdcSendTCPContext(context.Background(), kdc_host, kdc_port, msg, defaultTimeout)
+}
+
+func kdcSendTCPContext(ctx context.Context, kdc_host string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := kdcOperationContext(ctx, timeout)
+	defer cancel()
 	addr := net.JoinHostPort(kdc_host, strconv.Itoa(kdc_port))
-	conn, err := net.DialTimeout("tcp", addr, defaultTimeout)
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("kerberos: connect to KDC %s: %w", addr, err)
+		return nil, fmt.Errorf("kerberos: connect to KDC %s: %w", addr, contextTransportError(ctx, err))
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(defaultTimeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	setContextDeadline(ctx, conn)
 
 	if err := writeTCPFramed(conn, msg); err != nil {
-		return nil, err
+		return nil, contextTransportError(ctx, err)
 	}
-	return readTCPFramed(conn)
+	resp, err := readTCPFramed(conn)
+	return resp, contextTransportError(ctx, err)
+}
+
+func kdcOperationContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func setContextDeadline(ctx context.Context, conn net.Conn) {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+}
+
+func contextTransportError(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // maxTCPResponse caps the length a TCP length-prefix may declare, guarding

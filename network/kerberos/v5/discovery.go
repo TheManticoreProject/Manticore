@@ -99,7 +99,8 @@ func (c *KerberosClient) lookupKerberosSRV(proto, realm string) ([]*net.SRV, err
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	baseCtx, timeout := c.contextAndTimeout()
+	ctx, cancel := context.WithTimeout(baseCtx, timeout)
 	defer cancel()
 	_, addrs, err := resolver.LookupSRV(ctx, "kerberos", proto, realm)
 	if err != nil {

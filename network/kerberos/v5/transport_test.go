@@ -2,6 +2,7 @@ package kerberos
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net"
 	"testing"
@@ -127,5 +128,46 @@ func TestResolveKDCAddrsIPLiteral(t *testing.T) {
 		if len(addrs) != 1 || addrs[0] != ip {
 			t.Errorf("resolveKDCAddrs(%q) = %v, want [%q]", ip, addrs, ip)
 		}
+	}
+}
+
+func TestKDCSendAddrHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := kdcSendAddrContext(ctx, "127.0.0.1", 88, []byte{0x01}, time.Hour)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("kdcSendAddrContext error = %v, want context.Canceled", err)
+	}
+}
+
+func TestKDCSendAddrHonorsTimeout(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	start := time.Now()
+	_, err = kdcSendAddrContext(context.Background(), "127.0.0.1", conn.LocalAddr().(*net.UDPAddr).Port, []byte{0x01}, 25*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("kdcSendAddrContext error = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("configured timeout took %s", elapsed)
+	}
+}
+
+func TestKerberosClientOperationControls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	c := NewClient("alice", "corp.local", "127.0.0.1").WithContext(ctx).WithTimeout(125 * time.Millisecond)
+
+	gotCtx, gotTimeout := c.contextAndTimeout()
+	if gotCtx != ctx || gotTimeout != 125*time.Millisecond {
+		t.Fatalf("contextAndTimeout = (%v, %s), want configured context and 125ms", gotCtx, gotTimeout)
+	}
+	cancel()
+	if _, err := c.sendToRealm(c.realm, []byte{0x01}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("client transport error = %v, want context.Canceled", err)
 	}
 }
