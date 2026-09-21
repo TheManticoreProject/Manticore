@@ -100,9 +100,16 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 		binary.LittleEndian.PutUint16(buf[56:58], uint16(header.SMB2_HEADER_SIZE+negotiateResponseFixedSize))
 	}
 	binary.LittleEndian.PutUint16(buf[58:60], uint16(len(c.SecurityBuffer)))
-	binary.LittleEndian.PutUint32(buf[60:64], c.NegotiateContextOffset)
 
 	buf = append(buf, c.SecurityBuffer...)
+
+	if len(c.Contexts) > 0 {
+		ctxBytes, firstOffset := marshalNegotiateContexts(len(buf), c.Contexts)
+		binary.LittleEndian.PutUint16(buf[6:8], uint16(len(c.Contexts)))
+		binary.LittleEndian.PutUint32(buf[60:64], uint32(firstOffset))
+		buf = append(buf, ctxBytes...)
+	}
+
 	return buf, nil
 }
 

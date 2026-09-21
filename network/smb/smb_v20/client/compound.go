@@ -121,21 +121,24 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 	}
 
 	// Read the response frame, skipping any leading server-initiated message
-	// (reserved MessageId), which is not a reply to this chain.
+	// (reserved MessageId), which is not a reply to this chain. An encrypted
+	// response is decrypted before probing; the AEAD tag authenticates the
+	// entire frame, so per-segment signature verification is skipped below.
 	var raw []byte
+	wasEncrypted := false
 	for {
 		raw, err = c.Transport.Receive()
 		if err != nil {
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 		}
 
-		// Decrypt an encrypted response before probing its header.
 		if isTransformHeader(raw) {
 			plaintext, derr := c.decryptMessage(raw)
 			if derr != nil {
 				return nil, fmt.Errorf("%s: %w", label, derr)
 			}
 			raw = plaintext
+			wasEncrypted = true
 		}
 
 		probe := header.NewHeader()
@@ -163,8 +166,9 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		}
 
 		// Enforce signing per segment, with the same exemptions as the
-		// single-message path (MS-SMB2 3.2.5.1.3).
-		if c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
+		// single-message path (MS-SMB2 3.2.5.1.3). When the frame was
+		// encrypted, the AEAD tag already authenticated it.
+		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
 			if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
 				return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
 			}

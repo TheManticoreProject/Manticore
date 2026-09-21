@@ -50,11 +50,14 @@ func (c *Client) TreeConnect(shareName string) error {
 	}
 
 	tc := &TreeConnect{
-		Connection: c.Connection,
-		Session:    c.Session,
-		ShareName:  shareName,
-		TreeId:     treeId,
-		ShareType:  treeConnectResponse.ShareType,
+		Connection:        c.Connection,
+		Session:           c.Session,
+		ShareName:         shareName,
+		TreeId:            treeId,
+		ShareType:         treeConnectResponse.ShareType,
+		ShareFlags:        treeConnectResponse.ShareFlags,
+		ShareCapabilities: treeConnectResponse.Capabilities,
+		MaximalAccess:     treeConnectResponse.MaximalAccess,
 	}
 	// A dialect below 3.1.1 has no pre-authentication integrity, so the NEGOTIATE
 	// exchange that produced this connection was unprotected. Have the server

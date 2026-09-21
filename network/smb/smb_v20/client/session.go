@@ -172,29 +172,44 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		return fmt.Errorf("session setup failed: %s", formatNTStatus(status))
 	}
 
-	// SMB 3.x: fold the (unsigned) AUTHENTICATE request into the pre-auth hash —
-	// the final SUCCESS response is excluded — then derive the key hierarchy and
-	// verify the server's signature over that response.
-	if isSMB3Dialect(c.Connection.Dialect) {
-		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
-		finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
-		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
-
-		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
-			c.Session = nil
-			return fmt.Errorf("session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
-		}
-
-		if resp2Cmd, ok := resp2.Command.(*commands.SessionSetupResponse); ok &&
-			resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
-			session.EncryptData = true
-		}
+	// Check whether the server authenticated the client as a guest or
+	// anonymously. Per MS-SMB2 3.2.5.3.1 both cases disable signing and
+	// encryption: the session key is meaningless.
+	resp2Cmd, _ := resp2.Command.(*commands.SessionSetupResponse)
+	if resp2Cmd != nil {
+		session.IsGuest = resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_IS_GUEST != 0
+		session.IsNull = resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_IS_NULL != 0
 	}
 
-	// Session established: activate signing for all subsequent requests when the
-	// server enables or requires it.
-	session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
+	if session.IsGuest || session.IsNull {
+		session.SessionKey = make([]byte, 16)
+		session.SigningKey = session.SessionKey
+		session.SigningActive = false
+	} else {
+		// SMB 3.x: fold the (unsigned) AUTHENTICATE request into the pre-auth hash —
+		// the final SUCCESS response is excluded — then derive the key hierarchy and
+		// verify the server's signature over that response.
+		if isSMB3Dialect(c.Connection.Dialect) {
+			sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+			finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
+			session.PreauthHash = sessionHash
+			deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
+
+			if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
+				c.Session = nil
+				return fmt.Errorf("session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
+			}
+
+			if resp2Cmd != nil &&
+				resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
+				session.EncryptData = true
+			}
+		}
+
+		// Session established: activate signing for all subsequent requests when the
+		// server enables or requires it.
+		session.SigningActive = serverMode.IsSigningEnabled() || serverMode.IsSigningRequired()
+	}
 
 	// Retain the server identity (NetBIOS/DNS names, OS version) advertised in the
 	// NTLM CHALLENGE so callers can read it after authentication.

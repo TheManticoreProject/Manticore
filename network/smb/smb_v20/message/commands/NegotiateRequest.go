@@ -134,6 +134,7 @@ func (c *NegotiateRequest) Unmarshal(data []byte) (int, error) {
 			return 0, err
 		}
 		c.Contexts = contexts
+		offset = len(data)
 	}
 
 	return offset, nil

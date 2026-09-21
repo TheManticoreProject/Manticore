@@ -10,11 +10,11 @@ func TestNewNetnameContext(t *testing.T) {
 	if ctx.ContextType != SMB2_NETNAME_NEGOTIATE_CONTEXT_ID {
 		t.Errorf("ContextType = 0x%04x, want 0x%04x", ctx.ContextType, SMB2_NETNAME_NEGOTIATE_CONTEXT_ID)
 	}
-	// "DC01" → 4 UTF-16LE code units = 8 bytes
-	if len(ctx.Data) != 8 {
-		t.Fatalf("Data length = %d, want 8", len(ctx.Data))
+	// "DC01" → 4 UTF-16LE code units + null terminator = 10 bytes
+	if len(ctx.Data) != 10 {
+		t.Fatalf("Data length = %d, want 10", len(ctx.Data))
 	}
-	want := []byte{'D', 0, 'C', 0, '0', 0, '1', 0}
+	want := []byte{'D', 0, 'C', 0, '0', 0, '1', 0, 0, 0}
 	for i, b := range ctx.Data {
 		if b != want[i] {
 			t.Errorf("Data[%d] = 0x%02x, want 0x%02x", i, b, want[i])
@@ -27,16 +27,17 @@ func TestNewNetnameContextEmpty(t *testing.T) {
 	if ctx.ContextType != SMB2_NETNAME_NEGOTIATE_CONTEXT_ID {
 		t.Errorf("ContextType = 0x%04x, want 0x%04x", ctx.ContextType, SMB2_NETNAME_NEGOTIATE_CONTEXT_ID)
 	}
-	if len(ctx.Data) != 0 {
-		t.Errorf("Data length = %d, want 0 for empty server name", len(ctx.Data))
+	// Empty name still carries the UTF-16 null terminator.
+	if len(ctx.Data) != 2 {
+		t.Errorf("Data length = %d, want 2 (null terminator only)", len(ctx.Data))
 	}
 }
 
 func TestNewNetnameContextIPv4(t *testing.T) {
 	ctx := NewNetnameContext("10.0.0.1")
-	// "10.0.0.1" → 8 UTF-16LE code units = 16 bytes
-	if len(ctx.Data) != 16 {
-		t.Errorf("Data length = %d, want 16", len(ctx.Data))
+	// "10.0.0.1" → 8 UTF-16LE code units + null terminator = 18 bytes
+	if len(ctx.Data) != 18 {
+		t.Errorf("Data length = %d, want 18", len(ctx.Data))
 	}
 }
 

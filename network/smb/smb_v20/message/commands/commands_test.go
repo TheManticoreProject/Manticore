@@ -237,6 +237,97 @@ func TestLogoffAndTreeDisconnect_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestNegotiateResponse_ContextRoundTrip verifies that negotiate contexts
+// survive a marshal/unmarshal cycle on a NegotiateResponse. Before the fix for
+// #1337, NegotiateResponse.Marshal wrote the context count and offset fields
+// but never appended the context data.
+func TestNegotiateResponse_ContextRoundTrip(t *testing.T) {
+	resp := commands.NewNegotiateResponse()
+	resp.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_REQUIRED
+	resp.DialectRevision = dialects.SMB2_DIALECT_3_1_1
+	resp.MaxTransactSize = 0x10000
+	resp.MaxReadSize = 0x10000
+	resp.MaxWriteSize = 0x10000
+	resp.SecurityBuffer = []byte{0x60, 0x28}
+	resp.Contexts = []*commands.NegotiateContext{
+		commands.NewPreauthIntegrityContext(make([]byte, 32)),
+		commands.NewEncryptionContext([]uint16{commands.SMB2_ENCRYPTION_AES128_GCM}),
+		commands.NewSigningCapabilitiesContext([]uint16{commands.SMB2_SIGNING_ALG_AES_CMAC}),
+	}
+
+	wire, err := resp.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	ctxCount := binary.LittleEndian.Uint16(wire[6:8])
+	if ctxCount != 3 {
+		t.Fatalf("NegotiateContextCount on wire = %d, want 3", ctxCount)
+	}
+	ctxOffset := binary.LittleEndian.Uint32(wire[60:64])
+	if ctxOffset == 0 {
+		t.Fatal("NegotiateContextOffset on wire is 0 (contexts were not serialized)")
+	}
+
+	var decoded commands.NegotiateResponse
+	if _, err := decoded.Unmarshal(wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(decoded.Contexts) != 3 {
+		t.Fatalf("decoded %d contexts, want 3", len(decoded.Contexts))
+	}
+	if decoded.Contexts[0].ContextType != commands.SMB2_PREAUTH_INTEGRITY_CAPABILITIES {
+		t.Errorf("context[0] type = 0x%04x, want PREAUTH_INTEGRITY", decoded.Contexts[0].ContextType)
+	}
+	if decoded.Contexts[1].ContextType != commands.SMB2_ENCRYPTION_CAPABILITIES {
+		t.Errorf("context[1] type = 0x%04x, want ENCRYPTION", decoded.Contexts[1].ContextType)
+	}
+	if decoded.Contexts[2].ContextType != commands.SMB2_SIGNING_CAPABILITIES {
+		t.Errorf("context[2] type = 0x%04x, want SIGNING", decoded.Contexts[2].ContextType)
+	}
+	if !bytes.Equal(decoded.SecurityBuffer, resp.SecurityBuffer) {
+		t.Errorf("SecurityBuffer = % x, want % x", decoded.SecurityBuffer, resp.SecurityBuffer)
+	}
+
+	gotCipher := commands.SelectedCipher(decoded.Contexts)
+	if gotCipher != commands.SMB2_ENCRYPTION_AES128_GCM {
+		t.Errorf("SelectedCipher = 0x%04x, want AES-128-GCM", gotCipher)
+	}
+	gotSigning := commands.SelectedSigningAlgorithm(decoded.Contexts)
+	if gotSigning != commands.SMB2_SIGNING_ALG_AES_CMAC {
+		t.Errorf("SelectedSigningAlgorithm = %d, want AES-CMAC", gotSigning)
+	}
+}
+
+// TestNegotiateRequest_ContextConsumedCount verifies that NegotiateRequest.Unmarshal
+// returns a consumed byte count that covers the negotiate contexts, not just the
+// fixed header and dialects (#1342).
+func TestNegotiateRequest_ContextConsumedCount(t *testing.T) {
+	req := commands.NewNegotiateRequest()
+	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
+	req.AddDialect(dialects.SMB2_DIALECT_3_1_1)
+	req.Contexts = []*commands.NegotiateContext{
+		commands.NewPreauthIntegrityContext(make([]byte, 32)),
+		commands.NewEncryptionContext([]uint16{commands.SMB2_ENCRYPTION_AES128_GCM}),
+	}
+
+	wire, err := req.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var decoded commands.NegotiateRequest
+	consumed, err := decoded.Unmarshal(wire)
+	if err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if consumed != len(wire) {
+		t.Errorf("consumed = %d, want %d (full wire length including contexts)", consumed, len(wire))
+	}
+	if len(decoded.Contexts) != 2 {
+		t.Fatalf("decoded %d contexts, want 2", len(decoded.Contexts))
+	}
+}
+
 // TestNegotiateContextOffsetInsideHeader asserts that a NegotiateContextOffset
 // pointing inside or before the 64-byte SMB2 header is refused rather than
 // producing a negative index into the message body.

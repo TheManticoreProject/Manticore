@@ -33,6 +33,18 @@ func (c *Client) WaitOplockBreak() (*OplockBreak, error) {
 		return nil, fmt.Errorf("failed to receive oplock break: %w", err)
 	}
 
+	// When per-session encryption is active, the server wraps unsolicited
+	// notifications in an SMB2 TRANSFORM_HEADER (MS-SMB2 3.2.5.19).
+	wasEncrypted := false
+	if isTransformHeader(raw) {
+		plaintext, derr := c.decryptMessage(raw)
+		if derr != nil {
+			return nil, fmt.Errorf("oplock break: %w", derr)
+		}
+		raw = plaintext
+		wasEncrypted = true
+	}
+
 	msg := message.NewMessage()
 	if _, err := msg.Header.Unmarshal(raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal oplock break header: %w", err)
@@ -40,7 +52,7 @@ func (c *Client) WaitOplockBreak() (*OplockBreak, error) {
 	if !msg.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("oplock break is not an SMB2 message (ProtocolId % x)", msg.Header.ProtocolId)
 	}
-	if c.Session != nil && c.Session.SigningActive {
+	if !wasEncrypted && c.Session != nil && c.Session.SigningActive {
 		if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 			return nil, fmt.Errorf("oplock break failed SMB2 signature verification")
 		}
