@@ -123,6 +123,11 @@ type Connection struct {
 	// for dialects below 3.1.1.
 	PreauthIntegrityHashValue []byte
 
+	// CompressionAlgorithms are the compression algorithms the server selected in
+	// the SMB2_COMPRESSION_CAPABILITIES negotiate context. Nil when no compression
+	// was negotiated.
+	CompressionAlgorithms []uint16
+
 	// ServerName is the hostname or IP string the client connected to. It is sent
 	// in the SMB2_NETNAME_NEGOTIATE_CONTEXT_ID negotiate context for virtual-hosted
 	// servers. When empty, Negotiate derives it from Server.Host.

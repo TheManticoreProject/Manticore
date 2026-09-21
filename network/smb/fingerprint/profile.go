@@ -79,6 +79,11 @@ type Profile struct {
 	// to the dialect default (AES-128-CMAC for 3.x).
 	SigningAlgorithms []uint16
 
+	// CompressionAlgorithms are the SMB 3.1.1 compression algorithms offered in
+	// the SMB2_COMPRESSION_CAPABILITIES context, in preference order. When
+	// non-empty the context is sent; when empty it is omitted.
+	CompressionAlgorithms []uint16
+
 	// PreauthSaltLength is the size of the salt in the SMB 3.1.1 pre-auth
 	// integrity negotiate context.
 	PreauthSaltLength int
@@ -94,5 +99,6 @@ func (p *Profile) Clone() *Profile {
 	out.Dialects = append([]dialects.Dialect(nil), p.Dialects...)
 	out.Ciphers = append([]uint16(nil), p.Ciphers...)
 	out.SigningAlgorithms = append([]uint16(nil), p.SigningAlgorithms...)
+	out.CompressionAlgorithms = append([]uint16(nil), p.CompressionAlgorithms...)
 	return &out
 }

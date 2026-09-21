@@ -58,6 +58,11 @@ func (c *Client) Negotiate() error {
 		req.Contexts = append(req.Contexts,
 			commands.NewSigningCapabilitiesContext(profile.SigningAlgorithms))
 	}
+	if len(profile.CompressionAlgorithms) > 0 {
+		req.Contexts = append(req.Contexts,
+			commands.NewCompressionCapabilitiesContext(profile.CompressionAlgorithms,
+				commands.SMB2_COMPRESSION_CAPABILITIES_FLAG_NONE))
+	}
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the
 	// NEGOTIATE request and response bytes below.
@@ -119,6 +124,7 @@ func (c *Client) ApplyNegotiateResponse(negotiateResponse *commands.NegotiateRes
 		c.Connection.Cipher = commands.SelectedCipher(negotiateResponse.Contexts)
 		c.Connection.PreauthIntegrityHashId = commands.SelectedPreauthHash(negotiateResponse.Contexts)
 		c.Connection.SigningAlgorithmId = commands.SelectedSigningAlgorithm(negotiateResponse.Contexts)
+		c.Connection.CompressionAlgorithms = commands.SelectedCompressionAlgorithms(negotiateResponse.Contexts)
 	}
 
 	if c.Connection.MessageId == 0 {
