@@ -1,19 +1,19 @@
 package keycredentiallink
 
 import (
-	"github.com/TheManticoreProject/Manticore/network/ldap"
-	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt"
-	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/customkeyinformation"
-	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/source"
-	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/usage"
-	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/utils"
-	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/version"
-
 	"encoding/hex"
 	"fmt"
 	"strings"
 
+	"github.com/TheManticoreProject/Manticore/network/ldap"
+	"github.com/TheManticoreProject/Manticore/windows/cng/bcrypt"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/customkeyinformation"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/material/fido"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/source"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/key/usage"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/utils"
+	"github.com/TheManticoreProject/Manticore/windows/keycredentiallink/version"
 )
 
 // KeyCredentialLink represents a key credential structure used for authentication and authorization.
@@ -235,8 +235,12 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 	// the entries are processed, not left at its zero value.
 	kc.Version = blob.Version
 
+	// KeyMaterial (identifier 0x03) arrives before KeyUsage (identifier 0x04) in the
+	// sorted entry list, but FIDO key material is JSON while NGC/STK use CNG blobs, so
+	// the raw bytes are captured here and parsed after the usage is known.
+	var rawKeyMaterial []byte
+
 	for _, entry := range blob.Entries {
-		// Process the entry data based on its type.
 		switch entry.Identifier {
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyID:
@@ -246,14 +250,10 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 			kc.KeyHash = entry.Value
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyMaterial:
-			kc.KeyMaterial, bytesRead, err = bcrypt.UnmarshalKeyMaterial(entry.Value)
-			if err != nil {
-				return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink key material: %w", err)
-			}
+			rawKeyMaterial = entry.Value
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_KeyUsage:
 			if len(entry.Value) == 1 {
-				// This is apparently a V2 structure (single byte enum).
 				if kc.Usage == nil {
 					kc.Usage = &usage.KeyUsage{}
 				}
@@ -262,7 +262,6 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 					return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink usage: %w", err)
 				}
 			} else {
-				// This is a legacy structure that contains a string-encoded key usage.
 				kc.LegacyUsage = string(entry.Value)
 			}
 
@@ -303,6 +302,22 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 				return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink creation time: %w", err)
 			}
 			kc.CreationTime = t
+		}
+	}
+
+	// Parse key material now that the usage is known.
+	if rawKeyMaterial != nil {
+		var kmErr error
+		if kc.Usage != nil && kc.Usage.Value == usage.KeyUsage_FIDO {
+			f := &fido.FIDOKeyMaterial{}
+			if _, kmErr = f.Unmarshal(rawKeyMaterial); kmErr == nil {
+				kc.KeyMaterial = f
+			}
+		} else {
+			kc.KeyMaterial, _, kmErr = bcrypt.UnmarshalKeyMaterial(rawKeyMaterial)
+		}
+		if kmErr != nil {
+			return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink key material: %w", kmErr)
 		}
 	}
 
