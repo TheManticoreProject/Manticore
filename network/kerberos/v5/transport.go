@@ -67,13 +67,11 @@ func kdcSendEndpoints(resolver *net.Resolver, endpoints []kdcEndpoint, msg []byt
 // answers. For each address it tries UDP first for small messages, then falls
 // back to TCP.
 //
-// TCP is attempted when the UDP datagram fails, comes back empty, or carries a
-// KRB-ERROR — most importantly KRB_ERR_RESPONSE_TOO_BIG, the KDC's explicit
-// signal that its answer did not fit a datagram and must be retried over TCP
-// (RFC 4120 Section 7.2.1). Windows KDCs also occasionally return stale or
-// protocol-level errors over UDP that succeed over TCP, so any UDP KRB-ERROR
-// prompts a TCP retry. UDP has no length prefix; TCP uses the RFC 4120 4-byte
-// big-endian prefix.
+// TCP is attempted when the UDP datagram fails, comes back empty, or carries
+// KRB_ERR_RESPONSE_TOO_BIG, the KDC's explicit signal that its answer did not
+// fit a datagram and must be retried over TCP (RFC 4120 Section 7.2.1). Other
+// KRB-ERROR replies are complete protocol responses and are returned directly.
+// UDP has no length prefix; TCP uses the RFC 4120 4-byte big-endian prefix.
 func kdcSend(resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
 	addrs, err := resolveKDCAddrs(resolver, kdc_host)
 	if err != nil {
@@ -104,14 +102,14 @@ func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
 
 // shouldRetryOverTCP decides, from a UDP attempt's result, whether the request
 // must be re-sent over TCP. It is true when UDP failed outright, returned an
-// empty datagram, or the KDC answered with a KRB-ERROR (in particular
-// KRB_ERR_RESPONSE_TOO_BIG, RFC 4120 Section 7.2.1). It is factored out so the
-// UDP→TCP decision can be unit-tested without a live KDC.
+// empty datagram, or the KDC answered with KRB_ERR_RESPONSE_TOO_BIG (RFC 4120
+// Section 7.2.1). It is factored out so the UDP→TCP decision can be unit-tested
+// without a live KDC.
 func shouldRetryOverTCP(udpResp []byte, udpErr error) bool {
 	if udpErr != nil || len(udpResp) == 0 {
 		return true
 	}
-	return udpResp[0] == krbErrorTag
+	return responseTooBigOverUDP(udpResp)
 }
 
 // responseTooBigOverUDP reports whether a reply is a KRB-ERROR carrying
