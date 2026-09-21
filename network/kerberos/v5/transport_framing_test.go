@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -84,5 +85,19 @@ func TestWriteTCPFramedError(t *testing.T) {
 	if err := writeTCPFramed(errWriter{}, []byte("hi")); err == nil ||
 		!strings.Contains(err.Error(), "TCP send") {
 		t.Errorf("writeTCPFramed error = %v, want a TCP send error", err)
+	}
+}
+
+// shortWriter violates the io.Writer convention by returning a short count
+// without an error. writeTCPFramed must still surface io.ErrShortWrite instead
+// of reporting that a truncated Kerberos request was sent successfully.
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
+func TestWriteTCPFramedShortWrite(t *testing.T) {
+	err := writeTCPFramed(shortWriter{}, []byte("hi"))
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("writeTCPFramed error = %v, want io.ErrShortWrite", err)
 	}
 }
