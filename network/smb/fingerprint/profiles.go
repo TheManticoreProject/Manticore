@@ -54,11 +54,13 @@ var defaultProfile = Profile{
 	},
 
 	// Deliberately short of what a Windows client advertises. The bits omitted
-	// here — DFS, leasing, multi-channel, persistent handles, directory leasing
-	// — stand for features this client does not implement, and claiming a
-	// capability that is then refused is a louder difference than not claiming
-	// it. Each becomes claimable when the feature behind it exists.
-	Capabilities: capabilities.SMB2_GLOBAL_CAP_LARGE_MTU | capabilities.SMB2_GLOBAL_CAP_ENCRYPTION,
+	// here — DFS, multi-channel, persistent handles — stand for features this
+	// client does not implement, and claiming a capability that is then refused
+	// is a louder difference than not claiming it.
+	Capabilities: capabilities.SMB2_GLOBAL_CAP_LARGE_MTU |
+		capabilities.SMB2_GLOBAL_CAP_ENCRYPTION |
+		capabilities.SMB2_GLOBAL_CAP_LEASING |
+		capabilities.SMB2_GLOBAL_CAP_DIRECTORY_LEASING,
 
 	SecurityMode: securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED,
 

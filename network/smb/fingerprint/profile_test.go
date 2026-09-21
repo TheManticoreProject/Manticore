@@ -96,10 +96,8 @@ func TestDefaultDialectsAscend(t *testing.T) {
 func TestDefaultClaimsNoUnimplementedCapability(t *testing.T) {
 	unimplemented := map[string]capabilities.Capabilities{
 		"SMB2_GLOBAL_CAP_DFS":                capabilities.SMB2_GLOBAL_CAP_DFS,
-		"SMB2_GLOBAL_CAP_LEASING":            capabilities.SMB2_GLOBAL_CAP_LEASING,
 		"SMB2_GLOBAL_CAP_MULTI_CHANNEL":      capabilities.SMB2_GLOBAL_CAP_MULTI_CHANNEL,
 		"SMB2_GLOBAL_CAP_PERSISTENT_HANDLES": capabilities.SMB2_GLOBAL_CAP_PERSISTENT_HANDLES,
-		"SMB2_GLOBAL_CAP_DIRECTORY_LEASING":  capabilities.SMB2_GLOBAL_CAP_DIRECTORY_LEASING,
 	}
 	claimed := Default().Capabilities
 	for name, bit := range unimplemented {
