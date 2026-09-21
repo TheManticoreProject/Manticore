@@ -114,14 +114,18 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 		if err != nil {
 			return nil, err
 		}
+		n := uint32(len(data))
+		if n > remaining {
+			return nil, fmt.Errorf("read returned %d bytes, more than the %d remaining", n, remaining)
+		}
 		out = append(out, data...)
 		// Stop at end-of-file or a short read (the server returned less than was
 		// asked for, which for a pipe is one message and for a file is the tail).
-		if eof || len(data) == 0 || uint32(len(data)) < chunk {
+		if eof || n == 0 || n < chunk {
 			break
 		}
-		pos += uint64(len(data))
-		remaining -= uint32(len(data))
+		pos += uint64(n)
+		remaining -= n
 	}
 	return out, nil
 }
