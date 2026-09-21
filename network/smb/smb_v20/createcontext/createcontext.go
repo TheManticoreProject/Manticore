@@ -21,8 +21,10 @@ import (
 var (
 	NameExtendedAttributes = []byte("ExtA") // SMB2_CREATE_EA_BUFFER
 	NameSecurityDescriptor = []byte("SecD") // SMB2_CREATE_SD_BUFFER
-	NameDurableHandleReq   = []byte("DHnQ") // SMB2_CREATE_DURABLE_HANDLE_REQUEST
-	NameDurableHandleRecon = []byte("DHnC") // SMB2_CREATE_DURABLE_HANDLE_RECONNECT
+	NameDurableHandleReq     = []byte("DHnQ") // SMB2_CREATE_DURABLE_HANDLE_REQUEST
+	NameDurableHandleRecon   = []byte("DHnC") // SMB2_CREATE_DURABLE_HANDLE_RECONNECT
+	NameDurableHandleReqV2   = []byte("DH2Q") // SMB2_CREATE_DURABLE_HANDLE_REQUEST_V2
+	NameDurableHandleReconV2 = []byte("DH2C") // SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2
 	NameAllocationSize     = []byte("AlSi") // SMB2_CREATE_ALLOCATION_SIZE
 	NameQueryMaximalAccess = []byte("MxAc") // SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST
 	NameTimewarpToken      = []byte("TWrp") // SMB2_CREATE_TIMEWARP_TOKEN
