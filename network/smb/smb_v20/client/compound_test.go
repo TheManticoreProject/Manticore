@@ -127,6 +127,111 @@ func TestSendReceiveCompoundEnforcesSigning(t *testing.T) {
 	})
 }
 
+func TestSendUnrelatedCompound(t *testing.T) {
+	queryOut1 := []byte{0xAA, 0xBB}
+	queryOut2 := []byte{0xCC, 0xDD}
+
+	resp1 := commands.NewQueryInfoResponse()
+	resp1.OutputBuffer = queryOut1
+	resp2 := commands.NewQueryInfoResponse()
+	resp2.OutputBuffer = queryOut2
+
+	wire := cannedCompound(t, []compoundSegment{
+		{resp1, 0, 0},
+		{resp2, 1, 0},
+	})
+	ft := &fakeTransport{responses: [][]byte{wire}}
+	c := withConnectedTree(ft)
+
+	q1 := commands.NewQueryInfoRequest()
+	q1.InfoType = types.UCHAR(commands.SMB2_0_INFO_FILE)
+	q1.FileInfoClass = 0x12
+	q1.OutputBufferLength = 0x10000
+	q1.FileId = types.SMB2_FILEID{Persistent: 0x11, Volatile: 0x22}
+	msg1 := c.NewRequest(q1)
+
+	q2 := commands.NewQueryInfoRequest()
+	q2.InfoType = types.UCHAR(commands.SMB2_0_INFO_FILE)
+	q2.FileInfoClass = 0x12
+	q2.OutputBufferLength = 0x10000
+	q2.FileId = types.SMB2_FILEID{Persistent: 0x33, Volatile: 0x44}
+	msg2 := c.NewRequest(q2)
+
+	responses, err := c.SendUnrelatedCompound([]*message.Message{msg1, msg2})
+	if err != nil {
+		t.Fatalf("SendUnrelatedCompound: %v", err)
+	}
+	if len(responses) != 2 {
+		t.Fatalf("got %d responses, want 2", len(responses))
+	}
+
+	got1, ok := responses[0].Command.(*commands.QueryInfoResponse)
+	if !ok {
+		t.Fatalf("response 0 command type = %T, want *QueryInfoResponse", responses[0].Command)
+	}
+	if !bytes.Equal(got1.OutputBuffer, queryOut1) {
+		t.Errorf("response 0 output = % x, want % x", got1.OutputBuffer, queryOut1)
+	}
+	got2, ok := responses[1].Command.(*commands.QueryInfoResponse)
+	if !ok {
+		t.Fatalf("response 1 command type = %T, want *QueryInfoResponse", responses[1].Command)
+	}
+	if !bytes.Equal(got2.OutputBuffer, queryOut2) {
+		t.Errorf("response 1 output = % x, want % x", got2.OutputBuffer, queryOut2)
+	}
+
+	// Verify the sent frame: one compound with two segments, neither RELATED.
+	if len(ft.sent) != 1 {
+		t.Fatalf("expected 1 compound frame sent, got %d", len(ft.sent))
+	}
+	reqs, err := message.UnmarshalCompound(ft.sent[0])
+	if err != nil {
+		t.Fatalf("UnmarshalCompound(sent): %v", err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("sent compound has %d segments, want 2", len(reqs))
+	}
+	for i, r := range reqs {
+		if r.Header.Flags.IsRelatedOperations() {
+			t.Errorf("request %d must NOT set RELATED_OPERATIONS", i)
+		}
+	}
+	if reqs[0].Header.MessageId == reqs[1].Header.MessageId {
+		t.Errorf("both requests have the same MessageId %d; each must be unique", reqs[0].Header.MessageId)
+	}
+}
+
+func TestSendUnrelatedCompoundRejectsRelatedFlag(t *testing.T) {
+	ft := &fakeTransport{}
+	c := withConnectedTree(ft)
+
+	q := commands.NewQueryInfoRequest()
+	q.InfoType = types.UCHAR(commands.SMB2_0_INFO_FILE)
+	q.FileInfoClass = 0x12
+	q.OutputBufferLength = 0x10000
+	q.FileId = types.SMB2_FILEID{Persistent: 0x11, Volatile: 0x22}
+	msg1 := c.NewRequest(q)
+	msg2 := c.NewRequest(q)
+	msg2.Header.AddFlags(flags.SMB2_FLAGS_RELATED_OPERATIONS)
+
+	if _, err := c.SendUnrelatedCompound([]*message.Message{msg1, msg2}); err == nil {
+		t.Fatal("expected error when a request carries RELATED_OPERATIONS")
+	}
+}
+
+func TestSendUnrelatedCompoundRequiresTwo(t *testing.T) {
+	ft := &fakeTransport{}
+	c := withConnectedTree(ft)
+
+	q := commands.NewQueryInfoRequest()
+	q.FileId = types.SMB2_FILEID{Persistent: 1, Volatile: 2}
+	msg := c.NewRequest(q)
+
+	if _, err := c.SendUnrelatedCompound([]*message.Message{msg}); err == nil {
+		t.Fatal("expected error for a single-request unrelated compound")
+	}
+}
+
 func TestCreateQueryInfoCloseSurfacesSegmentError(t *testing.T) {
 	// CREATE succeeds but QUERY_INFO fails (STATUS_ACCESS_DENIED); the error must
 	// be surfaced and the CLOSE segment (an error body) must not break parsing.
