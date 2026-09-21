@@ -44,6 +44,16 @@ func assertUsableTGT(t *testing.T, src, imp *KerberosClient) {
 	}
 }
 
+func TestLoadTGTRejectsNilContainers(t *testing.T) {
+	c := NewClient("", "", "10.0.0.1")
+	if err := c.LoadTGT(nil); err == nil {
+		t.Fatal("LoadTGT(nil) returned nil error")
+	}
+	if err := c.LoadTGTFromCCache(nil); err == nil {
+		t.Fatal("LoadTGTFromCCache(nil) returned nil error")
+	}
+}
+
 func TestImportTGTFromKirbiRoundTrip(t *testing.T) {
 	src := fakeTGTClient(t)
 	blob, err := src.ExportTGTKirbi()

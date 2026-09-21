@@ -35,6 +35,15 @@ func sampleTicketAndInfo(t *testing.T) ([]byte, messages.KrbCredInfo) {
 	return raw, info
 }
 
+func TestNilCredentialErrors(t *testing.T) {
+	if _, err := Bytes(nil); err == nil {
+		t.Fatal("Bytes(nil) returned nil error")
+	}
+	if _, err := TicketInfo(nil); err == nil {
+		t.Fatal("TicketInfo(nil) returned nil error")
+	}
+}
+
 func TestKirbiNewRoundtrip(t *testing.T) {
 	raw, info := sampleTicketAndInfo(t)
 

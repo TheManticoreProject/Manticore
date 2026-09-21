@@ -14,6 +14,9 @@ import (
 
 // Bytes returns the DER encoding of a KRB-CRED (the raw .kirbi contents).
 func Bytes(cred *messages.KRBCred) ([]byte, error) {
+	if cred == nil {
+		return nil, fmt.Errorf("kirbi: nil KRB-CRED")
+	}
 	return cred.Marshal()
 }
 
@@ -69,6 +72,9 @@ func New(ticketRaw []byte, info messages.KrbCredInfo) (*messages.KRBCred, error)
 // KRB-CRED whose enc-part is stored unencrypted (etype 0), the .kirbi
 // convention. It errors if the enc-part is encrypted (etype != 0).
 func TicketInfo(cred *messages.KRBCred) ([]messages.KrbCredInfo, error) {
+	if cred == nil {
+		return nil, fmt.Errorf("kirbi: nil KRB-CRED")
+	}
 	if cred.EncPart.EType != 0 {
 		return nil, fmt.Errorf("kirbi: enc-part is encrypted (etype %d); cannot read without a key", cred.EncPart.EType)
 	}
