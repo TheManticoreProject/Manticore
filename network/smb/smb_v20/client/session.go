@@ -179,7 +179,7 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
 		finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
 		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash)
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher)
 
 		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, session.SigningKey, finalRespBytes) {
 			c.Session = nil

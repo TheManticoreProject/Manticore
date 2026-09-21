@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
 
 func mustHex(t *testing.T, s string) []byte {
@@ -23,7 +24,7 @@ func TestSMB30KeyDerivationKnownAnswer(t *testing.T) {
 	sessionKey := mustHex(t, "7CD451825D0450D235424E44BA6E78CC")
 
 	s := &Session{SessionKey: sessionKey}
-	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_0_0, nil)
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_0_0, nil, 0)
 
 	cases := []struct {
 		name string
@@ -50,7 +51,7 @@ func TestSMB311KeyDerivationKnownAnswer(t *testing.T) {
 		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
 
 	s := &Session{SessionKey: sessionKey}
-	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth)
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, 0)
 
 	cases := []struct {
 		name string
@@ -66,5 +67,48 @@ func TestSMB311KeyDerivationKnownAnswer(t *testing.T) {
 		if !bytes.Equal(c.got, mustHex(t, c.want)) {
 			t.Errorf("%s = %X, want %s", c.name, c.got, c.want)
 		}
+	}
+}
+
+// TestSMB311AES256KeyDerivation verifies that when an AES-256 cipher is
+// negotiated the encryption and decryption keys are 32 bytes while the signing
+// and application keys remain 16 bytes. It also checks that the 256-bit KDF
+// output differs from the 128-bit truncation (the L value encoded into the PRF
+// input changes the output even for the first 16 bytes).
+func TestSMB311AES256KeyDerivation(t *testing.T) {
+	sessionKey := mustHex(t, "270E1BA896585EEB7AF3472D3B4C75A7")
+	preauth := mustHex(t, "0DD13628CC3ED218EF9DF9772D436D0887AB9814BFAE63A80AA845F36909DB79"+
+		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
+
+	s := &Session{SessionKey: sessionKey}
+	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, commands.SMB2_ENCRYPTION_AES256_GCM)
+
+	if len(s.SigningKey) != 16 {
+		t.Errorf("SigningKey length = %d, want 16", len(s.SigningKey))
+	}
+	if len(s.ApplicationKey) != 16 {
+		t.Errorf("ApplicationKey length = %d, want 16", len(s.ApplicationKey))
+	}
+	if len(s.EncryptionKey) != 32 {
+		t.Errorf("EncryptionKey length = %d, want 32", len(s.EncryptionKey))
+	}
+	if len(s.DecryptionKey) != 32 {
+		t.Errorf("DecryptionKey length = %d, want 32", len(s.DecryptionKey))
+	}
+
+	// The signing and application keys must match the 128-bit known-answer values
+	// from the test above — they are unaffected by the cipher choice.
+	if want := mustHex(t, "73FE7A9A77BEF0BDE49C650D8CCB5F76"); !bytes.Equal(s.SigningKey, want) {
+		t.Errorf("SigningKey = %X, want %X (should match AES-128 derivation)", s.SigningKey, want)
+	}
+	if want := mustHex(t, "6D7AD7954E9EC61E907B4D473DC178FF"); !bytes.Equal(s.ApplicationKey, want) {
+		t.Errorf("ApplicationKey = %X, want %X (should match AES-128 derivation)", s.ApplicationKey, want)
+	}
+
+	// The 256-bit encryption key must differ from the 128-bit one: the L value
+	// (256 vs 128) is part of the PRF input, so even the first 16 bytes change.
+	enc128 := mustHex(t, "629BCBC54422A0F572B97F45989B6073")
+	if bytes.Equal(s.EncryptionKey[:16], enc128) {
+		t.Error("EncryptionKey first 16 bytes equal the AES-128 derivation; L=256 should produce different PRF output")
 	}
 }
