@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
@@ -169,6 +170,33 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 	}
 
 	return responses, nil
+}
+
+// SendUnrelatedCompound sends multiple independent SMB2 requests as a single
+// compounded frame (MS-SMB2 3.2.4.1.4). Unlike a related compound chain, each
+// request carries its own SessionId, TreeId, MessageId, and FileId — no segment
+// sets SMB2_FLAGS_RELATED_OPERATIONS. The server processes each request
+// independently and returns one response segment per request.
+//
+// Callers build each request with newRequest (which assigns MessageId, SessionId,
+// TreeId) and populate the command's FileId before passing it here. The method
+// validates that no request carries the RELATED_OPERATIONS flag.
+func (c *Client) SendUnrelatedCompound(msgs []*message.Message) ([]*message.Message, error) {
+	if len(msgs) < 2 {
+		return nil, fmt.Errorf("unrelated compound requires at least 2 requests, got %d", len(msgs))
+	}
+	for i, m := range msgs {
+		if m.Header.Flags.IsRelatedOperations() {
+			return nil, fmt.Errorf("unrelated compound: request %d has SMB2_FLAGS_RELATED_OPERATIONS set", i)
+		}
+	}
+	return c.sendReceiveCompound(msgs, "UnrelatedCompound")
+}
+
+// NewRequest exposes the internal newRequest for callers that build unrelated
+// compound chains outside the client package.
+func (c *Client) NewRequest(command command_interface.CommandInterface) *message.Message {
+	return c.newRequest(command)
 }
 
 // CreateQueryInfoClose opens path, queries the given information class on the
