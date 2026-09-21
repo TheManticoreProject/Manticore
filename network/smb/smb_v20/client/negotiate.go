@@ -54,6 +54,10 @@ func (c *Client) Negotiate() error {
 		commands.NewNetnameContext(serverName),
 		commands.NewTransportCapabilitiesContext(commands.SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY),
 	}
+	if len(profile.SigningAlgorithms) > 0 {
+		req.Contexts = append(req.Contexts,
+			commands.NewSigningCapabilitiesContext(profile.SigningAlgorithms))
+	}
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the
 	// NEGOTIATE request and response bytes below.
@@ -109,11 +113,12 @@ func (c *Client) ApplyNegotiateResponse(negotiateResponse *commands.NegotiateRes
 	server.ServerStartTime = negotiateResponse.ServerStartTime
 	server.SecurityBuffer = negotiateResponse.SecurityBuffer
 
-	// SMB 3.1.1: record the server's chosen cipher and pre-auth hash algorithm
-	// from the returned negotiate contexts.
+	// SMB 3.1.1: record the server's chosen cipher, pre-auth hash algorithm,
+	// and signing algorithm from the returned negotiate contexts.
 	if negotiateResponse.DialectRevision == dialects.SMB2_DIALECT_3_1_1 {
 		c.Connection.Cipher = commands.SelectedCipher(negotiateResponse.Contexts)
 		c.Connection.PreauthIntegrityHashId = commands.SelectedPreauthHash(negotiateResponse.Contexts)
+		c.Connection.SigningAlgorithmId = commands.SelectedSigningAlgorithm(negotiateResponse.Contexts)
 	}
 
 	if c.Connection.MessageId == 0 {

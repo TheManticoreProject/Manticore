@@ -25,7 +25,7 @@ func TestSMB3CMACSignAndVerify(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	signMessageForDialect(dialects.SMB2_DIALECT_3_1_1, key, wire)
+	signMessageForDialect(dialects.SMB2_DIALECT_3_1_1, -1, key, wire)
 
 	decoded := message.NewMessage()
 	if _, err := decoded.Unmarshal(wire); err != nil {
@@ -35,15 +35,81 @@ func TestSMB3CMACSignAndVerify(t *testing.T) {
 		t.Errorf("SMB2_FLAGS_SIGNED not set after CMAC signing")
 	}
 
-	if !verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, key, wire) {
+	if !verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, -1, key, wire) {
 		t.Errorf("CMAC signature failed to verify with the correct key")
 	}
-	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, mustHex(t, "00000000000000000000000000000000"), wire) {
+	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, -1, mustHex(t, "00000000000000000000000000000000"), wire) {
 		t.Errorf("CMAC signature verified with a wrong key")
 	}
 	wire[len(wire)-1] ^= 0xFF
-	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, key, wire) {
+	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, -1, key, wire) {
 		t.Errorf("CMAC signature verified for a tampered message")
+	}
+}
+
+// TestGMACSignAndVerify checks the AES-GMAC signing round-trip: a signed message
+// verifies with the correct key, sets the SIGNED flag, derives the nonce from
+// the MessageId and direction, and rejects a wrong key or tampering.
+func TestGMACSignAndVerify(t *testing.T) {
+	key := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE0B7E9C5CAC36C0F6EA9AB275298CEDCE") // 32-byte key
+
+	m := message.NewMessage()
+	m.Header.MessageId = 42
+	m.SetCommand(commands.NewTreeDisconnectRequest())
+	wire, err := m.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	signMessageForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, key, wire)
+
+	decoded := message.NewMessage()
+	if _, err := decoded.Unmarshal(wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !decoded.Header.Flags.IsSigned() {
+		t.Errorf("SMB2_FLAGS_SIGNED not set after GMAC signing")
+	}
+
+	if !verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, key, wire) {
+		t.Errorf("GMAC signature failed to verify with the correct key")
+	}
+	wrongKey := make([]byte, 32)
+	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, wrongKey, wire) {
+		t.Errorf("GMAC signature verified with a wrong key")
+	}
+	wire[len(wire)-1] ^= 0xFF
+	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, key, wire) {
+		t.Errorf("GMAC signature verified for a tampered message")
+	}
+}
+
+// TestGMACSignatureNotCMAC verifies that the GMAC signature differs from the
+// CMAC signature on the same message, confirming they are distinct algorithms.
+func TestGMACSignatureNotCMAC(t *testing.T) {
+	key16 := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE")
+	key32 := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE0B7E9C5CAC36C0F6EA9AB275298CEDCE")
+
+	buildMessage := func() []byte {
+		m := message.NewMessage()
+		m.Header.MessageId = 7
+		m.SetCommand(commands.NewTreeDisconnectRequest())
+		wire, _ := m.Marshal()
+		return wire
+	}
+
+	cmacWire := buildMessage()
+	signMessageCMAC(key16, cmacWire)
+	cmacSig := make([]byte, 16)
+	copy(cmacSig, cmacWire[signSignatureOffset:signSignatureOffset+signSignatureLength])
+
+	gmacWire := buildMessage()
+	signMessageGMAC(key32, gmacWire)
+	gmacSig := make([]byte, 16)
+	copy(gmacSig, gmacWire[signSignatureOffset:signSignatureOffset+signSignatureLength])
+
+	if bytes.Equal(cmacSig, gmacSig) {
+		t.Errorf("GMAC and CMAC produced the same signature")
 	}
 }
 

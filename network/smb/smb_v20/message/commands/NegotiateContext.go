@@ -30,6 +30,13 @@ const (
 	SMB2_ENCRYPTION_AES256_GCM = 0x0004
 )
 
+// SMB2 signing algorithm IDs (MS-SMB2 2.2.3.1.7).
+const (
+	SMB2_SIGNING_ALG_HMAC_SHA256 = 0x0000
+	SMB2_SIGNING_ALG_AES_CMAC   = 0x0001
+	SMB2_SIGNING_ALG_AES_GMAC   = 0x0002
+)
+
 // NegotiateContext is a single SMB2 NEGOTIATE context: a 2-byte type, a 2-byte
 // data length, 4 reserved bytes, and the context-specific data. On the wire the
 // contexts are 8-byte aligned relative to the start of the SMB2 header.
@@ -157,6 +164,18 @@ func NewTransportCapabilitiesContext(flags uint32) *NegotiateContext {
 	return &NegotiateContext{ContextType: SMB2_TRANSPORT_CAPABILITIES, Data: data}
 }
 
+// NewSigningCapabilitiesContext builds an SMB2_SIGNING_CAPABILITIES context
+// advertising the supplied signing algorithms in preference order (MS-SMB2
+// 2.2.3.1.7).
+func NewSigningCapabilitiesContext(algorithms []uint16) *NegotiateContext {
+	data := make([]byte, 2+2*len(algorithms))
+	binary.LittleEndian.PutUint16(data[0:2], uint16(len(algorithms)))
+	for i, a := range algorithms {
+		binary.LittleEndian.PutUint16(data[2+2*i:], a)
+	}
+	return &NegotiateContext{ContextType: SMB2_SIGNING_CAPABILITIES, Data: data}
+}
+
 // SelectedCipher returns the cipher ID from an SMB2_ENCRYPTION_CAPABILITIES
 // context in the list (the server echoes its single chosen cipher), or 0 if
 // none is present.
@@ -178,4 +197,18 @@ func SelectedPreauthHash(contexts []*NegotiateContext) uint16 {
 		}
 	}
 	return 0
+}
+
+// SelectedSigningAlgorithm returns the signing algorithm ID from an
+// SMB2_SIGNING_CAPABILITIES context in the list (the server echoes its single
+// chosen algorithm), or -1 if no signing capabilities context is present. The
+// return is int so the caller can distinguish "absent" from algorithm 0
+// (HMAC-SHA256).
+func SelectedSigningAlgorithm(contexts []*NegotiateContext) int {
+	for _, ctx := range contexts {
+		if ctx.ContextType == SMB2_SIGNING_CAPABILITIES && len(ctx.Data) >= 4 {
+			return int(binary.LittleEndian.Uint16(ctx.Data[2:4]))
+		}
+	}
+	return -1
 }

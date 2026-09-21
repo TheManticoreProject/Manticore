@@ -116,7 +116,7 @@ func TestSendReceiveCompoundEnforcesSigning(t *testing.T) {
 
 	t.Run("signed compound accepted", func(t *testing.T) {
 		raw := createQueryCloseResponse(t, []byte{0x01})
-		if err := signCompound(dialects.SMB2_DIALECT_2_0_2, key, raw); err != nil {
+		if err := signCompound(dialects.SMB2_DIALECT_2_0_2, -1, key, raw); err != nil {
 			t.Fatalf("signCompound: %v", err)
 		}
 		ft := &fakeTransport{responses: [][]byte{raw}}

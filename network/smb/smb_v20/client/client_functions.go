@@ -18,9 +18,10 @@ func newClient(t transport.Transport, host net.IP, port int) *Client {
 		// never populated the field.
 		ClientGuid: fingerprint.MachineGuid(),
 		Connection: &Connection{
-			Server:           &Server{Host: host, Port: port},
-			SessionTable:     make(map[uint64]*Session),
-			TreeConnectTable: make(map[uint32]*TreeConnect),
+			Server:             &Server{Host: host, Port: port},
+			SigningAlgorithmId: -1,
+			SessionTable:       make(map[uint64]*Session),
+			TreeConnectTable:   make(map[uint32]*TreeConnect),
 		},
 	}
 }

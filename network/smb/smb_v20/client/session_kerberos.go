@@ -218,11 +218,11 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	// context. For the 2.x dialects the session key remains the signing key.
 	if isSMB3Dialect(c.Connection.Dialect) {
 		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher)
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
 
 		// The server signs the final SESSION_SETUP response with the derived signing
 		// key; verify it to confirm the key hierarchy is correct.
-		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, session.SigningKey, finalRespBytes) {
+		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
 			c.Session = nil
 			return fmt.Errorf("kerberos session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
 		}

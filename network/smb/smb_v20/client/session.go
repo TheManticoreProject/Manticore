@@ -179,9 +179,9 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
 		finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
 		session.PreauthHash = sessionHash
-		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher)
+		deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
 
-		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, session.SigningKey, finalRespBytes) {
+		if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
 			c.Session = nil
 			return fmt.Errorf("session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
 		}

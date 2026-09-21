@@ -56,13 +56,13 @@ func compoundSegments(buf []byte) ([][]byte, error) {
 // computed over its own region (header, body, and inter-segment padding for
 // non-final segments), so they are signed individually rather than over the
 // whole buffer.
-func signCompound(dialect dialects.Dialect, key, buf []byte) error {
+func signCompound(dialect dialects.Dialect, signingAlg int, key, buf []byte) error {
 	segments, err := compoundSegments(buf)
 	if err != nil {
 		return err
 	}
 	for _, seg := range segments {
-		signMessageForDialect(dialect, key, seg)
+		signMessageForDialect(dialect, signingAlg, key, seg)
 	}
 	return nil
 }
@@ -99,7 +99,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 	}
 
 	if c.Session != nil && c.Session.SigningActive {
-		if err := signCompound(c.Connection.Dialect, c.Session.SigningKey, marshalled); err != nil {
+		if err := signCompound(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled); err != nil {
 			return nil, fmt.Errorf("failed to sign %s: %w", label, err)
 		}
 	}
@@ -143,7 +143,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		// Enforce signing per segment, with the same exemptions as the
 		// single-message path (MS-SMB2 3.2.5.1.3).
 		if c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
-			if !verifySignatureForDialect(c.Connection.Dialect, c.Session.SigningKey, seg) {
+			if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
 				return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
 			}
 		}

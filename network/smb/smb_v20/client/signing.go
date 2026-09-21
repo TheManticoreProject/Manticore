@@ -2,12 +2,14 @@ package client
 
 import (
 	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 
 	"github.com/TheManticoreProject/Manticore/crypto/cmac"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 )
@@ -128,10 +130,95 @@ func verifySignatureCMAC(key, message []byte) bool {
 	return hmac.Equal(received, digest[:signSignatureLength])
 }
 
-// signMessageForDialect signs a message in place with the algorithm mandated by
-// the negotiated dialect: AES-128-CMAC for the SMB 3.x family, HMAC-SHA256 for
-// SMB 2.0.2/2.1.
-func signMessageForDialect(dialect dialects.Dialect, key, message []byte) {
+// gmacNonce builds the 12-byte AES-GMAC nonce for signing (MS-SMB2 3.1.4.1):
+// bytes 0–7 are the message's MessageId in little-endian, bytes 8–9 are zero,
+// and bytes 10–11 are the direction (0x0001 for client-to-server requests,
+// 0x0002 for server-to-client responses). The SMB2_FLAGS_SERVER_TO_REDIR flag
+// in the header Flags distinguishes the two.
+func gmacNonce(message []byte) []byte {
+	const messageIdOffset = 24 // within the 64-byte SMB2 header
+	nonce := make([]byte, 12)
+	copy(nonce[0:8], message[messageIdOffset:messageIdOffset+8])
+	f := binary.LittleEndian.Uint32(message[signFlagsOffset : signFlagsOffset+4])
+	if f&uint32(flags.SMB2_FLAGS_SERVER_TO_REDIR) != 0 {
+		binary.LittleEndian.PutUint16(nonce[10:12], 0x0002)
+	} else {
+		binary.LittleEndian.PutUint16(nonce[10:12], 0x0001)
+	}
+	return nonce
+}
+
+// signMessageGMAC signs a marshalled SMB2 message in place using AES-GMAC, the
+// signing algorithm negotiated via SMB2_SIGNING_CAPABILITIES when AES-GMAC is
+// selected (MS-SMB2 3.1.4.1). GMAC is GCM with an empty plaintext: the entire
+// message is the additional authenticated data (AAD) and the 16-byte
+// authentication tag is the signature.
+func signMessageGMAC(key, message []byte) {
+	if len(message) < header.SMB2_HEADER_SIZE {
+		return
+	}
+
+	f := binary.LittleEndian.Uint32(message[signFlagsOffset : signFlagsOffset+4])
+	f |= uint32(flags.SMB2_FLAGS_SIGNED)
+	binary.LittleEndian.PutUint32(message[signFlagsOffset:signFlagsOffset+4], f)
+
+	for i := 0; i < signSignatureLength; i++ {
+		message[signSignatureOffset+i] = 0
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return
+	}
+	gcm, err := cipher.NewGCMWithNonceSize(block, 12)
+	if err != nil {
+		return
+	}
+	nonce := gmacNonce(message)
+	tag := gcm.Seal(nil, nonce, nil, message)
+	copy(message[signSignatureOffset:signSignatureOffset+signSignatureLength], tag[:signSignatureLength])
+}
+
+// verifySignatureGMAC recomputes the AES-GMAC signature of a received SMB2
+// message and compares it in constant time to the Signature it carries.
+func verifySignatureGMAC(key, message []byte) bool {
+	if len(message) < header.SMB2_HEADER_SIZE {
+		return false
+	}
+
+	received := make([]byte, signSignatureLength)
+	copy(received, message[signSignatureOffset:signSignatureOffset+signSignatureLength])
+
+	work := make([]byte, len(message))
+	copy(work, message)
+	for i := 0; i < signSignatureLength; i++ {
+		work[signSignatureOffset+i] = 0
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return false
+	}
+	gcm, err := cipher.NewGCMWithNonceSize(block, 12)
+	if err != nil {
+		return false
+	}
+	nonce := gmacNonce(work)
+	tag := gcm.Seal(nil, nonce, nil, work)
+
+	return hmac.Equal(received, tag[:signSignatureLength])
+}
+
+// signMessageForDialect signs a message in place with the algorithm appropriate
+// for the negotiated dialect and signing algorithm. When the SMB 3.1.1
+// SMB2_SIGNING_CAPABILITIES context negotiated a specific algorithm, that
+// algorithm is used; otherwise the dialect default applies (AES-128-CMAC for
+// SMB 3.x, HMAC-SHA256 for 2.x).
+func signMessageForDialect(dialect dialects.Dialect, signingAlg int, key, message []byte) {
+	if signingAlg == commands.SMB2_SIGNING_ALG_AES_GMAC {
+		signMessageGMAC(key, message)
+		return
+	}
 	if isSMB3Dialect(dialect) {
 		signMessageCMAC(key, message)
 		return
@@ -140,8 +227,11 @@ func signMessageForDialect(dialect dialects.Dialect, key, message []byte) {
 }
 
 // verifySignatureForDialect verifies a message signature with the algorithm
-// mandated by the negotiated dialect.
-func verifySignatureForDialect(dialect dialects.Dialect, key, message []byte) bool {
+// appropriate for the negotiated dialect and signing algorithm.
+func verifySignatureForDialect(dialect dialects.Dialect, signingAlg int, key, message []byte) bool {
+	if signingAlg == commands.SMB2_SIGNING_ALG_AES_GMAC {
+		return verifySignatureGMAC(key, message)
+	}
 	if isSMB3Dialect(dialect) {
 		return verifySignatureCMAC(key, message)
 	}

@@ -69,7 +69,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	// mandates (AES-128-CMAC for SMB 3.x, HMAC-SHA256 for SMB 2.x).
 	encrypt := c.Session != nil && c.Session.EncryptData
 	if !encrypt && c.Session != nil && c.Session.SigningActive {
-		signMessageForDialect(c.Connection.Dialect, c.Session.SigningKey, marshalled)
+		signMessageForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
 	}
 
 	// Preserve the plaintext wire bytes of the request for the pre-auth hash.
@@ -137,7 +137,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// arrives unsigned (zeroed signature) fails verification and is
 		// rejected rather than silently accepted.
 		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(response) {
-			if !verifySignatureForDialect(c.Connection.Dialect, c.Session.SigningKey, raw) {
+			if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
 			}
 		}
