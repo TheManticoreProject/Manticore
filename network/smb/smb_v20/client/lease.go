@@ -162,7 +162,7 @@ func (c *Client) WaitBreakNotification() (*BreakNotification, error) {
 	if !msg.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("break notification is not an SMB2 message (ProtocolId % x)", msg.Header.ProtocolId)
 	}
-	if c.Session != nil && c.Session.SigningActive && msg.Header.Flags.IsSigned() {
+	if c.Session != nil && c.Session.SigningActive {
 		if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 			return nil, fmt.Errorf("break notification failed SMB2 signature verification")
 		}
