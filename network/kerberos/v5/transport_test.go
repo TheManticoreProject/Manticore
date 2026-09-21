@@ -1,7 +1,9 @@
 package kerberos
 
 import (
+	"bytes"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -25,10 +27,11 @@ func mustMarshalKRBError(t *testing.T, code int) []byte {
 }
 
 // TestShouldRetryOverTCP covers the UDP->TCP decision: transport failure, empty
-// datagram, and any KRB-ERROR reply all force a TCP retry; a normal AS-REP does
-// not.
+// datagram, and KRB_ERR_RESPONSE_TOO_BIG force a TCP retry; a complete protocol
+// error or normal AS-REP does not.
 func TestShouldRetryOverTCP(t *testing.T) {
-	krbErr := mustMarshalKRBError(t, messages.ErrResponseTooBig)
+	tooBig := mustMarshalKRBError(t, messages.ErrResponseTooBig)
+	preauthRequired := mustMarshalKRBError(t, messages.ErrPreauthRequired)
 
 	tests := []struct {
 		name string
@@ -38,7 +41,8 @@ func TestShouldRetryOverTCP(t *testing.T) {
 	}{
 		{"udp error", nil, errors.New("timeout"), true},
 		{"empty datagram", []byte{}, nil, true},
-		{"krb-error reply", krbErr, nil, true},
+		{"response too big", tooBig, nil, true},
+		{"complete krb-error reply", preauthRequired, nil, false},
 		{"as-rep reply", []byte{0x6b, 0x01, 0x02}, nil, false},
 	}
 	for _, tt := range tests {
@@ -47,6 +51,39 @@ func TestShouldRetryOverTCP(t *testing.T) {
 				t.Errorf("shouldRetryOverTCP = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestKDCSendAddrReturnsUDPProtocolError verifies that a complete KRB-ERROR
+// received over UDP is not discarded in favour of a failing TCP retry. The
+// loopback port deliberately has a UDP listener but no TCP listener.
+func TestKDCSendAddrReturnsUDPProtocolError(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	want := mustMarshalKRBError(t, messages.ErrPreauthRequired)
+	serverErr := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1024)
+		_, peer, err := conn.ReadFromUDP(buf)
+		if err == nil {
+			_, err = conn.WriteToUDP(want, peer)
+		}
+		serverErr <- err
+	}()
+
+	got, err := kdcSendAddr("127.0.0.1", conn.LocalAddr().(*net.UDPAddr).Port, []byte{0x01})
+	if err != nil {
+		t.Fatalf("kdcSendAddr discarded the UDP response: %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("UDP test server: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("kdcSendAddr returned %x, want UDP KRB-ERROR %x", got, want)
 	}
 }
 
