@@ -37,6 +37,21 @@ const (
 	SMB2_SIGNING_ALG_AES_GMAC   = 0x0002
 )
 
+// SMB2 compression algorithm IDs (MS-SMB2 2.2.3.1.3).
+const (
+	SMB2_COMPRESSION_NONE         uint16 = 0x0000
+	SMB2_COMPRESSION_LZNT1        uint16 = 0x0001
+	SMB2_COMPRESSION_LZ77         uint16 = 0x0002
+	SMB2_COMPRESSION_LZ77_HUFFMAN uint16 = 0x0003
+	SMB2_COMPRESSION_PATTERN_V1   uint16 = 0x0004
+)
+
+// SMB2 compression capabilities flags (MS-SMB2 2.2.3.1.3).
+const (
+	SMB2_COMPRESSION_CAPABILITIES_FLAG_NONE    uint32 = 0x00000000
+	SMB2_COMPRESSION_CAPABILITIES_FLAG_CHAINED uint32 = 0x00000001
+)
+
 // NegotiateContext is a single SMB2 NEGOTIATE context: a 2-byte type, a 2-byte
 // data length, 4 reserved bytes, and the context-specific data. On the wire the
 // contexts are 8-byte aligned relative to the start of the SMB2 header.
@@ -174,6 +189,41 @@ func NewSigningCapabilitiesContext(algorithms []uint16) *NegotiateContext {
 		binary.LittleEndian.PutUint16(data[2+2*i:], a)
 	}
 	return &NegotiateContext{ContextType: SMB2_SIGNING_CAPABILITIES, Data: data}
+}
+
+// NewCompressionCapabilitiesContext builds an SMB2_COMPRESSION_CAPABILITIES
+// context advertising the supplied compression algorithms in preference order
+// (MS-SMB2 2.2.3.1.3).
+func NewCompressionCapabilitiesContext(algorithms []uint16, flags uint32) *NegotiateContext {
+	// CompressionAlgorithmCount(2) + Padding(2) + Flags(4) + algorithms(2*n)
+	data := make([]byte, 8+2*len(algorithms))
+	binary.LittleEndian.PutUint16(data[0:2], uint16(len(algorithms)))
+	// data[2:4] padding
+	binary.LittleEndian.PutUint32(data[4:8], flags)
+	for i, a := range algorithms {
+		binary.LittleEndian.PutUint16(data[8+2*i:], a)
+	}
+	return &NegotiateContext{ContextType: SMB2_COMPRESSION_CAPABILITIES, Data: data}
+}
+
+// SelectedCompressionAlgorithms returns the compression algorithms from an
+// SMB2_COMPRESSION_CAPABILITIES context in the list, or nil if none is present.
+// The server may echo one or more algorithms it supports.
+func SelectedCompressionAlgorithms(contexts []*NegotiateContext) []uint16 {
+	for _, ctx := range contexts {
+		if ctx.ContextType == SMB2_COMPRESSION_CAPABILITIES && len(ctx.Data) >= 8 {
+			count := int(binary.LittleEndian.Uint16(ctx.Data[0:2]))
+			if len(ctx.Data) < 8+2*count {
+				continue
+			}
+			algs := make([]uint16, count)
+			for i := 0; i < count; i++ {
+				algs[i] = binary.LittleEndian.Uint16(ctx.Data[8+2*i:])
+			}
+			return algs
+		}
+	}
+	return nil
 }
 
 // SelectedCipher returns the cipher ID from an SMB2_ENCRYPTION_CAPABILITIES
