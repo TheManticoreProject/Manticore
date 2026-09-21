@@ -232,6 +232,7 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 	}
 
 	engine := smb2.NewFromTransport(t, ip, port)
+	engine.Connection.ServerName = host
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
