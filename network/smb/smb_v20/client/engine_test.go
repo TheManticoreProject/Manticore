@@ -1,8 +1,10 @@
 package client
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
@@ -69,5 +71,37 @@ func TestSendReceiveRejectsMismatchedCommand(t *testing.T) {
 
 	if err := c.CloseFile(types.SMB2_FILEID{}); err == nil {
 		t.Fatal("CloseFile should reject a response carrying a different command code")
+	}
+}
+
+// TestSendReceiveRejectsUnencryptedWhenEncryptDataSet verifies that a plaintext
+// response is rejected when Session.EncryptData is true (MS-SMB2 3.2.5.1.1).
+func TestSendReceiveRejectsUnencryptedWhenEncryptDataSet(t *testing.T) {
+	key := make([]byte, 16)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	ft := &fakeTransport{responses: [][]byte{
+		cannedResponse(t, commands.NewCloseResponse(), 0, 0x5, 0x99),
+	}}
+	c := newTestClient(ft)
+	c.Connection.Dialect = dialects.SMB2_DIALECT_3_1_1
+	c.Connection.Cipher = commands.SMB2_ENCRYPTION_AES128_GCM
+	c.Session = &Session{
+		Client:        c,
+		SessionId:     0x99,
+		TreeId:        0x5,
+		EncryptionKey: key,
+		DecryptionKey: key,
+		EncryptData:   true,
+	}
+	c.Connection.SessionTable[0x99] = c.Session
+
+	err := c.CloseFile(types.SMB2_FILEID{})
+	if err == nil {
+		t.Fatal("CloseFile should reject an unencrypted response when Session.EncryptData is true")
+	}
+	if !strings.Contains(err.Error(), "session requires encryption") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
