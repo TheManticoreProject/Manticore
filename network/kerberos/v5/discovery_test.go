@@ -113,6 +113,29 @@ func TestOrderSRVEndpointsDedup(t *testing.T) {
 	}
 }
 
+// TestParseKDCEndpoint verifies that bare hosts default to port 88 and that
+// explicit host:port (including bracketed IPv6) is honoured.
+func TestParseKDCEndpoint(t *testing.T) {
+	cases := []struct {
+		input    string
+		wantHost string
+		wantPort int
+	}{
+		{"dc.corp.local", "dc.corp.local", 88},
+		{"10.0.0.1", "10.0.0.1", 88},
+		{"dc.corp.local:8888", "dc.corp.local", 8888},
+		{"10.0.0.1:9999", "10.0.0.1", 9999},
+		{"[::1]:8888", "::1", 8888},
+		{"::1", "::1", 88},
+	}
+	for _, tc := range cases {
+		ep := parseKDCEndpoint(tc.input)
+		if ep.host != tc.wantHost || ep.port != tc.wantPort {
+			t.Errorf("parseKDCEndpoint(%q) = {%q, %d}, want {%q, %d}", tc.input, ep.host, ep.port, tc.wantHost, tc.wantPort)
+		}
+	}
+}
+
 // TestEndpointsForRealmPrecedence checks the resolution order used before any
 // DNS SRV discovery: explicit WithRealmKDC, then the home realm's configured
 // KDC, then a custom resolver — all yielding the standard port 88.
@@ -133,6 +156,33 @@ func TestEndpointsForRealmPrecedence(t *testing.T) {
 		}
 		if len(eps) != 1 || eps[0].host != tc.wantHost || eps[0].port != defaultKDCPort {
 			t.Errorf("endpointsForRealm(%q) = %v, want single %s:%d", tc.realm, eps, tc.wantHost, defaultKDCPort)
+		}
+	}
+}
+
+// TestEndpointsForRealmExplicitPort verifies that host:port passes through when
+// configured on the home realm, a cross-realm KDC, or a custom resolver.
+func TestEndpointsForRealmExplicitPort(t *testing.T) {
+	c := NewClient("alice", "corp.local", "10.0.0.1:9999")
+	c.WithRealmKDC("child.corp.local", "10.0.1.1:7777")
+	c.WithKDCResolver(func(realm string) (string, error) { return "[::1]:6666", nil })
+
+	cases := []struct {
+		realm    string
+		wantHost string
+		wantPort int
+	}{
+		{"CHILD.CORP.LOCAL", "10.0.1.1", 7777},
+		{"CORP.LOCAL", "10.0.0.1", 9999},
+		{"OTHER.LOCAL", "::1", 6666},
+	}
+	for _, tc := range cases {
+		eps, err := c.endpointsForRealm(tc.realm)
+		if err != nil {
+			t.Fatalf("endpointsForRealm(%q): %v", tc.realm, err)
+		}
+		if len(eps) != 1 || eps[0].host != tc.wantHost || eps[0].port != tc.wantPort {
+			t.Errorf("endpointsForRealm(%q) = %v, want single %s:%d", tc.realm, eps, tc.wantHost, tc.wantPort)
 		}
 	}
 }
