@@ -14,9 +14,9 @@ import (
 // GSS security buffer.
 //
 // For the SMB 3.1.1 dialect the request carries the pre-authentication
-// integrity (SHA-512) and encryption (AES-128-GCM / AES-128-CCM) negotiate
-// contexts, and the running pre-auth integrity hash is seeded from the exact
-// NEGOTIATE request and response bytes (MS-SMB2 3.1.4.2).
+// integrity (SHA-512) and encryption (AES-256-GCM/CCM, AES-128-GCM/CCM)
+// negotiate contexts, and the running pre-auth integrity hash is seeded from
+// the exact NEGOTIATE request and response bytes (MS-SMB2 3.1.4.2).
 //
 // NEGOTIATE uses MessageId 0 and SessionId 0, as required by the spec.
 func (c *Client) Negotiate() error {
