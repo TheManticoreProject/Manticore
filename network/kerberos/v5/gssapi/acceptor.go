@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +20,8 @@ import (
 
 // The GSS-API acceptor path (RFC 4121 §4.1 / RFC 4120 §3.2). It is the service
 // side of context establishment: it consumes the initiator's KRB_AP_REQ GSS
-// token, decrypts the ticket with the service long-term key, validates the
+// token, binds the ticket to the configured service principal, decrypts it with
+// the service long-term key, validates the
 // enclosed authenticator (client identity, clock skew, replay, channel
 // bindings), adopts a per-message base key, and — when the initiator asked for
 // mutual authentication — emits the KRB_AP_REP GSS token that proves the service
@@ -86,6 +88,10 @@ func (rc *ReplayCache) seenBefore(tuple string, expiry, now time.Time) bool {
 
 // AcceptOptions configures AcceptSecContext.
 type AcceptOptions struct {
+	// ServiceName and ServiceRealm identify the service principal this acceptor
+	// serves. Both are required and bind accepted tickets to that identity.
+	ServiceName  messages.PrincipalName
+	ServiceRealm string
 	// Keytab supplies candidate service long-term keys (the preferred source):
 	// every key whose enctype matches the ticket enc-part is tried at key usage 2.
 	Keytab *keytab.Keytab
@@ -124,7 +130,8 @@ type AcceptOptions struct {
 
 // AcceptSecContext consumes an initiator's KRB_AP_REQ GSS token and establishes
 // the acceptor (service) side of the context. It parses the InitialContextToken
-// wrapper and the AP-REQ, decrypts the ticket enc-part with a service long-term
+// wrapper and the AP-REQ, requires the ticket's server principal to match
+// ServiceName@ServiceRealm, decrypts the ticket enc-part with a service long-term
 // key (key usage 2, trying keytab and explicit keys), decrypts and validates the
 // authenticator with the ticket session key (key usage 11), enforces client
 // identity, clock skew, replay and — when requested — channel bindings, and
@@ -148,6 +155,13 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	var apReq messages.APReq
 	if _, err := apReq.Unmarshal(krbMsg); err != nil {
 		return nil, nil, fmt.Errorf("gssapi: parse AP-REQ: %w", err)
+	}
+	if len(opts.ServiceName.NameString) == 0 || opts.ServiceRealm == "" {
+		return nil, nil, fmt.Errorf("gssapi: expected service principal is required")
+	}
+	if !principalsEqual(apReq.Ticket.SName, opts.ServiceName) || !strings.EqualFold(apReq.Ticket.Realm, opts.ServiceRealm) {
+		return nil, nil, fmt.Errorf("gssapi: ticket service %s@%s does not match expected service %s@%s",
+			principalString(apReq.Ticket.SName), apReq.Ticket.Realm, principalString(opts.ServiceName), opts.ServiceRealm)
 	}
 
 	// Decrypt the ticket enc-part with a service long-term key (key usage 2) and
@@ -314,12 +328,13 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate
 // service key whose enctype matches the ticket enc-part at key usage 2. Keys come
-// from the keytab first, then the explicit key list.
+// from the keytab entry for the ticket service first, then the explicit key list.
 func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicketPart, error) {
 	etype := tkt.EncPart.EType
 	var candidates []ServiceKey
 	if opts.Keytab != nil {
-		for _, e := range opts.Keytab.Find("", etype, -1) {
+		principal := principalString(tkt.SName) + "@" + tkt.Realm
+		for _, e := range opts.Keytab.Find(principal, etype, -1) {
 			candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key})
 		}
 	}

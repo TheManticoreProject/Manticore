@@ -13,6 +13,14 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
+var testServiceName = messages.PrincipalName{NameType: iana.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
+
+func serviceAcceptOptions(opts AcceptOptions) AcceptOptions {
+	opts.ServiceName = testServiceName
+	opts.ServiceRealm = "CORP.LOCAL"
+	return opts
+}
+
 // serviceTicket builds a synthetic service ticket for cifs/host@REALM whose
 // enc-part is sealed under serviceKey (key usage 2), carrying sessionKey as the
 // ticket session key and issued to clientName@clientRealm. When pacBytes is
@@ -199,7 +207,7 @@ func TestAcceptSecContextLoopbackMutual(t *testing.T) {
 			ClientName: client, ClientRealm: "CORP.LOCAL",
 			Flags: GSSIntegFlag | GSSConfFlag, Mutual: true,
 		},
-		AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}},
+		serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}),
 	)
 
 	// The acceptor recovered the client identity and session key.
@@ -240,7 +248,7 @@ func TestAcceptSecContextLoopbackViaKeytab(t *testing.T) {
 			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
 			ClientName: client, ClientRealm: "CORP.LOCAL", Mutual: true,
 		},
-		AcceptOptions{Keytab: kt},
+		serviceAcceptOptions(AcceptOptions{Keytab: kt}),
 	)
 	if err := ictx.AcceptAPRep(apRep); err != nil {
 		t.Fatalf("initiator AcceptAPRep: %v", err)
@@ -260,7 +268,7 @@ func TestAcceptSecContextRC4BothDirections(t *testing.T) {
 			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
 			ClientName: client, ClientRealm: "CORP.LOCAL", Mutual: true,
 		},
-		AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}},
+		serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}),
 	)
 	if err := ictx.AcceptAPRep(apRep); err != nil {
 		t.Fatalf("initiator AcceptAPRep: %v", err)
@@ -280,7 +288,7 @@ func TestAcceptSecContextMintSubkey(t *testing.T) {
 			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
 			ClientName: client, ClientRealm: "CORP.LOCAL", Mutual: true,
 		},
-		AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, MintSubkey: true},
+		serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, MintSubkey: true}),
 	)
 	// The acceptor keys per-message tokens with its minted subkey; the initiator
 	// must adopt it from the AP-REP before per-message tokens agree.
@@ -307,7 +315,7 @@ func TestAcceptSecContextAuthenticatorSubkey(t *testing.T) {
 			ClientName: client, ClientRealm: "CORP.LOCAL", Mutual: true,
 			SubKey: subKey, SubKeyEType: etype,
 		},
-		AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}},
+		serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}),
 	)
 	if !bytes.Equal(actx.SubKey, subKey) {
 		t.Fatal("acceptor did not adopt the authenticator subkey")
@@ -332,7 +340,7 @@ func TestAcceptSecContextNoMutualNoAPRep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	apRep, actx, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})
+	apRep, actx, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}))
 	if err != nil {
 		t.Fatalf("AcceptSecContext: %v", err)
 	}
@@ -359,7 +367,7 @@ func TestAcceptSecContextPACExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, actx, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})
+	_, actx, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}))
 	if err != nil {
 		t.Fatalf("AcceptSecContext: %v", err)
 	}
@@ -388,17 +396,17 @@ func TestAcceptSecContextChannelBindings(t *testing.T) {
 	}
 
 	// Matching channel bindings pass.
-	if _, _, err := AcceptSecContext(token, AcceptOptions{
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{
 		Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ChannelBindings: cb,
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("matching channel bindings rejected: %v", err)
 	}
 
 	// Mismatched channel bindings fail (tampered checksum Bnd field).
-	if _, _, err := AcceptSecContext(token, AcceptOptions{
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{
 		Keys:            []ServiceKey{{EType: etype, Key: serviceKey}},
 		ChannelBindings: GSSChannelBindings([]byte("tls-server-end-point:WRONG")),
-	}); err == nil {
+	})); err == nil {
 		t.Error("expected channel-binding mismatch to be rejected")
 	}
 }
@@ -418,8 +426,33 @@ func TestAcceptSecContextWrongServiceKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrong := randKey(t, 32)
-	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: wrong}}}); err == nil {
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: wrong}}})); err == nil {
 		t.Error("expected AcceptSecContext to fail with the wrong service key")
+	}
+}
+
+func TestAcceptSecContextRequiresExpectedService(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"service-binding"}}
+	ticketRaw := serviceTicket(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", nil)
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keys := []ServiceKey{{EType: etype, Key: serviceKey}}
+	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: keys}); err == nil {
+		t.Fatal("accepted a ticket without an expected service principal")
+	}
+	wrongService := serviceAcceptOptions(AcceptOptions{Keys: keys})
+	wrongService.ServiceName = messages.PrincipalName{NameType: iana.NameTypeSRVInst, NameString: []string{"ldap", "host.corp.local"}}
+	if _, _, err := AcceptSecContext(token, wrongService); err == nil {
+		t.Fatal("accepted a ticket for a different service principal")
 	}
 }
 
@@ -438,7 +471,7 @@ func TestAcceptSecContextReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := NewReplayCache()
-	opts := AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ReplayCache: rc}
+	opts := serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ReplayCache: rc})
 
 	if _, _, err := AcceptSecContext(token, opts); err != nil {
 		t.Fatalf("first AcceptSecContext: %v", err)
@@ -464,10 +497,10 @@ func TestAcceptSecContextClockSkew(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The acceptor's clock is an hour ahead of the authenticator: skew rejected.
-	skewed := AcceptOptions{
+	skewed := serviceAcceptOptions(AcceptOptions{
 		Keys: []ServiceKey{{EType: etype, Key: serviceKey}},
 		Now:  time.Now().UTC().Add(time.Hour),
-	}
+	})
 	if _, _, err := AcceptSecContext(token, skewed); err == nil {
 		t.Error("expected an out-of-skew authenticator to be rejected")
 	}
@@ -490,7 +523,7 @@ func TestAcceptSecContextExpiredTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})); err == nil {
 		t.Error("expected an expired ticket to be rejected")
 	}
 }
@@ -512,7 +545,7 @@ func TestAcceptSecContextNotYetValidTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})); err == nil {
 		t.Error("expected a not-yet-valid ticket to be rejected")
 	}
 }
@@ -533,7 +566,7 @@ func TestAcceptSecContextInvalidFlagTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := AcceptSecContext(token, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})); err == nil {
 		t.Error("expected a ticket with the INVALID flag to be rejected")
 	}
 }
@@ -556,7 +589,7 @@ func TestAcceptSecContextTamperedAuthenticator(t *testing.T) {
 	// integrity check on the authenticator must fail.
 	tampered := append([]byte(nil), token...)
 	tampered[len(tampered)-5] ^= 0xff
-	if _, _, err := AcceptSecContext(tampered, AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}); err == nil {
+	if _, _, err := AcceptSecContext(tampered, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})); err == nil {
 		t.Error("expected a tampered authenticator to be rejected")
 	}
 }
