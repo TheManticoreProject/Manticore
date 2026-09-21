@@ -189,6 +189,10 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 
 	// If the server still requires another leg (unusual for AD Kerberos), send the
 	// final NegTokenResp confirming completion before the session is usable.
+	// The authoritative SessionFlags are on the final SUCCESS response (MS-SMB2
+	// 3.2.5.3.1), so when there are two legs we parse resp2 instead of the
+	// initial setupResp.
+	finalSetupResp := setupResp
 	if status == ntStatusMoreProcessingRequired {
 		// Two-leg: the interim response and the second request also feed the hash.
 		sessionHash = preauthUpdate(sessionHash, firstRespBytes)
@@ -211,13 +215,16 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 			c.Session = nil
 			return fmt.Errorf("kerberos session setup failed: %s", formatNTStatus(st))
 		}
+		if resp2Cmd, ok := resp2.Command.(*commands.SessionSetupResponse); ok {
+			finalSetupResp = resp2Cmd
+		}
 	}
 
 	// Check whether the server authenticated the client as a guest or
 	// anonymously. Per MS-SMB2 3.2.5.3.1 both cases disable signing and
 	// encryption: the session key is meaningless.
-	session.IsGuest = setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_GUEST != 0
-	session.IsNull = setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_NULL != 0
+	session.IsGuest = finalSetupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_GUEST != 0
+	session.IsNull = finalSetupResp.SessionFlags&commands.SMB2_SESSION_FLAG_IS_NULL != 0
 
 	if session.IsGuest || session.IsNull {
 		session.SessionKey = make([]byte, 16)
@@ -239,7 +246,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 			}
 
 			// Honour a server that requires encryption for the whole session.
-			if setupResp.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
+			if finalSetupResp.SessionFlags&commands.SMB2_SESSION_FLAG_ENCRYPT_DATA != 0 {
 				session.EncryptData = true
 			}
 		}
