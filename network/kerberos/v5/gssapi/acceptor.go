@@ -159,6 +159,29 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	sessionKey := encTkt.Key.KeyValue
 	sessionEType := encTkt.Key.KeyType
 
+	// Ticket validity checks (RFC 4120 §3.2.3): reject tickets that are expired,
+	// not yet valid, or explicitly marked INVALID (postdated tickets that have not
+	// been validated by the KDC).
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	now = now.UTC()
+	skew := opts.ClockSkew
+	if skew <= 0 {
+		skew = DefaultClockSkew
+	}
+
+	if encTkt.Flags.At(messages.TicketFlagInvalid) != 0 {
+		return nil, nil, fmt.Errorf("gssapi: ticket has the INVALID flag set (postdated but not validated)")
+	}
+	if !encTkt.EndTime.IsZero() && now.After(encTkt.EndTime.UTC().Add(skew)) {
+		return nil, nil, fmt.Errorf("gssapi: ticket expired (endtime %s, now %s)", encTkt.EndTime.UTC(), now)
+	}
+	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
+		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
+	}
+
 	// Decrypt the authenticator with the ticket session key (key usage 11).
 	authPlain, err := kerbcrypto.Decrypt(sessionEType, sessionKey, kerbcrypto.KeyUsageAPReqAuthen, apReq.Authenticator.Cipher)
 	if err != nil {
@@ -177,15 +200,6 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	}
 
 	// Clock-skew check against the authenticator timestamp (RFC 4120 §3.2.3).
-	now := opts.Now
-	if now.IsZero() {
-		now = time.Now()
-	}
-	now = now.UTC()
-	skew := opts.ClockSkew
-	if skew <= 0 {
-		skew = DefaultClockSkew
-	}
 	delta := now.Sub(auth.CTime.UTC())
 	if delta < 0 {
 		delta = -delta
