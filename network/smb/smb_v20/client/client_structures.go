@@ -117,6 +117,11 @@ type Connection struct {
 	// for dialects below 3.1.1.
 	PreauthIntegrityHashValue []byte
 
+	// ServerName is the hostname or IP string the client connected to. It is sent
+	// in the SMB2_NETNAME_NEGOTIATE_CONTEXT_ID negotiate context for virtual-hosted
+	// servers. When empty, Negotiate derives it from Server.Host.
+	ServerName string
+
 	// SessionTable holds authenticated sessions on this connection, keyed by the
 	// server-assigned 64-bit SessionId.
 	SessionTable map[uint64]*Session
