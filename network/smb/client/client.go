@@ -55,6 +55,7 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 // the bound is lifted once the dialect is established.
 func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb2.NewClientUsingTCPTransport(ip, port)
+	engine.Connection.ServerName = host
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
