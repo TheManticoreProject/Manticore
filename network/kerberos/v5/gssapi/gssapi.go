@@ -186,6 +186,9 @@ type InitOptions struct {
 	// Mutual requests mutual authentication (sets AP-options mutual-required and
 	// the GSS mutual flag), so the acceptor returns an AP-REP.
 	Mutual bool
+	// UseSessionKey sets the AP-options use-session-key bit required when
+	// presenting a user-to-user service ticket.
+	UseSessionKey bool
 	// SubKey optionally supplies a client subkey (used to key per-message tokens);
 	// if set, SubKeyEType must be set too.
 	SubKey      []byte
@@ -221,7 +224,6 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 	if opts.Mutual {
 		flags |= GSSMutualFlag
 	}
-
 	now := time.Now().UTC()
 	cusec := now.Nanosecond() / 1000
 
@@ -267,6 +269,10 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 	if opts.Mutual {
 		// mutual-required is APOptions bit 2 -> byte 0, 0x20.
 		apOptions.Bytes[0] |= 0x20
+	}
+	if opts.UseSessionKey {
+		// use-session-key is APOptions bit 1 -> byte 0, 0x40.
+		apOptions.Bytes[0] |= 0x40
 	}
 	apReq := &messages.APReq{
 		PVNO:          messages.KerberosV5,

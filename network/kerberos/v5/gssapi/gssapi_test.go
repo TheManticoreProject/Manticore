@@ -116,13 +116,14 @@ func TestInitSecContextProducesDecryptableAPReq(t *testing.T) {
 	ticketRaw, sessionKey := fakeTicketAndKey(t)
 
 	token, ctx, err := InitSecContext(InitOptions{
-		TicketRaw:    ticketRaw,
-		SessionKey:   sessionKey,
-		SessionEType: iana.ETypeAES256CTSHMACSHA196,
-		ClientName:   messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"alice"}},
-		ClientRealm:  "CORP.LOCAL",
-		Flags:        GSSIntegFlag | GSSConfFlag,
-		Mutual:       true,
+		TicketRaw:     ticketRaw,
+		SessionKey:    sessionKey,
+		SessionEType:  iana.ETypeAES256CTSHMACSHA196,
+		ClientName:    messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"alice"}},
+		ClientRealm:   "CORP.LOCAL",
+		Flags:         GSSIntegFlag | GSSConfFlag,
+		Mutual:        true,
+		UseSessionKey: true,
 	})
 	if err != nil {
 		t.Fatalf("InitSecContext: %v", err)
@@ -143,6 +144,9 @@ func TestInitSecContextProducesDecryptableAPReq(t *testing.T) {
 	// mutual-required (APOptions bit 2) must be set.
 	if apReq.APOptions.Bytes[0]&0x20 == 0 {
 		t.Errorf("mutual-required AP option not set: % X", apReq.APOptions.Bytes)
+	}
+	if apReq.APOptions.Bytes[0]&0x40 == 0 {
+		t.Errorf("use-session-key AP option not set: % X", apReq.APOptions.Bytes)
 	}
 	if !bytes.Equal(apReq.TicketRaw, ticketRaw) {
 		t.Error("ticket not carried verbatim")
