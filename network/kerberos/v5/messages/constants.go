@@ -16,6 +16,8 @@ const (
 	MsgTypeTGSRep  = iana.MsgTypeTGSRep
 	MsgTypeAPReq   = iana.MsgTypeAPReq
 	MsgTypeAPRep   = iana.MsgTypeAPRep
+	MsgTypeKRBSafe = iana.MsgTypeKRBSafe
+	MsgTypeKRBPriv = iana.MsgTypeKRBPriv
 	MsgTypeKRBCred = iana.MsgTypeKRBCred
 	MsgTypeError   = iana.MsgTypeError
 
