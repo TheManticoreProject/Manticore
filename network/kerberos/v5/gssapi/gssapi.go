@@ -162,6 +162,10 @@ type SecContext struct {
 	// pacBytes is the raw AD-WIN2K-PAC extracted from the decrypted ticket on the
 	// acceptor side, or nil when the ticket carried no PAC. PAC() parses it.
 	pacBytes []byte
+	// ticketFlags and ticketAuthorizationData retain the complete authorization
+	// result for applications that need policy inputs beyond the PAC.
+	ticketFlags             asn1.BitString
+	ticketAuthorizationData []messages.AuthorizationData
 	// recvWindow enforces the receive-side replay / sequencing check on incoming
 	// per-message tokens (RFC 4121 §4.2.6 / RFC 2743 §1.2.1.1). It seeds itself
 	// from the first authenticated token; a zero-value SecContext (no flags set)
