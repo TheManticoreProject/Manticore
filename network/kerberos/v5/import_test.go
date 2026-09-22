@@ -39,7 +39,8 @@ func assertUsableTGT(t *testing.T, src, imp *KerberosClient) {
 	}
 	// buildAPReq must succeed off the imported state alone — this is exactly what
 	// GetTGS does before contacting the KDC.
-	if _, err := imp.buildAPReq(); err != nil {
+	body := messages.KDCReqBody{Realm: imp.realm, Till: imp.tgtEnc.EndTime, Nonce: 1, EType: []int{imp.sessionEType}}
+	if _, err := imp.buildAPReq(body); err != nil {
 		t.Errorf("buildAPReq off imported TGT: %v", err)
 	}
 }

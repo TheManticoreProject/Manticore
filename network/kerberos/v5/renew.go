@@ -19,11 +19,6 @@ import (
 // It is factored out of Renew/Validate so the request shape can be verified
 // without a live KDC (see renew_test.go).
 func (c *KerberosClient) buildRenewalTGSReq(option, nonce int) (*messages.TGSReq, error) {
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	// The renewed/validated ticket is a TGT, so the requested server is the
 	// ticket-granting service of the client's own realm.
 	sname := messages.PrincipalName{
@@ -41,20 +36,26 @@ func (c *KerberosClient) buildRenewalTGSReq(option, nonce int) (*messages.TGSReq
 		till = c.tgtEnc.RenewTill
 	}
 
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(kdcOptionRenewable, option),
+		Realm:      c.realm,
+		SName:      sname,
+		Till:       till,
+		Nonce:      nonce,
+		EType:      c.serviceTicketETypes(),
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+	}
+
 	return &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
 		PAData: []messages.PAData{
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(kdcOptionRenewable, option),
-			Realm:      c.realm,
-			SName:      sname,
-			Till:       till,
-			Nonce:      nonce,
-			EType:      c.serviceTicketETypes(),
-		},
+		ReqBody: body,
 	}, nil
 }
 

@@ -540,6 +540,40 @@ func TestAcceptSecContextTransitedPolicy(t *testing.T) {
 	})
 }
 
+func TestAcceptSecContextDefaultReplayCachePersistsAcrossCalls(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"default-replay-cache"}}
+	ticketRaw := serviceTicket(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", nil)
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})
+	if _, _, err := AcceptSecContext(token, opts); err != nil {
+		t.Fatalf("first AcceptSecContext: %v", err)
+	}
+	if _, _, err := AcceptSecContext(token, opts); err == nil {
+		t.Fatal("default replay cache accepted the same authenticator twice")
+	}
+}
+
+func TestReplayCacheTupleIncludesServerPrincipal(t *testing.T) {
+	auth := messages.Authenticator{
+		CName: messages.PrincipalName{NameString: []string{"alice"}}, CRealm: "CORP.LOCAL",
+		CTime: time.Unix(1_700_000_000, 0).UTC(), CUSec: 42,
+	}
+	cifs := replayCacheTuple(messages.PrincipalName{NameString: []string{"cifs", "host"}}, "CORP.LOCAL", auth)
+	ldap := replayCacheTuple(messages.PrincipalName{NameString: []string{"ldap", "host"}}, "CORP.LOCAL", auth)
+	if cifs == ldap {
+		t.Fatal("replay cache tuple does not distinguish service principals")
+	}
+}
+
 func TestAcceptSecContextClockSkew(t *testing.T) {
 	const etype = iana.ETypeAES256CTSHMACSHA196
 	serviceKey := randKey(t, 32)
