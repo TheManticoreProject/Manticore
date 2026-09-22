@@ -27,6 +27,7 @@ type encRepPartInner struct {
 	RenewTill     time.Time      `asn1:"explicit,tag:8,optional,generalized"`
 	SRealm        string         `asn1:"explicit,tag:9,generalstring"`
 	SName         PrincipalName  `asn1:"explicit,tag:10"`
+	CAddr         []HostAddress  `asn1:"explicit,tag:11,optional"`
 }
 
 // encRepPartMarshal is the wire form of an EncKDCRepPart for marshaling. Unlike
@@ -45,13 +46,14 @@ type encRepPartMarshal struct {
 	RenewTill time.Time            `asn1:"explicit,tag:8,optional,generalized"`
 	SRealm    asn1.RawValue        // pre-encoded [9] EXPLICIT { GeneralString }
 	SName     PrincipalNameMarshal `asn1:"explicit,tag:10"`
+	CAddr     []HostAddress        `asn1:"explicit,tag:11,optional"`
 }
 
 // marshalEncRepPart assembles an EncKDCRepPart and wraps it in the given
 // APPLICATION tag (25 for AS-REP, 26 for TGS-REP). Optional times are emitted
 // only when non-zero.
 func marshalEncRepPart(appTag int, key EncryptionKey, nonce int, flags asn1.BitString,
-	authTime, startTime, endTime, renewTill time.Time, srealm string, sname PrincipalName) ([]byte, error) {
+	authTime, startTime, endTime, renewTill time.Time, srealm string, sname PrincipalName, caddr []HostAddress) ([]byte, error) {
 	inner := encRepPartMarshal{
 		Key:      key,
 		LastReq:  []LastReq{},
@@ -61,6 +63,7 @@ func marshalEncRepPart(appTag int, key EncryptionKey, nonce int, flags asn1.BitS
 		EndTime:  normalizeTime(endTime),
 		SRealm:   realmExplicit(9, srealm),
 		SName:    MarshalPrincipalName(sname),
+		CAddr:    caddr,
 	}
 	if !startTime.IsZero() {
 		inner.StartTime = normalizeTime(startTime)
@@ -97,11 +100,13 @@ type EncASRepPart struct {
 	SRealm string
 	// SName is the service principal name.
 	SName PrincipalName
+	// CAddr is the address restriction returned for the issued ticket.
+	CAddr []HostAddress
 }
 
 // Marshal encodes the EncASRepPart as an ASN.1 APPLICATION[25] wrapped SEQUENCE.
 func (e *EncASRepPart) Marshal() ([]byte, error) {
-	return marshalEncRepPart(25, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName)
+	return marshalEncRepPart(25, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName, e.CAddr)
 }
 
 // Unmarshal decodes an EncASRepPart from an ASN.1 APPLICATION[25] wrapped SEQUENCE.
@@ -128,6 +133,7 @@ func (e *EncASRepPart) Unmarshal(data []byte) (int, error) {
 	e.RenewTill = inner.RenewTill
 	e.SRealm = inner.SRealm
 	e.SName = inner.SName
+	e.CAddr = inner.CAddr
 	return consumed, nil
 }
 
@@ -153,11 +159,13 @@ type EncTGSRepPart struct {
 	SRealm string
 	// SName is the service principal name.
 	SName PrincipalName
+	// CAddr is the address restriction returned for the issued ticket.
+	CAddr []HostAddress
 }
 
 // Marshal encodes the EncTGSRepPart as an ASN.1 APPLICATION[26] wrapped SEQUENCE.
 func (e *EncTGSRepPart) Marshal() ([]byte, error) {
-	return marshalEncRepPart(26, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName)
+	return marshalEncRepPart(26, e.Key, e.Nonce, e.Flags, e.AuthTime, e.StartTime, e.EndTime, e.RenewTill, e.SRealm, e.SName, e.CAddr)
 }
 
 // Unmarshal decodes an EncTGSRepPart from an ASN.1 APPLICATION[26] wrapped SEQUENCE.
@@ -184,5 +192,6 @@ func (e *EncTGSRepPart) Unmarshal(data []byte) (int, error) {
 	e.RenewTill = inner.RenewTill
 	e.SRealm = inner.SRealm
 	e.SName = inner.SName
+	e.CAddr = inner.CAddr
 	return consumed, nil
 }

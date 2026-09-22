@@ -1,6 +1,7 @@
 package kerberos
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -164,12 +165,12 @@ func (c *KerberosClient) serviceTicketETypes() []int {
 }
 
 // NewClient creates a new KerberosClient for the given username, realm and KDC host.
-// The realm is uppercased automatically (required by the Kerberos specification).
+// Realm spelling is preserved because RFC 4120 realm names are case-sensitive.
 // Call WithPassword before calling GetTGT.
 func NewClient(username, realm, kdcHost string) *KerberosClient {
 	return &KerberosClient{
 		username: username,
-		realm:    strings.ToUpper(realm),
+		realm:    realm,
 		kdcHost:  kdcHost,
 	}
 }
@@ -539,7 +540,7 @@ func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
 }
 
 // pickETypeFromError extracts the preferred etype, salt and S2KParams from the
-// PA-ETYPE-INFO2 structure embedded in a KRBError's EData.
+// PA-ETYPE-INFO2 or legacy PA-ETYPE-INFO structure embedded in a KRBError's EData.
 // Falls back to AES-256 with the default AD salt if no EData is present.
 func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, string, []byte) {
 	preferred := c.cred.SupportedETypes()
@@ -550,10 +551,11 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 		return default_etype, default_salt, nil
 	}
 
-	// EData may be a SEQUENCE OF PA-DATA or raw ETYPE-INFO2.
+	// EData may be a SEQUENCE OF PA-DATA or a raw ETYPE-INFO structure.
 	// Try to parse as SEQUENCE OF PA-DATA first.
 	var pa_list []messages.PAData
 	if _, err := asn1.Unmarshal(krb_err.EData, &pa_list); err == nil {
+		// Prefer ETYPE-INFO2 when both forms are advertised.
 		for _, pa := range pa_list {
 			if pa.PADataType == messages.PAETypeInfo2 {
 				var info messages.ETypeInfo2
@@ -562,15 +564,51 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 				}
 			}
 		}
+		for _, pa := range pa_list {
+			if pa.PADataType == messages.PAETypeInfo {
+				var legacy messages.ETypeInfo
+				if _, err := legacy.Unmarshal(pa.PADataValue); err == nil && len(legacy) > 0 {
+					return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
+				}
+			}
+		}
 	}
 
 	// Try to parse EData directly as ETYPE-INFO2.
 	var info messages.ETypeInfo2
-	if _, err := info.Unmarshal(krb_err.EData); err == nil && len(info) > 0 {
+	if strictETypeInfo2(krb_err.EData, &info) && len(info) > 0 {
 		return pickBestEType(info, preferred, default_salt)
+	}
+	var legacy messages.ETypeInfo
+	if strictETypeInfo(krb_err.EData, &legacy) && len(legacy) > 0 {
+		return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
 	}
 
 	return default_etype, default_salt, nil
+}
+
+func strictETypeInfo2(wire []byte, out *messages.ETypeInfo2) bool {
+	if _, err := out.Unmarshal(wire); err != nil {
+		return false
+	}
+	reencoded, err := out.Marshal()
+	return err == nil && bytes.Equal(reencoded, wire)
+}
+
+func strictETypeInfo(wire []byte, out *messages.ETypeInfo) bool {
+	if _, err := out.Unmarshal(wire); err != nil {
+		return false
+	}
+	reencoded, err := out.Marshal()
+	return err == nil && bytes.Equal(reencoded, wire)
+}
+
+func legacyETypeInfo2(info messages.ETypeInfo) messages.ETypeInfo2 {
+	out := make(messages.ETypeInfo2, len(info))
+	for i, entry := range info {
+		out[i] = messages.ETypeInfo2Entry{EType: entry.EType, Salt: string(entry.Salt)}
+	}
+	return out
 }
 
 // pickBestEType selects, from an ETYPE-INFO2 list, the strongest etype the
@@ -685,6 +723,12 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 	if err := c.validateKDCReplyIdentity("AS-REP", as_rep.CRealm, as_rep.CName, as_rep.Ticket, enc_as_rep.SRealm, enc_as_rep.SName); err != nil {
 		return err
 	}
+	if err := validateKDCReplyServer("AS-REP", as_rep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
+		return err
+	}
+	if err := validateKDCReplyAddresses("AS-REP", enc_as_rep.CAddr, nil); err != nil {
+		return err
+	}
 
 	c.tgtTicket = as_rep.Ticket
 	c.tgtTicketRaw = as_rep.TicketRaw
@@ -696,9 +740,9 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 }
 
 // buildAPReq constructs an AP-REQ wrapping the client's current TGT for use in
-// TGS-REQ PA-DATA.
-func (c *KerberosClient) buildAPReq() ([]byte, error) {
-	return c.buildAPReqWith(c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType)
+// TGS-REQ PA-DATA. The authenticator checksum binds it to body.
+func (c *KerberosClient) buildAPReq(body messages.KDCReqBody) ([]byte, error) {
+	return c.buildAPReqWith(body, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType)
 }
 
 // buildAPReqWith constructs an AP-REQ wrapping the given ticket-granting ticket
@@ -707,9 +751,8 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 // taken from the client's home TGT. The authenticator's client name and realm
 // always identify the original client (they must match the crealm embedded in
 // the ticket, which stays the home realm across cross-realm referrals).
-func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
-	now := c.now()
-	cusec := now.Nanosecond() / 1000
+func (c *KerberosClient) buildAPReqWith(body messages.KDCReqBody, tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
+	now, cusec := messages.NextAuthenticatorTimestamp(c.now())
 
 	var seq_buf [4]byte
 	if _, err := rand.Read(seq_buf[:]); err != nil {
@@ -717,10 +760,24 @@ func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey 
 	}
 	seq_num := int(binary.BigEndian.Uint32(seq_buf[:]) & 0x7fffffff)
 
+	bodyBytes, err := messages.EncodeKDCReqBody(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal KDC-REQ-BODY checksum input: %w", err)
+	}
+	cksumType, ok := kerbcrypto.ChecksumTypeForEType(sessionEType)
+	if !ok {
+		return nil, fmt.Errorf("no checksum type for TGT session enctype %d", sessionEType)
+	}
+	checksum, err := kerbcrypto.GetChecksum(cksumType, sessionKey, kerbcrypto.KeyUsageTGSReqAuthCksum, bodyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("checksum KDC-REQ-BODY: %w", err)
+	}
+
 	auth := &messages.Authenticator{
 		AVno:      messages.KerberosV5,
 		CRealm:    c.realm,
 		CName:     messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}},
+		Cksum:     &messages.Checksum{CKSumType: cksumType, Checksum: checksum},
 		CUSec:     cusec,
 		CTime:     now,
 		SeqNumber: seq_num,
@@ -759,7 +816,9 @@ func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey 
 // N/8 at position 7-(N%8).
 const (
 	kdcOptionForwardable    = iana.KDCOptionForwardable    // byte 0, 0x40
+	kdcOptionForwarded      = iana.KDCOptionForwarded      // byte 0, 0x20 (RFC 4120 forwarding)
 	kdcOptionProxiable      = iana.KDCOptionProxiable      // byte 0, 0x10
+	kdcOptionProxy          = iana.KDCOptionProxy          // byte 0, 0x08 (RFC 4120 proxy)
 	kdcOptionAllowPostdate  = iana.KDCOptionAllowPostdate  // byte 0, 0x04 (RFC 4120 §3.3 postdating)
 	kdcOptionPostdated      = iana.KDCOptionPostdated      // byte 0, 0x02 (RFC 4120 §3.3 postdating)
 	kdcOptionRenewable      = iana.KDCOptionRenewable      // byte 1, 0x80

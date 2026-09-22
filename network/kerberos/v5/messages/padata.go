@@ -50,6 +50,29 @@ type ETypeInfo2Entry struct {
 // The KDC uses this to tell the client which encryption types and salts to use.
 type ETypeInfo2 []ETypeInfo2Entry
 
+// ETypeInfoEntry is the legacy RFC 4120 ETYPE-INFO entry. Unlike ETYPE-INFO2,
+// its optional salt is an OCTET STRING and it has no string-to-key parameters.
+type ETypeInfoEntry struct {
+	EType int    `asn1:"explicit,tag:0"`
+	Salt  []byte `asn1:"explicit,tag:1,optional"`
+}
+
+// ETypeInfo is the legacy PA-ETYPE-INFO sequence retained for interoperability
+// with older KDCs.
+type ETypeInfo []ETypeInfoEntry
+
+func (e ETypeInfo) Marshal() ([]byte, error) { return asn1.Marshal([]ETypeInfoEntry(e)) }
+
+func (e *ETypeInfo) Unmarshal(data []byte) (int, error) {
+	var entries []ETypeInfoEntry
+	rest, err := asn1.Unmarshal(data, &entries)
+	if err != nil {
+		return 0, err
+	}
+	*e = ETypeInfo(entries)
+	return len(data) - len(rest), nil
+}
+
 // Marshal encodes ETypeInfo2 as an ASN.1 SEQUENCE OF.
 func (e ETypeInfo2) Marshal() ([]byte, error) {
 	return asn1.Marshal([]ETypeInfo2Entry(e))
