@@ -50,6 +50,10 @@ type ServiceKey struct {
 	Key []byte
 }
 
+// TransitedPolicyFunc validates the cross-realm path carried by a service
+// ticket. A nil error accepts the path; a non-nil error rejects the ticket.
+type TransitedPolicyFunc func(clientRealm, serverRealm string, transited messages.TransitedEncoding) error
+
 // ReplayCache is a minimal in-memory authenticator replay cache (RFC 4120
 // §3.2.3): it remembers the (client, ctime, cusec) tuple of every AP-REQ
 // authenticator seen within the clock-skew window and rejects a repeat. It is
@@ -117,6 +121,11 @@ type AcceptOptions struct {
 	// process. Callers serving a principal from multiple processes or machines
 	// should pass a cache backed by shared replay state.
 	ReplayCache *ReplayCache
+	// TransitedPolicy validates cross-realm ticket paths when the service-realm
+	// KDC did not set TRANSITED-POLICY-CHECKED. When nil, such unchecked tickets
+	// are rejected. If supplied, it is called for every cross-realm ticket so an
+	// application can enforce policy even when the KDC set the flag.
+	TransitedPolicy TransitedPolicyFunc
 	// MintSubkey makes the acceptor generate its own sub-session key, return it in
 	// the AP-REP (setting the AcceptorSubkey per-message flag), and key per-message
 	// tokens with it. Requires mutual authentication so the initiator learns the
@@ -200,6 +209,15 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	}
 	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
 		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
+	}
+	if encTkt.CRealm != apReq.Ticket.Realm {
+		if opts.TransitedPolicy != nil {
+			if err := opts.TransitedPolicy(encTkt.CRealm, apReq.Ticket.Realm, encTkt.Transited); err != nil {
+				return nil, nil, fmt.Errorf("gssapi: transited-realm policy rejected ticket: %w", err)
+			}
+		} else if encTkt.Flags.At(messages.TicketFlagTransitCheck) == 0 {
+			return nil, nil, fmt.Errorf("gssapi: unchecked cross-realm ticket from %s to %s", encTkt.CRealm, apReq.Ticket.Realm)
+		}
 	}
 
 	// Decrypt the authenticator with the ticket session key (key usage 11).
