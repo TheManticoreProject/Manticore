@@ -130,6 +130,9 @@ func (c *KerberosClient) renewOrValidate(option int, label string) error {
 		if encRep.Nonce != nonce {
 			return fmt.Errorf("kerberos: %s nonce mismatch: got %d, want %d", label, encRep.Nonce, nonce)
 		}
+		if err := validateKDCReplyAddresses(label+" TGS-REP", encRep.CAddr, nil); err != nil {
+			return err
+		}
 
 		c.storeReissuedTGT(&tgsRep, &encRep)
 		return nil
@@ -156,5 +159,6 @@ func (c *KerberosClient) storeReissuedTGT(rep *messages.TGSRep, enc *messages.En
 		RenewTill: enc.RenewTill,
 		SRealm:    enc.SRealm,
 		SName:     enc.SName,
+		CAddr:     enc.CAddr,
 	}
 }

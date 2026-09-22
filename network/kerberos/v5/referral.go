@@ -1,6 +1,7 @@
 package kerberos
 
 import (
+	"bytes"
 	"encoding/asn1"
 	"fmt"
 	"strings"
@@ -238,8 +239,32 @@ func (c *KerberosClient) tgsExchange(
 	if err := c.validateKDCReplyIdentity("TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := validateKDCReplyAddresses("TGS-REP", encRep.CAddr, nil); err != nil {
+		return nil, nil, nil, err
+	}
 
 	return &tgsRep, &encRep, nil, nil
+}
+
+func validateKDCReplyAddresses(replyType string, got, requested []messages.HostAddress) error {
+	if len(got) != len(requested) {
+		return fmt.Errorf("kerberos: %s client addresses do not match request", replyType)
+	}
+	used := make([]bool, len(got))
+	for _, want := range requested {
+		matched := false
+		for i, have := range got {
+			if !used[i] && have.AddrType == want.AddrType && bytes.Equal(have.Address, want.Address) {
+				used[i] = true
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("kerberos: %s client addresses do not match request", replyType)
+		}
+	}
+	return nil
 }
 
 // referralTargetRealm decides whether a TGS-REP is a cross-realm referral rather

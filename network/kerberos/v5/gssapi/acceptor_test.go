@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/asn1"
+	"net"
 	"testing"
 	"time"
 
@@ -79,6 +80,7 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 		CRealm:    clientRealm,
 		CName:     clientName,
 		Transited: tmpl.Transited,
+		CAddr:     tmpl.CAddr,
 	}
 	if encPart.Flags.BitLength == 0 {
 		encPart.Flags = asn1.BitString{Bytes: []byte{0x40, 0, 0, 0}, BitLength: 32}
@@ -480,6 +482,37 @@ func TestAcceptSecContextReplay(t *testing.T) {
 	// The same authenticator replayed against the shared cache must be rejected.
 	if _, _, err := AcceptSecContext(token, opts); err == nil {
 		t.Error("expected a replayed authenticator to be rejected")
+	}
+}
+
+func TestAcceptSecContextEnforcesTicketAddresses(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"address-bound"}}
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		CAddr: []messages.HostAddress{{AddrType: 2, Address: []byte{192, 0, 2, 10}}},
+	})
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := func(ip net.IP) AcceptOptions {
+		return serviceAcceptOptions(AcceptOptions{
+			Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ClientAddress: ip, ReplayCache: NewReplayCache(),
+		})
+	}
+	if _, _, err := AcceptSecContext(token, base(nil)); err == nil {
+		t.Fatal("accepted address-bound ticket without a client address")
+	}
+	if _, _, err := AcceptSecContext(token, base(net.ParseIP("192.0.2.11"))); err == nil {
+		t.Fatal("accepted address-bound ticket from the wrong client address")
+	}
+	if _, _, err := AcceptSecContext(token, base(net.ParseIP("192.0.2.10"))); err != nil {
+		t.Fatalf("rejected ticket from authorized client address: %v", err)
 	}
 }
 
