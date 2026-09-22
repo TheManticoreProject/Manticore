@@ -190,6 +190,32 @@ func TestValidateKDCReplyIdentity(t *testing.T) {
 	}
 }
 
+func TestValidateKDCReplyServerBindsRequestedPrincipal(t *testing.T) {
+	requested := srvName("cifs", "files.corp.local")
+	matching := messages.Ticket{Realm: "CORP.LOCAL", SName: requested}
+	if err := validateKDCReplyServer("TGS-REP", matching, "CORP.LOCAL", requested, true); err != nil {
+		t.Fatalf("matching service rejected: %v", err)
+	}
+
+	substitute := messages.Ticket{Realm: "CORP.LOCAL", SName: srvName("ldap", "dc.corp.local")}
+	if err := validateKDCReplyServer("TGS-REP", substitute, "CORP.LOCAL", requested, true); err == nil {
+		t.Fatal("substitute service principal accepted")
+	}
+
+	wrongRealm := messages.Ticket{Realm: "OTHER.LOCAL", SName: requested}
+	if err := validateKDCReplyServer("TGS-REP", wrongRealm, "CORP.LOCAL", requested, true); err == nil {
+		t.Fatal("service ticket from an unrequested realm accepted")
+	}
+
+	referral := messages.Ticket{Realm: "CORP.LOCAL", SName: srvName("krbtgt", "CHILD.CORP.LOCAL")}
+	if err := validateKDCReplyServer("TGS-REP", referral, "CORP.LOCAL", requested, true); err != nil {
+		t.Fatalf("valid referral rejected: %v", err)
+	}
+	if err := validateKDCReplyServer("AS-REP", referral, "CORP.LOCAL", requested, false); err == nil {
+		t.Fatal("referral accepted where referrals are forbidden")
+	}
+}
+
 func TestValidateKDCReplyAddresses(t *testing.T) {
 	requested := []messages.HostAddress{{AddrType: 2, Address: []byte{192, 0, 2, 1}}}
 	if err := validateKDCReplyAddresses("AS-REP", requested, requested); err != nil {

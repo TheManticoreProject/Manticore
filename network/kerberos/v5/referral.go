@@ -239,6 +239,9 @@ func (c *KerberosClient) tgsExchange(
 	if err := c.validateKDCReplyIdentity("TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := validateKDCReplyServer("TGS-REP", tgsRep.Ticket, bodyRealm, sname, true); err != nil {
+		return nil, nil, nil, err
+	}
 	if err := validateKDCReplyAddresses("TGS-REP", encRep.CAddr, nil); err != nil {
 		return nil, nil, nil, err
 	}
@@ -356,4 +359,21 @@ func (c *KerberosClient) validateKDCReplyIdentity(replyType, clientRealm string,
 			replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm, strings.Join(serverName.NameString, "/"), serverRealm)
 	}
 	return nil
+}
+
+// validateKDCReplyServer binds a KDC reply to the service named in the request.
+// TGS referral replies may instead contain a krbtgt/NEXT-REALM principal, but
+// arbitrary substitute service principals are never accepted.
+func validateKDCReplyServer(replyType string, ticket messages.Ticket, requestedRealm string, requestedName messages.PrincipalName, allowReferral bool) error {
+	if strings.EqualFold(ticket.Realm, requestedRealm) && principalNameEqualFold(ticket.SName, requestedName) {
+		return nil
+	}
+	if allowReferral {
+		if _, ok := referralRealmFromSName(ticket.SName, requestedName); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("kerberos: %s service %s@%s does not match requested service %s@%s",
+		replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm,
+		strings.Join(requestedName.NameString, "/"), requestedRealm)
 }

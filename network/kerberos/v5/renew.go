@@ -130,6 +130,12 @@ func (c *KerberosClient) renewOrValidate(option int, label string) error {
 		if encRep.Nonce != nonce {
 			return fmt.Errorf("kerberos: %s nonce mismatch: got %d, want %d", label, encRep.Nonce, nonce)
 		}
+		if err := c.validateKDCReplyIdentity(label+" TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+			return err
+		}
+		if err := validateKDCReplyServer(label+" TGS-REP", tgsRep.Ticket, c.realm, req.ReqBody.SName, false); err != nil {
+			return err
+		}
 		if err := validateKDCReplyAddresses(label+" TGS-REP", encRep.CAddr, nil); err != nil {
 			return err
 		}

@@ -314,6 +314,12 @@ func (c *KerberosClient) harvestPACViaS4USelfU2U(impersonateUser, impersonateRea
 	if encTGSRep.Nonce != nonce {
 		return nil, messages.PrincipalName{}, "", fmt.Errorf("kerberos: sapphire nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := c.validateKDCReplyIdentity("sapphire TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
+	if err := validateKDCReplyServer("sapphire TGS-REP", tgsRep.Ticket, c.realm, tgsReq.ReqBody.SName, false); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
 	if err := validateKDCReplyAddresses("sapphire TGS-REP", encTGSRep.CAddr, nil); err != nil {
 		return nil, messages.PrincipalName{}, "", err
 	}
