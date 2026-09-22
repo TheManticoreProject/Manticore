@@ -1,6 +1,7 @@
 package kerberos
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -539,7 +540,7 @@ func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
 }
 
 // pickETypeFromError extracts the preferred etype, salt and S2KParams from the
-// PA-ETYPE-INFO2 structure embedded in a KRBError's EData.
+// PA-ETYPE-INFO2 or legacy PA-ETYPE-INFO structure embedded in a KRBError's EData.
 // Falls back to AES-256 with the default AD salt if no EData is present.
 func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, string, []byte) {
 	preferred := c.cred.SupportedETypes()
@@ -550,10 +551,11 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 		return default_etype, default_salt, nil
 	}
 
-	// EData may be a SEQUENCE OF PA-DATA or raw ETYPE-INFO2.
+	// EData may be a SEQUENCE OF PA-DATA or a raw ETYPE-INFO structure.
 	// Try to parse as SEQUENCE OF PA-DATA first.
 	var pa_list []messages.PAData
 	if _, err := asn1.Unmarshal(krb_err.EData, &pa_list); err == nil {
+		// Prefer ETYPE-INFO2 when both forms are advertised.
 		for _, pa := range pa_list {
 			if pa.PADataType == messages.PAETypeInfo2 {
 				var info messages.ETypeInfo2
@@ -562,15 +564,51 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 				}
 			}
 		}
+		for _, pa := range pa_list {
+			if pa.PADataType == messages.PAETypeInfo {
+				var legacy messages.ETypeInfo
+				if _, err := legacy.Unmarshal(pa.PADataValue); err == nil && len(legacy) > 0 {
+					return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
+				}
+			}
+		}
 	}
 
 	// Try to parse EData directly as ETYPE-INFO2.
 	var info messages.ETypeInfo2
-	if _, err := info.Unmarshal(krb_err.EData); err == nil && len(info) > 0 {
+	if strictETypeInfo2(krb_err.EData, &info) && len(info) > 0 {
 		return pickBestEType(info, preferred, default_salt)
+	}
+	var legacy messages.ETypeInfo
+	if strictETypeInfo(krb_err.EData, &legacy) && len(legacy) > 0 {
+		return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
 	}
 
 	return default_etype, default_salt, nil
+}
+
+func strictETypeInfo2(wire []byte, out *messages.ETypeInfo2) bool {
+	if _, err := out.Unmarshal(wire); err != nil {
+		return false
+	}
+	reencoded, err := out.Marshal()
+	return err == nil && bytes.Equal(reencoded, wire)
+}
+
+func strictETypeInfo(wire []byte, out *messages.ETypeInfo) bool {
+	if _, err := out.Unmarshal(wire); err != nil {
+		return false
+	}
+	reencoded, err := out.Marshal()
+	return err == nil && bytes.Equal(reencoded, wire)
+}
+
+func legacyETypeInfo2(info messages.ETypeInfo) messages.ETypeInfo2 {
+	out := make(messages.ETypeInfo2, len(info))
+	for i, entry := range info {
+		out[i] = messages.ETypeInfo2Entry{EType: entry.EType, Salt: string(entry.Salt)}
+	}
+	return out
 }
 
 // pickBestEType selects, from an ETYPE-INFO2 list, the strongest etype the

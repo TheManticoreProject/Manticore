@@ -235,6 +235,28 @@ func TestPickETypeFromError(t *testing.T) {
 	}
 }
 
+func TestPickETypeFromLegacyETypeInfo(t *testing.T) {
+	c := NewClient("alice", "Legacy.Realm", "10.0.0.1").WithPassword("Passw0rd!")
+	legacy := messages.ETypeInfo{
+		{EType: messages.ETypeRC4HMAC},
+		{EType: messages.ETypeAES128CTSHMACSHA196, Salt: []byte("Legacy.Realmalice")},
+	}
+	wire, err := legacy.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	methodData, err := asn1.Marshal([]messages.PAData{{PADataType: messages.PAETypeInfo, PADataValue: wire}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, edata := range [][]byte{wire, methodData} {
+		etype, salt, s2k := c.pickETypeFromError(messages.KRBError{EData: edata})
+		if etype != messages.ETypeAES128CTSHMACSHA196 || salt != "Legacy.Realmalice" || s2k != nil {
+			t.Fatalf("legacy selection = etype %d salt %q s2k %x", etype, salt, s2k)
+		}
+	}
+}
+
 // TestPickBestETypeHonoursCredential confirms an NT-hash credential (RC4-only)
 // never selects an advertised AES etype it cannot key.
 func TestPickBestETypeHonoursCredential(t *testing.T) {

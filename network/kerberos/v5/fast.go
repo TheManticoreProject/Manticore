@@ -427,6 +427,13 @@ func (c *KerberosClient) parseFASTError(krbErr messages.KRBError, armorKey []byt
 			if _, err := i2.Unmarshal(pa.PADataValue); err == nil && len(i2) > 0 {
 				info = i2
 			}
+		case messages.PAETypeInfo:
+			if info == nil {
+				var legacy messages.ETypeInfo
+				if _, err := legacy.Unmarshal(pa.PADataValue); err == nil && len(legacy) > 0 {
+					info = legacyETypeInfo2(legacy)
+				}
+			}
 		}
 	}
 	// PA-ETYPE-INFO2 may also ride in the nested error's own EData.

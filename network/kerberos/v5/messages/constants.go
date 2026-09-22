@@ -32,6 +32,7 @@ const (
 
 	PATGSReq             = iana.PATGSReq
 	PAEncTimestamp       = iana.PAEncTimestamp
+	PAETypeInfo          = iana.PAETypeInfo
 	PAETypeInfo2         = iana.PAETypeInfo2
 	PAPACRequest         = iana.PAPACRequest
 	PASvrReferralInfo    = iana.PASvrReferralInfo
