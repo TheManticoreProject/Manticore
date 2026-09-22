@@ -167,17 +167,25 @@ func (c *KerberosClient) tgsExchange(
 		return c.tgsExchangeFAST(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
 	}
 
-	apReqBytes, err := c.buildAPReqWith(tgt, tgtRaw, sessionKey, sessionEType)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	nonce := randomNonce()
 	// PA-PAC-REQUEST: SEQUENCE { [0] BOOLEAN } — TRUE=0xff, FALSE=0x00.
 	pacBool := byte(0xff)
 	if !includePAC {
 		pacBool = 0x00
 	}
+	body := messages.KDCReqBody{
+		KDCOptions: kdcOptionsForTGSReq(),
+		Realm:      bodyRealm,
+		SName:      sname,
+		Till:       c.now().Add(24 * time.Hour),
+		Nonce:      nonce,
+		EType:      c.serviceTicketETypes(),
+	}
+	apReqBytes, err := c.buildAPReqWith(body, tgt, tgtRaw, sessionKey, sessionEType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+	}
+
 	tgsReq := &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
@@ -185,14 +193,7 @@ func (c *KerberosClient) tgsExchange(
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, pacBool}},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForTGSReq(),
-			Realm:      bodyRealm,
-			SName:      sname,
-			Till:       c.now().Add(24 * time.Hour),
-			Nonce:      nonce,
-			EType:      c.serviceTicketETypes(),
-		},
+		ReqBody: body,
 	}
 
 	tgsReqBytes, err := tgsReq.Marshal()

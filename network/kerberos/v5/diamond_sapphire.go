@@ -232,14 +232,32 @@ func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm s
 		return nil, fmt.Errorf("kerberos: build PA-FOR-USER: %w", err)
 	}
 
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	self := messages.PrincipalName{
 		NameType:   messages.NameTypePrincipal,
 		NameString: []string{c.username},
+	}
+
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(
+			kdcOptionForwardable,
+			kdcOptionRenewable,
+			kdcOptionCanonicalize,
+			kdcOptionEncTktInSKey,
+		),
+		Realm: c.realm,
+		SName: self,
+		Till:  c.now().Add(24 * time.Hour),
+		Nonce: nonce,
+		EType: []int{
+			messages.ETypeAES256CTSHMACSHA196,
+			messages.ETypeAES128CTSHMACSHA196,
+			messages.ETypeRC4HMAC,
+		},
+		AdditTicketsRaw: [][]byte{c.tgtTicketRaw},
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 
 	return &messages.TGSReq{
@@ -250,24 +268,7 @@ func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm s
 			paForUser,
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, 0xff}},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(
-				kdcOptionForwardable,
-				kdcOptionRenewable,
-				kdcOptionCanonicalize,
-				kdcOptionEncTktInSKey,
-			),
-			Realm: c.realm,
-			SName: self,
-			Till:  c.now().Add(24 * time.Hour),
-			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
-			AdditTicketsRaw: [][]byte{c.tgtTicketRaw},
-		},
+		ReqBody: body,
 	}, nil
 }
 
