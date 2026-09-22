@@ -114,6 +114,12 @@ func (c *KerberosClient) GetTGSU2U(targetUser, targetRealm string, targetTGTRaw 
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: U2U nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := c.validateKDCReplyIdentity("U2U TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
+	if err := validateKDCReplyServer("U2U TGS-REP", tgsRep.Ticket, tgsReq.ReqBody.Realm, tgsReq.ReqBody.SName, false); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
 
 	ticket, raw, key, etype := u2uResult(&tgsRep, &encTGSRep)
 	return ticket, raw, key, etype, nil

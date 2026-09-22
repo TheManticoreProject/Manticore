@@ -274,6 +274,10 @@ func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, 
 			lastErr = err
 			continue
 		}
+		if err := validateKDCReplyServer("PKINIT AS-REP", asRep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
+			lastErr = err
+			continue
+		}
 
 		c.tgtTicket = asRep.Ticket
 		c.tgtTicketRaw = asRep.TicketRaw

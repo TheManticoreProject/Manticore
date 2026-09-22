@@ -36,11 +36,13 @@ import (
 // subkey (the base reply key the strengthen-key is combined with), and the inner
 // request nonce the reply must echo.
 type fastTGSContext struct {
-	armorKey    []byte
-	armorEType  int
-	subkey      []byte
-	subkeyEType int
-	nonce       int
+	armorKey     []byte
+	armorEType   int
+	subkey       []byte
+	subkeyEType  int
+	nonce        int
+	requestRealm string
+	requestName  messages.PrincipalName
 }
 
 // buildTGSAPReqWithSubkey builds the PA-TGS-REQ AP-REQ that presents tgt, with
@@ -208,11 +210,13 @@ func (c *KerberosClient) buildFASTTGSReq(
 	}
 
 	ctx := &fastTGSContext{
-		armorKey:    armorKey,
-		armorEType:  armorEType,
-		subkey:      subkey,
-		subkeyEType: sessionEType,
-		nonce:       nonce,
+		armorKey:     armorKey,
+		armorEType:   armorEType,
+		subkey:       subkey,
+		subkeyEType:  sessionEType,
+		nonce:        nonce,
+		requestRealm: bodyRealm,
+		requestName:  sname,
 	}
 	return reqBytes, ctx, nil
 }
@@ -277,6 +281,9 @@ func (c *KerberosClient) processFASTTGSRep(resp []byte, ctx *fastTGSContext) (*m
 		return nil, nil, nil, nil, fmt.Errorf("kerberos: FAST TGS-REP nonce mismatch: got %d, want %d", encRep.Nonce, ctx.nonce)
 	}
 	if err := c.validateKDCReplyIdentity("FAST TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := validateKDCReplyServer("FAST TGS-REP", tgsRep.Ticket, ctx.requestRealm, ctx.requestName, true); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	return &tgsRep, &encRep, nil, nil, nil

@@ -129,6 +129,12 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := c.validateKDCReplyIdentity("S4U2Self TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
+	if err := validateKDCReplyServer("S4U2Self TGS-REP", tgsRep.Ticket, c.realm, tgsReq.ReqBody.SName, false); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
 
 	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)
 	return ticket, raw, key, etype, nil
@@ -238,6 +244,12 @@ func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (
 	}
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
+	}
+	if err := c.validateKDCReplyIdentity("S4U2Proxy TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
+	if err := validateKDCReplyServer("S4U2Proxy TGS-REP", tgsRep.Ticket, c.realm, sname, false); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)
