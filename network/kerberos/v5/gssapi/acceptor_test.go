@@ -74,10 +74,11 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 	t.Helper()
 	now := time.Now().UTC()
 	encPart := messages.EncTicketPart{
-		Flags:  tmpl.Flags,
-		Key:    messages.EncryptionKey{KeyType: etype, KeyValue: sessionKey},
-		CRealm: clientRealm,
-		CName:  clientName,
+		Flags:     tmpl.Flags,
+		Key:       messages.EncryptionKey{KeyType: etype, KeyValue: sessionKey},
+		CRealm:    clientRealm,
+		CName:     clientName,
+		Transited: tmpl.Transited,
 	}
 	if encPart.Flags.BitLength == 0 {
 		encPart.Flags = asn1.BitString{Bytes: []byte{0x40, 0, 0, 0}, BitLength: 32}
@@ -105,7 +106,7 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 	}
 	tkt := messages.Ticket{
 		TktVno:  messages.KerberosV5,
-		Realm:   clientRealm,
+		Realm:   "CORP.LOCAL",
 		SName:   messages.PrincipalName{NameType: iana.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}},
 		EncPart: messages.EncryptedData{EType: etype, Cipher: cipher},
 	}
@@ -480,6 +481,63 @@ func TestAcceptSecContextReplay(t *testing.T) {
 	if _, _, err := AcceptSecContext(token, opts); err == nil {
 		t.Error("expected a replayed authenticator to be rejected")
 	}
+}
+
+func TestAcceptSecContextTransitedPolicy(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"cross-realm"}}
+	makeToken := func(t *testing.T, flags asn1.BitString) []byte {
+		t.Helper()
+		ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CHILD.CORP.LOCAL", messages.EncTicketPart{
+			Flags: flags,
+			Transited: messages.TransitedEncoding{
+				TRType: 0, Contents: []byte("INTERMEDIATE.CORP.LOCAL"),
+			},
+		})
+		token, _, err := InitSecContext(InitOptions{
+			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+			ClientName: client, ClientRealm: "CHILD.CORP.LOCAL",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	base := func() AcceptOptions {
+		return serviceAcceptOptions(AcceptOptions{
+			Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ReplayCache: NewReplayCache(),
+		})
+	}
+
+	t.Run("unchecked without local policy", func(t *testing.T) {
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags()), base()); err == nil {
+			t.Fatal("accepted unchecked cross-realm ticket without local policy")
+		}
+	})
+	t.Run("KDC checked", func(t *testing.T) {
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags(messages.TicketFlagTransitCheck)), base()); err != nil {
+			t.Fatalf("rejected KDC-checked cross-realm ticket: %v", err)
+		}
+	})
+	t.Run("local policy", func(t *testing.T) {
+		opts := base()
+		called := false
+		opts.TransitedPolicy = func(clientRealm, serverRealm string, transited messages.TransitedEncoding) error {
+			called = true
+			if clientRealm != "CHILD.CORP.LOCAL" || serverRealm != "CORP.LOCAL" || string(transited.Contents) != "INTERMEDIATE.CORP.LOCAL" {
+				t.Fatalf("unexpected policy input: %s, %s, %q", clientRealm, serverRealm, transited.Contents)
+			}
+			return nil
+		}
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags()), opts); err != nil {
+			t.Fatalf("local policy did not authorize cross-realm ticket: %v", err)
+		}
+		if !called {
+			t.Fatal("transited policy was not called")
+		}
+	})
 }
 
 func TestAcceptSecContextClockSkew(t *testing.T) {
