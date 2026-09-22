@@ -129,8 +129,8 @@ func TestSvrReferralRealm(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PA-SVR-REFERRAL-INFO to be found")
 	}
-	if realm != "CHILD.CORP.LOCAL" {
-		t.Errorf("realm = %q, want CHILD.CORP.LOCAL (uppercased)", realm)
+	if realm != "child.corp.local" {
+		t.Errorf("realm = %q, want case-preserved child.corp.local", realm)
 	}
 
 	if _, ok := svrReferralRealm(pa[:1]); ok {
@@ -147,12 +147,12 @@ func TestResolveKDCForRealm(t *testing.T) {
 		return "resolver-" + realm, nil
 	})
 
-	// Explicit override (case-insensitive realm key).
-	if host, err := c.resolveKDCForRealm("CHILD.CORP.LOCAL"); err != nil || host != "10.0.1.1" {
+	// Explicit override uses the exact realm key.
+	if host, err := c.resolveKDCForRealm("child.corp.local"); err != nil || host != "10.0.1.1" {
 		t.Errorf("override: got (%q, %v), want (10.0.1.1, nil)", host, err)
 	}
 	// Home realm resolves to the configured KDC.
-	if host, err := c.resolveKDCForRealm("CORP.LOCAL"); err != nil || host != "10.0.0.1" {
+	if host, err := c.resolveKDCForRealm("corp.local"); err != nil || host != "10.0.0.1" {
 		t.Errorf("home realm: got (%q, %v), want (10.0.0.1, nil)", host, err)
 	}
 	// Unknown realm falls through to the custom resolver.
@@ -180,12 +180,15 @@ func TestValidateKDCReplyIdentity(t *testing.T) {
 	c := NewClient("alice", "corp.local", "10.0.0.1")
 	client := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{"ALICE"}}
 	service := srvName("cifs", "host.corp.local")
-	ticket := messages.Ticket{Realm: "CORP.LOCAL", SName: service}
+	ticket := messages.Ticket{Realm: "corp.local", SName: service}
 
-	if err := c.validateKDCReplyIdentity("TGS-REP", "CORP.LOCAL", client, ticket, "corp.local", srvName("CIFS", "HOST.CORP.LOCAL")); err != nil {
-		t.Fatalf("rejected a case-only canonicalization: %v", err)
+	if err := c.validateKDCReplyIdentity("TGS-REP", "corp.local", client, ticket, "corp.local", srvName("CIFS", "HOST.CORP.LOCAL")); err != nil {
+		t.Fatalf("rejected matching realms: %v", err)
 	}
-	if err := c.validateKDCReplyIdentity("TGS-REP", "CORP.LOCAL", client, ticket, "CORP.LOCAL", srvName("ldap", "host.corp.local")); err == nil {
+	if err := c.validateKDCReplyIdentity("TGS-REP", "CORP.LOCAL", client, ticket, "corp.local", service); err == nil {
+		t.Fatal("accepted a client realm differing only by case")
+	}
+	if err := c.validateKDCReplyIdentity("TGS-REP", "corp.local", client, ticket, "corp.local", srvName("ldap", "host.corp.local")); err == nil {
 		t.Fatal("accepted inconsistent encrypted and outer service identities")
 	}
 }

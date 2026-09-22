@@ -24,7 +24,7 @@ func fastArmoredClient(t *testing.T, armorKey []byte, armorEType int) *KerberosC
 	if err != nil {
 		t.Fatalf("Ticket.Marshal: %v", err)
 	}
-	c := NewClient("alice", "corp.local", "10.0.0.1").WithPassword("Passw0rd!")
+	c := NewClient("alice", testRealm, "10.0.0.1").WithPassword("Passw0rd!")
 	c.WithFASTArmor("armor$", testRealm, tkt, raw, armorKey, armorEType)
 	return c
 }

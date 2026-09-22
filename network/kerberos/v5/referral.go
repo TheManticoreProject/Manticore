@@ -17,7 +17,7 @@ import (
 const maxReferralHops = 10
 
 // WithRealmKDC registers the KDC host to contact when the cross-realm referral
-// chase reaches the given realm. The realm is uppercased automatically. This is
+// chase reaches the given case-sensitive realm. This is
 // the minimal, no-dependency way to resolve a target-realm KDC; automatic
 // discovery (DNS SRV) is used for any realm not registered here. Returns the
 // client to allow fluent chaining.
@@ -25,7 +25,7 @@ func (c *KerberosClient) WithRealmKDC(realm, kdcHost string) *KerberosClient {
 	if c.realmKDCs == nil {
 		c.realmKDCs = make(map[string]string)
 	}
-	c.realmKDCs[strings.ToUpper(realm)] = kdcHost
+	c.realmKDCs[realm] = kdcHost
 	return c
 }
 
@@ -80,7 +80,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 
 	// Realms whose KDC we have already presented a TGT to, to detect referral
 	// cycles (an authority realm must not be revisited).
-	visited := map[string]bool{strings.ToUpper(bodyRealm): true}
+	visited := map[string]bool{bodyRealm: true}
 	// Corrected realms we have already retried for WRONG_REALM, to avoid a
 	// ping-pong between two KDCs that keep correcting each other. Kept separate
 	// from visited so the follow-up referral toward the corrected realm is not
@@ -100,7 +100,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 			// per corrected realm against the same (home) KDC so it can issue a
 			// referral toward that realm.
 			if krbErr.ErrorCode == messages.ErrWrongRealm && krbErr.CRealm != "" {
-				corrected := strings.ToUpper(krbErr.CRealm)
+				corrected := krbErr.CRealm
 				if !wrongRealmTried[corrected] {
 					wrongRealmTried[corrected] = true
 					bodyRealm = corrected
@@ -124,7 +124,6 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 			return rep.Ticket, rep.TicketRaw, encRep.Key.KeyValue, encRep.Key.KeyType, nil
 		}
 
-		nextRealm = strings.ToUpper(nextRealm)
 		if visited[nextRealm] {
 			return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: cross-realm referral cycle detected at realm %q", nextRealm)
 		}
@@ -325,7 +324,7 @@ func svrReferralRealm(paList []messages.PAData) (string, bool) {
 		}
 		var d svrReferralData
 		if _, err := asn1.Unmarshal(pa.PADataValue, &d); err == nil && d.ReferredRealm != "" {
-			return strings.ToUpper(d.ReferredRealm), true
+			return d.ReferredRealm, true
 		}
 	}
 	return "", false
@@ -350,11 +349,11 @@ func principalNameEqualFold(a, b messages.PrincipalName) bool {
 // and verifies that its encrypted server identity matches the outer ticket.
 func (c *KerberosClient) validateKDCReplyIdentity(replyType, clientRealm string, clientName messages.PrincipalName, ticket messages.Ticket, serverRealm string, serverName messages.PrincipalName) error {
 	expectedClient := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}}
-	if !strings.EqualFold(clientRealm, c.realm) || !principalNameEqualFold(clientName, expectedClient) {
+	if clientRealm != c.realm || !principalNameEqualFold(clientName, expectedClient) {
 		return fmt.Errorf("kerberos: %s client identity %s@%s does not match %s@%s",
 			replyType, strings.Join(clientName.NameString, "/"), clientRealm, c.username, c.realm)
 	}
-	if !strings.EqualFold(ticket.Realm, serverRealm) || !principalNameEqualFold(ticket.SName, serverName) {
+	if ticket.Realm != serverRealm || !principalNameEqualFold(ticket.SName, serverName) {
 		return fmt.Errorf("kerberos: %s ticket service %s@%s does not match encrypted reply service %s@%s",
 			replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm, strings.Join(serverName.NameString, "/"), serverRealm)
 	}

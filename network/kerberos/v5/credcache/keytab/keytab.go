@@ -142,7 +142,7 @@ func etypeStrength(etype uint16) int {
 }
 
 // principalMatches reports whether entry principal p matches the query string,
-// case-insensitively on the realm. The query is "comp1/comp2@REALM"; a missing
+// case-sensitively on the realm. The query is "comp1/comp2@REALM"; a missing
 // "@REALM" matches any realm, and an empty query matches anything.
 func principalMatches(p Principal, query string) bool {
 	if query == "" {
@@ -154,7 +154,7 @@ func principalMatches(p Principal, query string) bool {
 		name = query[:at]
 		realm = query[at+1:]
 	}
-	if realm != "" && !strings.EqualFold(realm, p.Realm) {
+	if realm != "" && realm != p.Realm {
 		return false
 	}
 	return name == strings.Join(p.Components, "/")

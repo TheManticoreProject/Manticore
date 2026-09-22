@@ -164,12 +164,12 @@ func (c *KerberosClient) serviceTicketETypes() []int {
 }
 
 // NewClient creates a new KerberosClient for the given username, realm and KDC host.
-// The realm is uppercased automatically (required by the Kerberos specification).
+// Realm spelling is preserved because RFC 4120 realm names are case-sensitive.
 // Call WithPassword before calling GetTGT.
 func NewClient(username, realm, kdcHost string) *KerberosClient {
 	return &KerberosClient{
 		username: username,
-		realm:    strings.ToUpper(realm),
+		realm:    realm,
 		kdcHost:  kdcHost,
 	}
 }
