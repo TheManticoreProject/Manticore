@@ -8,7 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
-	"strings"
+	"net"
 	"sync"
 	"time"
 
@@ -48,7 +48,14 @@ type ServiceKey struct {
 	EType int
 	// Key is the raw long-term key bytes.
 	Key []byte
+	// KVNO is the key version. Zero means unspecified and remains a wildcard for
+	// callers that do not track versions.
+	KVNO int
 }
+
+// TransitedPolicyFunc validates the cross-realm path carried by a service
+// ticket. A nil error accepts the path; a non-nil error rejects the ticket.
+type TransitedPolicyFunc func(clientRealm, serverRealm string, transited messages.TransitedEncoding) error
 
 // ReplayCache is a minimal in-memory authenticator replay cache (RFC 4120
 // §3.2.3): it remembers the (client, ctime, cusec) tuple of every AP-REQ
@@ -59,6 +66,11 @@ type ReplayCache struct {
 	mu      sync.Mutex
 	entries map[string]time.Time // tuple -> expiry (ctime + skew)
 }
+
+// defaultReplayCache persists replay state across AcceptSecContext calls when a
+// caller does not provide a cache. Applications that share a service principal
+// across processes still need to provide a shared external replay mechanism.
+var defaultReplayCache = NewReplayCache()
 
 // NewReplayCache returns an empty replay cache ready for use.
 func NewReplayCache() *ReplayCache {
@@ -98,6 +110,10 @@ type AcceptOptions struct {
 	// Keys supplies explicit candidate service keys when no keytab is available.
 	// They are tried after the keytab keys.
 	Keys []ServiceKey
+	// UserToUserKey is the target TGT session key used to decrypt a U2U ticket.
+	// It is used only when the AP-REQ sets USE-SESSION-KEY; in that case a
+	// long-term keytab or Keys entry is never used as a fallback.
+	UserToUserKey *ServiceKey
 	// ChannelBindings, when non-nil, are the acceptor's channel bindings: the
 	// authenticator's 0x8003 Bnd field must equal MD5(ChannelBindings) or the
 	// AP-REQ is rejected (GSS_C_BAD_BINDINGS). When nil the initiator's channel
@@ -107,10 +123,20 @@ type AcceptOptions struct {
 	// ClockSkew is the maximum tolerated difference between the authenticator
 	// timestamp and the acceptor clock. Zero selects DefaultClockSkew.
 	ClockSkew time.Duration
-	// ReplayCache detects replayed authenticators. When nil a fresh single-use
-	// cache is created, giving no cross-call replay protection; callers accepting
-	// more than one context should pass a shared cache.
+	// ClientAddress is the operating-system reported peer address. It is required
+	// when the ticket contains caddr restrictions and ignored for addressless
+	// tickets.
+	ClientAddress net.IP
+	// ReplayCache detects replayed authenticators. When nil the package-wide
+	// in-memory cache is used so replay protection persists across calls in this
+	// process. Callers serving a principal from multiple processes or machines
+	// should pass a cache backed by shared replay state.
 	ReplayCache *ReplayCache
+	// TransitedPolicy validates cross-realm ticket paths when the service-realm
+	// KDC did not set TRANSITED-POLICY-CHECKED. When nil, such unchecked tickets
+	// are rejected. If supplied, it is called for every cross-realm ticket so an
+	// application can enforce policy even when the KDC set the flag.
+	TransitedPolicy TransitedPolicyFunc
 	// MintSubkey makes the acceptor generate its own sub-session key, return it in
 	// the AP-REP (setting the AcceptorSubkey per-message flag), and key per-message
 	// tokens with it. Requires mutual authentication so the initiator learns the
@@ -159,14 +185,15 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	if len(opts.ServiceName.NameString) == 0 || opts.ServiceRealm == "" {
 		return nil, nil, fmt.Errorf("gssapi: expected service principal is required")
 	}
-	if !principalsEqual(apReq.Ticket.SName, opts.ServiceName) || !strings.EqualFold(apReq.Ticket.Realm, opts.ServiceRealm) {
+	if !principalsEqual(apReq.Ticket.SName, opts.ServiceName) || apReq.Ticket.Realm != opts.ServiceRealm {
 		return nil, nil, fmt.Errorf("gssapi: ticket service %s@%s does not match expected service %s@%s",
 			principalString(apReq.Ticket.SName), apReq.Ticket.Realm, principalString(opts.ServiceName), opts.ServiceRealm)
 	}
 
 	// Decrypt the ticket enc-part with a service long-term key (key usage 2) and
 	// recover the session key the KDC sealed inside it.
-	encTkt, err := decryptTicket(&apReq.Ticket, opts)
+	useSessionKey := apReq.APOptions.At(messages.APOptionUseSessionKey) != 0
+	encTkt, err := decryptTicket(&apReq.Ticket, opts, useSessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -192,8 +219,27 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	if !encTkt.EndTime.IsZero() && now.After(encTkt.EndTime.UTC().Add(skew)) {
 		return nil, nil, fmt.Errorf("gssapi: ticket expired (endtime %s, now %s)", encTkt.EndTime.UTC(), now)
 	}
-	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
-		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
+	effectiveStart := encTkt.StartTime
+	if effectiveStart.IsZero() {
+		// RFC 4120 section 5.3: an omitted starttime means authtime.
+		effectiveStart = encTkt.AuthTime
+	}
+	if !effectiveStart.IsZero() && effectiveStart.UTC().After(now.Add(skew)) {
+		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (effective starttime %s, now %s)", effectiveStart.UTC(), now)
+	}
+	if len(encTkt.CAddr) > 0 {
+		if len(opts.ClientAddress) == 0 || !ticketAddressMatches(encTkt.CAddr, opts.ClientAddress) {
+			return nil, nil, fmt.Errorf("gssapi: client address %s is not authorized by ticket", opts.ClientAddress)
+		}
+	}
+	if encTkt.CRealm != apReq.Ticket.Realm {
+		if opts.TransitedPolicy != nil {
+			if err := opts.TransitedPolicy(encTkt.CRealm, apReq.Ticket.Realm, encTkt.Transited); err != nil {
+				return nil, nil, fmt.Errorf("gssapi: transited-realm policy rejected ticket: %w", err)
+			}
+		} else if encTkt.Flags.At(messages.TicketFlagTransitCheck) == 0 {
+			return nil, nil, fmt.Errorf("gssapi: unchecked cross-realm ticket from %s to %s", encTkt.CRealm, apReq.Ticket.Realm)
+		}
 	}
 
 	// Decrypt the authenticator with the ticket session key (key usage 11).
@@ -226,9 +272,9 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	// window (RFC 4120 §3.2.3).
 	rc := opts.ReplayCache
 	if rc == nil {
-		rc = NewReplayCache()
+		rc = defaultReplayCache
 	}
-	tuple := fmt.Sprintf("%s@%s|%d|%d", principalString(auth.CName), auth.CRealm, auth.CTime.UTC().Unix(), auth.CUSec)
+	tuple := replayCacheTuple(apReq.Ticket.SName, apReq.Ticket.Realm, auth)
 	if rc.seenBefore(tuple, auth.CTime.UTC().Add(skew), now) {
 		return nil, nil, fmt.Errorf("gssapi: replayed authenticator (client %s@%s, ctime %s)", principalString(auth.CName), auth.CRealm, auth.CTime.UTC())
 	}
@@ -248,8 +294,13 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 		clientRealm:   auth.CRealm,
 		authenticator: func() *messages.Authenticator { a := auth; return &a }(),
 		pacBytes:      extractWin2KPAC(encTkt.AuthorizationData),
-		ctime:         auth.CTime.UTC().Truncate(time.Second),
-		cusec:         auth.CUSec,
+		ticketFlags: asn1.BitString{
+			Bytes:     append([]byte(nil), encTkt.Flags.Bytes...),
+			BitLength: encTkt.Flags.BitLength,
+		},
+		ticketAuthorizationData: cloneAuthorizationData(encTkt.AuthorizationData),
+		ctime:                   auth.CTime.UTC().Truncate(time.Second),
+		cusec:                   auth.CUSec,
 		recvWindow: seqWindow{
 			replayDetect: !opts.DisableReplayDetection,
 			sequence:     opts.EnforceSequence,
@@ -326,21 +377,57 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	return outputToken, ctx, nil
 }
 
+func ticketAddressMatches(addresses []messages.HostAddress, peer net.IP) bool {
+	for _, address := range addresses {
+		switch address.AddrType {
+		case 2: // IPv4
+			if ip := peer.To4(); ip != nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		case 24: // IPv6
+			if ip := peer.To16(); ip != nil && peer.To4() == nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func replayCacheTuple(server messages.PrincipalName, serverRealm string, auth messages.Authenticator) string {
+	return fmt.Sprintf("%q@%q|%q@%q|%d|%d",
+		server.NameString, serverRealm, auth.CName.NameString, auth.CRealm,
+		auth.CTime.UTC().Unix(), auth.CUSec)
+}
+
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate
 // service key whose enctype matches the ticket enc-part at key usage 2. Keys come
 // from the keytab entry for the ticket service first, then the explicit key list.
-func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicketPart, error) {
+func decryptTicket(tkt *messages.Ticket, opts AcceptOptions, useSessionKey bool) (*messages.EncTicketPart, error) {
 	etype := tkt.EncPart.EType
 	var candidates []ServiceKey
-	if opts.Keytab != nil {
-		principal := principalString(tkt.SName) + "@" + tkt.Realm
-		for _, e := range opts.Keytab.Find(principal, etype, -1) {
-			candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key})
+	if useSessionKey {
+		if opts.UserToUserKey == nil {
+			return nil, fmt.Errorf("gssapi: AP-REQ requires a user-to-user TGT session key")
 		}
-	}
-	for _, k := range opts.Keys {
-		if k.EType == etype {
-			candidates = append(candidates, k)
+		if opts.UserToUserKey.EType != etype {
+			return nil, fmt.Errorf("gssapi: user-to-user key enctype %d does not match ticket enctype %d", opts.UserToUserKey.EType, etype)
+		}
+		candidates = append(candidates, *opts.UserToUserKey)
+	} else {
+		if opts.Keytab != nil {
+			principal := principalString(tkt.SName) + "@" + tkt.Realm
+			kvno := -1
+			if tkt.EncPart.KvNo != 0 {
+				kvno = tkt.EncPart.KvNo
+			}
+			for _, e := range opts.Keytab.Find(principal, etype, kvno) {
+				candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key, KVNO: int(e.Kvno())})
+			}
+		}
+		for _, k := range opts.Keys {
+			if k.EType == etype && (tkt.EncPart.KvNo == 0 || k.KVNO == 0 || k.KVNO == tkt.EncPart.KvNo) {
+				candidates = append(candidates, k)
+			}
 		}
 	}
 	if len(candidates) == 0 {
@@ -359,6 +446,9 @@ func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicke
 			continue
 		}
 		return &enc, nil
+	}
+	if useSessionKey {
+		return nil, fmt.Errorf("gssapi: user-to-user key could not decrypt the ticket (enctype %d): %w", etype, lastErr)
 	}
 	return nil, fmt.Errorf("gssapi: no service key could decrypt the ticket (enctype %d): %w", etype, lastErr)
 }
@@ -461,6 +551,25 @@ func (ctx *SecContext) ClientPrincipal() (messages.PrincipalName, string) {
 // checksum, e.g. via ExtractDelegatedCred for an unconstrained-delegation
 // KRB-CRED.
 func (ctx *SecContext) Authenticator() *messages.Authenticator { return ctx.authenticator }
+
+// TicketFlags returns a copy of the flags from the accepted ticket.
+func (ctx *SecContext) TicketFlags() asn1.BitString {
+	return asn1.BitString{Bytes: append([]byte(nil), ctx.ticketFlags.Bytes...), BitLength: ctx.ticketFlags.BitLength}
+}
+
+// AuthorizationData returns a deep copy of all authorization-data entries from
+// the accepted ticket, including entries not understood by this package.
+func (ctx *SecContext) AuthorizationData() []messages.AuthorizationData {
+	return cloneAuthorizationData(ctx.ticketAuthorizationData)
+}
+
+func cloneAuthorizationData(in []messages.AuthorizationData) []messages.AuthorizationData {
+	out := make([]messages.AuthorizationData, len(in))
+	for i := range in {
+		out[i] = messages.AuthorizationData{ADType: in[i].ADType, ADData: append([]byte(nil), in[i].ADData...)}
+	}
+	return out
+}
 
 // HasPAC reports whether the decrypted ticket carried a PAC (acceptor side).
 func (ctx *SecContext) HasPAC() bool { return len(ctx.pacBytes) > 0 }

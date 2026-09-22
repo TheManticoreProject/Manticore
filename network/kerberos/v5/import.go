@@ -199,7 +199,7 @@ func (c *KerberosClient) LoadServiceTicket(st *ServiceTicket) error {
 		c.username = st.Client.NameString[0]
 	}
 	if c.realm == "" && st.CRealm != "" {
-		c.realm = strings.ToUpper(st.CRealm)
+		c.realm = st.CRealm
 	}
 	spn := st.SName.NameString[0] + "/" + st.SName.NameString[1]
 	c.preloadedTGS[normalizeSPN(spn)] = preloadedServiceTicket{

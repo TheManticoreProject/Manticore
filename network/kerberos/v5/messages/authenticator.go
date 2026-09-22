@@ -79,17 +79,21 @@ type Authenticator struct {
 	SubKey *EncryptionKey
 	// SeqNumber is the optional sequence number.
 	SeqNumber int
+	// AuthorizationData is optional application authorization data carried in
+	// the authenticator rather than the ticket.
+	AuthorizationData []AuthorizationData
 }
 
 // Marshal encodes the Authenticator as an ASN.1 APPLICATION[2] wrapped SEQUENCE.
 func (a *Authenticator) Marshal() ([]byte, error) {
 	inner := authenticatorMarshal{
-		AVno:      KerberosV5,
-		CRealm:    realmExplicit(1, a.CRealm),
-		CName:     MarshalPrincipalName(a.CName),
-		CUSec:     a.CUSec,
-		CTime:     normalizeTime(a.CTime),
-		SeqNumber: a.SeqNumber,
+		AVno:              KerberosV5,
+		CRealm:            realmExplicit(1, a.CRealm),
+		CName:             MarshalPrincipalName(a.CName),
+		CUSec:             a.CUSec,
+		CTime:             normalizeTime(a.CTime),
+		SeqNumber:         a.SeqNumber,
+		AuthorizationData: a.AuthorizationData,
 	}
 	if a.Cksum != nil {
 		inner.Cksum = *a.Cksum
@@ -127,6 +131,7 @@ func (a *Authenticator) Unmarshal(data []byte) (int, error) {
 	a.CUSec = inner.CUSec
 	a.CTime = inner.CTime
 	a.SeqNumber = inner.SeqNumber
+	a.AuthorizationData = inner.AuthorizationData
 	// Cksum is optional; only set if a checksum type is present.
 	if inner.Cksum.CKSumType != 0 || len(inner.Cksum.Checksum) != 0 {
 		ck := inner.Cksum
