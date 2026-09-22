@@ -49,14 +49,15 @@ func TestKRBErrorRoundTrip(t *testing.T) {
 // and sub-key) and confirms the identity, timestamp, checksum and sub-key round-trip.
 func TestAuthenticatorRoundTrip(t *testing.T) {
 	orig := &Authenticator{
-		AVno:      KerberosV5,
-		CRealm:    "CORP.LOCAL",
-		CName:     cliName(),
-		Cksum:     &Checksum{CKSumType: 16, Checksum: bytes.Repeat([]byte{0x7f}, 12)},
-		CUSec:     654321,
-		CTime:     tstTime,
-		SubKey:    &EncryptionKey{KeyType: ETypeAES256CTSHMACSHA196, KeyValue: bytes.Repeat([]byte{0x22}, 32)},
-		SeqNumber: 0x11223344,
+		AVno:              KerberosV5,
+		CRealm:            "CORP.LOCAL",
+		CName:             cliName(),
+		Cksum:             &Checksum{CKSumType: 16, Checksum: bytes.Repeat([]byte{0x7f}, 12)},
+		CUSec:             654321,
+		CTime:             tstTime,
+		SubKey:            &EncryptionKey{KeyType: ETypeAES256CTSHMACSHA196, KeyValue: bytes.Repeat([]byte{0x22}, 32)},
+		SeqNumber:         0x11223344,
+		AuthorizationData: []AuthorizationData{{ADType: 777, ADData: []byte("authz")}},
 	}
 	wire, err := orig.Marshal()
 	if err != nil {
@@ -79,6 +80,10 @@ func TestAuthenticatorRoundTrip(t *testing.T) {
 	if got.SubKey == nil || got.SubKey.KeyType != ETypeAES256CTSHMACSHA196 ||
 		!bytes.Equal(got.SubKey.KeyValue, orig.SubKey.KeyValue) {
 		t.Errorf("subkey not preserved: %+v", got.SubKey)
+	}
+	if len(got.AuthorizationData) != 1 || got.AuthorizationData[0].ADType != 777 ||
+		!bytes.Equal(got.AuthorizationData[0].ADData, []byte("authz")) {
+		t.Errorf("authorization data not preserved: %+v", got.AuthorizationData)
 	}
 }
 
