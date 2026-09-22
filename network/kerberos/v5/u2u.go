@@ -17,10 +17,6 @@ func u2uResult(tgsRep *messages.TGSRep, encTGSRep *messages.EncTGSRepPart) (mess
 // target user's TGT in additional-tickets, and the target user as sname. It is
 // separated from GetTGSU2U so the request shape can be tested without a KDC.
 func (c *KerberosClient) buildU2UTGSReq(targetUser, targetRealm string, targetTGTRaw []byte, nonce int) (*messages.TGSReq, error) {
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
 	sname := messages.PrincipalName{
 		NameType:   messages.NameTypePrincipal,
 		NameString: []string{targetUser},
@@ -29,30 +25,35 @@ func (c *KerberosClient) buildU2UTGSReq(targetUser, targetRealm string, targetTG
 	if targetRealm != "" {
 		realm = targetRealm
 	}
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(
+			kdcOptionForwardable,
+			kdcOptionRenewable,
+			kdcOptionCanonicalize,
+			kdcOptionEncTktInSKey,
+		),
+		Realm: realm,
+		SName: sname,
+		Till:  c.now().Add(24 * time.Hour),
+		Nonce: nonce,
+		EType: []int{
+			messages.ETypeAES256CTSHMACSHA196,
+			messages.ETypeAES128CTSHMACSHA196,
+			messages.ETypeRC4HMAC,
+		},
+		AdditTicketsRaw: [][]byte{targetTGTRaw},
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+	}
 	return &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
 		PAData: []messages.PAData{
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(
-				kdcOptionForwardable,
-				kdcOptionRenewable,
-				kdcOptionCanonicalize,
-				kdcOptionEncTktInSKey,
-			),
-			Realm: realm,
-			SName: sname,
-			Till:  c.now().Add(24 * time.Hour),
-			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
-			AdditTicketsRaw: [][]byte{targetTGTRaw},
-		},
+		ReqBody: body,
 	}, nil
 }
 
@@ -118,6 +119,9 @@ func (c *KerberosClient) GetTGSU2U(targetUser, targetRealm string, targetTGTRaw 
 		return messages.Ticket{}, nil, nil, 0, err
 	}
 	if err := validateKDCReplyServer("U2U TGS-REP", tgsRep.Ticket, tgsReq.ReqBody.Realm, tgsReq.ReqBody.SName, false); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
+	if err := validateKDCReplyAddresses("U2U TGS-REP", encTGSRep.CAddr, nil); err != nil {
 		return messages.Ticket{}, nil, nil, 0, err
 	}
 

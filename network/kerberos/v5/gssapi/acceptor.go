@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,10 @@ type ServiceKey struct {
 	Key []byte
 }
 
+// TransitedPolicyFunc validates the cross-realm path carried by a service
+// ticket. A nil error accepts the path; a non-nil error rejects the ticket.
+type TransitedPolicyFunc func(clientRealm, serverRealm string, transited messages.TransitedEncoding) error
+
 // ReplayCache is a minimal in-memory authenticator replay cache (RFC 4120
 // §3.2.3): it remembers the (client, ctime, cusec) tuple of every AP-REQ
 // authenticator seen within the clock-skew window and rejects a repeat. It is
@@ -59,6 +64,11 @@ type ReplayCache struct {
 	mu      sync.Mutex
 	entries map[string]time.Time // tuple -> expiry (ctime + skew)
 }
+
+// defaultReplayCache persists replay state across AcceptSecContext calls when a
+// caller does not provide a cache. Applications that share a service principal
+// across processes still need to provide a shared external replay mechanism.
+var defaultReplayCache = NewReplayCache()
 
 // NewReplayCache returns an empty replay cache ready for use.
 func NewReplayCache() *ReplayCache {
@@ -107,10 +117,20 @@ type AcceptOptions struct {
 	// ClockSkew is the maximum tolerated difference between the authenticator
 	// timestamp and the acceptor clock. Zero selects DefaultClockSkew.
 	ClockSkew time.Duration
-	// ReplayCache detects replayed authenticators. When nil a fresh single-use
-	// cache is created, giving no cross-call replay protection; callers accepting
-	// more than one context should pass a shared cache.
+	// ClientAddress is the operating-system reported peer address. It is required
+	// when the ticket contains caddr restrictions and ignored for addressless
+	// tickets.
+	ClientAddress net.IP
+	// ReplayCache detects replayed authenticators. When nil the package-wide
+	// in-memory cache is used so replay protection persists across calls in this
+	// process. Callers serving a principal from multiple processes or machines
+	// should pass a cache backed by shared replay state.
 	ReplayCache *ReplayCache
+	// TransitedPolicy validates cross-realm ticket paths when the service-realm
+	// KDC did not set TRANSITED-POLICY-CHECKED. When nil, such unchecked tickets
+	// are rejected. If supplied, it is called for every cross-realm ticket so an
+	// application can enforce policy even when the KDC set the flag.
+	TransitedPolicy TransitedPolicyFunc
 	// MintSubkey makes the acceptor generate its own sub-session key, return it in
 	// the AP-REP (setting the AcceptorSubkey per-message flag), and key per-message
 	// tokens with it. Requires mutual authentication so the initiator learns the
@@ -195,6 +215,20 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
 		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
 	}
+	if len(encTkt.CAddr) > 0 {
+		if len(opts.ClientAddress) == 0 || !ticketAddressMatches(encTkt.CAddr, opts.ClientAddress) {
+			return nil, nil, fmt.Errorf("gssapi: client address %s is not authorized by ticket", opts.ClientAddress)
+		}
+	}
+	if encTkt.CRealm != apReq.Ticket.Realm {
+		if opts.TransitedPolicy != nil {
+			if err := opts.TransitedPolicy(encTkt.CRealm, apReq.Ticket.Realm, encTkt.Transited); err != nil {
+				return nil, nil, fmt.Errorf("gssapi: transited-realm policy rejected ticket: %w", err)
+			}
+		} else if encTkt.Flags.At(messages.TicketFlagTransitCheck) == 0 {
+			return nil, nil, fmt.Errorf("gssapi: unchecked cross-realm ticket from %s to %s", encTkt.CRealm, apReq.Ticket.Realm)
+		}
+	}
 
 	// Decrypt the authenticator with the ticket session key (key usage 11).
 	authPlain, err := kerbcrypto.Decrypt(sessionEType, sessionKey, kerbcrypto.KeyUsageAPReqAuthen, apReq.Authenticator.Cipher)
@@ -226,9 +260,9 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	// window (RFC 4120 §3.2.3).
 	rc := opts.ReplayCache
 	if rc == nil {
-		rc = NewReplayCache()
+		rc = defaultReplayCache
 	}
-	tuple := fmt.Sprintf("%s@%s|%d|%d", principalString(auth.CName), auth.CRealm, auth.CTime.UTC().Unix(), auth.CUSec)
+	tuple := replayCacheTuple(apReq.Ticket.SName, apReq.Ticket.Realm, auth)
 	if rc.seenBefore(tuple, auth.CTime.UTC().Add(skew), now) {
 		return nil, nil, fmt.Errorf("gssapi: replayed authenticator (client %s@%s, ctime %s)", principalString(auth.CName), auth.CRealm, auth.CTime.UTC())
 	}
@@ -324,6 +358,28 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 		return nil, nil, err
 	}
 	return outputToken, ctx, nil
+}
+
+func ticketAddressMatches(addresses []messages.HostAddress, peer net.IP) bool {
+	for _, address := range addresses {
+		switch address.AddrType {
+		case 2: // IPv4
+			if ip := peer.To4(); ip != nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		case 24: // IPv6
+			if ip := peer.To16(); ip != nil && peer.To4() == nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func replayCacheTuple(server messages.PrincipalName, serverRealm string, auth messages.Authenticator) string {
+	return fmt.Sprintf("%q@%q|%q@%q|%d|%d",
+		server.NameString, serverRealm, auth.CName.NameString, auth.CRealm,
+		auth.CTime.UTC().Unix(), auth.CUSec)
 }
 
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate

@@ -278,6 +278,10 @@ func (c *KerberosClient) processPKINITASRep(resp []byte, pkReq *pkinit.Request, 
 			lastErr = err
 			continue
 		}
+		if err := validateKDCReplyAddresses("PKINIT AS-REP", encASRep.CAddr, nil); err != nil {
+			lastErr = err
+			continue
+		}
 
 		c.tgtTicket = asRep.Ticket
 		c.tgtTicketRaw = asRep.TicketRaw

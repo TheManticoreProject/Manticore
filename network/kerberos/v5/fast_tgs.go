@@ -49,7 +49,7 @@ type fastTGSContext struct {
 // the given subkey placed in the authenticator (RFC 6113 §5.4.2 requires the
 // subkey for TGS armoring). The authenticator is encrypted with the TGT session
 // key under key usage 7 (the PA-TGS-REQ authenticator usage).
-func (c *KerberosClient) buildTGSAPReqWithSubkey(tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, subkey []byte) ([]byte, error) {
+func (c *KerberosClient) buildTGSAPReqWithSubkey(body messages.KDCReqBody, tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, subkey []byte) ([]byte, error) {
 	now := c.now()
 
 	var seqBuf [4]byte
@@ -58,10 +58,24 @@ func (c *KerberosClient) buildTGSAPReqWithSubkey(tgt messages.Ticket, tgtRaw, se
 	}
 	seqNum := int(binary.BigEndian.Uint32(seqBuf[:]) & 0x7fffffff)
 
+	bodyBytes, err := messages.EncodeKDCReqBody(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal FAST TGS KDC-REQ-BODY checksum input: %w", err)
+	}
+	cksumType, ok := kerbcrypto.ChecksumTypeForEType(sessionEType)
+	if !ok {
+		return nil, fmt.Errorf("no checksum type for TGT session enctype %d", sessionEType)
+	}
+	checksum, err := kerbcrypto.GetChecksum(cksumType, sessionKey, kerbcrypto.KeyUsageTGSReqAuthCksum, bodyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("checksum FAST TGS KDC-REQ-BODY: %w", err)
+	}
+
 	auth := &messages.Authenticator{
 		AVno:      messages.KerberosV5,
 		CRealm:    c.realm,
 		CName:     messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}},
+		Cksum:     &messages.Checksum{CKSumType: cksumType, Checksum: checksum},
 		CUSec:     now.Nanosecond() / 1000,
 		CTime:     now,
 		SubKey:    &messages.EncryptionKey{KeyType: sessionEType, KeyValue: subkey},
@@ -132,9 +146,14 @@ func (c *KerberosClient) buildFASTTGSReq(
 		return nil, nil, fmt.Errorf("kerberos: derive FAST TGS armor key: %w", err)
 	}
 
+	// Build the inner body first because the PA-TGS-REQ authenticator checksum
+	// binds to the body the FAST KDC will process.
+	nonce := randomNonce()
+	innerBody := c.tgsReqBody(bodyRealm, sname, nonce)
+
 	// The AP-REQ carrying the subkey. It goes verbatim into the outer PA-TGS-REQ
 	// and is also the object the req-checksum covers (RFC 6113 §5.4.2).
-	apReqBytes, err := c.buildTGSAPReqWithSubkey(tgt, tgtRaw, sessionKey, sessionEType, subkey)
+	apReqBytes, err := c.buildTGSAPReqWithSubkey(innerBody, tgt, tgtRaw, sessionKey, sessionEType, subkey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("kerberos: build FAST TGS AP-REQ: %w", err)
 	}
@@ -152,9 +171,6 @@ func (c *KerberosClient) buildFASTTGSReq(
 	if cookie != nil {
 		innerPAData = append(innerPAData, *cookie)
 	}
-	nonce := randomNonce()
-	innerBody := c.tgsReqBody(bodyRealm, sname, nonce)
-
 	fastReq := &messages.KrbFastReq{
 		FastOptions: messages.NewKerberosFlags(),
 		PAData:      innerPAData,
@@ -284,6 +300,9 @@ func (c *KerberosClient) processFASTTGSRep(resp []byte, ctx *fastTGSContext) (*m
 		return nil, nil, nil, nil, err
 	}
 	if err := validateKDCReplyServer("FAST TGS-REP", tgsRep.Ticket, ctx.requestRealm, ctx.requestName, true); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := validateKDCReplyAddresses("FAST TGS-REP", encRep.CAddr, nil); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	return &tgsRep, &encRep, nil, nil, nil

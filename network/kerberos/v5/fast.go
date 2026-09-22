@@ -357,6 +357,9 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	if err := validateKDCReplyServer("FAST AS-REP", asRep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
 		return err
 	}
+	if err := validateKDCReplyAddresses("FAST AS-REP", encASRep.CAddr, nil); err != nil {
+		return err
+	}
 
 	c.tgtTicket = asRep.Ticket
 	c.tgtTicketRaw = asRep.TicketRaw
