@@ -60,6 +60,11 @@ type ReplayCache struct {
 	entries map[string]time.Time // tuple -> expiry (ctime + skew)
 }
 
+// defaultReplayCache persists replay state across AcceptSecContext calls when a
+// caller does not provide a cache. Applications that share a service principal
+// across processes still need to provide a shared external replay mechanism.
+var defaultReplayCache = NewReplayCache()
+
 // NewReplayCache returns an empty replay cache ready for use.
 func NewReplayCache() *ReplayCache {
 	return &ReplayCache{entries: make(map[string]time.Time)}
@@ -107,9 +112,10 @@ type AcceptOptions struct {
 	// ClockSkew is the maximum tolerated difference between the authenticator
 	// timestamp and the acceptor clock. Zero selects DefaultClockSkew.
 	ClockSkew time.Duration
-	// ReplayCache detects replayed authenticators. When nil a fresh single-use
-	// cache is created, giving no cross-call replay protection; callers accepting
-	// more than one context should pass a shared cache.
+	// ReplayCache detects replayed authenticators. When nil the package-wide
+	// in-memory cache is used so replay protection persists across calls in this
+	// process. Callers serving a principal from multiple processes or machines
+	// should pass a cache backed by shared replay state.
 	ReplayCache *ReplayCache
 	// MintSubkey makes the acceptor generate its own sub-session key, return it in
 	// the AP-REP (setting the AcceptorSubkey per-message flag), and key per-message
@@ -226,9 +232,9 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	// window (RFC 4120 §3.2.3).
 	rc := opts.ReplayCache
 	if rc == nil {
-		rc = NewReplayCache()
+		rc = defaultReplayCache
 	}
-	tuple := fmt.Sprintf("%s@%s|%d|%d", principalString(auth.CName), auth.CRealm, auth.CTime.UTC().Unix(), auth.CUSec)
+	tuple := replayCacheTuple(apReq.Ticket.SName, apReq.Ticket.Realm, auth)
 	if rc.seenBefore(tuple, auth.CTime.UTC().Add(skew), now) {
 		return nil, nil, fmt.Errorf("gssapi: replayed authenticator (client %s@%s, ctime %s)", principalString(auth.CName), auth.CRealm, auth.CTime.UTC())
 	}
@@ -324,6 +330,12 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 		return nil, nil, err
 	}
 	return outputToken, ctx, nil
+}
+
+func replayCacheTuple(server messages.PrincipalName, serverRealm string, auth messages.Authenticator) string {
+	return fmt.Sprintf("%q@%q|%q@%q|%d|%d",
+		server.NameString, serverRealm, auth.CName.NameString, auth.CRealm,
+		auth.CTime.UTC().Unix(), auth.CUSec)
 }
 
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate
