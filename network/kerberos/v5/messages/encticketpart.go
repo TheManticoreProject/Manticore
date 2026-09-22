@@ -41,6 +41,9 @@ type EncTicketPart struct {
 	EndTime time.Time
 	// RenewTill is the end of the renewable lifetime (optional).
 	RenewTill time.Time
+	// CAddr restricts the addresses from which the ticket may be used. An empty
+	// list represents an addressless ticket.
+	CAddr []HostAddress
 	// AuthorizationData carries the authorization-data elements (the AD-IF-RELEVANT
 	// wrapped AD-WIN2K-PAC for a Windows ticket). Optional.
 	AuthorizationData []AuthorizationData
@@ -60,6 +63,7 @@ type encTicketPartMarshal struct {
 	StartTime         time.Time            `asn1:"explicit,tag:6,optional,generalized"`
 	EndTime           time.Time            `asn1:"explicit,tag:7,generalized"`
 	RenewTill         time.Time            `asn1:"explicit,tag:8,optional,generalized"`
+	CAddr             []HostAddress        `asn1:"explicit,tag:9,optional"`
 	AuthorizationData []AuthorizationData  `asn1:"explicit,tag:10,optional"`
 }
 
@@ -82,6 +86,7 @@ func (e *EncTicketPart) Marshal() ([]byte, error) {
 		inner.RenewTill = normalizeTime(e.RenewTill)
 	}
 	inner.AuthorizationData = e.AuthorizationData
+	inner.CAddr = e.CAddr
 
 	seqBytes, err := asn1.Marshal(inner)
 	if err != nil {
@@ -108,7 +113,7 @@ func (e *EncTicketPart) Unmarshal(data []byte) (int, error) {
 		StartTime         time.Time           `asn1:"explicit,tag:6,optional,generalized"`
 		EndTime           time.Time           `asn1:"explicit,tag:7,generalized"`
 		RenewTill         time.Time           `asn1:"explicit,tag:8,optional,generalized"`
-		CAddr             asn1.RawValue       `asn1:"explicit,tag:9,optional"`
+		CAddr             []HostAddress       `asn1:"explicit,tag:9,optional"`
 		AuthorizationData []AuthorizationData `asn1:"explicit,tag:10,optional"`
 	}
 	if _, err := asn1.Unmarshal(innerBytes, &inner); err != nil {
@@ -124,6 +129,7 @@ func (e *EncTicketPart) Unmarshal(data []byte) (int, error) {
 	e.StartTime = inner.StartTime
 	e.EndTime = inner.EndTime
 	e.RenewTill = inner.RenewTill
+	e.CAddr = inner.CAddr
 	e.AuthorizationData = inner.AuthorizationData
 	return consumed, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/asn1"
+	"net"
 	"testing"
 	"time"
 
@@ -74,10 +75,12 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 	t.Helper()
 	now := time.Now().UTC()
 	encPart := messages.EncTicketPart{
-		Flags:  tmpl.Flags,
-		Key:    messages.EncryptionKey{KeyType: etype, KeyValue: sessionKey},
-		CRealm: clientRealm,
-		CName:  clientName,
+		Flags:     tmpl.Flags,
+		Key:       messages.EncryptionKey{KeyType: etype, KeyValue: sessionKey},
+		CRealm:    clientRealm,
+		CName:     clientName,
+		Transited: tmpl.Transited,
+		CAddr:     tmpl.CAddr,
 	}
 	if encPart.Flags.BitLength == 0 {
 		encPart.Flags = asn1.BitString{Bytes: []byte{0x40, 0, 0, 0}, BitLength: 32}
@@ -105,7 +108,7 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 	}
 	tkt := messages.Ticket{
 		TktVno:  messages.KerberosV5,
-		Realm:   clientRealm,
+		Realm:   "CORP.LOCAL",
 		SName:   messages.PrincipalName{NameType: iana.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}},
 		EncPart: messages.EncryptedData{EType: etype, Cipher: cipher},
 	}
@@ -270,6 +273,51 @@ func TestAcceptSecContextSelectsTicketKVNO(t *testing.T) {
 	kt.Entries[1].Key = append([]byte(nil), correctKey...)
 	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keytab: kt})); err != nil {
 		t.Fatalf("matching KVNO key rejected: %v", err)
+	}
+}
+
+func TestAcceptSecContextUserToUserKeySelection(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	u2uKey := randKey(t, 32)
+	wrongKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"alice"}}
+	ticketRaw := serviceTicket(t, etype, u2uKey, sessionKey, client, "CORP.LOCAL", nil)
+
+	makeToken := func(useSessionKey bool) []byte {
+		t.Helper()
+		token, _, err := InitSecContext(InitOptions{
+			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+			ClientName: client, ClientRealm: "CORP.LOCAL",
+			Flags: GSSIntegFlag, UseSessionKey: useSessionKey,
+		})
+		if err != nil {
+			t.Fatalf("InitSecContext: %v", err)
+		}
+		return token
+	}
+
+	u2u := ServiceKey{EType: etype, Key: u2uKey}
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{UserToUserKey: &u2u})); err != nil {
+		t.Fatalf("U2U AP-REQ with target TGT session key rejected: %v", err)
+	}
+
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{
+		Keys: []ServiceKey{{EType: etype, Key: u2uKey}},
+	})); err == nil {
+		t.Fatal("USE-SESSION-KEY AP-REQ accepted without a U2U key")
+	}
+
+	badU2U := ServiceKey{EType: etype, Key: wrongKey}
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{
+		Keys:          []ServiceKey{{EType: etype, Key: u2uKey}},
+		UserToUserKey: &badU2U,
+	})); err == nil {
+		t.Fatal("USE-SESSION-KEY AP-REQ fell back to a long-term service key")
+	}
+
+	if _, _, err := AcceptSecContext(makeToken(false), serviceAcceptOptions(AcceptOptions{UserToUserKey: &u2u})); err == nil {
+		t.Fatal("ordinary AP-REQ incorrectly used the U2U key without USE-SESSION-KEY")
 	}
 }
 
@@ -522,6 +570,128 @@ func TestAcceptSecContextReplay(t *testing.T) {
 	}
 }
 
+func TestAcceptSecContextEnforcesTicketAddresses(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"address-bound"}}
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		CAddr: []messages.HostAddress{{AddrType: 2, Address: []byte{192, 0, 2, 10}}},
+	})
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := func(ip net.IP) AcceptOptions {
+		return serviceAcceptOptions(AcceptOptions{
+			Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ClientAddress: ip, ReplayCache: NewReplayCache(),
+		})
+	}
+	if _, _, err := AcceptSecContext(token, base(nil)); err == nil {
+		t.Fatal("accepted address-bound ticket without a client address")
+	}
+	if _, _, err := AcceptSecContext(token, base(net.ParseIP("192.0.2.11"))); err == nil {
+		t.Fatal("accepted address-bound ticket from the wrong client address")
+	}
+	if _, _, err := AcceptSecContext(token, base(net.ParseIP("192.0.2.10"))); err != nil {
+		t.Fatalf("rejected ticket from authorized client address: %v", err)
+	}
+}
+
+func TestAcceptSecContextTransitedPolicy(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"cross-realm"}}
+	makeToken := func(t *testing.T, flags asn1.BitString) []byte {
+		t.Helper()
+		ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CHILD.CORP.LOCAL", messages.EncTicketPart{
+			Flags: flags,
+			Transited: messages.TransitedEncoding{
+				TRType: 0, Contents: []byte("INTERMEDIATE.CORP.LOCAL"),
+			},
+		})
+		token, _, err := InitSecContext(InitOptions{
+			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+			ClientName: client, ClientRealm: "CHILD.CORP.LOCAL",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	base := func() AcceptOptions {
+		return serviceAcceptOptions(AcceptOptions{
+			Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, ReplayCache: NewReplayCache(),
+		})
+	}
+
+	t.Run("unchecked without local policy", func(t *testing.T) {
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags()), base()); err == nil {
+			t.Fatal("accepted unchecked cross-realm ticket without local policy")
+		}
+	})
+	t.Run("KDC checked", func(t *testing.T) {
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags(messages.TicketFlagTransitCheck)), base()); err != nil {
+			t.Fatalf("rejected KDC-checked cross-realm ticket: %v", err)
+		}
+	})
+	t.Run("local policy", func(t *testing.T) {
+		opts := base()
+		called := false
+		opts.TransitedPolicy = func(clientRealm, serverRealm string, transited messages.TransitedEncoding) error {
+			called = true
+			if clientRealm != "CHILD.CORP.LOCAL" || serverRealm != "CORP.LOCAL" || string(transited.Contents) != "INTERMEDIATE.CORP.LOCAL" {
+				t.Fatalf("unexpected policy input: %s, %s, %q", clientRealm, serverRealm, transited.Contents)
+			}
+			return nil
+		}
+		if _, _, err := AcceptSecContext(makeToken(t, messages.NewKerberosFlags()), opts); err != nil {
+			t.Fatalf("local policy did not authorize cross-realm ticket: %v", err)
+		}
+		if !called {
+			t.Fatal("transited policy was not called")
+		}
+	})
+}
+
+func TestAcceptSecContextDefaultReplayCachePersistsAcrossCalls(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"default-replay-cache"}}
+	ticketRaw := serviceTicket(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", nil)
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})
+	if _, _, err := AcceptSecContext(token, opts); err != nil {
+		t.Fatalf("first AcceptSecContext: %v", err)
+	}
+	if _, _, err := AcceptSecContext(token, opts); err == nil {
+		t.Fatal("default replay cache accepted the same authenticator twice")
+	}
+}
+
+func TestReplayCacheTupleIncludesServerPrincipal(t *testing.T) {
+	auth := messages.Authenticator{
+		CName: messages.PrincipalName{NameString: []string{"alice"}}, CRealm: "CORP.LOCAL",
+		CTime: time.Unix(1_700_000_000, 0).UTC(), CUSec: 42,
+	}
+	cifs := replayCacheTuple(messages.PrincipalName{NameString: []string{"cifs", "host"}}, "CORP.LOCAL", auth)
+	ldap := replayCacheTuple(messages.PrincipalName{NameString: []string{"ldap", "host"}}, "CORP.LOCAL", auth)
+	if cifs == ldap {
+		t.Fatal("replay cache tuple does not distinguish service principals")
+	}
+}
+
 func TestAcceptSecContextClockSkew(t *testing.T) {
 	const etype = iana.ETypeAES256CTSHMACSHA196
 	serviceKey := randKey(t, 32)
@@ -587,6 +757,31 @@ func TestAcceptSecContextNotYetValidTicket(t *testing.T) {
 	}
 	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}})); err == nil {
 		t.Error("expected a not-yet-valid ticket to be rejected")
+	}
+}
+
+func TestAcceptSecContextAbsentStartTimeUsesAuthTime(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"future-auth"}}
+	now := time.Now().UTC()
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		AuthTime: now.Add(2 * time.Hour),
+		EndTime:  now.Add(10 * time.Hour),
+	})
+
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{
+		Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, Now: now,
+	})); err == nil {
+		t.Fatal("ticket with a future authtime and omitted starttime was accepted")
 	}
 }
 
