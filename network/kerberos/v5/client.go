@@ -778,7 +778,9 @@ func (c *KerberosClient) buildAPReqWith(body messages.KDCReqBody, tgt messages.T
 // N/8 at position 7-(N%8).
 const (
 	kdcOptionForwardable    = iana.KDCOptionForwardable    // byte 0, 0x40
+	kdcOptionForwarded      = iana.KDCOptionForwarded      // byte 0, 0x20 (RFC 4120 forwarding)
 	kdcOptionProxiable      = iana.KDCOptionProxiable      // byte 0, 0x10
+	kdcOptionProxy          = iana.KDCOptionProxy          // byte 0, 0x08 (RFC 4120 proxy)
 	kdcOptionAllowPostdate  = iana.KDCOptionAllowPostdate  // byte 0, 0x04 (RFC 4120 §3.3 postdating)
 	kdcOptionPostdated      = iana.KDCOptionPostdated      // byte 0, 0x02 (RFC 4120 §3.3 postdating)
 	kdcOptionRenewable      = iana.KDCOptionRenewable      // byte 1, 0x80
