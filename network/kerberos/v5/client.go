@@ -696,9 +696,9 @@ func (c *KerberosClient) processASRep(resp []byte, etype int, salt string, s2k_p
 }
 
 // buildAPReq constructs an AP-REQ wrapping the client's current TGT for use in
-// TGS-REQ PA-DATA.
-func (c *KerberosClient) buildAPReq() ([]byte, error) {
-	return c.buildAPReqWith(c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType)
+// TGS-REQ PA-DATA. The authenticator checksum binds it to body.
+func (c *KerberosClient) buildAPReq(body messages.KDCReqBody) ([]byte, error) {
+	return c.buildAPReqWith(body, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType)
 }
 
 // buildAPReqWith constructs an AP-REQ wrapping the given ticket-granting ticket
@@ -707,7 +707,7 @@ func (c *KerberosClient) buildAPReq() ([]byte, error) {
 // taken from the client's home TGT. The authenticator's client name and realm
 // always identify the original client (they must match the crealm embedded in
 // the ticket, which stays the home realm across cross-realm referrals).
-func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
+func (c *KerberosClient) buildAPReqWith(body messages.KDCReqBody, tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
 	now := c.now()
 	cusec := now.Nanosecond() / 1000
 
@@ -717,10 +717,24 @@ func (c *KerberosClient) buildAPReqWith(tgt messages.Ticket, tgtRaw, sessionKey 
 	}
 	seq_num := int(binary.BigEndian.Uint32(seq_buf[:]) & 0x7fffffff)
 
+	bodyBytes, err := messages.EncodeKDCReqBody(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal KDC-REQ-BODY checksum input: %w", err)
+	}
+	cksumType, ok := kerbcrypto.ChecksumTypeForEType(sessionEType)
+	if !ok {
+		return nil, fmt.Errorf("no checksum type for TGT session enctype %d", sessionEType)
+	}
+	checksum, err := kerbcrypto.GetChecksum(cksumType, sessionKey, kerbcrypto.KeyUsageTGSReqAuthCksum, bodyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("checksum KDC-REQ-BODY: %w", err)
+	}
+
 	auth := &messages.Authenticator{
 		AVno:      messages.KerberosV5,
 		CRealm:    c.realm,
 		CName:     messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}},
+		Cksum:     &messages.Checksum{CKSumType: cksumType, Checksum: checksum},
 		CUSec:     cusec,
 		CTime:     now,
 		SeqNumber: seq_num,

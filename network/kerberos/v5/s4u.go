@@ -39,16 +39,28 @@ func (c *KerberosClient) buildS4U2SelfTGSReq(impersonateUser, impersonateRealm s
 		return nil, fmt.Errorf("kerberos: build PA-FOR-USER: %w", err)
 	}
 
-	// AP-REQ over the service's own TGT.
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	// The requested server is the service itself (its own account).
 	self := messages.PrincipalName{
 		NameType:   messages.NameTypePrincipal,
 		NameString: []string{c.username},
+	}
+
+	body := messages.KDCReqBody{
+		KDCOptions: kdcOptionsForTGSReq(),
+		Realm:      c.realm,
+		SName:      self,
+		Till:       c.now().Add(24 * time.Hour),
+		Nonce:      nonce,
+		EType: []int{
+			messages.ETypeAES256CTSHMACSHA196,
+			messages.ETypeAES128CTSHMACSHA196,
+			messages.ETypeRC4HMAC,
+		},
+	}
+	// AP-REQ over the service's own TGT, bound to the request body.
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 
 	return &messages.TGSReq{
@@ -59,18 +71,7 @@ func (c *KerberosClient) buildS4U2SelfTGSReq(impersonateUser, impersonateRealm s
 			paForUser,
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, 0xff}},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForTGSReq(),
-			Realm:      c.realm,
-			SName:      self,
-			Till:       c.now().Add(24 * time.Hour),
-			Nonce:      nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
-		},
+		ReqBody: body,
 	}, nil
 }
 
@@ -141,14 +142,32 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 // S4U2Self service ticket (raw APPLICATION[1] bytes) in additional-tickets. It
 // is separated from S4U2Proxy so the request shape can be tested without a KDC.
 func (c *KerberosClient) buildS4U2ProxyTGSReq(sname messages.PrincipalName, s4u2selfTicketRaw []byte, nonce int) (*messages.TGSReq, error) {
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	pacOptions, err := mskile.PACOptionsPAData(mskile.PACOptionResourceBasedConstrainedDeleg)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: build PA-PAC-OPTIONS: %w", err)
+	}
+
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(
+			kdcOptionForwardable,
+			kdcOptionRenewable,
+			kdcOptionCanonicalize,
+			kdcOptionCNameInAddlTkt,
+		),
+		Realm: c.realm,
+		SName: sname,
+		Till:  c.now().Add(24 * time.Hour),
+		Nonce: nonce,
+		EType: []int{
+			messages.ETypeAES256CTSHMACSHA196,
+			messages.ETypeAES128CTSHMACSHA196,
+			messages.ETypeRC4HMAC,
+		},
+		AdditTicketsRaw: [][]byte{s4u2selfTicketRaw},
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 
 	return &messages.TGSReq{
@@ -158,24 +177,7 @@ func (c *KerberosClient) buildS4U2ProxyTGSReq(sname messages.PrincipalName, s4u2
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 			pacOptions,
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(
-				kdcOptionForwardable,
-				kdcOptionRenewable,
-				kdcOptionCanonicalize,
-				kdcOptionCNameInAddlTkt,
-			),
-			Realm: c.realm,
-			SName: sname,
-			Till:  c.now().Add(24 * time.Hour),
-			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
-			AdditTicketsRaw: [][]byte{s4u2selfTicketRaw},
-		},
+		ReqBody: body,
 	}, nil
 }
 
