@@ -32,7 +32,7 @@ const (
 // Credential is an immutable long-term secret bound to a principal.
 type Credential struct {
 	username string
-	realm    string // always upper-cased
+	realm    string // preserved verbatim; Kerberos realms are case-sensitive
 
 	kind     SecretKind
 	password string
@@ -41,11 +41,11 @@ type Credential struct {
 	aesEtype int    // 17, 18, 19, or 20, when kind == SecretAESKey
 }
 
-// NewWithPassword creates a password-based credential. The realm is upper-cased.
+// NewWithPassword creates a password-based credential.
 func NewWithPassword(username, realm, password string) *Credential {
 	return &Credential{
 		username: username,
-		realm:    strings.ToUpper(realm),
+		realm:    realm,
 		kind:     SecretPassword,
 		password: password,
 	}
@@ -61,7 +61,7 @@ func NewWithNTHash(username, realm string, ntHash []byte) (*Credential, error) {
 	copy(h, ntHash)
 	return &Credential{
 		username: username,
-		realm:    strings.ToUpper(realm),
+		realm:    realm,
 		kind:     SecretNTHash,
 		ntHash:   h,
 	}, nil
@@ -101,7 +101,7 @@ func NewWithAESKey(username, realm string, etype int, key []byte) (*Credential, 
 	copy(k, key)
 	return &Credential{
 		username: username,
-		realm:    strings.ToUpper(realm),
+		realm:    realm,
 		kind:     SecretAESKey,
 		aesKey:   k,
 		aesEtype: etype,

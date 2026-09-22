@@ -42,12 +42,10 @@ func parseKDCEndpoint(addr string) kdcEndpoint {
 // realm, then a custom WithKDCResolver, then DNS-SRV discovery — but yields the
 // full failover list rather than a single host. Nothing is hardcoded.
 func (c *KerberosClient) endpointsForRealm(realm string) ([]kdcEndpoint, error) {
-	realm = strings.ToUpper(realm)
-
 	if host, ok := c.realmKDCs[realm]; ok && host != "" {
 		return []kdcEndpoint{parseKDCEndpoint(host)}, nil
 	}
-	if realm == strings.ToUpper(c.realm) && c.kdcHost != "" {
+	if realm == c.realm && c.kdcHost != "" {
 		return []kdcEndpoint{parseKDCEndpoint(c.kdcHost)}, nil
 	}
 	if c.kdcResolver != nil {
