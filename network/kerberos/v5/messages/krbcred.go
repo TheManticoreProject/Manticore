@@ -48,6 +48,7 @@ type KrbCredInfo struct {
 	RenewTill time.Time
 	SRealm    string
 	SName     PrincipalName
+	CAddr     []HostAddress
 }
 
 // krbCredInfoInner is the unmarshal view of a KrbCredInfo SEQUENCE.
@@ -124,6 +125,13 @@ func (info *KrbCredInfo) marshal() ([]byte, error) {
 		}
 		elems = append(elems, s)
 	}
+	if len(info.CAddr) > 0 {
+		a, err := asn1.MarshalWithParams(info.CAddr, "explicit,tag:10")
+		if err != nil {
+			return nil, err
+		}
+		elems = append(elems, a)
+	}
 	return derSequence(elems...)
 }
 
@@ -158,6 +166,7 @@ func (info *krbCredInfoInner) toPublic() KrbCredInfo {
 		RenewTill: info.RenewTill,
 		SRealm:    info.SRealm,
 		SName:     info.SName,
+		CAddr:     info.CAddr,
 	}
 }
 
@@ -170,6 +179,8 @@ type EncKrbCredPart struct {
 	Nonce      int
 	Timestamp  time.Time
 	Usec       int
+	SAddress   HostAddress
+	RAddress   HostAddress
 }
 
 type encKrbCredPartInner struct {
@@ -220,6 +231,20 @@ func (e *EncKrbCredPart) Marshal() ([]byte, error) {
 		}
 		elems = append(elems, u)
 	}
+	if len(e.SAddress.Address) > 0 {
+		a, err := asn1.MarshalWithParams(e.SAddress, "explicit,tag:4")
+		if err != nil {
+			return nil, err
+		}
+		elems = append(elems, a)
+	}
+	if len(e.RAddress.Address) > 0 {
+		a, err := asn1.MarshalWithParams(e.RAddress, "explicit,tag:5")
+		if err != nil {
+			return nil, err
+		}
+		elems = append(elems, a)
+	}
 
 	seq, err := derSequence(elems...)
 	if err != nil {
@@ -245,6 +270,8 @@ func (e *EncKrbCredPart) Unmarshal(data []byte) (int, error) {
 	e.Nonce = inner.Nonce
 	e.Timestamp = inner.Timestamp
 	e.Usec = inner.Usec
+	e.SAddress = inner.SAddress
+	e.RAddress = inner.RAddress
 	return consumed, nil
 }
 

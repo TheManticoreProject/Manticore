@@ -1,8 +1,10 @@
 package gssapi
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
@@ -104,6 +106,22 @@ func ExtractDelegatedCred(auth *messages.Authenticator) (*messages.KRBCred, erro
 // forwarded ticket's session key and lifetimes, which together with the ticket
 // in cred.Tickets form a reusable TGT (a ".kirbi" for pass-the-ticket).
 func DecryptDelegatedCredPart(cred *messages.KRBCred, subKey messages.EncryptionKey) (*messages.EncKrbCredPart, error) {
+	return DecryptDelegatedCredPartWithOptions(cred, subKey, KRBCredReceiveOptions{})
+}
+
+// KRBCredReceiveOptions supplies the receiver state used for RFC 4120 KRB-CRED
+// freshness, nonce, and optional address validation.
+type KRBCredReceiveOptions struct {
+	Now              time.Time
+	ClockSkew        time.Duration
+	Nonce            *int
+	SenderAddress    *messages.HostAddress
+	RecipientAddress *messages.HostAddress
+}
+
+// DecryptDelegatedCredPartWithOptions decrypts and completely validates a
+// received KRB-CRED before returning any credentials.
+func DecryptDelegatedCredPartWithOptions(cred *messages.KRBCred, subKey messages.EncryptionKey, opts KRBCredReceiveOptions) (*messages.EncKrbCredPart, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("gssapi: nil KRB-CRED")
 	}
@@ -111,8 +129,11 @@ func DecryptDelegatedCredPart(cred *messages.KRBCred, subKey messages.Encryption
 	// (etype 0); accept it verbatim so extraction works without a key too.
 	plain := cred.EncPart.Cipher
 	if cred.EncPart.EType != 0 {
+		if cred.EncPart.EType != subKey.KeyType {
+			return nil, fmt.Errorf("gssapi: KRB-CRED enctype %d does not match receive key enctype %d", cred.EncPart.EType, subKey.KeyType)
+		}
 		var err error
-		plain, err = kerbcrypto.Decrypt(subKey.KeyType, subKey.KeyValue, kerbcrypto.KeyUsageKRBCredEncPart, cred.EncPart.Cipher)
+		plain, err = kerbcrypto.Decrypt(cred.EncPart.EType, subKey.KeyValue, kerbcrypto.KeyUsageKRBCredEncPart, cred.EncPart.Cipher)
 		if err != nil {
 			return nil, fmt.Errorf("gssapi: decrypt KRB-CRED enc-part: %w", err)
 		}
@@ -121,5 +142,47 @@ func DecryptDelegatedCredPart(cred *messages.KRBCred, subKey messages.Encryption
 	if _, err := enc.Unmarshal(plain); err != nil {
 		return nil, fmt.Errorf("gssapi: parse EncKrbCredPart: %w", err)
 	}
+	if err := validateReceivedKRBCred(cred, &enc, opts); err != nil {
+		return nil, err
+	}
 	return &enc, nil
+}
+
+func validateReceivedKRBCred(cred *messages.KRBCred, enc *messages.EncKrbCredPart, opts KRBCredReceiveOptions) error {
+	if len(cred.Tickets) != len(enc.TicketInfo) {
+		return fmt.Errorf("gssapi: KRB-CRED has %d tickets but %d ticket-info entries", len(cred.Tickets), len(enc.TicketInfo))
+	}
+	if enc.Timestamp.IsZero() || enc.Usec < 0 || enc.Usec > 999999 {
+		return fmt.Errorf("gssapi: KRB-CRED is missing a valid timestamp/usec pair")
+	}
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	skew := opts.ClockSkew
+	if skew <= 0 {
+		skew = DefaultClockSkew
+	}
+	generated := enc.Timestamp.UTC().Add(time.Duration(enc.Usec) * time.Microsecond)
+	delta := now.Sub(generated)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > skew {
+		return fmt.Errorf("gssapi: KRB-CRED timestamp outside clock skew (%s > %s)", delta, skew)
+	}
+	if opts.Nonce != nil && enc.Nonce != *opts.Nonce {
+		return fmt.Errorf("gssapi: KRB-CRED nonce mismatch: got %d, want %d", enc.Nonce, *opts.Nonce)
+	}
+	if opts.SenderAddress != nil && !credAddressEqual(enc.SAddress, *opts.SenderAddress) {
+		return fmt.Errorf("gssapi: KRB-CRED sender address mismatch")
+	}
+	if opts.RecipientAddress != nil && !credAddressEqual(enc.RAddress, *opts.RecipientAddress) {
+		return fmt.Errorf("gssapi: KRB-CRED recipient address mismatch")
+	}
+	return nil
+}
+
+func credAddressEqual(a, b messages.HostAddress) bool {
+	return a.AddrType == b.AddrType && bytes.Equal(a.Address, b.Address)
 }
