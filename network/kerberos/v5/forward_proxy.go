@@ -18,18 +18,19 @@ func (c *KerberosClient) buildForwardedProxyTGSReq(option int, sname messages.Pr
 	if len(addresses) == 0 {
 		return nil, fmt.Errorf("kerberos: forwarded and proxy requests require at least one address")
 	}
-	apReq, err := c.buildAPReq()
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(option), Realm: c.realm, SName: sname,
+		Till: c.now().Add(24 * time.Hour), Nonce: nonce,
+		EType: c.serviceTicketETypes(), Addresses: addresses,
+	}
+	apReq, err := c.buildAPReq(body)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
 	}
 	return &messages.TGSReq{
 		PVNO: messages.KerberosV5, MsgType: messages.MsgTypeTGSReq,
-		PAData: []messages.PAData{{PADataType: messages.PATGSReq, PADataValue: apReq}},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(option), Realm: c.realm, SName: sname,
-			Till: c.now().Add(24 * time.Hour), Nonce: nonce,
-			EType: c.serviceTicketETypes(), Addresses: addresses,
-		},
+		PAData:  []messages.PAData{{PADataType: messages.PATGSReq, PADataValue: apReq}},
+		ReqBody: body,
 	}, nil
 }
 

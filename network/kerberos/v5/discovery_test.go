@@ -145,8 +145,8 @@ func TestEndpointsForRealmPrecedence(t *testing.T) {
 	c.WithKDCResolver(func(realm string) (string, error) { return "resolver-" + realm, nil })
 
 	cases := []struct{ realm, wantHost string }{
-		{"CHILD.CORP.LOCAL", "10.0.1.1"},        // explicit override
-		{"CORP.LOCAL", "10.0.0.1"},              // home realm
+		{"child.corp.local", "10.0.1.1"},        // explicit override
+		{"corp.local", "10.0.0.1"},              // home realm
 		{"OTHER.LOCAL", "resolver-OTHER.LOCAL"}, // custom resolver
 	}
 	for _, tc := range cases {
@@ -172,8 +172,8 @@ func TestEndpointsForRealmExplicitPort(t *testing.T) {
 		wantHost string
 		wantPort int
 	}{
-		{"CHILD.CORP.LOCAL", "10.0.1.1", 7777},
-		{"CORP.LOCAL", "10.0.0.1", 9999},
+		{"child.corp.local", "10.0.1.1", 7777},
+		{"corp.local", "10.0.0.1", 9999},
 		{"OTHER.LOCAL", "::1", 6666},
 	}
 	for _, tc := range cases {

@@ -125,7 +125,7 @@ func TestProcessPKINITASRepAgilityKDF(t *testing.T) {
 	serverNonce := bytes.Repeat([]byte{0x5A}, pkinit.DHNonceLen)
 	paValue := synthPKINITReplyPAWithKDF(t, kdcKP.Y, serverNonce, asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 6, 2})
 
-	c := NewClient("alice", "corp.local", "").InsecureSkipPKINITKDCSignatureCheck()
+	c := NewClient("alice", "CORP.LOCAL", "").InsecureSkipPKINITKDCSignatureCheck()
 
 	const etype = messages.ETypeAES128CTSHMACSHA256 // 19, AES-SHA2
 	keyLen := kerbcrypto.KeyLen(etype)
@@ -242,7 +242,7 @@ func pkinitExchange(t *testing.T) (c *KerberosClient, pkReq *pkinit.Request, paV
 	keyMaterial := append(append(append([]byte{}, shared...), pkReq.ClientDHNonce...), serverNonce...)
 	replyKey = pkinit.OctetString2Key(keyMaterial, kerbcrypto.KeyLen(messages.ETypeAES256CTSHMACSHA196))
 
-	c = NewClient("alice", "corp.local", "").InsecureSkipPKINITKDCSignatureCheck()
+	c = NewClient("alice", "CORP.LOCAL", "").InsecureSkipPKINITKDCSignatureCheck()
 	return c, pkReq, paValue, replyKey
 }
 

@@ -1,6 +1,7 @@
 package kerberos
 
 import (
+	"bytes"
 	"encoding/asn1"
 	"fmt"
 	"strings"
@@ -16,7 +17,7 @@ import (
 const maxReferralHops = 10
 
 // WithRealmKDC registers the KDC host to contact when the cross-realm referral
-// chase reaches the given realm. The realm is uppercased automatically. This is
+// chase reaches the given case-sensitive realm. This is
 // the minimal, no-dependency way to resolve a target-realm KDC; automatic
 // discovery (DNS SRV) is used for any realm not registered here. Returns the
 // client to allow fluent chaining.
@@ -24,7 +25,7 @@ func (c *KerberosClient) WithRealmKDC(realm, kdcHost string) *KerberosClient {
 	if c.realmKDCs == nil {
 		c.realmKDCs = make(map[string]string)
 	}
-	c.realmKDCs[strings.ToUpper(realm)] = kdcHost
+	c.realmKDCs[realm] = kdcHost
 	return c
 }
 
@@ -79,7 +80,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 
 	// Realms whose KDC we have already presented a TGT to, to detect referral
 	// cycles (an authority realm must not be revisited).
-	visited := map[string]bool{strings.ToUpper(bodyRealm): true}
+	visited := map[string]bool{bodyRealm: true}
 	// Corrected realms we have already retried for WRONG_REALM, to avoid a
 	// ping-pong between two KDCs that keep correcting each other. Kept separate
 	// from visited so the follow-up referral toward the corrected realm is not
@@ -99,7 +100,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 			// per corrected realm against the same (home) KDC so it can issue a
 			// referral toward that realm.
 			if krbErr.ErrorCode == messages.ErrWrongRealm && krbErr.CRealm != "" {
-				corrected := strings.ToUpper(krbErr.CRealm)
+				corrected := krbErr.CRealm
 				if !wrongRealmTried[corrected] {
 					wrongRealmTried[corrected] = true
 					bodyRealm = corrected
@@ -123,7 +124,6 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 			return rep.Ticket, rep.TicketRaw, encRep.Key.KeyValue, encRep.Key.KeyType, nil
 		}
 
-		nextRealm = strings.ToUpper(nextRealm)
 		if visited[nextRealm] {
 			return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: cross-realm referral cycle detected at realm %q", nextRealm)
 		}
@@ -166,17 +166,25 @@ func (c *KerberosClient) tgsExchange(
 		return c.tgsExchangeFAST(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
 	}
 
-	apReqBytes, err := c.buildAPReqWith(tgt, tgtRaw, sessionKey, sessionEType)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	nonce := randomNonce()
 	// PA-PAC-REQUEST: SEQUENCE { [0] BOOLEAN } — TRUE=0xff, FALSE=0x00.
 	pacBool := byte(0xff)
 	if !includePAC {
 		pacBool = 0x00
 	}
+	body := messages.KDCReqBody{
+		KDCOptions: kdcOptionsForTGSReq(),
+		Realm:      bodyRealm,
+		SName:      sname,
+		Till:       c.now().Add(24 * time.Hour),
+		Nonce:      nonce,
+		EType:      c.serviceTicketETypes(),
+	}
+	apReqBytes, err := c.buildAPReqWith(body, tgt, tgtRaw, sessionKey, sessionEType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+	}
+
 	tgsReq := &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
@@ -184,14 +192,7 @@ func (c *KerberosClient) tgsExchange(
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 			{PADataType: messages.PAPACRequest, PADataValue: []byte{0x30, 0x05, 0xa0, 0x03, 0x01, 0x01, pacBool}},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: kdcOptionsForTGSReq(),
-			Realm:      bodyRealm,
-			SName:      sname,
-			Till:       c.now().Add(24 * time.Hour),
-			Nonce:      nonce,
-			EType:      c.serviceTicketETypes(),
-		},
+		ReqBody: body,
 	}
 
 	tgsReqBytes, err := tgsReq.Marshal()
@@ -237,8 +238,35 @@ func (c *KerberosClient) tgsExchange(
 	if err := c.validateKDCReplyIdentity("TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := validateKDCReplyServer("TGS-REP", tgsRep.Ticket, bodyRealm, sname, true); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateKDCReplyAddresses("TGS-REP", encRep.CAddr, nil); err != nil {
+		return nil, nil, nil, err
+	}
 
 	return &tgsRep, &encRep, nil, nil
+}
+
+func validateKDCReplyAddresses(replyType string, got, requested []messages.HostAddress) error {
+	if len(got) != len(requested) {
+		return fmt.Errorf("kerberos: %s client addresses do not match request", replyType)
+	}
+	used := make([]bool, len(got))
+	for _, want := range requested {
+		matched := false
+		for i, have := range got {
+			if !used[i] && have.AddrType == want.AddrType && bytes.Equal(have.Address, want.Address) {
+				used[i] = true
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("kerberos: %s client addresses do not match request", replyType)
+		}
+	}
+	return nil
 }
 
 // referralTargetRealm decides whether a TGS-REP is a cross-realm referral rather
@@ -296,7 +324,7 @@ func svrReferralRealm(paList []messages.PAData) (string, bool) {
 		}
 		var d svrReferralData
 		if _, err := asn1.Unmarshal(pa.PADataValue, &d); err == nil && d.ReferredRealm != "" {
-			return strings.ToUpper(d.ReferredRealm), true
+			return d.ReferredRealm, true
 		}
 	}
 	return "", false
@@ -321,13 +349,30 @@ func principalNameEqualFold(a, b messages.PrincipalName) bool {
 // and verifies that its encrypted server identity matches the outer ticket.
 func (c *KerberosClient) validateKDCReplyIdentity(replyType, clientRealm string, clientName messages.PrincipalName, ticket messages.Ticket, serverRealm string, serverName messages.PrincipalName) error {
 	expectedClient := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}}
-	if !strings.EqualFold(clientRealm, c.realm) || !principalNameEqualFold(clientName, expectedClient) {
+	if clientRealm != c.realm || !principalNameEqualFold(clientName, expectedClient) {
 		return fmt.Errorf("kerberos: %s client identity %s@%s does not match %s@%s",
 			replyType, strings.Join(clientName.NameString, "/"), clientRealm, c.username, c.realm)
 	}
-	if !strings.EqualFold(ticket.Realm, serverRealm) || !principalNameEqualFold(ticket.SName, serverName) {
+	if ticket.Realm != serverRealm || !principalNameEqualFold(ticket.SName, serverName) {
 		return fmt.Errorf("kerberos: %s ticket service %s@%s does not match encrypted reply service %s@%s",
 			replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm, strings.Join(serverName.NameString, "/"), serverRealm)
 	}
 	return nil
+}
+
+// validateKDCReplyServer binds a KDC reply to the service named in the request.
+// TGS referral replies may instead contain a krbtgt/NEXT-REALM principal, but
+// arbitrary substitute service principals are never accepted.
+func validateKDCReplyServer(replyType string, ticket messages.Ticket, requestedRealm string, requestedName messages.PrincipalName, allowReferral bool) error {
+	if strings.EqualFold(ticket.Realm, requestedRealm) && principalNameEqualFold(ticket.SName, requestedName) {
+		return nil
+	}
+	if allowReferral {
+		if _, ok := referralRealmFromSName(ticket.SName, requestedName); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("kerberos: %s service %s@%s does not match requested service %s@%s",
+		replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm,
+		strings.Join(requestedName.NameString, "/"), requestedRealm)
 }

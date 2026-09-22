@@ -12,6 +12,17 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
+func TestNewClientPreservesRealmCase(t *testing.T) {
+	c := NewClient("alice", "Example.Realm", "kdc.example")
+	if c.realm != "Example.Realm" {
+		t.Fatalf("realm = %q, want Example.Realm", c.realm)
+	}
+	c.WithPassword("password")
+	if c.cred.Realm() != "Example.Realm" || c.cred.DefaultSalt() != "Example.Realmalice" {
+		t.Fatalf("credential realm/salt lost case: realm=%q salt=%q", c.cred.Realm(), c.cred.DefaultSalt())
+	}
+}
+
 // buildASRep encodes an AS-REP whose enc-part is an EncASRepPart (with the given
 // nonce and session key) encrypted under key/etype at key-usage 3, so it can be
 // fed to processASRep without a live KDC.
@@ -70,7 +81,7 @@ func TestServiceTicketETypesIncludeAESSHA2(t *testing.T) {
 
 func TestWithAESKeyForEType(t *testing.T) {
 	key := bytes.Repeat([]byte{0x42}, 32)
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithAESKeyForEType(hex.EncodeToString(key), messages.ETypeAES256CTSHMACSHA384); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +100,7 @@ func TestProcessASRepSuccess(t *testing.T) {
 	nonce := 0x33445566
 	sessionKey := bytes.Repeat([]byte{0x42}, 32)
 
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithAESKey(keyHex); err != nil {
 		t.Fatalf("WithAESKey: %v", err)
 	}

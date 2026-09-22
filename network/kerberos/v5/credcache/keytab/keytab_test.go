@@ -84,12 +84,12 @@ func TestKeytabSelect(t *testing.T) {
 	if rc4 == nil || int(rc4.EType) != iana.ETypeRC4HMAC {
 		t.Fatalf("expected RC4, got %+v", rc4)
 	}
-	// Realm-less query matches, case-insensitively on realm.
+	// Realm-less query matches, while a supplied realm is case-sensitive.
 	if kt.Select("Administrator", 0, -1) == nil {
 		t.Fatal("realm-less query should match")
 	}
-	if kt.Select("Administrator@corp.local", iana.ETypeAES128CTSHMACSHA196, -1) == nil {
-		t.Fatal("case-insensitive realm match failed")
+	if kt.Select("Administrator@corp.local", iana.ETypeAES128CTSHMACSHA196, -1) != nil {
+		t.Fatal("realm differing only by case unexpectedly matched")
 	}
 	// Find with etype+kvno filters.
 	if hits := kt.Find("Administrator@CORP.LOCAL", 0, 3); len(hits) != 3 {
