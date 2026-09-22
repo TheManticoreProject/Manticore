@@ -110,6 +110,24 @@ func TestETypeInfo2RoundTrip(t *testing.T) {
 	}
 }
 
+func TestETypeInfoRoundTrip(t *testing.T) {
+	orig := ETypeInfo{
+		{EType: ETypeAES256CTSHMACSHA196, Salt: []byte("Legacy.Realmalice")},
+		{EType: ETypeRC4HMAC},
+	}
+	wire, err := orig.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got ETypeInfo
+	if _, err := got.Unmarshal(wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].EType != orig[0].EType || !bytes.Equal(got[0].Salt, orig[0].Salt) {
+		t.Fatalf("legacy ETYPE-INFO not preserved: %#v", got)
+	}
+}
+
 // TestPAEncTSEncRoundTrip marshals a PA-ENC-TIMESTAMP body and confirms the
 // timestamp and microseconds round-trip.
 func TestPAEncTSEncRoundTrip(t *testing.T) {
