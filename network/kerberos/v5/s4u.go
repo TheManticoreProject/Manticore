@@ -129,6 +129,9 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := validateKDCReplyAddresses("S4U2Self TGS-REP", encTGSRep.CAddr, nil); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
 
 	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)
 	return ticket, raw, key, etype, nil
@@ -238,6 +241,9 @@ func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (
 	}
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
+	}
+	if err := validateKDCReplyAddresses("S4U2Proxy TGS-REP", encTGSRep.CAddr, nil); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
 	}
 
 	ticket, raw, key, etype := s4uResult(&tgsRep, &encTGSRep)

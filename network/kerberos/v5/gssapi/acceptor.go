@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,10 @@ type AcceptOptions struct {
 	// ClockSkew is the maximum tolerated difference between the authenticator
 	// timestamp and the acceptor clock. Zero selects DefaultClockSkew.
 	ClockSkew time.Duration
+	// ClientAddress is the operating-system reported peer address. It is required
+	// when the ticket contains caddr restrictions and ignored for addressless
+	// tickets.
+	ClientAddress net.IP
 	// ReplayCache detects replayed authenticators. When nil a fresh single-use
 	// cache is created, giving no cross-call replay protection; callers accepting
 	// more than one context should pass a shared cache.
@@ -194,6 +199,11 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	}
 	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
 		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
+	}
+	if len(encTkt.CAddr) > 0 {
+		if len(opts.ClientAddress) == 0 || !ticketAddressMatches(encTkt.CAddr, opts.ClientAddress) {
+			return nil, nil, fmt.Errorf("gssapi: client address %s is not authorized by ticket", opts.ClientAddress)
+		}
 	}
 
 	// Decrypt the authenticator with the ticket session key (key usage 11).
@@ -324,6 +334,22 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 		return nil, nil, err
 	}
 	return outputToken, ctx, nil
+}
+
+func ticketAddressMatches(addresses []messages.HostAddress, peer net.IP) bool {
+	for _, address := range addresses {
+		switch address.AddrType {
+		case 2: // IPv4
+			if ip := peer.To4(); ip != nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		case 24: // IPv6
+			if ip := peer.To16(); ip != nil && peer.To4() == nil && bytes.Equal(ip, address.Address) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate

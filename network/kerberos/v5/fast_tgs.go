@@ -279,6 +279,9 @@ func (c *KerberosClient) processFASTTGSRep(resp []byte, ctx *fastTGSContext) (*m
 	if err := c.validateKDCReplyIdentity("FAST TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
 		return nil, nil, nil, nil, err
 	}
+	if err := validateKDCReplyAddresses("FAST TGS-REP", encRep.CAddr, nil); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	return &tgsRep, &encRep, nil, nil, nil
 }
 

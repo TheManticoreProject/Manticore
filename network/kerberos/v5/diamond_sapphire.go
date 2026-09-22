@@ -313,6 +313,9 @@ func (c *KerberosClient) harvestPACViaS4USelfU2U(impersonateUser, impersonateRea
 	if encTGSRep.Nonce != nonce {
 		return nil, messages.PrincipalName{}, "", fmt.Errorf("kerberos: sapphire nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
+	if err := validateKDCReplyAddresses("sapphire TGS-REP", encTGSRep.CAddr, nil); err != nil {
+		return nil, messages.PrincipalName{}, "", err
+	}
 
 	// ENC-TKT-IN-SKEY: the issued ticket's enc-part is encrypted under our TGT
 	// session key (usage 2), not a long-term key, so we can decrypt it.
