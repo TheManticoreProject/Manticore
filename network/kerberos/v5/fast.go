@@ -155,13 +155,13 @@ func (c *KerberosClient) getTGTFAST() error {
 // PA-TGS-REQ).
 func (c *KerberosClient) buildArmorAPReq(subkey []byte) ([]byte, error) {
 	armor := c.fast
-	now := c.now()
+	now, cusec := messages.NextAuthenticatorTimestamp(c.now())
 
 	auth := &messages.Authenticator{
 		AVno:   messages.KerberosV5,
 		CRealm: armor.realm,
 		CName:  messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{armor.cname}},
-		CUSec:  now.Nanosecond() / 1000,
+		CUSec:  cusec,
 		CTime:  now,
 		SubKey: &messages.EncryptionKey{KeyType: armor.sessionEType, KeyValue: subkey},
 	}
