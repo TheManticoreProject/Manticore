@@ -302,7 +302,8 @@ func (c *KerberosClient) tgsExchangeFAST(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		resp, err := kdcSendEndpoints(c.resolver, endpoints, reqBytes)
+		operationCtx, timeout := c.contextAndTimeout()
+		resp, err := kdcSendEndpointsContext(operationCtx, c.resolver, endpoints, reqBytes, timeout)
 		if err != nil {
 			return nil, nil, nil, err
 		}

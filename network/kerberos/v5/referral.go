@@ -198,7 +198,8 @@ func (c *KerberosClient) tgsExchange(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("kerberos: marshal TGS-REQ: %w", err)
 	}
-	resp, err := kdcSendEndpoints(c.resolver, endpoints, tgsReqBytes)
+	ctx, timeout := c.contextAndTimeout()
+	resp, err := kdcSendEndpointsContext(ctx, c.resolver, endpoints, tgsReqBytes, timeout)
 	if err != nil {
 		return nil, nil, nil, err
 	}
