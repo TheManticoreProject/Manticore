@@ -550,6 +550,31 @@ func TestAcceptSecContextNotYetValidTicket(t *testing.T) {
 	}
 }
 
+func TestAcceptSecContextAbsentStartTimeUsesAuthTime(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"future-auth"}}
+	now := time.Now().UTC()
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		AuthTime: now.Add(2 * time.Hour),
+		EndTime:  now.Add(10 * time.Hour),
+	})
+
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{
+		Keys: []ServiceKey{{EType: etype, Key: serviceKey}}, Now: now,
+	})); err == nil {
+		t.Fatal("ticket with a future authtime and omitted starttime was accepted")
+	}
+}
+
 func TestAcceptSecContextInvalidFlagTicket(t *testing.T) {
 	const etype = iana.ETypeAES256CTSHMACSHA196
 	serviceKey := randKey(t, 32)

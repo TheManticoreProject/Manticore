@@ -192,8 +192,13 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	if !encTkt.EndTime.IsZero() && now.After(encTkt.EndTime.UTC().Add(skew)) {
 		return nil, nil, fmt.Errorf("gssapi: ticket expired (endtime %s, now %s)", encTkt.EndTime.UTC(), now)
 	}
-	if !encTkt.StartTime.IsZero() && encTkt.StartTime.UTC().After(now.Add(skew)) {
-		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (starttime %s, now %s)", encTkt.StartTime.UTC(), now)
+	effectiveStart := encTkt.StartTime
+	if effectiveStart.IsZero() {
+		// RFC 4120 section 5.3: an omitted starttime means authtime.
+		effectiveStart = encTkt.AuthTime
+	}
+	if !effectiveStart.IsZero() && effectiveStart.UTC().After(now.Add(skew)) {
+		return nil, nil, fmt.Errorf("gssapi: ticket not yet valid (effective starttime %s, now %s)", effectiveStart.UTC(), now)
 	}
 
 	// Decrypt the authenticator with the ticket session key (key usage 11).
