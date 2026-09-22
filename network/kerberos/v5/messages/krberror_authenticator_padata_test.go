@@ -145,6 +145,7 @@ func TestEncRepPartRoundTrip(t *testing.T) {
 		EndTime:  tstTime,
 		SRealm:   "CORP.LOCAL",
 		SName:    tgtSName(),
+		CAddr:    []HostAddress{{AddrType: 2, Address: []byte{192, 0, 2, 5}}},
 	}
 	wire, err := asPart.Marshal()
 	if err != nil {
@@ -161,9 +162,13 @@ func TestEncRepPartRoundTrip(t *testing.T) {
 	if !gotAS.AuthTime.Equal(asPart.AuthTime) {
 		t.Errorf("authtime: got %v want %v", gotAS.AuthTime, asPart.AuthTime)
 	}
+	if len(gotAS.CAddr) != 1 || !bytes.Equal(gotAS.CAddr[0].Address, []byte{192, 0, 2, 5}) {
+		t.Errorf("AS-REP caddr not preserved: %+v", gotAS.CAddr)
+	}
 
 	tgsPart := &EncTGSRepPart{Key: key, Nonce: 99, Flags: NewKerberosFlags(TicketFlagForwardable),
-		AuthTime: tstTime, EndTime: tstTime, SRealm: "CORP.LOCAL", SName: tgtSName()}
+		AuthTime: tstTime, EndTime: tstTime, SRealm: "CORP.LOCAL", SName: tgtSName(),
+		CAddr: []HostAddress{{AddrType: 24, Address: bytes.Repeat([]byte{0x20}, 16)}}}
 	wire2, err := tgsPart.Marshal()
 	if err != nil {
 		t.Fatalf("EncTGSRepPart.Marshal: %v", err)
@@ -174,6 +179,9 @@ func TestEncRepPartRoundTrip(t *testing.T) {
 	}
 	if gotTGS.Nonce != 99 || !bytes.Equal(gotTGS.Key.KeyValue, key.KeyValue) {
 		t.Errorf("EncTGSRepPart not preserved: %+v", gotTGS)
+	}
+	if len(gotTGS.CAddr) != 1 || gotTGS.CAddr[0].AddrType != 24 {
+		t.Errorf("TGS-REP caddr not preserved: %+v", gotTGS.CAddr)
 	}
 	// The two enc-part flavours differ only by APPLICATION tag (25 vs 26).
 	if wire[0] == wire2[0] {

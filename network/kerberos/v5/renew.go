@@ -19,11 +19,6 @@ import (
 // It is factored out of Renew/Validate so the request shape can be verified
 // without a live KDC (see renew_test.go).
 func (c *KerberosClient) buildRenewalTGSReq(option, nonce int) (*messages.TGSReq, error) {
-	apReqBytes, err := c.buildAPReq()
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
-	}
-
 	// The renewed/validated ticket is a TGT, so the requested server is the
 	// ticket-granting service of the client's own realm.
 	sname := messages.PrincipalName{
@@ -41,20 +36,26 @@ func (c *KerberosClient) buildRenewalTGSReq(option, nonce int) (*messages.TGSReq
 		till = c.tgtEnc.RenewTill
 	}
 
+	body := messages.KDCReqBody{
+		KDCOptions: encodeKDCOptions(kdcOptionRenewable, option),
+		Realm:      c.realm,
+		SName:      sname,
+		Till:       till,
+		Nonce:      nonce,
+		EType:      c.serviceTicketETypes(),
+	}
+	apReqBytes, err := c.buildAPReq(body)
+	if err != nil {
+		return nil, fmt.Errorf("kerberos: build AP-REQ: %w", err)
+	}
+
 	return &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
 		PAData: []messages.PAData{
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 		},
-		ReqBody: messages.KDCReqBody{
-			KDCOptions: encodeKDCOptions(kdcOptionRenewable, option),
-			Realm:      c.realm,
-			SName:      sname,
-			Till:       till,
-			Nonce:      nonce,
-			EType:      c.serviceTicketETypes(),
-		},
+		ReqBody: body,
 	}, nil
 }
 
@@ -129,6 +130,15 @@ func (c *KerberosClient) renewOrValidate(option int, label string) error {
 		if encRep.Nonce != nonce {
 			return fmt.Errorf("kerberos: %s nonce mismatch: got %d, want %d", label, encRep.Nonce, nonce)
 		}
+		if err := c.validateKDCReplyIdentity(label+" TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+			return err
+		}
+		if err := validateKDCReplyServer(label+" TGS-REP", tgsRep.Ticket, c.realm, req.ReqBody.SName, false); err != nil {
+			return err
+		}
+		if err := validateKDCReplyAddresses(label+" TGS-REP", encRep.CAddr, nil); err != nil {
+			return err
+		}
 
 		c.storeReissuedTGT(&tgsRep, &encRep)
 		return nil
@@ -155,5 +165,6 @@ func (c *KerberosClient) storeReissuedTGT(rep *messages.TGSRep, enc *messages.En
 		RenewTill: enc.RenewTill,
 		SRealm:    enc.SRealm,
 		SName:     enc.SName,
+		CAddr:     enc.CAddr,
 	}
 }
