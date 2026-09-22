@@ -25,6 +25,7 @@ const (
 	KeyUsageASReqPAEncTimestamp    = iana.KeyUsageASReqPAEncTimestamp
 	KeyUsageKDCRepTicket           = iana.KeyUsageKDCRepTicket
 	KeyUsageASRepEncPart           = iana.KeyUsageASRepEncPart
+	KeyUsageTGSReqAuthCksum        = iana.KeyUsageTGSReqAuthCksum
 	KeyUsageTGSReqPAAPReqAuthen    = iana.KeyUsageTGSReqPAAPReqAuthen
 	KeyUsageTGSRepEncSessionKey    = iana.KeyUsageTGSRepEncSessionKey
 	KeyUsageTGSRepEncSubSessionKey = iana.KeyUsageTGSRepEncSubSessionKey

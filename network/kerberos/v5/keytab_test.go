@@ -30,7 +30,7 @@ func keytabBytes(t *testing.T, entries map[int][]byte) []byte {
 }
 
 func TestWithKeytabRejectsNil(t *testing.T) {
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithKeytab(nil, 0); err == nil {
 		t.Fatal("WithKeytab(nil) returned nil error")
 	}
@@ -46,7 +46,7 @@ func TestWithKeytabBytesPrefersAES256(t *testing.T) {
 		iana.ETypeAES256CTSHMACSHA196: bytes.Repeat([]byte{0x33}, 32),
 	})
 
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithKeytabBytes(data); err != nil {
 		t.Fatalf("WithKeytabBytes: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestWithKeytabBytesFallsBackToRC4(t *testing.T) {
 		iana.ETypeRC4HMAC: bytes.Repeat([]byte{0x11}, 16),
 	})
 
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithKeytabBytes(data); err != nil {
 		t.Fatalf("WithKeytabBytes: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestWithKeytabForcesEType(t *testing.T) {
 		t.Fatalf("keytab.Unmarshal: %v", err)
 	}
 
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithKeytab(kt, iana.ETypeAES128CTSHMACSHA196); err != nil {
 		t.Fatalf("WithKeytab(AES128): %v", err)
 	}
@@ -106,7 +106,7 @@ func TestWithKeytabAcceptsAESSHA2(t *testing.T) {
 		{iana.ETypeAES256CTSHMACSHA384, 32},
 	} {
 		data := keytabBytes(t, map[int][]byte{tc.etype: bytes.Repeat([]byte{0x44}, tc.size)})
-		c := NewClient("alice", "corp.local", "10.0.0.1")
+		c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 		if err := c.WithKeytabBytes(data); err != nil {
 			t.Fatalf("etype %d: WithKeytabBytes: %v", tc.etype, err)
 		}
@@ -121,7 +121,7 @@ func TestWithKeytabAcceptsAESSHA2(t *testing.T) {
 func TestWithKeytabRejectsUnsupportedEType(t *testing.T) {
 	for _, etype := range []int{iana.ETypeDESCBCMD5} {
 		data := keytabBytes(t, map[int][]byte{etype: bytes.Repeat([]byte{0x44}, 32)})
-		c := NewClient("alice", "corp.local", "10.0.0.1")
+		c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 		if err := c.WithKeytabBytes(data); err == nil {
 			t.Errorf("etype %d: expected WithKeytabBytes to reject an unusable enctype", etype)
 		}

@@ -155,13 +155,13 @@ func (c *KerberosClient) getTGTFAST() error {
 // PA-TGS-REQ).
 func (c *KerberosClient) buildArmorAPReq(subkey []byte) ([]byte, error) {
 	armor := c.fast
-	now := c.now()
+	now, cusec := messages.NextAuthenticatorTimestamp(c.now())
 
 	auth := &messages.Authenticator{
 		AVno:   messages.KerberosV5,
 		CRealm: armor.realm,
 		CName:  messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{armor.cname}},
-		CUSec:  now.Nanosecond() / 1000,
+		CUSec:  cusec,
 		CTime:  now,
 		SubKey: &messages.EncryptionKey{KeyType: armor.sessionEType, KeyValue: subkey},
 	}
@@ -354,6 +354,12 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	if err := c.validateKDCReplyIdentity("FAST AS-REP", asRep.CRealm, asRep.CName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
 		return err
 	}
+	if err := validateKDCReplyServer("FAST AS-REP", asRep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
+		return err
+	}
+	if err := validateKDCReplyAddresses("FAST AS-REP", encASRep.CAddr, nil); err != nil {
+		return err
+	}
 
 	c.tgtTicket = asRep.Ticket
 	c.tgtTicketRaw = asRep.TicketRaw
@@ -420,6 +426,13 @@ func (c *KerberosClient) parseFASTError(krbErr messages.KRBError, armorKey []byt
 			var i2 messages.ETypeInfo2
 			if _, err := i2.Unmarshal(pa.PADataValue); err == nil && len(i2) > 0 {
 				info = i2
+			}
+		case messages.PAETypeInfo:
+			if info == nil {
+				var legacy messages.ETypeInfo
+				if _, err := legacy.Unmarshal(pa.PADataValue); err == nil && len(legacy) > 0 {
+					info = legacyETypeInfo2(legacy)
+				}
 			}
 		}
 	}

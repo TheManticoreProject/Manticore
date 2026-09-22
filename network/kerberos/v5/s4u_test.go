@@ -47,8 +47,8 @@ func TestS4U2SelfRequestShape(t *testing.T) {
 	if len(parsed.UserName.NameString) != 1 || parsed.UserName.NameString[0] != "victim" {
 		t.Errorf("PA-FOR-USER user = %+v, want victim", parsed.UserName)
 	}
-	if parsed.UserRealm != "CORP.LOCAL" {
-		t.Errorf("PA-FOR-USER realm = %q, want CORP.LOCAL (client realm default)", parsed.UserRealm)
+	if parsed.UserRealm != "corp.local" {
+		t.Errorf("PA-FOR-USER realm = %q, want case-preserved client realm", parsed.UserRealm)
 	}
 	// The PA-FOR-USER checksum must verify under the TGT session key.
 	if !sfu.VerifyPAForUser(parsed, c.sessionKey, c.sessionEType) {
@@ -70,7 +70,7 @@ func TestS4U2SelfRequestShape(t *testing.T) {
 }
 
 // TestS4U2SelfImpersonateRealm confirms an explicit impersonation realm is
-// uppercased and carried in PA-FOR-USER.
+// preserved and carried in PA-FOR-USER.
 func TestS4U2SelfImpersonateRealm(t *testing.T) {
 	c := fakeTGTClient(t)
 	req, err := c.buildS4U2SelfTGSReq("victim", "other.realm", 1)
@@ -81,8 +81,8 @@ func TestS4U2SelfImpersonateRealm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.UserRealm != "OTHER.REALM" {
-		t.Errorf("PA-FOR-USER realm = %q, want OTHER.REALM", parsed.UserRealm)
+	if parsed.UserRealm != "other.realm" {
+		t.Errorf("PA-FOR-USER realm = %q, want other.realm", parsed.UserRealm)
 	}
 }
 

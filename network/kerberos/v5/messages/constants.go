@@ -34,6 +34,7 @@ const (
 
 	PATGSReq             = iana.PATGSReq
 	PAEncTimestamp       = iana.PAEncTimestamp
+	PAETypeInfo          = iana.PAETypeInfo
 	PAETypeInfo2         = iana.PAETypeInfo2
 	PAPACRequest         = iana.PAPACRequest
 	PASvrReferralInfo    = iana.PASvrReferralInfo
@@ -58,14 +59,15 @@ const (
 	APOptionUseSessionKey = iana.APOptionUseSessionKey
 	APOptionMutualAuth    = iana.APOptionMutualAuth
 
-	TicketFlagForwardable = iana.TicketFlagForwardable
-	TicketFlagForwarded   = iana.TicketFlagForwarded
-	TicketFlagProxiable   = iana.TicketFlagProxiable
-	TicketFlagProxy       = iana.TicketFlagProxy
-	TicketFlagMayPostdate = iana.TicketFlagMayPostdate
-	TicketFlagPostdated   = iana.TicketFlagPostdated
-	TicketFlagInvalid     = iana.TicketFlagInvalid
-	TicketFlagPreAuthent  = iana.TicketFlagPreAuthent
-	TicketFlagInitial     = iana.TicketFlagInitial
-	TicketFlagRenewable   = iana.TicketFlagRenewable
+	TicketFlagForwardable  = iana.TicketFlagForwardable
+	TicketFlagForwarded    = iana.TicketFlagForwarded
+	TicketFlagProxiable    = iana.TicketFlagProxiable
+	TicketFlagProxy        = iana.TicketFlagProxy
+	TicketFlagMayPostdate  = iana.TicketFlagMayPostdate
+	TicketFlagPostdated    = iana.TicketFlagPostdated
+	TicketFlagInvalid      = iana.TicketFlagInvalid
+	TicketFlagPreAuthent   = iana.TicketFlagPreAuthent
+	TicketFlagInitial      = iana.TicketFlagInitial
+	TicketFlagRenewable    = iana.TicketFlagRenewable
+	TicketFlagTransitCheck = iana.TicketFlagTransitCheck
 )

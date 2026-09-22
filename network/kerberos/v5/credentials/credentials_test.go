@@ -12,8 +12,8 @@ import (
 
 func TestPasswordKeyMatchesNTHashForRC4(t *testing.T) {
 	c := NewWithPassword("alice", "corp.local", "Sup3rSecret!")
-	if c.Realm() != "CORP.LOCAL" {
-		t.Fatalf("realm not upper-cased: %q", c.Realm())
+	if c.Realm() != "corp.local" {
+		t.Fatalf("realm case not preserved: %q", c.Realm())
 	}
 	got, err := c.Key(iana.ETypeRC4HMAC, "", nil)
 	if err != nil {

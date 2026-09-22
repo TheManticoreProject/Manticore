@@ -12,6 +12,17 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
+func TestNewClientPreservesRealmCase(t *testing.T) {
+	c := NewClient("alice", "Example.Realm", "kdc.example")
+	if c.realm != "Example.Realm" {
+		t.Fatalf("realm = %q, want Example.Realm", c.realm)
+	}
+	c.WithPassword("password")
+	if c.cred.Realm() != "Example.Realm" || c.cred.DefaultSalt() != "Example.Realmalice" {
+		t.Fatalf("credential realm/salt lost case: realm=%q salt=%q", c.cred.Realm(), c.cred.DefaultSalt())
+	}
+}
+
 // buildASRep encodes an AS-REP whose enc-part is an EncASRepPart (with the given
 // nonce and session key) encrypted under key/etype at key-usage 3, so it can be
 // fed to processASRep without a live KDC.
@@ -70,7 +81,7 @@ func TestServiceTicketETypesIncludeAESSHA2(t *testing.T) {
 
 func TestWithAESKeyForEType(t *testing.T) {
 	key := bytes.Repeat([]byte{0x42}, 32)
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithAESKeyForEType(hex.EncodeToString(key), messages.ETypeAES256CTSHMACSHA384); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +100,7 @@ func TestProcessASRepSuccess(t *testing.T) {
 	nonce := 0x33445566
 	sessionKey := bytes.Repeat([]byte{0x42}, 32)
 
-	c := NewClient("alice", "corp.local", "10.0.0.1")
+	c := NewClient("alice", "CORP.LOCAL", "10.0.0.1")
 	if err := c.WithAESKey(keyHex); err != nil {
 		t.Fatalf("WithAESKey: %v", err)
 	}
@@ -221,6 +232,28 @@ func TestPickETypeFromError(t *testing.T) {
 	etype, salt, _ := c.pickETypeFromError(messages.KRBError{})
 	if etype != c.cred.SupportedETypes()[0] || salt != c.cred.DefaultSalt() {
 		t.Errorf("fallback etype/salt = %d/%q", etype, salt)
+	}
+}
+
+func TestPickETypeFromLegacyETypeInfo(t *testing.T) {
+	c := NewClient("alice", "Legacy.Realm", "10.0.0.1").WithPassword("Passw0rd!")
+	legacy := messages.ETypeInfo{
+		{EType: messages.ETypeRC4HMAC},
+		{EType: messages.ETypeAES128CTSHMACSHA196, Salt: []byte("Legacy.Realmalice")},
+	}
+	wire, err := legacy.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	methodData, err := asn1.Marshal([]messages.PAData{{PADataType: messages.PAETypeInfo, PADataValue: wire}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, edata := range [][]byte{wire, methodData} {
+		etype, salt, s2k := c.pickETypeFromError(messages.KRBError{EData: edata})
+		if etype != messages.ETypeAES128CTSHMACSHA196 || salt != "Legacy.Realmalice" || s2k != nil {
+			t.Fatalf("legacy selection = etype %d salt %q s2k %x", etype, salt, s2k)
+		}
 	}
 }
 
