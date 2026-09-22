@@ -108,6 +108,10 @@ type AcceptOptions struct {
 	// Keys supplies explicit candidate service keys when no keytab is available.
 	// They are tried after the keytab keys.
 	Keys []ServiceKey
+	// UserToUserKey is the target TGT session key used to decrypt a U2U ticket.
+	// It is used only when the AP-REQ sets USE-SESSION-KEY; in that case a
+	// long-term keytab or Keys entry is never used as a fallback.
+	UserToUserKey *ServiceKey
 	// ChannelBindings, when non-nil, are the acceptor's channel bindings: the
 	// authenticator's 0x8003 Bnd field must equal MD5(ChannelBindings) or the
 	// AP-REQ is rejected (GSS_C_BAD_BINDINGS). When nil the initiator's channel
@@ -186,7 +190,8 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 
 	// Decrypt the ticket enc-part with a service long-term key (key usage 2) and
 	// recover the session key the KDC sealed inside it.
-	encTkt, err := decryptTicket(&apReq.Ticket, opts)
+	useSessionKey := apReq.APOptions.At(messages.APOptionUseSessionKey) != 0
+	encTkt, err := decryptTicket(&apReq.Ticket, opts, useSessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -385,18 +390,28 @@ func replayCacheTuple(server messages.PrincipalName, serverRealm string, auth me
 // decryptTicket recovers the EncTicketPart from a ticket by trying each candidate
 // service key whose enctype matches the ticket enc-part at key usage 2. Keys come
 // from the keytab entry for the ticket service first, then the explicit key list.
-func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicketPart, error) {
+func decryptTicket(tkt *messages.Ticket, opts AcceptOptions, useSessionKey bool) (*messages.EncTicketPart, error) {
 	etype := tkt.EncPart.EType
 	var candidates []ServiceKey
-	if opts.Keytab != nil {
-		principal := principalString(tkt.SName) + "@" + tkt.Realm
-		for _, e := range opts.Keytab.Find(principal, etype, -1) {
-			candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key})
+	if useSessionKey {
+		if opts.UserToUserKey == nil {
+			return nil, fmt.Errorf("gssapi: AP-REQ requires a user-to-user TGT session key")
 		}
-	}
-	for _, k := range opts.Keys {
-		if k.EType == etype {
-			candidates = append(candidates, k)
+		if opts.UserToUserKey.EType != etype {
+			return nil, fmt.Errorf("gssapi: user-to-user key enctype %d does not match ticket enctype %d", opts.UserToUserKey.EType, etype)
+		}
+		candidates = append(candidates, *opts.UserToUserKey)
+	} else {
+		if opts.Keytab != nil {
+			principal := principalString(tkt.SName) + "@" + tkt.Realm
+			for _, e := range opts.Keytab.Find(principal, etype, -1) {
+				candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key})
+			}
+		}
+		for _, k := range opts.Keys {
+			if k.EType == etype {
+				candidates = append(candidates, k)
+			}
 		}
 	}
 	if len(candidates) == 0 {
@@ -415,6 +430,9 @@ func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicke
 			continue
 		}
 		return &enc, nil
+	}
+	if useSessionKey {
+		return nil, fmt.Errorf("gssapi: user-to-user key could not decrypt the ticket (enctype %d): %w", etype, lastErr)
 	}
 	return nil, fmt.Errorf("gssapi: no service key could decrypt the ticket (enctype %d): %w", etype, lastErr)
 }

@@ -236,6 +236,51 @@ func TestAcceptSecContextLoopbackMutual(t *testing.T) {
 	exerciseBothDirections(t, ictx, actx)
 }
 
+func TestAcceptSecContextUserToUserKeySelection(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	u2uKey := randKey(t, 32)
+	wrongKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"alice"}}
+	ticketRaw := serviceTicket(t, etype, u2uKey, sessionKey, client, "CORP.LOCAL", nil)
+
+	makeToken := func(useSessionKey bool) []byte {
+		t.Helper()
+		token, _, err := InitSecContext(InitOptions{
+			TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+			ClientName: client, ClientRealm: "CORP.LOCAL",
+			Flags: GSSIntegFlag, UseSessionKey: useSessionKey,
+		})
+		if err != nil {
+			t.Fatalf("InitSecContext: %v", err)
+		}
+		return token
+	}
+
+	u2u := ServiceKey{EType: etype, Key: u2uKey}
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{UserToUserKey: &u2u})); err != nil {
+		t.Fatalf("U2U AP-REQ with target TGT session key rejected: %v", err)
+	}
+
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{
+		Keys: []ServiceKey{{EType: etype, Key: u2uKey}},
+	})); err == nil {
+		t.Fatal("USE-SESSION-KEY AP-REQ accepted without a U2U key")
+	}
+
+	badU2U := ServiceKey{EType: etype, Key: wrongKey}
+	if _, _, err := AcceptSecContext(makeToken(true), serviceAcceptOptions(AcceptOptions{
+		Keys:          []ServiceKey{{EType: etype, Key: u2uKey}},
+		UserToUserKey: &badU2U,
+	})); err == nil {
+		t.Fatal("USE-SESSION-KEY AP-REQ fell back to a long-term service key")
+	}
+
+	if _, _, err := AcceptSecContext(makeToken(false), serviceAcceptOptions(AcceptOptions{UserToUserKey: &u2u})); err == nil {
+		t.Fatal("ordinary AP-REQ incorrectly used the U2U key without USE-SESSION-KEY")
+	}
+}
+
 func TestAcceptSecContextLoopbackViaKeytab(t *testing.T) {
 	const etype = iana.ETypeAES256CTSHMACSHA196
 	serviceKey := randKey(t, 32)
