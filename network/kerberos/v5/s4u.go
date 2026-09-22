@@ -2,7 +2,6 @@ package kerberos
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
@@ -24,8 +23,6 @@ func s4uResult(tgsRep *messages.TGSRep, encTGSRep *messages.EncTGSRepPart) (mess
 func (c *KerberosClient) buildS4U2SelfTGSReq(impersonateUser, impersonateRealm string, nonce int) (*messages.TGSReq, error) {
 	if impersonateRealm == "" {
 		impersonateRealm = c.realm
-	} else {
-		impersonateRealm = strings.ToUpper(impersonateRealm)
 	}
 
 	// PA-FOR-USER identifies the impersonated user, protected by a checksum keyed

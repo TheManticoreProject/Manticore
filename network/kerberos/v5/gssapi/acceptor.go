@@ -8,7 +8,6 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -159,7 +158,7 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 	if len(opts.ServiceName.NameString) == 0 || opts.ServiceRealm == "" {
 		return nil, nil, fmt.Errorf("gssapi: expected service principal is required")
 	}
-	if !principalsEqual(apReq.Ticket.SName, opts.ServiceName) || !strings.EqualFold(apReq.Ticket.Realm, opts.ServiceRealm) {
+	if !principalsEqual(apReq.Ticket.SName, opts.ServiceName) || apReq.Ticket.Realm != opts.ServiceRealm {
 		return nil, nil, fmt.Errorf("gssapi: ticket service %s@%s does not match expected service %s@%s",
 			principalString(apReq.Ticket.SName), apReq.Ticket.Realm, principalString(opts.ServiceName), opts.ServiceRealm)
 	}

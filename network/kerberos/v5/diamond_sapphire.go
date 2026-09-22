@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"strings"
 	"time"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
@@ -219,8 +218,6 @@ func (c *KerberosClient) ForgeSapphire(opts SapphireOptions) (*ForgedTicket, err
 func (c *KerberosClient) buildSapphireTGSReq(impersonateUser, impersonateRealm string, nonce int) (*messages.TGSReq, error) {
 	if impersonateRealm == "" {
 		impersonateRealm = c.realm
-	} else {
-		impersonateRealm = strings.ToUpper(impersonateRealm)
 	}
 
 	userName := messages.PrincipalName{
@@ -351,9 +348,8 @@ func extractPACFromTicket(ticket messages.Ticket, etype int, key []byte) ([]byte
 func graftPACIntoTGT(pacBytes []byte, cname messages.PrincipalName, crealm string, opts SapphireOptions) (*ForgedTicket, error) {
 	realm := crealm
 	if opts.ImpersonateRealm != "" {
-		realm = strings.ToUpper(opts.ImpersonateRealm)
+		realm = opts.ImpersonateRealm
 	}
-	realm = strings.ToUpper(realm)
 	if realm == "" {
 		return nil, fmt.Errorf("kerberos: forge sapphire: could not determine realm for grafted ticket")
 	}

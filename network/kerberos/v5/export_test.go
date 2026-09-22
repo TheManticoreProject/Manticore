@@ -81,7 +81,7 @@ func TestExportTGTCCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ccache.Unmarshal: %v", err)
 	}
-	if got.DefaultPrincipal.Realm != "CORP.LOCAL" || got.DefaultPrincipal.Components[0] != "alice" {
+	if got.DefaultPrincipal.Realm != "corp.local" || got.DefaultPrincipal.Components[0] != "alice" {
 		t.Errorf("default principal wrong: %+v", got.DefaultPrincipal)
 	}
 	if len(got.Credentials) != 1 {
@@ -152,7 +152,7 @@ func TestExportServiceTicketKirbi(t *testing.T) {
 	if st.SName.NameString[0] != "cifs" || st.SRealm != "CORP.LOCAL" {
 		t.Errorf("sname/srealm wrong: %v %q", st.SName.NameString, st.SRealm)
 	}
-	if st.Client.NameString[0] != "alice" || st.CRealm != "CORP.LOCAL" {
+	if st.Client.NameString[0] != "alice" || st.CRealm != "corp.local" {
 		t.Errorf("client principal wrong: %v %q", st.Client.NameString, st.CRealm)
 	}
 }

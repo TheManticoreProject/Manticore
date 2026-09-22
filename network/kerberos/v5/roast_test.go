@@ -42,7 +42,7 @@ func TestKerberoastPreloadedTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Kerberoast: %v", err)
 	}
-	if res.SPN != "cifs/dc01.corp.local" || res.Realm != "CORP.LOCAL" {
+	if res.SPN != "cifs/dc01.corp.local" || res.Realm != "corp.local" {
 		t.Errorf("result identity = %+v", res)
 	}
 	if res.EType != messages.ETypeRC4HMAC {
