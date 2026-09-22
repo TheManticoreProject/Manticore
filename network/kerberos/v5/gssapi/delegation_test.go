@@ -25,6 +25,7 @@ func buildForwardedCred(t *testing.T) ([]byte, *messages.KRBCred) {
 	if err != nil {
 		t.Fatalf("Ticket.Marshal: %v", err)
 	}
+	now := time.Now().UTC()
 	enc := messages.EncKrbCredPart{
 		TicketInfo: []messages.KrbCredInfo{{
 			Key:       messages.EncryptionKey{KeyType: messages.ETypeAES256CTSHMACSHA196, KeyValue: bytes.Repeat([]byte{0x22}, 32)},
@@ -35,6 +36,8 @@ func buildForwardedCred(t *testing.T) ([]byte, *messages.KRBCred) {
 			EndTime:   time.Date(2026, 7, 10, 20, 0, 0, 0, time.UTC),
 			RenewTill: time.Date(2026, 7, 17, 20, 0, 0, 0, time.UTC),
 		}},
+		Timestamp: now,
+		Usec:      now.Nanosecond() / 1000,
 	}
 	encBytes, err := enc.Marshal()
 	if err != nil {
@@ -142,6 +145,54 @@ func TestExtractDelegatedCred(t *testing.T) {
 	wantEnd := time.Date(2026, 7, 10, 20, 0, 0, 0, time.UTC)
 	if !part.TicketInfo[0].EndTime.Equal(wantEnd) {
 		t.Errorf("forwarded ticket endtime: got %v want %v", part.TicketInfo[0].EndTime, wantEnd)
+	}
+}
+
+func TestKrbCredReceiptValidation(t *testing.T) {
+	_, cred := buildForwardedCred(t)
+	var part messages.EncKrbCredPart
+	if _, err := part.Unmarshal(cred.EncPart.Cipher); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	nonce := 4242
+	sender := messages.HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 1}}
+	recipient := messages.HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 2}}
+	part.Timestamp, part.Usec, part.Nonce = now, now.Nanosecond()/1000, nonce
+	part.SAddress, part.RAddress = sender, recipient
+	setPart := func() {
+		t.Helper()
+		wire, err := part.Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cred.EncPart.Cipher = wire
+	}
+	setPart()
+	opts := KRBCredReceiveOptions{Now: now, Nonce: &nonce, SenderAddress: &sender, RecipientAddress: &recipient}
+	if _, err := DecryptDelegatedCredPartWithOptions(cred, messages.EncryptionKey{}, opts); err != nil {
+		t.Fatalf("valid KRB-CRED rejected: %v", err)
+	}
+
+	wrongNonce := nonce + 1
+	if _, err := DecryptDelegatedCredPartWithOptions(cred, messages.EncryptionKey{}, KRBCredReceiveOptions{Now: now, Nonce: &wrongNonce}); err == nil {
+		t.Fatal("KRB-CRED nonce mismatch accepted")
+	}
+	wrongSender := messages.HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 99}}
+	if _, err := DecryptDelegatedCredPartWithOptions(cred, messages.EncryptionKey{}, KRBCredReceiveOptions{Now: now, SenderAddress: &wrongSender}); err == nil {
+		t.Fatal("KRB-CRED sender mismatch accepted")
+	}
+
+	part.Timestamp = now.Add(-time.Hour)
+	setPart()
+	if _, err := DecryptDelegatedCredPartWithOptions(cred, messages.EncryptionKey{}, KRBCredReceiveOptions{Now: now}); err == nil {
+		t.Fatal("stale KRB-CRED accepted")
+	}
+	part.Timestamp = time.Time{}
+	part.Usec = 0
+	setPart()
+	if _, err := DecryptDelegatedCredPartWithOptions(cred, messages.EncryptionKey{}, KRBCredReceiveOptions{Now: now}); err == nil {
+		t.Fatal("KRB-CRED without timestamp accepted")
 	}
 }
 

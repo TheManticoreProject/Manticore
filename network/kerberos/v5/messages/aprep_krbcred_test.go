@@ -74,7 +74,12 @@ func TestKRBCredRoundtrip(t *testing.T) {
 			RenewTill: time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC),
 			SRealm:    "CORP.LOCAL",
 			SName:     PrincipalName{NameType: NameTypeSRVInst, NameString: []string{"krbtgt", "CORP.LOCAL"}},
+			CAddr:     []HostAddress{{AddrType: 2, Address: []byte{192, 0, 2, 10}}},
 		}},
+		Timestamp: time.Date(2026, 7, 9, 11, 0, 0, 123000000, time.UTC),
+		Usec:      123000,
+		SAddress:  HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 1}},
+		RAddress:  HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 2}},
 	}
 	encBytes, err := enc.Marshal()
 	if err != nil {
@@ -103,6 +108,13 @@ func TestKRBCredRoundtrip(t *testing.T) {
 	}
 	if !bytes.Equal(got.Key.KeyValue, want.Key.KeyValue) {
 		t.Errorf("session key mismatch")
+	}
+	if len(got.CAddr) != 1 || !bytes.Equal(got.CAddr[0].Address, want.CAddr[0].Address) {
+		t.Errorf("client addresses not preserved: %#v", got.CAddr)
+	}
+	if !decEnc.Timestamp.Equal(enc.Timestamp.Truncate(time.Second)) || decEnc.Usec != enc.Usec ||
+		!bytes.Equal(decEnc.SAddress.Address, enc.SAddress.Address) || !bytes.Equal(decEnc.RAddress.Address, enc.RAddress.Address) {
+		t.Errorf("KRB-CRED metadata not preserved: %#v", decEnc)
 	}
 
 	cred := &KRBCred{
