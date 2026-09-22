@@ -48,6 +48,9 @@ type ServiceKey struct {
 	EType int
 	// Key is the raw long-term key bytes.
 	Key []byte
+	// KVNO is the key version. Zero means unspecified and remains a wildcard for
+	// callers that do not track versions.
+	KVNO int
 }
 
 // ReplayCache is a minimal in-memory authenticator replay cache (RFC 4120
@@ -334,12 +337,16 @@ func decryptTicket(tkt *messages.Ticket, opts AcceptOptions) (*messages.EncTicke
 	var candidates []ServiceKey
 	if opts.Keytab != nil {
 		principal := principalString(tkt.SName) + "@" + tkt.Realm
-		for _, e := range opts.Keytab.Find(principal, etype, -1) {
-			candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key})
+		kvno := -1
+		if tkt.EncPart.KvNo != 0 {
+			kvno = tkt.EncPart.KvNo
+		}
+		for _, e := range opts.Keytab.Find(principal, etype, kvno) {
+			candidates = append(candidates, ServiceKey{EType: int(e.EType), Key: e.Key, KVNO: int(e.Kvno())})
 		}
 	}
 	for _, k := range opts.Keys {
-		if k.EType == etype {
+		if k.EType == etype && (tkt.EncPart.KvNo == 0 || k.KVNO == 0 || k.KVNO == tkt.EncPart.KvNo) {
 			candidates = append(candidates, k)
 		}
 	}

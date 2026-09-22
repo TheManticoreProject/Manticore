@@ -233,6 +233,46 @@ func TestAcceptSecContextLoopbackMutual(t *testing.T) {
 	exerciseBothDirections(t, ictx, actx)
 }
 
+func TestAcceptSecContextSelectsTicketKVNO(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	correctKey := randKey(t, 32)
+	wrongKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"kvno-client"}}
+	ticketRaw := serviceTicket(t, etype, correctKey, sessionKey, client, "CORP.LOCAL", nil)
+	var ticket messages.Ticket
+	if _, err := ticket.Unmarshal(ticketRaw); err != nil {
+		t.Fatal(err)
+	}
+	ticket.EncPart.KvNo = 2
+	ticketRaw, err := ticket.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := InitSecContext(InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	principal := keytab.Principal{NameType: iana.NameTypeSRVInst, Realm: "CORP.LOCAL", Components: []string{"cifs", "host.corp.local"}}
+	kt := keytab.New()
+	// The stale version deliberately has the correct bytes. Trying all matching
+	// enctypes would accept it despite the ticket explicitly naming KVNO 2.
+	kt.Add(principal, etype, correctKey, 1)
+	kt.Add(principal, etype, wrongKey, 2)
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keytab: kt})); err == nil {
+		t.Fatal("ticket was decrypted with a keytab entry from the wrong KVNO")
+	}
+
+	kt.Entries[1].Key = append([]byte(nil), correctKey...)
+	if _, _, err := AcceptSecContext(token, serviceAcceptOptions(AcceptOptions{Keytab: kt})); err != nil {
+		t.Fatalf("matching KVNO key rejected: %v", err)
+	}
+}
+
 func TestAcceptSecContextLoopbackViaKeytab(t *testing.T) {
 	const etype = iana.ETypeAES256CTSHMACSHA196
 	serviceKey := randKey(t, 32)
