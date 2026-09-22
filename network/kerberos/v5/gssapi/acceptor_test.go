@@ -98,6 +98,7 @@ func serviceTicketCustom(t *testing.T, etype int, serviceKey, sessionKey []byte,
 	if !tmpl.StartTime.IsZero() {
 		encPart.StartTime = tmpl.StartTime
 	}
+	encPart.AuthorizationData = tmpl.AuthorizationData
 	plain, err := encPart.Marshal()
 	if err != nil {
 		t.Fatalf("marshal EncTicketPart: %v", err)
@@ -234,6 +235,34 @@ func TestAcceptSecContextLoopbackMutual(t *testing.T) {
 	}
 
 	exerciseBothDirections(t, ictx, actx)
+}
+
+func TestAcceptSecContextExposesTicketPolicyData(t *testing.T) {
+	const etype = iana.ETypeAES256CTSHMACSHA196
+	serviceKey := randKey(t, 32)
+	sessionKey := randKey(t, 32)
+	client := messages.PrincipalName{NameType: iana.NameTypePrincipal, NameString: []string{"policy-client"}}
+	flags := messages.NewKerberosFlags(messages.TicketFlagForwardable, messages.TicketFlagInitial)
+	ticketRaw := serviceTicketCustom(t, etype, serviceKey, sessionKey, client, "CORP.LOCAL", messages.EncTicketPart{
+		Flags:             flags,
+		AuthorizationData: []messages.AuthorizationData{{ADType: 777, ADData: []byte("application-policy")}},
+	})
+	_, ctx, _ := loopback(t, etype, InitOptions{
+		TicketRaw: ticketRaw, SessionKey: sessionKey, SessionEType: etype,
+		ClientName: client, ClientRealm: "CORP.LOCAL",
+	}, serviceAcceptOptions(AcceptOptions{Keys: []ServiceKey{{EType: etype, Key: serviceKey}}}))
+
+	if ctx.TicketFlags().At(messages.TicketFlagInitial) == 0 {
+		t.Fatal("INITIAL ticket flag was not exposed")
+	}
+	ad := ctx.AuthorizationData()
+	if len(ad) != 1 || ad[0].ADType != 777 || string(ad[0].ADData) != "application-policy" {
+		t.Fatalf("AuthorizationData = %#v", ad)
+	}
+	ad[0].ADData[0] ^= 0xff
+	if string(ctx.AuthorizationData()[0].ADData) != "application-policy" {
+		t.Fatal("AuthorizationData returned mutable context storage")
+	}
 }
 
 func TestAcceptSecContextSelectsTicketKVNO(t *testing.T) {

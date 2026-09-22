@@ -295,8 +295,13 @@ func AcceptSecContext(token []byte, opts AcceptOptions) (outputToken []byte, ctx
 		clientRealm:   auth.CRealm,
 		authenticator: func() *messages.Authenticator { a := auth; return &a }(),
 		pacBytes:      extractWin2KPAC(encTkt.AuthorizationData),
-		ctime:         auth.CTime.UTC().Truncate(time.Second),
-		cusec:         auth.CUSec,
+		ticketFlags: asn1.BitString{
+			Bytes:     append([]byte(nil), encTkt.Flags.Bytes...),
+			BitLength: encTkt.Flags.BitLength,
+		},
+		ticketAuthorizationData: cloneAuthorizationData(encTkt.AuthorizationData),
+		ctime:                   auth.CTime.UTC().Truncate(time.Second),
+		cusec:                   auth.CUSec,
 		recvWindow: seqWindow{
 			replayDetect: !opts.DisableReplayDetection,
 			sequence:     opts.EnforceSequence,
@@ -547,6 +552,25 @@ func (ctx *SecContext) ClientPrincipal() (messages.PrincipalName, string) {
 // checksum, e.g. via ExtractDelegatedCred for an unconstrained-delegation
 // KRB-CRED.
 func (ctx *SecContext) Authenticator() *messages.Authenticator { return ctx.authenticator }
+
+// TicketFlags returns a copy of the flags from the accepted ticket.
+func (ctx *SecContext) TicketFlags() asn1.BitString {
+	return asn1.BitString{Bytes: append([]byte(nil), ctx.ticketFlags.Bytes...), BitLength: ctx.ticketFlags.BitLength}
+}
+
+// AuthorizationData returns a deep copy of all authorization-data entries from
+// the accepted ticket, including entries not understood by this package.
+func (ctx *SecContext) AuthorizationData() []messages.AuthorizationData {
+	return cloneAuthorizationData(ctx.ticketAuthorizationData)
+}
+
+func cloneAuthorizationData(in []messages.AuthorizationData) []messages.AuthorizationData {
+	out := make([]messages.AuthorizationData, len(in))
+	for i := range in {
+		out[i] = messages.AuthorizationData{ADType: in[i].ADType, ADData: append([]byte(nil), in[i].ADData...)}
+	}
+	return out
+}
 
 // HasPAC reports whether the decrypted ticket carried a PAC (acceptor side).
 func (ctx *SecContext) HasPAC() bool { return len(ctx.pacBytes) > 0 }
