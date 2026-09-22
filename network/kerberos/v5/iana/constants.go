@@ -22,6 +22,8 @@ const (
 	MsgTypeTGSRep  = 13 // TGS-REP
 	MsgTypeAPReq   = 14 // AP-REQ
 	MsgTypeAPRep   = 15 // AP-REP
+	MsgTypeKRBSafe = 20 // KRB-SAFE
+	MsgTypeKRBPriv = 21 // KRB-PRIV
 	MsgTypeKRBCred = 22 // KRB-CRED
 	MsgTypeError   = 30 // KRB-ERROR
 )
