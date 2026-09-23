@@ -11,6 +11,40 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
 
+func TestGMACNonce(t *testing.T) {
+	m := message.NewMessage()
+	m.Header.MessageId = 2
+	m.SetCommand(commands.NewTreeDisconnectRequest())
+	request, err := m.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		wire []byte
+		want string
+	}{
+		{"client request", request, "020000000000000000000000"},
+		{"server response", func() []byte {
+			wire := bytes.Clone(request)
+			wire[signFlagsOffset] |= 1 // SMB2_FLAGS_SERVER_TO_REDIR
+			return wire
+		}(), "020000000000000001000000"},
+		{"cancel request", func() []byte {
+			wire := bytes.Clone(request)
+			wire[12] = 0x0c // SMB2_CANCEL
+			return wire
+		}(), "020000000000000002000000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, want := gmacNonce(tc.wire), mustHex(t, tc.want); !bytes.Equal(got, want) {
+				t.Errorf("gmacNonce = %X, want %X", got, want)
+			}
+		})
+	}
+}
+
 // TestSMB3CMACSignAndVerify checks the AES-128-CMAC signing round-trip used by
 // the SMB 3.x dialects: a signed message verifies with the right key, sets the
 // SIGNED flag, and fails to verify under a wrong key or after tampering.
@@ -51,7 +85,7 @@ func TestSMB3CMACSignAndVerify(t *testing.T) {
 // verifies with the correct key, sets the SIGNED flag, derives the nonce from
 // the MessageId and direction, and rejects a wrong key or tampering.
 func TestGMACSignAndVerify(t *testing.T) {
-	key := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE0B7E9C5CAC36C0F6EA9AB275298CEDCE") // 32-byte key
+	key := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE")
 
 	m := message.NewMessage()
 	m.Header.MessageId = 42
@@ -74,7 +108,7 @@ func TestGMACSignAndVerify(t *testing.T) {
 	if !verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, key, wire) {
 		t.Errorf("GMAC signature failed to verify with the correct key")
 	}
-	wrongKey := make([]byte, 32)
+	wrongKey := make([]byte, 16)
 	if verifySignatureForDialect(dialects.SMB2_DIALECT_3_1_1, commands.SMB2_SIGNING_ALG_AES_GMAC, wrongKey, wire) {
 		t.Errorf("GMAC signature verified with a wrong key")
 	}
@@ -88,7 +122,6 @@ func TestGMACSignAndVerify(t *testing.T) {
 // CMAC signature on the same message, confirming they are distinct algorithms.
 func TestGMACSignatureNotCMAC(t *testing.T) {
 	key16 := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE")
-	key32 := mustHex(t, "0B7E9C5CAC36C0F6EA9AB275298CEDCE0B7E9C5CAC36C0F6EA9AB275298CEDCE")
 
 	buildMessage := func() []byte {
 		m := message.NewMessage()
@@ -104,7 +137,7 @@ func TestGMACSignatureNotCMAC(t *testing.T) {
 	copy(cmacSig, cmacWire[signSignatureOffset:signSignatureOffset+signSignatureLength])
 
 	gmacWire := buildMessage()
-	signMessageGMAC(key32, gmacWire)
+	signMessageGMAC(key16, gmacWire)
 	gmacSig := make([]byte, 16)
 	copy(gmacSig, gmacWire[signSignatureOffset:signSignatureOffset+signSignatureLength])
 

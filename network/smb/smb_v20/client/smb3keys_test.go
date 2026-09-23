@@ -113,11 +113,9 @@ func TestSMB311AES256KeyDerivation(t *testing.T) {
 	}
 }
 
-// TestSMB311GMACSigning256BitKey verifies that when AES-GMAC is the negotiated
-// signing algorithm the signing key is 32 bytes while all other keys retain
-// their normal lengths. The 256-bit signing key must also differ from the
-// 128-bit one (the L value changes the PRF output).
-func TestSMB311GMACSigning256BitKey(t *testing.T) {
+// TestSMB311GMACSigningKey verifies that GMAC uses the same 128-bit signing
+// key derivation as CMAC with an AES-128 encryption cipher.
+func TestSMB311GMACSigningKey(t *testing.T) {
 	sessionKey := mustHex(t, "270E1BA896585EEB7AF3472D3B4C75A7")
 	preauth := mustHex(t, "0DD13628CC3ED218EF9DF9772D436D0887AB9814BFAE63A80AA845F36909DB79"+
 		"28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01")
@@ -125,8 +123,8 @@ func TestSMB311GMACSigning256BitKey(t *testing.T) {
 	s := &Session{SessionKey: sessionKey}
 	deriveSMB3Keys(s, dialects.SMB2_DIALECT_3_1_1, preauth, 0, commands.SMB2_SIGNING_ALG_AES_GMAC)
 
-	if len(s.SigningKey) != 32 {
-		t.Errorf("SigningKey length = %d, want 32 for AES-GMAC", len(s.SigningKey))
+	if len(s.SigningKey) != 16 {
+		t.Errorf("SigningKey length = %d, want 16 for AES-GMAC", len(s.SigningKey))
 	}
 	if len(s.ApplicationKey) != 16 {
 		t.Errorf("ApplicationKey length = %d, want 16", len(s.ApplicationKey))
@@ -139,7 +137,7 @@ func TestSMB311GMACSigning256BitKey(t *testing.T) {
 	}
 
 	sign128 := mustHex(t, "73FE7A9A77BEF0BDE49C650D8CCB5F76")
-	if bytes.Equal(s.SigningKey[:16], sign128) {
-		t.Error("SigningKey first 16 bytes equal the AES-CMAC derivation; L=256 should produce different PRF output")
+	if !bytes.Equal(s.SigningKey, sign128) {
+		t.Errorf("SigningKey = %X, want %X", s.SigningKey, sign128)
 	}
 }

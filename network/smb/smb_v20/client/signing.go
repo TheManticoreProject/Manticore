@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/cmac"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 )
@@ -131,19 +132,19 @@ func verifySignatureCMAC(key, message []byte) bool {
 }
 
 // gmacNonce builds the 12-byte AES-GMAC nonce for signing (MS-SMB2 3.1.4.1):
-// bytes 0–7 are the message's MessageId in little-endian, bytes 8–9 are zero,
-// and bytes 10–11 are the direction (0x0001 for client-to-server requests,
-// 0x0002 for server-to-client responses). The SMB2_FLAGS_SERVER_TO_REDIR flag
-// in the header Flags distinguishes the two.
+// bytes 0–7 are the message's MessageId in little-endian. Bytes 8–11 are a
+// little-endian uint32: bit 0 is set for server responses, and bit 1 is set
+// for SMB2 CANCEL requests.
 func gmacNonce(message []byte) []byte {
 	const messageIdOffset = 24 // within the 64-byte SMB2 header
 	nonce := make([]byte, 12)
 	copy(nonce[0:8], message[messageIdOffset:messageIdOffset+8])
 	f := binary.LittleEndian.Uint32(message[signFlagsOffset : signFlagsOffset+4])
 	if f&uint32(flags.SMB2_FLAGS_SERVER_TO_REDIR) != 0 {
-		binary.LittleEndian.PutUint16(nonce[10:12], 0x0002)
-	} else {
-		binary.LittleEndian.PutUint16(nonce[10:12], 0x0001)
+		nonce[8] |= 1
+	}
+	if binary.LittleEndian.Uint16(message[12:14]) == uint16(codes.SMB2_CANCEL) {
+		nonce[8] |= 2
 	}
 	return nonce
 }
