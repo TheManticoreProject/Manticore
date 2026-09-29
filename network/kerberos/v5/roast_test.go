@@ -101,3 +101,24 @@ func TestBuildASREPRoastReq(t *testing.T) {
 		t.Errorf("round-trip changed the request: %+v", got.ReqBody)
 	}
 }
+
+func TestBuildASREPRoastReqRC4(t *testing.T) {
+	req, err := buildASREPRoastReqWithEtypes("victim", "CORP.LOCAL", []int{messages.ETypeRC4HMAC})
+	if err != nil {
+		t.Fatalf("buildASREPRoastReqWithEtypes: %v", err)
+	}
+	if len(req.PAData) != 0 || len(req.ReqBody.EType) != 1 || req.ReqBody.EType[0] != messages.ETypeRC4HMAC {
+		t.Fatalf("RC4 request has unexpected PA-DATA or etypes: %+v", req)
+	}
+	wire, err := req.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got messages.ASReq
+	if _, err := got.Unmarshal(wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(got.ReqBody.EType) != 1 || got.ReqBody.EType[0] != messages.ETypeRC4HMAC {
+		t.Fatalf("round-trip changed RC4 etype list: %v", got.ReqBody.EType)
+	}
+}
