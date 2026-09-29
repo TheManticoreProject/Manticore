@@ -77,8 +77,10 @@ func ASREPRoast(username, realm, kdcHost string) (*ASREPRoastResult, error) {
 	return asrepRoast(username, realm, kdcHost, buildASREPRoastReq)
 }
 
-// ASREPRoastRC4 requests an RC4-only AS-REP for hashcat mode 18200. A KDC
-// that has disabled RC4 for the target account will reject this request.
+// ASREPRoastRC4 offers only RC4 for the AS-REP session key. The KDC can still
+// encrypt the AS-REP with an AES account key, so callers targeting hashcat mode
+// 18200 must check the returned EncryptionType before formatting it. A KDC that
+// has disabled RC4 session keys for the account will reject the request.
 func ASREPRoastRC4(username, realm, kdcHost string) (*ASREPRoastResult, error) {
 	return asrepRoast(username, realm, kdcHost, func(username, realm string) (*messages.ASReq, error) {
 		return buildASREPRoastReqWithEtypes(username, realm, []int{messages.ETypeRC4HMAC})
