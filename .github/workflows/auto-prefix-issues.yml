@@ -3,8 +3,6 @@ name: Auto-prefix & Label Issues
 on:
   issues:
     types: [opened, edited]
-  schedule:
-    - cron: '0 0 * * *' # daily catch-up at midnight UTC
 
 permissions:
   issues: write
