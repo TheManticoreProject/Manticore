@@ -35,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22.1'
+          go-version-file: go.mod
 
       - name: Run Unit Tests
         env:
@@ -44,3 +44,23 @@ jobs:
         run: |
           echo "$GOOS, $GOARCH"
           go test -count=1 ./...
+
+  race:
+    name: Run Race Tests (IBM i stack)
+    runs-on: ubuntu-latest
+
+    env:
+      GO111MODULE: 'on'
+      CGO_ENABLED: '1'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+
+      - name: Run Race Tests
+        run: go test -race -count=1 ./encoding/ebcdic/... ./ibmi/... ./network/ibmi/...
