@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"github.com/TheManticoreProject/Manticore/ibmi/rpc"
+
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd"
 )
 
@@ -34,6 +36,9 @@ func (c *Client) exclusive(ctx context.Context, fn func(*reservation) error) err
 	}
 	defer c.release()
 	if st := c.getState(); st != stateReady {
+		if st == statePoisoned || st == stateClosing || st == stateClosed {
+			return fmt.Errorf("%w (state %s): %w", ErrNotReady, st, rpc.ErrSessionLost)
+		}
 		return fmt.Errorf("%w (state %s)", ErrNotReady, st)
 	}
 	c.mu.Lock()

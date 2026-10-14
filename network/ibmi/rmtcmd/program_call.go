@@ -109,6 +109,7 @@ func (s *Session) Call(ctx context.Context, call rpc.Call) (*rpc.Result, error) 
 	}
 	native := &NativeError{Operation: op, ReturnCode: r.ReturnCode, Messages: result.Messages}
 	if !keepsSession(r.ReturnCode, false) {
+		native.SessionLost = true
 		_ = s.conn.Poison(native)
 	}
 	return result, native

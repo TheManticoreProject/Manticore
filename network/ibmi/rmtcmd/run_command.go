@@ -103,6 +103,7 @@ func (s *Session) RunCommand(ctx context.Context, command string, opts RunComman
 	}
 	native := &NativeError{Operation: op, ReturnCode: r.ReturnCode, Messages: msgs}
 	if !keepsSession(r.ReturnCode, true) {
+		native.SessionLost = true
 		_ = s.conn.Poison(native)
 	}
 	return result, native
