@@ -357,3 +357,15 @@ func TestConcurrentExchangesSerialize(t *testing.T) {
 		t.Fatalf("Conn poisoned by concurrent use: %v", c.Err())
 	}
 }
+
+func TestContextDeadlineIsReported(t *testing.T) {
+	c, server := newPipeConn(t, hostserver.Options{OperationTimeout: time.Minute})
+	serveOne(t, server, nil) // reads the request, never replies
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, _, err := c.Exchange(ctx, request(1), expect1)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v; want context.DeadlineExceeded", err)
+	}
+	wantPoisoned(t, c, err)
+}

@@ -174,15 +174,14 @@ func (c *Conn) trace(e Event) {
 	}
 }
 
-// arm applies the earlier of the context deadline and the operation timeout
-// to the socket, and forces an immediate deadline if ctx is cancelled while
-// I/O is blocked. The returned function disarms it and clears the deadline.
+// arm bounds the next I/O by the operation timeout and by ctx: the socket
+// deadline is the operation timeout, and when ctx is done (cancelled or past
+// its own deadline) an immediate deadline interrupts blocked I/O. Enforcing
+// the context deadline through ctx rather than the socket guarantees
+// ctx.Err() is already set when the I/O fails. The returned function disarms
+// it and clears the deadline.
 func (c *Conn) arm(ctx context.Context) func() {
-	deadline := time.Now().Add(c.timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
-	_ = c.conn.SetDeadline(deadline)
+	_ = c.conn.SetDeadline(time.Now().Add(c.timeout))
 	fired := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
 		defer close(fired)

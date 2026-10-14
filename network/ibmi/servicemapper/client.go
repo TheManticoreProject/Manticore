@@ -59,11 +59,10 @@ func (c *Client) Lookup(ctx context.Context, host string, port int, name string)
 		return 0, fmt.Errorf("servicemapper: dial mapper for %s: %w", name, err)
 	}
 	defer conn.Close()
+	// The context (which carries the lookup timeout) interrupts blocked I/O
+	// once it is done, so its error is always set when the read fails.
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
 	defer stop()
-	if d, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(d)
-	}
 
 	if _, err := conn.Write(req); err != nil {
 		return 0, fmt.Errorf("servicemapper: send %s: %w", name, ctxErr(ctx, err))
