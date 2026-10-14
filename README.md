@@ -17,6 +17,7 @@
 - [x] **Authentication**: NTLM (v1/v2), SPNEGO/GSSAPI, LDAP bind, and a native Kerberos v5 stack — AS/TGS exchanges, PKINIT, FAST, S4U (S4U2self/S4U2proxy), U2U, AS-REP roasting and Kerberoasting, golden/silver/diamond/sapphire ticket forging, UnPAC-the-hash, and keytab/ccache/kirbi credential I/O.
 - [x] **Network Protocols**: SMB 1.0 (CIFS) and SMB 2.0, a full DCE/RPC stack (NDR, EPM, `ncacn_ip_tcp`/`ncacn_np`/`ncacn_http` transports) exposing LSARPC, SAMR, SRVSVC, SVCCTL, DRSUAPI and WINREG, plus LDAP, LLMNR and NetBIOS name services.
 - [x] **Cryptography**: [aescts](crypto/aescts/), [cmac](crypto/cmac/), [dcc](crypto/dcc/), [dcc2](crypto/dcc2/), [gppp](crypto/gppp/), [lm](crypto/lm/), [md4](crypto/md4/), [nfold](crypto/nfold/), [nt](crypto/nt/), [ntlmv1](crypto/ntlmv1/), [ntlmv2](crypto/ntlmv2/), [pkcs7](crypto/pkcs7/), [rc4](crypto/rc4/), [spnego](crypto/spnego/), [uuid](crypto/uuid/)
+- [x] **IBM i (AS/400)**: a native Client Access stack — service discovery, Sign-on with DES and SHA-1 password substitutes, verified TLS or explicit lab cleartext, Remote Command (raw CL with structured IBM messages) and typed Program Call — plus open-list user and group profile enumeration over QGY APIs. See [`network/ibmi`](network/ibmi/) and [`ibmi`](ibmi/); validated live against V5R4.
 - [x] **Windows Internals**: Offline NTDS.dit secret extraction (ESE/JET parser + PEK decryption), REGF registry hive read/write, Active Directory replication metadata (`DS_REPL_*`), KeyCredentialLink, and CNG (bcrypt) key blobs.
 - [x] **Extensible Architecture**: Easily add new modules and functionality.
 
@@ -37,12 +38,14 @@ graph LR
   root["Manticore 🔴"]:::c0
   n_crypto["crypto 🟠"]:::c1
   n_encoding["encoding 🟠"]:::c1
+  n_ibmi["ibmi 🟢"]:::c2
   n_logger["logger 🟢"]:::c2
   n_network["network 🔴"]:::c0
   n_utils["utils 🟢"]:::c2
   n_windows["windows 🟠"]:::c1
   root --> n_crypto
   root --> n_encoding
+  root --> n_ibmi
   root --> n_logger
   root --> n_network
   root --> n_utils

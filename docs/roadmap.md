@@ -32,6 +32,7 @@ graph LR
   root["Manticore 🔴"]:::c0
   root --> n_crypto
   root --> n_encoding
+  root --> n_ibmi
   root --> n_logger
   root --> n_network
   root --> n_utils
@@ -81,6 +82,19 @@ graph LR
   n_encoding_ebcdic_cp037["cp037 🟢"]:::c2
   n_encoding_ebcdic_cp500["cp500 🟢"]:::c2
   n_encoding_utf16["utf16 🟢"]:::c2
+  n_ibmi["ibmi 🟢"]:::c2
+  n_ibmi_api["api 🟢"]:::c2
+  n_ibmi_api_internal["internal 🟢"]:::c2
+  n_ibmi_api_internal_openlist["openlist 🟢"]:::c2
+  n_ibmi_api_users["users 🟢"]:::c2
+  n_ibmi_ccsid["ccsid 🟢"]:::c2
+  n_ibmi_rpc["rpc 🟢"]:::c2
+  n_ibmi_rpc_qgy["qgy 🟢"]:::c2
+  n_ibmi_rpc_qgy_qgyclst["qgyclst 🟢"]:::c2
+  n_ibmi_rpc_qgy_qgygtle["qgygtle 🟢"]:::c2
+  n_ibmi_rpc_qgy_qgyolaus["qgyolaus 🟢"]:::c2
+  n_ibmi_rpc_structures_errorcode["errorcode 🟢"]:::c2
+  n_ibmi_rpc_structures_openlist["openlist 🟢"]:::c2
   n_logger["logger 🟢"]:::c2
   n_network["network 🔴"]:::c0
   n_network_dcerpc["dcerpc 🟠"]:::c1
@@ -105,6 +119,7 @@ graph LR
   n_network_dcerpc_v5["v5 🟠"]:::c1
   n_network_dcerpc_v5_client["client 🟢"]:::c2
   n_network_dcerpc_v5_pdu["pdu 🟢"]:::c2
+  n_network_dcerpc_v5_rpcserver["rpcserver 🟢"]:::c2
   n_network_dcerpc_v5_transport["transport 🟠"]:::c1
   n_network_dcerpc_v5_transport_smb["smb 🟢"]:::c2
   n_network_dcerpc_v5_transport_smb2["smb2 🟢"]:::c2
@@ -113,6 +128,17 @@ graph LR
   n_network_gssapi["gssapi 🟠"]:::c1
   n_network_gssapi_context["context 🟠"]:::c1
   n_network_gssapi_status["status 🟢"]:::c2
+  n_network_ibmi["ibmi 🟢"]:::c2
+  n_network_ibmi_client["client 🟢"]:::c2
+  n_network_ibmi_hostserver["hostserver 🟢"]:::c2
+  n_network_ibmi_internal["internal 🟢"]:::c2
+  n_network_ibmi_internal_auth["auth 🟢"]:::c2
+  n_network_ibmi_internal_hosttest["hosttest 🟢"]:::c2
+  n_network_ibmi_rmtcmd["rmtcmd 🟢"]:::c2
+  n_network_ibmi_rmtcmd_message["message 🟢"]:::c2
+  n_network_ibmi_servicemapper["servicemapper 🟢"]:::c2
+  n_network_ibmi_signon["signon 🟢"]:::c2
+  n_network_ibmi_signon_message["message 🟢"]:::c2
   n_network_ip["ip 🔴"]:::c0
   n_network_kerberos["kerberos 🟠"]:::c1
   n_network_kerberos_v5["v5 🟠"]:::c1
@@ -154,6 +180,9 @@ graph LR
   n_network_smb_client["client 🟢"]:::c2
   n_network_smb_common["common 🟢"]:::c2
   n_network_smb_common_transport["transport 🟢"]:::c2
+  n_network_smb_fingerprint["fingerprint 🟢"]:::c2
+  n_network_smb_internal["internal 🟢"]:::c2
+  n_network_smb_internal_wirediff["wirediff 🟢"]:::c2
   n_network_smb_smb_v10["smb_v10 🟠"]:::c1
   n_network_smb_smb_v10_capabilities["capabilities 🟢"]:::c2
   n_network_smb_smb_v10_client["client 🟢"]:::c2
@@ -173,6 +202,9 @@ graph LR
   n_network_smb_smb_v10_message_parameters["parameters 🟢"]:::c2
   n_network_smb_smb_v10_message_securityfeatures["securityfeatures 🟢"]:::c2
   n_network_smb_smb_v10_securitymode["securitymode 🟢"]:::c2
+  n_network_smb_smb_v10_server["server 🟢"]:::c2
+  n_network_smb_smb_v10_server_rpcpipe["rpcpipe 🟢"]:::c2
+  n_network_smb_smb_v10_signing["signing 🟢"]:::c2
   n_network_smb_smb_v10_subcommands["subcommands 🟢"]:::c2
   n_network_smb_smb_v10_types["types 🟢"]:::c2
   n_network_smb_smb_v20["smb_v20 🟠"]:::c1
@@ -196,6 +228,7 @@ graph LR
   n_utils["utils 🟢"]:::c2
   n_windows["windows 🟠"]:::c1
   n_windows_activedirectory["activedirectory 🟢"]:::c2
+  n_windows_activedirectory_attributes["attributes 🟢"]:::c2
   n_windows_activedirectory_replication["replication 🟢"]:::c2
   n_windows_activedirectory_replication_dsrepl["dsrepl 🟢"]:::c2
   n_windows_cng["cng 🟠"]:::c1
@@ -209,6 +242,11 @@ graph LR
   n_windows_database["database 🟢"]:::c2
   n_windows_database_ese["ese 🟢"]:::c2
   n_windows_database_ntds["ntds 🟢"]:::c2
+  n_windows_errors["errors 🟠"]:::c1
+  n_windows_errors_errgen["errgen 🟠"]:::c1
+  n_windows_errors_hresult["hresult 🟢"]:::c2
+  n_windows_errors_nt_status["nt_status 🟢"]:::c2
+  n_windows_errors_win32["win32 🟢"]:::c2
   n_windows_fileflags["fileflags 🟠"]:::c1
   n_windows_filesystem["filesystem 🟠"]:::c1
   n_windows_filesystem_infoclass["infoclass 🟠"]:::c1
@@ -224,13 +262,13 @@ graph LR
   n_windows_keycredentiallink_key_material_fek_blob["blob 🟢"]:::c2
   n_windows_keycredentiallink_key_material_fek_headers["headers 🟢"]:::c2
   n_windows_keycredentiallink_key_material_fek_magic["magic 🟢"]:::c2
+  n_windows_keycredentiallink_key_material_fido["fido 🟢"]:::c2
   n_windows_keycredentiallink_key_source["source 🟢"]:::c2
   n_windows_keycredentiallink_key_strength["strength 🟢"]:::c2
   n_windows_keycredentiallink_key_usage["usage 🟢"]:::c2
   n_windows_keycredentiallink_utils["utils 🟢"]:::c2
   n_windows_keycredentiallink_version["version 🟢"]:::c2
   n_windows_ms_dtyp["ms-dtyp 🟠"]:::c1
-  n_windows_nt_status["nt_status 🟢"]:::c2
   n_windows_protocols["protocols 🟠"]:::c1
   n_windows_protocols_ms_bpau["ms-bpau 🟠"]:::c1
   n_windows_protocols_ms_brwsa["ms-brwsa 🟢"]:::c2
@@ -336,6 +374,16 @@ graph LR
   n_encoding_ebcdic --> n_encoding_ebcdic_cp037
   n_encoding_ebcdic --> n_encoding_ebcdic_cp500
   n_encoding --> n_encoding_utf16
+  n_ibmi --> n_ibmi_api
+  n_ibmi_api --> n_ibmi_api_internal
+  n_ibmi_api_internal --> n_ibmi_api_internal_openlist
+  n_ibmi_api --> n_ibmi_api_users
+  n_ibmi --> n_ibmi_ccsid
+  n_ibmi --> n_ibmi_rpc
+  n_ibmi_rpc --> n_ibmi_rpc_qgy
+  n_ibmi_rpc_qgy --> n_ibmi_rpc_qgy_qgyclst
+  n_ibmi_rpc_qgy --> n_ibmi_rpc_qgy_qgygtle
+  n_ibmi_rpc_qgy --> n_ibmi_rpc_qgy_qgyolaus
   n_network --> n_network_dcerpc
   n_network_dcerpc --> n_network_dcerpc_interfaces
   n_network_dcerpc --> n_network_dcerpc_ms_protocols
@@ -358,6 +406,7 @@ graph LR
   n_network_dcerpc --> n_network_dcerpc_v5
   n_network_dcerpc_v5 --> n_network_dcerpc_v5_client
   n_network_dcerpc_v5 --> n_network_dcerpc_v5_pdu
+  n_network_dcerpc_v5 --> n_network_dcerpc_v5_rpcserver
   n_network_dcerpc_v5 --> n_network_dcerpc_v5_transport
   n_network_dcerpc_v5_transport --> n_network_dcerpc_v5_transport_smb
   n_network_dcerpc_v5_transport --> n_network_dcerpc_v5_transport_smb2
@@ -366,6 +415,17 @@ graph LR
   n_network --> n_network_gssapi
   n_network_gssapi --> n_network_gssapi_context
   n_network_gssapi --> n_network_gssapi_status
+  n_network --> n_network_ibmi
+  n_network_ibmi --> n_network_ibmi_client
+  n_network_ibmi --> n_network_ibmi_hostserver
+  n_network_ibmi --> n_network_ibmi_internal
+  n_network_ibmi_internal --> n_network_ibmi_internal_auth
+  n_network_ibmi_internal --> n_network_ibmi_internal_hosttest
+  n_network_ibmi --> n_network_ibmi_rmtcmd
+  n_network_ibmi_rmtcmd --> n_network_ibmi_rmtcmd_message
+  n_network_ibmi --> n_network_ibmi_servicemapper
+  n_network_ibmi --> n_network_ibmi_signon
+  n_network_ibmi_signon --> n_network_ibmi_signon_message
   n_network --> n_network_ip
   n_network --> n_network_kerberos
   n_network_kerberos --> n_network_kerberos_v5
@@ -407,6 +467,9 @@ graph LR
   n_network_smb --> n_network_smb_client
   n_network_smb --> n_network_smb_common
   n_network_smb_common --> n_network_smb_common_transport
+  n_network_smb --> n_network_smb_fingerprint
+  n_network_smb --> n_network_smb_internal
+  n_network_smb_internal --> n_network_smb_internal_wirediff
   n_network_smb --> n_network_smb_smb_v10
   n_network_smb_smb_v10 --> n_network_smb_smb_v10_capabilities
   n_network_smb_smb_v10 --> n_network_smb_smb_v10_client
@@ -426,6 +489,9 @@ graph LR
   n_network_smb_smb_v10_message --> n_network_smb_smb_v10_message_parameters
   n_network_smb_smb_v10_message --> n_network_smb_smb_v10_message_securityfeatures
   n_network_smb_smb_v10 --> n_network_smb_smb_v10_securitymode
+  n_network_smb_smb_v10 --> n_network_smb_smb_v10_server
+  n_network_smb_smb_v10_server --> n_network_smb_smb_v10_server_rpcpipe
+  n_network_smb_smb_v10 --> n_network_smb_smb_v10_signing
   n_network_smb_smb_v10 --> n_network_smb_smb_v10_subcommands
   n_network_smb_smb_v10 --> n_network_smb_smb_v10_types
   n_network_smb --> n_network_smb_smb_v20
@@ -447,6 +513,7 @@ graph LR
   n_network_smb --> n_network_smb_smb_v311
   n_network --> n_network_tcp
   n_windows --> n_windows_activedirectory
+  n_windows_activedirectory --> n_windows_activedirectory_attributes
   n_windows_activedirectory --> n_windows_activedirectory_replication
   n_windows_activedirectory_replication --> n_windows_activedirectory_replication_dsrepl
   n_windows --> n_windows_cng
@@ -460,6 +527,11 @@ graph LR
   n_windows --> n_windows_database
   n_windows_database --> n_windows_database_ese
   n_windows_database --> n_windows_database_ntds
+  n_windows --> n_windows_errors
+  n_windows_errors --> n_windows_errors_errgen
+  n_windows_errors --> n_windows_errors_hresult
+  n_windows_errors --> n_windows_errors_nt_status
+  n_windows_errors --> n_windows_errors_win32
   n_windows --> n_windows_fileflags
   n_windows --> n_windows_filesystem
   n_windows_filesystem --> n_windows_filesystem_infoclass
@@ -475,13 +547,13 @@ graph LR
   n_windows_keycredentiallink_key_material_fek --> n_windows_keycredentiallink_key_material_fek_blob
   n_windows_keycredentiallink_key_material_fek --> n_windows_keycredentiallink_key_material_fek_headers
   n_windows_keycredentiallink_key_material_fek --> n_windows_keycredentiallink_key_material_fek_magic
+  n_windows_keycredentiallink_key_material --> n_windows_keycredentiallink_key_material_fido
   n_windows_keycredentiallink_key --> n_windows_keycredentiallink_key_source
   n_windows_keycredentiallink_key --> n_windows_keycredentiallink_key_strength
   n_windows_keycredentiallink_key --> n_windows_keycredentiallink_key_usage
   n_windows_keycredentiallink --> n_windows_keycredentiallink_utils
   n_windows_keycredentiallink --> n_windows_keycredentiallink_version
   n_windows --> n_windows_ms_dtyp
-  n_windows --> n_windows_nt_status
   n_windows --> n_windows_protocols
   n_windows_protocols --> n_windows_protocols_ms_bpau
   n_windows_protocols --> n_windows_protocols_ms_brwsa

@@ -6,6 +6,12 @@
 // network/ibmi, mirroring the split between network/... transports and the
 // root windows/... platform structures.
 //
+// Entry points: ibmi/api/users lists user and group profiles over any
+// rpc.ExclusiveCaller; ibmi/rpc/qgy/... are the program-qualified QGY call
+// contracts; network/ibmi/client provides the connection that implements
+// the callers. The supported releases, password levels, CCSIDs and
+// transports are listed in the network/ibmi package documentation.
+//
 // Dependency rules, enforced by architecture_test.go:
 //
 //   - no production package under ibmi/... imports network/ibmi/...;

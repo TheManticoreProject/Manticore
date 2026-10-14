@@ -2,7 +2,7 @@
 import os, re
 
 ROOT = "/home/claude/git_projects/TheManticoreProject/Manticore"
-TOPS = ["crypto", "encoding", "logger", "network", "utils", "windows"]
+TOPS = ["crypto", "encoding", "ibmi", "logger", "network", "utils", "windows"]
 EXCLUDE_NAMES = {"docs", "testdata"}  # documentation / test fixtures are not modules
 
 RED, ORANGE, GREEN = 0, 1, 2
