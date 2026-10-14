@@ -131,6 +131,10 @@ func within(pkg, root string) bool {
 	return pkg == root || strings.HasPrefix(pkg, root+"/")
 }
 
+// testInfra is the scripted fake-server package; only _test.go files may
+// import it.
+const testInfra = "network/ibmi/internal/hosttest"
+
 // networkMayUse lists the only root-ibmi packages network/ibmi may depend on.
 var networkMayUse = map[string]bool{
 	"ibmi":       true,
@@ -197,6 +201,14 @@ func checkIBMiBoundaries(g *importGraph) []string {
 				}
 			}
 		}
+
+		if !within(pkg, testInfra) {
+			for dep := range g.prod[pkg] {
+				if within(dep, testInfra) {
+					add("production-imports-testinfra", pkg, dep)
+				}
+			}
+		}
 	}
 	sort.Strings(violations)
 	return violations
@@ -245,16 +257,17 @@ func writeForbiddenEdgeModule(t *testing.T) string {
 	t.Helper()
 	const module = "example.com/fixture"
 	files := map[string][]string{
-		"ibmi/root.go":                          {"ibmi/rpc"},
-		"ibmi/rpc/rpc.go":                       {"ibmi"},
-		"ibmi/rpc/rpc_test.go":                  {"network/ibmi/hostserver"},
-		"ibmi/helper/helper.go":                 {"network/ibmi/hostserver"},
-		"ibmi/rpc/qgy/qgyolaus/qgyolaus.go":     {"ibmi/rpc", "ibmi/helper"},
-		"ibmi/api/users/users_test.go":          {"ibmi/rpc/qgy/qgyolaus"},
-		"network/ibmi/hostserver/hostserver.go": nil,
-		"network/ibmi/rmtcmd/rmtcmd.go":         {"ibmi/rpc", "network/ibmi/client"},
-		"network/ibmi/rmtcmd/rmtcmd_test.go":    {"network/ibmi/client"},
-		"network/ibmi/client/client.go":         {"ibmi/rpc/qgy/qgyolaus"},
+		"ibmi/root.go":                           {"ibmi/rpc"},
+		"ibmi/rpc/rpc.go":                        {"ibmi"},
+		"ibmi/rpc/rpc_test.go":                   {"network/ibmi/hostserver"},
+		"ibmi/helper/helper.go":                  {"network/ibmi/hostserver"},
+		"ibmi/rpc/qgy/qgyolaus/qgyolaus.go":      {"ibmi/rpc", "ibmi/helper"},
+		"ibmi/api/users/users_test.go":           {"ibmi/rpc/qgy/qgyolaus"},
+		"network/ibmi/hostserver/hostserver.go":  {"network/ibmi/internal/hosttest"},
+		"network/ibmi/rmtcmd/rmtcmd.go":          {"ibmi/rpc", "network/ibmi/client"},
+		"network/ibmi/rmtcmd/rmtcmd_test.go":     {"network/ibmi/client", "network/ibmi/internal/hosttest"},
+		"network/ibmi/internal/hosttest/fake.go": nil,
+		"network/ibmi/client/client.go":          {"ibmi/rpc/qgy/qgyolaus"},
 	}
 	root := t.TempDir()
 	write := func(rel, content string) {
@@ -293,7 +306,10 @@ func TestIBMiImportBoundariesRejectForbiddenEdges(t *testing.T) {
 		"network-imports-concrete-api: network/ibmi/rmtcmd -> ibmi/helper",
 		"network-imports-concrete-api: network/ibmi/rmtcmd -> ibmi/rpc/qgy/qgyolaus",
 		"platform-imports-network: ibmi/helper -> network/ibmi/hostserver",
+		"platform-imports-network: ibmi/helper -> network/ibmi/internal/hosttest",
 		"platform-imports-network: ibmi/rpc/qgy/qgyolaus -> network/ibmi/hostserver",
+		"platform-imports-network: ibmi/rpc/qgy/qgyolaus -> network/ibmi/internal/hosttest",
+		"production-imports-testinfra: network/ibmi/hostserver -> network/ibmi/internal/hosttest",
 		"root-imports-child: ibmi -> ibmi/rpc",
 		"rpc-test-imports-network: ibmi/rpc -> network/ibmi/hostserver",
 	}

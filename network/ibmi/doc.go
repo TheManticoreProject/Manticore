@@ -10,8 +10,9 @@
 // IBM i platform definitions and program-call contracts live under the root
 // ibmi tree. Packages here may import only the root ibmi, ibmi/ccsid and
 // ibmi/rpc packages from it, never a concrete program wrapper or an ibmi/api
-// feature package. Lower layers never import network/ibmi/client. These
-// rules are enforced by ibmi/architecture_test.go.
+// feature package. Lower layers never import network/ibmi/client, and only
+// _test.go files may import the network/ibmi/internal/hosttest fake servers.
+// These rules are enforced by ibmi/architecture_test.go.
 //
 // Examples alias this package as ibminet, since the platform package is also
 // named ibmi.
