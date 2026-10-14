@@ -40,6 +40,18 @@ type FieldPolicy struct {
 	// Repeatable lists code points that may occur more than once. Every
 	// other code point is a singleton and a duplicate is rejected.
 	Repeatable map[uint16]bool
+	// Singletons, when non-nil, inverts that default: only the listed code
+	// points are singletons and every other code point may repeat. Use it
+	// for replies whose unconsumed code points are not under the client's
+	// control. Repeatable is ignored when Singletons is set.
+	Singletons map[uint16]bool
+}
+
+func (p FieldPolicy) mayRepeat(cp uint16) bool {
+	if p.Singletons != nil {
+		return !p.Singletons[cp]
+	}
+	return p.Repeatable[cp]
 }
 
 // Fields is an ordered list of parsed fields.
@@ -91,7 +103,7 @@ func ParseFields(b []byte, policy FieldPolicy) (Fields, error) {
 		if len(out) == max {
 			return nil, malformed("field", off, "more than %d fields", max)
 		}
-		if seen[cp] && !policy.Repeatable[cp] {
+		if seen[cp] && !policy.mayRepeat(cp) {
 			return nil, malformed("field", off, "duplicate singleton code point 0x%04X", cp)
 		}
 		seen[cp] = true

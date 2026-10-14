@@ -268,3 +268,19 @@ func FuzzParseFields(f *testing.F) {
 		}
 	})
 }
+
+func TestParseFieldsSingletonsPolicy(t *testing.T) {
+	var b []byte
+	for _, cp := range []uint16{0x1103, 0x9999, 0x9999} {
+		b, _ = hostserver.AppendField(b, cp, []byte{1})
+	}
+	policy := hostserver.FieldPolicy{Singletons: map[uint16]bool{0x1103: true}}
+	fs, err := hostserver.ParseFields(b, policy)
+	if err != nil || len(fs.All(0x9999)) != 2 {
+		t.Fatalf("unlisted code point may repeat: %v, %v", fs, err)
+	}
+	dup, _ := hostserver.AppendField(b, 0x1103, nil)
+	if _, err := hostserver.ParseFields(dup, policy); !errors.Is(err, hostserver.ErrMalformed) {
+		t.Errorf("duplicate listed singleton error = %v", err)
+	}
+}
