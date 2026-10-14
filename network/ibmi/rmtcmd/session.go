@@ -29,6 +29,9 @@ type StartOptions struct {
 	// JobCCSIDOverride, when nonzero, replaces the negotiated job CCSID for
 	// encoding names, commands and messages. It always adds a warning.
 	JobCCSIDOverride uint32
+	// Limits bound program-call and command replies; zero fields select the
+	// defaults.
+	Limits Limits
 }
 
 // Info is the non-secret state negotiated by Start.
@@ -46,10 +49,11 @@ type Info struct {
 
 // Session is one authenticated Remote Command server job.
 type Session struct {
-	conn  *hostserver.Conn
-	corr  hostserver.Correlator
-	info  Info
-	codec ccsid.Codec
+	conn   *hostserver.Conn
+	corr   hostserver.Correlator
+	info   Info
+	codec  ccsid.Codec
+	limits Limits
 
 	closeOnce sync.Once
 	closeErr  error
@@ -81,6 +85,10 @@ func start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCre
 	nlv := opts.NLV
 	if nlv == "" {
 		nlv = message.DefaultNLV
+	}
+	limits, err := opts.Limits.Resolve()
+	if err != nil {
+		return nil, err
 	}
 	clientSeed, err := auth.NewSeed(opts.Rand)
 	if err != nil {
@@ -121,7 +129,7 @@ func start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCre
 		return nil, &signon.Error{Stage: "remote command start server", Code: signon.ReturnCode(started.ReturnCode)}
 	}
 
-	s := &Session{conn: conn}
+	s := &Session{conn: conn, limits: limits}
 	corr, err := s.corr.Next()
 	if err != nil {
 		return nil, err

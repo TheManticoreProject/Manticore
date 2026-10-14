@@ -314,3 +314,50 @@ func (s *Server) serveRemoteCommand(c net.Conn) {
 		}
 	}
 }
+
+// OperationReply builds a 0x8002/0x8003/0x9003 reply: return code, message
+// count, then rest (message records or output envelopes).
+func OperationReply(replyID uint16, correlation uint32, rc, count uint16, rest []byte) hostserver.Frame {
+	t := binary.BigEndian.AppendUint16(nil, rc)
+	t = binary.BigEndian.AppendUint16(t, count)
+	return hostserver.Frame{
+		Header:   hostserver.Header{ServerID: hostserver.ServerIDRemoteCommand, RequestID: replyID, CorrelationID: correlation},
+		Template: t, Variable: rest,
+	}
+}
+
+// MessageRecord builds a classic CCSID 37 message record. The message type
+// is written as two zoned digits.
+func MessageRecord(id string, messageType uint8, severity uint16, file, library string, substitution []byte, text string) []byte {
+	codec, _ := ccsid.Lookup(ccsid.CCSID37)
+	enc := func(s string, width int) []byte {
+		b, err := ccsid.EncodeFixed(codec, s, width)
+		if err != nil {
+			panic("hosttest: " + err.Error())
+		}
+		return b
+	}
+	textBytes, err := codec.Encode(text)
+	if err != nil {
+		panic("hosttest: " + err.Error())
+	}
+	r := binary.BigEndian.AppendUint32(nil, uint32(41+len(substitution)+len(textBytes)))
+	r = binary.BigEndian.AppendUint16(r, 0)
+	r = append(r, enc(id, 7)...)
+	r = append(r, 0xF0|messageType/10, 0xF0|messageType%10)
+	r = binary.BigEndian.AppendUint16(r, severity)
+	r = append(r, enc(file, 10)...)
+	r = append(r, enc(library, 10)...)
+	r = binary.BigEndian.AppendUint16(r, uint16(len(substitution)))
+	r = binary.BigEndian.AppendUint16(r, uint16(len(textBytes)))
+	return append(append(r, substitution...), textBytes...)
+}
+
+// OutputEnvelope builds one returned parameter envelope.
+func OutputEnvelope(usage uint16, length uint32, payload []byte) []byte {
+	b := binary.BigEndian.AppendUint32(nil, uint32(12+len(payload)))
+	b = binary.BigEndian.AppendUint16(b, 0x1103)
+	b = binary.BigEndian.AppendUint32(b, length)
+	b = binary.BigEndian.AppendUint16(b, usage)
+	return append(b, payload...)
+}

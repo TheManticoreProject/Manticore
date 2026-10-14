@@ -157,6 +157,15 @@ func (c *Conn) usable() error {
 	return nil
 }
 
+// Poison marks the stream unusable for a reason found above the framing
+// layer (for example a malformed operation body), closes the socket, and
+// returns an error matching ErrPoisoned. Later operations fail with it.
+func (c *Conn) Poison(cause error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.poison(cause)
+}
+
 // poison records cause, closes the socket and returns the poisoned error.
 func (c *Conn) poison(cause error) error {
 	if c.poisoned == nil {

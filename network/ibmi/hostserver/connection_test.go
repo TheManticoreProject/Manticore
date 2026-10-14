@@ -369,3 +369,13 @@ func TestContextDeadlineIsReported(t *testing.T) {
 	}
 	wantPoisoned(t, c, err)
 }
+
+func TestPoisonFromAbove(t *testing.T) {
+	c, _ := newPipeConn(t, hostserver.Options{})
+	cause := errors.New("malformed operation body")
+	err := c.Poison(cause)
+	if !errors.Is(err, hostserver.ErrPoisoned) || !errors.Is(err, cause) {
+		t.Fatalf("Poison = %v", err)
+	}
+	wantPoisoned(t, c, err)
+}
