@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/TheManticoreProject/Manticore/ibmi/rpc"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
 )
 
@@ -62,9 +63,18 @@ func (e *OutcomeError) Error() string {
 func (e *OutcomeError) Unwrap() error { return e.Err }
 
 // Is makes errors.Is(err, ErrUncertainOutcome) true when the request may
-// have executed.
+// have executed, and errors.Is(err, rpc.ErrSessionLost) true when the
+// session can no longer be used.
 func (e *OutcomeError) Is(target error) bool {
-	return target == ErrUncertainOutcome && e.MayHaveExecuted
+	switch target {
+	case ErrUncertainOutcome:
+		return e.MayHaveExecuted
+	case rpc.ErrSessionLost:
+		// Any frame that started moving poisons the stream; a call that
+		// never started fails this way only on an already unusable session.
+		return e.Phase != SendNotStarted || errors.Is(e.Err, hostserver.ErrPoisoned) || errors.Is(e.Err, hostserver.ErrClosed)
+	}
+	return false
 }
 
 // exchangeOutcome classifies an Exchange failure for a frame of size bytes.

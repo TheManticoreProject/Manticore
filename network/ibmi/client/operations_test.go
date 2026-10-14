@@ -126,7 +126,7 @@ func TestMalformedReplyPoisonsClient(t *testing.T) {
 	if c.getState() != statePoisoned || c.SessionInfo().Connected {
 		t.Fatalf("state = %s", c.getState())
 	}
-	if _, err := c.Call(context.Background(), testCall(t)); !errors.Is(err, ErrNotReady) {
+	if _, err := c.Call(context.Background(), testCall(t)); !errors.Is(err, ErrNotReady) || !errors.Is(err, rpc.ErrSessionLost) {
 		t.Errorf("Call on a poisoned client = %v", err)
 	}
 	if err := c.Close(); err != nil {

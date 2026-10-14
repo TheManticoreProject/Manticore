@@ -71,6 +71,9 @@ type NativeError struct {
 	Operation  string
 	ReturnCode uint16
 	Messages   []rpc.IBMMessage
+	// SessionLost is set when the return code's body semantics are unknown,
+	// so the session was poisoned.
+	SessionLost bool
 }
 
 func (e *NativeError) Error() string {
@@ -86,8 +89,11 @@ func (e *NativeError) Error() string {
 	return fmt.Sprintf("rmtcmd: %s failed with return code 0x%04X (%s)", e.Operation, e.ReturnCode, strings.Join(ids, ", "))
 }
 
-// Is makes errors.Is(err, ErrNative) true.
-func (e *NativeError) Is(target error) bool { return target == ErrNative }
+// Is makes errors.Is(err, ErrNative) true, and errors.Is(err,
+// rpc.ErrSessionLost) true when the session was poisoned.
+func (e *NativeError) Is(target error) bool {
+	return target == ErrNative || (target == rpc.ErrSessionLost && e.SessionLost)
+}
 
 // ErrLimit is matched when a request or reply exceeds a configured limit
 // before any allocation.
