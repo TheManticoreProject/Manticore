@@ -3,6 +3,9 @@ package rmtcmd
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/TheManticoreProject/Manticore/ibmi/rpc"
 )
 
 // ErrAttributesRejected is matched when the 0x8001 return code is not a
@@ -54,4 +57,53 @@ func attributesCodeText(code uint16) string {
 		return t
 	}
 	return "unknown"
+}
+
+// ErrNative is matched by a NativeError: IBM i completed the request and
+// reported failure with a Remote Command return code.
+var ErrNative = errors.New("rmtcmd: operation failed on the server")
+
+// NativeError is a nonzero Remote Command return code with the IBM messages
+// that explain it. Its text lists at most five message IDs and never the
+// message text, substitution data or command source, which can contain
+// secrets.
+type NativeError struct {
+	Operation  string
+	ReturnCode uint16
+	Messages   []rpc.IBMMessage
+}
+
+func (e *NativeError) Error() string {
+	ids := make([]string, 0, 5)
+	for _, m := range e.Messages {
+		if m.ID != "" && len(ids) < 5 {
+			ids = append(ids, m.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return fmt.Sprintf("rmtcmd: %s failed with return code 0x%04X", e.Operation, e.ReturnCode)
+	}
+	return fmt.Sprintf("rmtcmd: %s failed with return code 0x%04X (%s)", e.Operation, e.ReturnCode, strings.Join(ids, ", "))
+}
+
+// Is makes errors.Is(err, ErrNative) true.
+func (e *NativeError) Is(target error) bool { return target == ErrNative }
+
+// ErrLimit is matched when a request or reply exceeds a configured limit
+// before any allocation.
+var ErrLimit = errors.New("rmtcmd: limit exceeded")
+
+// keepsSession reports whether a nonzero return code leaves the stream and
+// server job in a known state (docs/19, "Command and program calls"). Any
+// other code poisons the session because its body semantics are unknown.
+func keepsSession(code uint16, command bool) bool {
+	switch code {
+	case 0x0303, 0x0400:
+		return true
+	case 0x0401: // invalid explicit command CCSID (level 10 and later)
+		return command
+	case 0x0500, 0x0501:
+		return !command
+	}
+	return false
 }

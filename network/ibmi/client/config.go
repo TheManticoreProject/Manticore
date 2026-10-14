@@ -8,6 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/ibmi/ccsid"
 	ibminet "github.com/TheManticoreProject/Manticore/network/ibmi"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd/message"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/servicemapper"
 )
@@ -55,6 +56,16 @@ type Config struct {
 	// JobCCSIDOverride replaces the negotiated Remote Command job CCSID; it
 	// must be a supported CCSID and always adds a SessionInfo warning.
 	JobCCSIDOverride uint32
+
+	// MaxReceiver caps each program-call output (default 16 MiB, at most
+	// 64 MiB). MaxMessageText caps each message's text (default 1 MiB).
+	// MaxRLEExpansion caps one decompressed output (default 16 MiB, at
+	// most 64 MiB). MaxMessages caps the messages in one reply (default
+	// 256, at most 65535).
+	MaxReceiver     uint32
+	MaxMessageText  uint32
+	MaxRLEExpansion uint32
+	MaxMessages     int
 
 	// Dial replaces net.Dialer.DialContext, for tests and custom routing.
 	Dial ibminet.DialFunc
@@ -121,6 +132,14 @@ func (c Config) resolve() (Config, error) {
 	if _, err := message.ExchangeAttributesFrame(1, c.NLV); err != nil {
 		return Config{}, fmt.Errorf("%w: %w", ErrConfig, err)
 	}
+	limits, err := c.limits().Resolve()
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: %w", ErrConfig, err)
+	}
+	if limits.MaxMessageText > c.MaxFrame {
+		return Config{}, fmt.Errorf("%w: MaxMessageText %d exceeds MaxFrame %d", ErrConfig, limits.MaxMessageText, c.MaxFrame)
+	}
+	c.MaxReceiver, c.MaxMessageText, c.MaxRLEExpansion, c.MaxMessages = limits.MaxReceiver, limits.MaxMessageText, limits.MaxRLEExpansion, limits.MaxMessages
 	if c.JobCCSIDOverride != 0 {
 		if _, err := ccsid.Lookup(ccsid.CCSID(c.JobCCSIDOverride)); err != nil {
 			return Config{}, fmt.Errorf("%w: JobCCSIDOverride: %w", ErrConfig, err)
@@ -132,6 +151,10 @@ func (c Config) resolve() (Config, error) {
 		}
 	}
 	return c, nil
+}
+
+func (c Config) limits() rmtcmd.Limits {
+	return rmtcmd.Limits{MaxReceiver: c.MaxReceiver, MaxMessageText: c.MaxMessageText, MaxRLEExpansion: c.MaxRLEExpansion, MaxMessages: c.MaxMessages}
 }
 
 func (c Config) dialer() *hostserver.Dialer {

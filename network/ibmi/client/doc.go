@@ -12,6 +12,11 @@
 //	                       \-> poisoned (framing became ambiguous) -> closed
 //	a failed Connect     -> closed (create a new Client to retry)
 //
+// Client implements rpc.Caller (Call) and rpc.ExclusiveCaller
+// (ExecuteExclusive), so typed IBM i API packages can depend on those
+// interfaces instead of this facade. RunCommand runs raw CL and is a
+// privileged operation.
+//
 // All operations on the session hold one lifecycle lock, so Close waits for
 // an in-flight operation and a compound operation cannot be interleaved.
 //

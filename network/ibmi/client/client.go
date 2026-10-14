@@ -142,7 +142,7 @@ func (c *Client) connect(ctx context.Context, cred *ibminet.PasswordCredential) 
 	if err != nil {
 		return SessionInfo{}, nil, err
 	}
-	session, err := rmtcmd.Start(ctx, conn, cred, so.PasswordFamily, rmtcmd.StartOptions{NLV: c.cfg.NLV, JobCCSIDOverride: c.cfg.JobCCSIDOverride})
+	session, err := rmtcmd.Start(ctx, conn, cred, so.PasswordFamily, rmtcmd.StartOptions{NLV: c.cfg.NLV, JobCCSIDOverride: c.cfg.JobCCSIDOverride, Limits: c.cfg.limits()})
 	if err != nil {
 		return SessionInfo{}, nil, err // Start closed conn
 	}
