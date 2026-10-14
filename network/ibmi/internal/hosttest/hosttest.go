@@ -1,0 +1,316 @@
+// Package hosttest provides scripted, in-memory IBM i Sign-on and Remote
+// Command host servers for tests of the network/ibmi packages. It is test
+// infrastructure only: production code must never import it.
+//
+// A Server is reached through its Dial method (an ibminet.DialFunc), which
+// routes by port and returns one side of a net.Pipe. The servers verify
+// every password substitute independently from their own copy of the
+// credential and the seeds they saw, record every request, and track open
+// connections so tests can assert that sockets are closed.
+package hosttest
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/TheManticoreProject/Manticore/ibmi/ccsid"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/internal/auth"
+)
+
+// Default ports the Dial method routes on.
+const (
+	SignonPort        = 8476
+	RemoteCommandPort = 8475
+)
+
+// Request records one frame a server received.
+type Request struct {
+	ServerID      uint16
+	RequestID     uint16
+	CorrelationID uint32
+	// ClientSeed is set for 0x7003 and 0x7001.
+	ClientSeed [8]byte
+	// Substitute is set for 0x7004 and 0x7002.
+	Substitute []byte
+}
+
+// Server scripts both host servers. Configure the exported fields before
+// the first Dial; zero values select a healthy V5R4-like server.
+type Server struct {
+	Profile  string
+	Password string
+	// PasswordLevel is reported in CP 0x1119 (default 0).
+	PasswordLevel byte
+	// SignonRC and StartRC force a 0xF004 or 0xF002 return code. A wrong
+	// substitute yields 0x0003000B regardless.
+	SignonRC uint32
+	StartRC  uint32
+	// AttributesRC is the 0x8001 return code.
+	AttributesRC uint16
+	// SystemCCSID (0xF004) and JobCCSID (0x8001) default to 37.
+	SystemCCSID uint32
+	JobCCSID    uint32
+	// RemoteCommandLevel is the 0x8001 data-stream level (default 7).
+	RemoteCommandLevel uint16
+	// JobName is returned in 0xF002 CP 0x111F (default QZRCSRVS).
+	JobName string
+	// Handle answers Remote Command requests other than the startup ones.
+	// Returning ok=false sends no reply.
+	Handle func(req hostserver.Frame) (reply hostserver.Frame, ok bool)
+	// SilentOn suppresses the reply to this request ID.
+	SilentOn uint16
+	// AttributesCorrelationDelta is added to the 0x8001 correlation ID, to
+	// script a mismatched reply.
+	AttributesCorrelationDelta uint32
+
+	mu       sync.Mutex
+	requests []Request
+	open     int
+	wg       sync.WaitGroup
+}
+
+func (s *Server) defaults() {
+	if s.SystemCCSID == 0 {
+		s.SystemCCSID = 37
+	}
+	if s.JobCCSID == 0 {
+		s.JobCCSID = 37
+	}
+	if s.RemoteCommandLevel == 0 {
+		s.RemoteCommandLevel = 7
+	}
+	if s.JobName == "" {
+		s.JobName = "QZRCSRVS"
+	}
+}
+
+// Dial is an ibminet.DialFunc routing SignonPort and RemoteCommandPort to
+// the scripted servers. Any other port fails.
+func (s *Server) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	_, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	port, _ := strconv.Atoi(portText)
+	var serve func(net.Conn)
+	switch port {
+	case SignonPort:
+		serve = s.serveSignon
+	case RemoteCommandPort:
+		serve = s.serveRemoteCommand
+	default:
+		return nil, fmt.Errorf("hosttest: nothing listens on port %d", port)
+	}
+	s.mu.Lock()
+	s.defaults()
+	s.open++
+	s.mu.Unlock()
+	client, server := net.Pipe()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() {
+			server.Close()
+			s.mu.Lock()
+			s.open--
+			s.mu.Unlock()
+		}()
+		serve(server)
+	}()
+	return client, nil
+}
+
+// Requests returns a copy of every recorded request.
+func (s *Server) Requests() []Request {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Request(nil), s.requests...)
+}
+
+// Count returns how many requests with id were received.
+func (s *Server) Count(id uint16) int {
+	n := 0
+	for _, r := range s.Requests() {
+		if r.RequestID == id {
+			n++
+		}
+	}
+	return n
+}
+
+// WaitClosed waits until every connection the client opened has been closed
+// by the client, or fails after timeout.
+func (s *Server) WaitClosed(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return fmt.Errorf("hosttest: %d connection(s) still open", s.open)
+	}
+}
+
+func (s *Server) record(r Request) {
+	s.mu.Lock()
+	s.requests = append(s.requests, r)
+	s.mu.Unlock()
+}
+
+func (s *Server) credential() *auth.PasswordCredential {
+	c, err := auth.NewPasswordCredential(s.Profile, []byte(s.Password))
+	if err != nil {
+		panic("hosttest: invalid scripted credential: " + err.Error())
+	}
+	return c
+}
+
+func (s *Server) family() auth.Family {
+	f, err := auth.FamilyForLevel(s.PasswordLevel)
+	if err != nil {
+		return auth.FamilyDES
+	}
+	return f
+}
+
+// readFrame reads one frame; io.EOF means the client closed the socket.
+func readFrame(c net.Conn) (hostserver.Frame, error) {
+	var hb [hostserver.HeaderLength]byte
+	if _, err := io.ReadFull(c, hb[:]); err != nil {
+		return hostserver.Frame{}, err
+	}
+	b := make([]byte, binary.BigEndian.Uint32(hb[:]))
+	copy(b, hb[:])
+	if _, err := io.ReadFull(c, b[hostserver.HeaderLength:]); err != nil {
+		return hostserver.Frame{}, err
+	}
+	return hostserver.UnmarshalFrame(b, 0)
+}
+
+func write(c net.Conn, f hostserver.Frame) {
+	b, err := f.Marshal(0)
+	if err != nil {
+		panic("hosttest: " + err.Error())
+	}
+	_, _ = c.Write(b)
+}
+
+// Reply builds a reply frame with a 4-byte template and LL/CP fields.
+func Reply(serverID, replyID uint16, correlation uint32, template []byte, fields ...hostserver.Field) hostserver.Frame {
+	var v []byte
+	for _, f := range fields {
+		v, _ = hostserver.AppendField(v, f.CodePoint, f.Value)
+	}
+	return hostserver.Frame{
+		Header:   hostserver.Header{ServerID: serverID, RequestID: replyID, CorrelationID: correlation},
+		Template: template, Variable: v,
+	}
+}
+
+func u32(v uint32) []byte { return binary.BigEndian.AppendUint32(nil, v) }
+
+func (s *Server) serveSignon(c net.Conn) {
+	cred := s.credential()
+	defer cred.Destroy()
+	serverSeed := [8]byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38}
+	var clientSeed [8]byte
+	for {
+		f, err := readFrame(c)
+		if err != nil {
+			return
+		}
+		req := Request{ServerID: f.Header.ServerID, RequestID: f.Header.RequestID, CorrelationID: f.Header.CorrelationID}
+		switch f.Header.RequestID {
+		case 0x7003:
+			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+			seed, _ := fs.Get(0x1103)
+			copy(clientSeed[:], seed)
+			req.ClientSeed = clientSeed
+			s.record(req)
+			if s.SilentOn == 0x7003 {
+				continue
+			}
+			write(c, Reply(hostserver.ServerIDSignon, 0xF003, 0, u32(0),
+				hostserver.Field{CodePoint: 0x1101, Value: u32(0x00050400)},
+				hostserver.Field{CodePoint: 0x1102, Value: []byte{0, 2}},
+				hostserver.Field{CodePoint: 0x1103, Value: serverSeed[:]},
+				hostserver.Field{CodePoint: 0x1119, Value: []byte{s.PasswordLevel}}))
+		case 0x7004:
+			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+			got, _ := fs.Get(0x1105)
+			req.Substitute = append([]byte(nil), got...)
+			s.record(req)
+			rc := s.SignonRC
+			if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
+				rc = 0x0003000B
+			}
+			write(c, Reply(hostserver.ServerIDSignon, 0xF004, 0, u32(rc),
+				hostserver.Field{CodePoint: 0x1114, Value: u32(s.SystemCCSID)}))
+		default:
+			s.record(req) // 0x7006 and anything else: no reply
+		}
+	}
+}
+
+func (s *Server) serveRemoteCommand(c net.Conn) {
+	cred := s.credential()
+	defer cred.Destroy()
+	serverSeed := [8]byte{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48}
+	var clientSeed [8]byte
+	for {
+		f, err := readFrame(c)
+		if err != nil {
+			return
+		}
+		h := f.Header
+		req := Request{ServerID: h.ServerID, RequestID: h.RequestID, CorrelationID: h.CorrelationID}
+		if h.RequestID == s.SilentOn && s.SilentOn != 0 {
+			s.record(req)
+			continue
+		}
+		switch h.RequestID {
+		case 0x7001:
+			copy(clientSeed[:], f.Template)
+			req.ClientSeed = clientSeed
+			s.record(req)
+			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF001, 0, append(u32(0), serverSeed[:]...)))
+		case 0x7002:
+			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+			got, _ := fs.Get(0x1105)
+			req.Substitute = append([]byte(nil), got...)
+			s.record(req)
+			rc := s.StartRC
+			if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
+				rc = 0x0003000B
+			}
+			codec, _ := ccsid.Lookup(ccsid.CCSID37)
+			job, _ := ccsid.EncodeFixed(codec, s.JobName, 28)
+			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF002, 0, u32(rc),
+				hostserver.Field{CodePoint: 0x111F, Value: append([]byte{0, 0, 0, 0x25}, job...)}))
+		case 0x1001:
+			s.record(req)
+			body := make([]byte, 16)
+			binary.BigEndian.PutUint16(body[0:], s.AttributesRC)
+			binary.BigEndian.PutUint32(body[2:], s.JobCCSID)
+			binary.BigEndian.PutUint16(body[14:], s.RemoteCommandLevel)
+			write(c, hostserver.Frame{Header: hostserver.Header{ServerID: hostserver.ServerIDRemoteCommand, RequestID: 0x8001, CorrelationID: h.CorrelationID + s.AttributesCorrelationDelta}, Variable: body})
+		default:
+			s.record(req)
+			if s.Handle != nil {
+				if reply, ok := s.Handle(f); ok {
+					write(c, reply)
+				}
+			}
+		}
+	}
+}
