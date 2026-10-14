@@ -9,6 +9,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.12
 	golang.org/x/crypto v0.43.0
 	golang.org/x/term v0.36.0
+	golang.org/x/text v0.30.0
 )
 
 require (
