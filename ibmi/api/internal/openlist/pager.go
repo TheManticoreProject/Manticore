@@ -1,5 +1,6 @@
 // Package openlist runs the same-session lifecycle shared by IBM i open-list
-// APIs: open, read pages with QGYGTLE, close with QGYCLST.
+// APIs: open, wait for an asynchronously built list, read pages with QGYGTLE,
+// close with QGYCLST.
 //
 // Read holds one rpc.ExclusiveCaller reservation for the whole sequence, so
 // no other call can run on the server job between open and close (the list
@@ -37,6 +38,10 @@ const (
 	MaxMaxRecords         = 1 << 20
 	DefaultMaxReceiver    = 16 << 20
 	DefaultCleanupTimeout = 5 * time.Second
+	DefaultPollInterval   = 250 * time.Millisecond
+	MinPollInterval       = 10 * time.Millisecond
+	DefaultMaxBuildWait   = time.Minute
+	MaxMaxBuildWait       = time.Hour
 )
 
 // Config bounds one Read. Zero values select the defaults.
@@ -58,6 +63,11 @@ type Config struct {
 	JobCodec ccsid.Codec
 	// ErrorCode is used for QGYGTLE and QGYCLST; zero is exception mode.
 	ErrorCode errorcode.Parameter
+	// PollInterval spaces the list-information requests made while an
+	// asynchronously built list is not complete.
+	PollInterval time.Duration
+	// MaxBuildWait bounds the wait for an asynchronous build.
+	MaxBuildWait time.Duration
 }
 
 func (c Config) resolve() (Config, error) {
@@ -73,6 +83,12 @@ func (c Config) resolve() (Config, error) {
 	if c.CleanupTimeout == 0 {
 		c.CleanupTimeout = DefaultCleanupTimeout
 	}
+	if c.PollInterval == 0 {
+		c.PollInterval = DefaultPollInterval
+	}
+	if c.MaxBuildWait == 0 {
+		c.MaxBuildWait = DefaultMaxBuildWait
+	}
 	switch {
 	case c.RecordLength == 0:
 		return Config{}, errors.New("openlist: zero record length")
@@ -84,6 +100,10 @@ func (c Config) resolve() (Config, error) {
 		return Config{}, fmt.Errorf("openlist: maximum records %d outside 1..%d", c.MaxRecords, MaxMaxRecords)
 	case c.CleanupTimeout < 0:
 		return Config{}, fmt.Errorf("openlist: negative cleanup timeout %s", c.CleanupTimeout)
+	case c.PollInterval < MinPollInterval:
+		return Config{}, fmt.Errorf("openlist: poll interval %s below %s", c.PollInterval, MinPollInterval)
+	case c.MaxBuildWait < 0 || c.MaxBuildWait > MaxMaxBuildWait:
+		return Config{}, fmt.Errorf("openlist: maximum build wait %s outside (0, %s]", c.MaxBuildWait, MaxMaxBuildWait)
 	}
 	receiver := uint64(c.PageSize) * uint64(c.RecordLength)
 	if receiver > uint64(c.MaxReceiver) || receiver > math.MaxInt32 {
@@ -111,7 +131,7 @@ type Result struct {
 	Count   int
 	// Total is the list size the server reported at open.
 	Total int32
-	// Status is the list status at open.
+	// Status is the list status once built.
 	Status listinfo.Status
 	// Partial means Records stops before the end of the list; an error is
 	// always returned with a partial result.
@@ -127,6 +147,12 @@ var (
 	ErrNoProgress = errors.New("openlist: page made no progress")
 	// ErrUnstable is matched when the list changed between pages.
 	ErrUnstable = errors.New("openlist: list changed while paging")
+	// ErrBuildFailed is matched when the server reports an error building
+	// an asynchronous list.
+	ErrBuildFailed = errors.New("openlist: the server failed to build the list")
+	// ErrBuildTimeout is matched when an asynchronous list is not complete
+	// within MaxBuildWait.
+	ErrBuildTimeout = errors.New("openlist: list not built in time")
 )
 
 // Read opens a list with open, reads up to cfg.MaxRecords records, and
@@ -149,15 +175,55 @@ func Read(ctx context.Context, ex rpc.ExclusiveCaller, cfg Config, open OpenFunc
 		if openErr != nil {
 			return openErr
 		}
+		if opened.Info, err = waitBuilt(ctx, caller, cfg, opened); err != nil {
+			return err
+		}
 		result, err = readPages(ctx, caller, cfg, opened)
 		return err
 	})
 	return result, err
 }
 
+// waitBuilt polls the list information of an asynchronously built list
+// until it is complete (or stopped with too much data), the server reports
+// an error, ctx ends, or MaxBuildWait passes. A synchronously built list is
+// returned unchanged.
+func waitBuilt(ctx context.Context, caller rpc.Caller, cfg Config, opened Opened) (listinfo.Info, error) {
+	info := opened.Info
+	deadline := time.Now().Add(cfg.MaxBuildWait)
+	for {
+		switch info.Status {
+		case listinfo.StatusComplete, listinfo.StatusTooMuchData:
+			return info, nil
+		case listinfo.StatusError:
+			return info, ErrBuildFailed
+		}
+		if !time.Now().Before(deadline) {
+			return info, fmt.Errorf("%w: still %s after %s", ErrBuildTimeout, info.Status, cfg.MaxBuildWait)
+		}
+		timer := time.NewTimer(min(cfg.PollInterval, time.Until(deadline)))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return info, ctx.Err()
+		case <-timer.C:
+		}
+		var err error
+		info, err = qgygtle.GetInfo(ctx, caller, qgygtle.InfoRequest{
+			Library: cfg.Library, Handle: opened.Handle, ErrorCode: cfg.ErrorCode,
+		}, cfg.JobCodec)
+		if err != nil {
+			return info, err
+		}
+	}
+}
+
 func readPages(ctx context.Context, caller rpc.Caller, cfg Config, opened Opened) (*Result, error) {
 	total := opened.Info.TotalRecords
 	res := &Result{Total: total, Status: opened.Info.Status}
+	if opened.Info.Status == listinfo.StatusTooMuchData {
+		res.Warnings = appendOnce(res.Warnings, "the server stopped building the list (too much data); it is incomplete")
+	}
 	limit := int(total)
 	var limitErr error
 	if limit > cfg.MaxRecords {

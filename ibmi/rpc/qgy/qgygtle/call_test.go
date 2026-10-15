@@ -123,3 +123,35 @@ func TestGetRejectsInconsistentPages(t *testing.T) {
 		t.Errorf("short receiver: %v", err)
 	}
 }
+
+func TestInfoCall(t *testing.T) {
+	call, err := qgygtle.NewInfoCall(qgygtle.InfoRequest{Handle: handle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := call.Parameters()
+	if p[0].Direction() != rpc.DirectionInput || p[0].Maximum() != 0 ||
+		!bytes.Equal(p[4].InputBytes(), []byte{0, 0, 0, 0}) || !bytes.Equal(p[5].InputBytes(), []byte{0, 0, 0, 0}) ||
+		p[3].Direction() != rpc.DirectionOutput || p[3].Maximum() != 80 {
+		t.Errorf("info call parameters = %v", p)
+	}
+	infoOnly := func(li []byte) func(rpc.Call) (*rpc.Result, error) {
+		return func(c rpc.Call) (*rpc.Result, error) {
+			r := &rpc.Result{Parameters: make([]rpc.ParameterResult, c.ParameterCount()), RequestedMessageOption: c.MessageOption(), EffectiveMessageOption: c.MessageOption()}
+			r.Parameters[3] = rpc.ParameterResult{Present: true, Data: li}
+			return r, nil
+		}
+	}
+	got, err := qgygtle.GetInfo(context.Background(), fakeCaller{infoOnly(info(7, 0, handle, 62, 0, 0))}, qgygtle.InfoRequest{Handle: handle}, codec)
+	if err != nil || got.TotalRecords != 7 {
+		t.Fatalf("GetInfo = %+v, %v", got, err)
+	}
+	for name, li := range map[string][]byte{
+		"handle changed":   info(7, 0, openlist.Handle{9}, 62, 0, 0),
+		"records returned": info(7, 1, handle, 62, 1, 62),
+	} {
+		if _, err := qgygtle.GetInfo(context.Background(), fakeCaller{infoOnly(li)}, qgygtle.InfoRequest{Handle: handle}, codec); !errors.Is(err, qgygtle.ErrInvalidPage) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

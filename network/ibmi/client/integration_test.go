@@ -124,6 +124,20 @@ func TestLiveReadOnlySequence(t *testing.T) {
 	if uint32(len(res.Users)) != res.TotalReported {
 		t.Errorf("listed %d of %d reported profiles", len(res.Users), res.TotalReported)
 	}
+	async, err := u.List(ctx, users.ListOptions{PageSize: 25, Asynchronous: true})
+	if err != nil {
+		t.Fatalf("list users asynchronously: %v", err)
+	}
+	t.Logf("asynchronous build listed %d profiles of %d reported, status %s", len(async.Users), async.TotalReported, async.SnapshotStatus)
+	if len(async.Users) != len(res.Users) {
+		t.Errorf("asynchronous list has %d profiles, synchronous %d", len(async.Users), len(res.Users))
+	}
+	for i := range async.Users {
+		if i < len(res.Users) && async.Users[i] != res.Users[i] {
+			t.Errorf("profile %d differs between build modes", i)
+			break
+		}
+	}
 	t.Logf("before close: sent %04X, received %04X", events.sent, events.received)
 }
 

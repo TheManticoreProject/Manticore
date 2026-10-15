@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/ibmi/api/internal/openlist"
 	"github.com/TheManticoreProject/Manticore/ibmi/ccsid"
@@ -36,6 +37,14 @@ type listServer struct {
 	closeErr     error
 	pageErrStart int
 	pageErr      error
+
+	// Asynchronous build simulation: the open reports pending, and
+	// list-information polls report pending buildPolls times, then
+	// buildFinal (default complete).
+	async      bool
+	buildPolls int
+	buildFinal byte
+	infoCalls  int
 
 	mu        sync.Mutex
 	held      bool
@@ -95,6 +104,9 @@ func (c listCaller) Call(ctx context.Context, call rpc.Call) (*rpc.Result, error
 		if status == 0 {
 			status = 0xF2
 		}
+		if s.async {
+			status = 0xF0 // pending
+		}
 		b := info(s.records, 0, s.handle, recLen, 0, status)
 		if s.openBadInfo {
 			b[16] = 0x00
@@ -103,6 +115,18 @@ func (c listCaller) Call(ctx context.Context, call rpc.Call) (*rpc.Result, error
 	case "QGYGTLE":
 		count := int(int32(binary.BigEndian.Uint32(params[4].InputBytes())))
 		start := int(int32(binary.BigEndian.Uint32(params[5].InputBytes())))
+		if count == 0 && start == 0 { // list-information request
+			s.infoCalls++
+			status := byte(0xF0)
+			if s.infoCalls > s.buildPolls {
+				status = s.buildFinal
+				if status == 0 {
+					status = 0xF2
+				}
+			}
+			res.Parameters[3] = rpc.ParameterResult{Present: true, Data: info(s.records, 0, s.handle, recLen, 0, status)}
+			return res, nil
+		}
 		if s.pageErr != nil && start >= s.pageErrStart {
 			return nil, s.pageErr
 		}
@@ -144,7 +168,21 @@ func newServer(t *testing.T, records int) *listServer {
 }
 
 func open(ctx context.Context, caller rpc.Caller) (openlist.Opened, error) {
-	res, recovered, err := qgyolaus.Open(ctx, caller, qgyolaus.AUTU0100(), qgyolaus.Request{}, codec, codec)
+	return openWith(qgyolaus.Request{})(ctx, caller)
+}
+
+func openAsync(ctx context.Context, caller rpc.Caller) (openlist.Opened, error) {
+	return openWith(qgyolaus.Request{Build: qgyolaus.BuildAsynchronous})(ctx, caller)
+}
+
+func openWith(req qgyolaus.Request) openlist.OpenFunc {
+	return func(ctx context.Context, caller rpc.Caller) (openlist.Opened, error) {
+		return openReq(ctx, caller, req)
+	}
+}
+
+func openReq(ctx context.Context, caller rpc.Caller, req qgyolaus.Request) (openlist.Opened, error) {
+	res, recovered, err := qgyolaus.Open(ctx, caller, qgyolaus.AUTU0100(), req, codec, codec)
 	o := openlist.Opened{HandleRecovered: recovered}
 	if res != nil {
 		o.Info, o.Handle = res.Info, res.Handle
@@ -392,4 +430,90 @@ func marshalInfo(i listinfo.Info) []byte {
 	b[16] = map[listinfo.Complete]byte{listinfo.CompleteAccurate: 0xC3, listinfo.Incomplete: 0xC9, listinfo.PartialAccurate: 0xD7}[i.Complete]
 	binary.BigEndian.PutUint32(b[32:], uint32(i.InfoLength))
 	return b
+}
+
+func asyncCfg(pageSize int) openlist.Config {
+	c := cfg(pageSize)
+	c.PollInterval = openlist.MinPollInterval
+	return c
+}
+
+func TestReadWaitsForAsynchronousBuild(t *testing.T) {
+	s := newServer(t, 25)
+	s.async, s.buildPolls = true, 3
+	res, err := openlist.Read(context.Background(), s, asyncCfg(10), openAsync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRecords(t, res, 1, 25)
+	if res.Status != listinfo.StatusComplete || s.infoCalls != 4 {
+		t.Errorf("status %s after %d polls", res.Status, s.infoCalls)
+	}
+	want := []string{"QGYOLAUS", "QGYGTLE", "QGYGTLE", "QGYGTLE", "QGYGTLE", "QGYGTLE", "QGYGTLE", "QGYGTLE", "QGYCLST"}
+	wantLog(t, s, want...)
+}
+
+func TestReadAsynchronousBuildFailures(t *testing.T) {
+	s := newServer(t, 25)
+	s.async, s.buildPolls, s.buildFinal = true, 1, 0xF3 // error
+	if res, err := openlist.Read(context.Background(), s, asyncCfg(10), openAsync); res != nil || !errors.Is(err, openlist.ErrBuildFailed) {
+		t.Errorf("build error: %v, %v", res, err)
+	}
+	wantLog(t, s, "QGYOLAUS", "QGYGTLE", "QGYGTLE", "QGYCLST")
+
+	s = newServer(t, 25)
+	s.async, s.buildPolls = true, 1<<30 // never completes
+	c := asyncCfg(10)
+	c.MaxBuildWait = 50 * time.Millisecond
+	if res, err := openlist.Read(context.Background(), s, c, openAsync); res != nil || !errors.Is(err, openlist.ErrBuildTimeout) {
+		t.Errorf("timeout: %v, %v", res, err)
+	}
+	if got := programs(s.log); got[len(got)-1] != "QGYCLST" {
+		t.Errorf("list not closed after the timeout: %v", got)
+	}
+
+	s = newServer(t, 25)
+	s.async, s.buildPolls = true, 1<<30
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := openlist.Read(ctx, s, asyncCfg(10), openAsync); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("cancellation: %v", err)
+	}
+	if got := programs(s.log); got[len(got)-1] != "QGYCLST" {
+		t.Errorf("list not closed after cancellation: %v", got)
+	}
+}
+
+func TestReadAsynchronousTooMuchData(t *testing.T) {
+	s := newServer(t, 5)
+	s.async, s.buildPolls, s.buildFinal = true, 0, 0xF5
+	s.pageHook = func(start int) (listinfo.Info, error, bool) {
+		return listinfo.Info{TotalRecords: 5, RecordsReturned: 5, Handle: s.handle, RecordLength: recLen, Complete: listinfo.PartialAccurate, Status: listinfo.StatusTooMuchData, InfoLength: 60, FirstRecord: 1}, nil, true
+	}
+	res, err := openlist.Read(context.Background(), s, asyncCfg(10), openAsync)
+	if err != nil || len(res.Warnings) != 1 || res.Count != 5 {
+		t.Fatalf("result %+v, %v", res, err)
+	}
+}
+
+func TestSynchronousOpenRejectsPending(t *testing.T) {
+	s := newServer(t, 5)
+	s.async = true // the server answers pending even though -1 was sent
+	if _, err := openlist.Read(context.Background(), s, cfg(10), open); !errors.Is(err, qgyolaus.ErrMetadata) {
+		t.Errorf("pending synchronous open = %v", err)
+	}
+	wantLog(t, s, "QGYOLAUS", "QGYCLST")
+}
+
+func TestPollConfig(t *testing.T) {
+	for name, c := range map[string]openlist.Config{
+		"poll too fast": {RecordLength: recLen, JobCodec: codec, PollInterval: time.Millisecond},
+		"build wait":    {RecordLength: recLen, JobCodec: codec, MaxBuildWait: 2 * time.Hour},
+		"negative wait": {RecordLength: recLen, JobCodec: codec, MaxBuildWait: -time.Second},
+	} {
+		s := newServer(t, 5)
+		if _, err := openlist.Read(context.Background(), s, c, open); err == nil || len(s.log) != 0 {
+			t.Errorf("%s: %v after %d calls", name, err, len(s.log))
+		}
+	}
 }

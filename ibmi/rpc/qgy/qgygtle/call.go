@@ -167,3 +167,76 @@ func Get(ctx context.Context, caller rpc.Caller, req Request, jobCodec ccsid.Cod
 	}
 	return ParsePage(call, req, res, jobCodec)
 }
+
+// InfoRequest asks for an open list's information without records.
+type InfoRequest struct {
+	// Library defaults to QGY (V5R4).
+	Library rpc.ObjectName
+	Handle  openlist.Handle
+	// ErrorCode defaults to exception mode.
+	ErrorCode errorcode.Parameter
+	// MessageOption defaults to rpc.MessagesUpToTen.
+	MessageOption rpc.MessageOption
+}
+
+// NewInfoCall builds a QGYGTLE call that returns the list information
+// immediately: records to return 0 and starting record 0, with a zero-length
+// receiver. Use it to poll an asynchronously built list.
+func NewInfoCall(req InfoRequest) (rpc.Call, error) {
+	listInfo, _ := rpc.Output(openlist.Length)
+	option := req.MessageOption
+	if option == 0 {
+		option = rpc.MessagesUpToTen
+	}
+	return rpc.NewCall(qgy.LibraryOr(req.Library), Program(), []rpc.Parameter{
+		rpc.EmptyInput(),
+		input(qgy.Binary4(0)),
+		input(req.Handle[:]),
+		listInfo,
+		input(qgy.Binary4(0)),
+		input(qgy.Binary4(0)),
+		req.ErrorCode.RPC(),
+	}, option)
+}
+
+// ParseInfo validates the result of a NewInfoCall call: the handle must not
+// change and no record may be returned.
+func ParseInfo(call rpc.Call, req InfoRequest, res *rpc.Result, jobCodec ccsid.Codec) (openlist.Info, error) {
+	if err := res.Validate(call); err != nil {
+		return openlist.Info{}, err
+	}
+	if call.ParameterCount() != parameterCount {
+		return openlist.Info{}, fmt.Errorf("qgygtle: call has %d parameters, want %d", call.ParameterCount(), parameterCount)
+	}
+	if err := req.ErrorCode.Check(call.Library(), call.Program(), res.Parameters[paramErrorCode], jobCodec); err != nil {
+		return openlist.Info{}, err
+	}
+	raw, ok := res.Output(paramListInfo)
+	if !ok {
+		return openlist.Info{}, fmt.Errorf("%w: list information was not returned", ErrInvalidPage)
+	}
+	info, err := openlist.Unmarshal(raw)
+	if err != nil {
+		return openlist.Info{}, fmt.Errorf("%w: %w", ErrInvalidPage, err)
+	}
+	switch {
+	case info.Handle != req.Handle:
+		return openlist.Info{}, fmt.Errorf("%w: the list handle changed", ErrInvalidPage)
+	case info.RecordsReturned != 0:
+		return openlist.Info{}, fmt.Errorf("%w: %d records returned to an information request", ErrInvalidPage, info.RecordsReturned)
+	}
+	return info, nil
+}
+
+// GetInfo runs a NewInfoCall call through caller.
+func GetInfo(ctx context.Context, caller rpc.Caller, req InfoRequest, jobCodec ccsid.Codec) (openlist.Info, error) {
+	call, err := NewInfoCall(req)
+	if err != nil {
+		return openlist.Info{}, err
+	}
+	res, err := caller.Call(ctx, call)
+	if err != nil {
+		return openlist.Info{}, err
+	}
+	return ParseInfo(call, req, res, jobCodec)
+}

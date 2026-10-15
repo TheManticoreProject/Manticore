@@ -22,6 +22,9 @@ type qgyWireServer struct {
 	n   int
 	mu  sync.Mutex
 	log []string
+	// infoPolls counts list-information requests; an asynchronous open
+	// reports pending and the first poll building.
+	infoPolls int
 }
 
 func (q *qgyWireServer) programs() []string {
@@ -47,24 +50,40 @@ func (q *qgyWireServer) handle(f hostserver.Frame) (hostserver.Frame, bool) {
 		inputs = append(inputs, data)
 		off += n
 	}
-	info := func(returned, first int) []byte {
+	infoStatus := func(returned, first int, status byte) []byte {
 		b := make([]byte, 80)
 		binary.BigEndian.PutUint32(b[0:], uint32(q.n))
 		binary.BigEndian.PutUint32(b[4:], uint32(returned))
 		copy(b[8:], []byte{0xCA, 0xFE, 0xBA, 0xBE})
 		binary.BigEndian.PutUint32(b[12:], 62)
-		b[16], b[30] = 0xC3, 0xF2
+		b[16], b[30] = 0xC3, status
 		binary.BigEndian.PutUint32(b[32:], uint32(returned*62))
 		binary.BigEndian.PutUint32(b[36:], uint32(first))
 		return b
 	}
+	info := func(returned, first int) []byte { return infoStatus(returned, first, 0xF2) }
 	var rest []byte
 	switch program {
 	case "QGYOLAUS":
-		rest = hosttest.OutputEnvelope(12, 80, info(0, 0))
+		status := byte(0xF2)
+		if int32(binary.BigEndian.Uint32(inputs[3])) == 0 { // asynchronous build
+			status = 0xF0
+		}
+		rest = hosttest.OutputEnvelope(12, 80, infoStatus(0, 0, status))
 	case "QGYGTLE":
 		count := int(binary.BigEndian.Uint32(inputs[4]))
 		start := int(binary.BigEndian.Uint32(inputs[5]))
+		if count == 0 && start == 0 {
+			q.mu.Lock()
+			q.infoPolls++
+			status := byte(0xF2)
+			if q.infoPolls == 1 {
+				status = 0xF1 // still building on the first poll
+			}
+			q.mu.Unlock()
+			rest = hosttest.OutputEnvelope(12, 80, infoStatus(0, 0, status))
+			break
+		}
 		n := min(count, q.n-start+1)
 		var recs []byte
 		for i := 0; i < n; i++ {
@@ -141,5 +160,28 @@ func TestUsersListEndToEnd(t *testing.T) {
 	}
 	if srv.Count(0x1004) != 1 {
 		t.Error("Close did not end the server job")
+	}
+}
+
+func TestUsersListAsynchronousEndToEnd(t *testing.T) {
+	srv := newServer()
+	q := &qgyWireServer{n: 7}
+	srv.Handle = q.handle
+	c := newClient(t, srv)
+	if err := c.Connect(context.Background(), credential(t, testPassword)); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	info := c.SessionInfo()
+	u, _ := users.New(c, users.Options{SystemCCSID: info.SystemCCSID, JobCCSID: info.JobCCSID})
+	res, err := u.List(context.Background(), users.ListOptions{PageSize: 4, Asynchronous: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Users) != 7 || res.SnapshotStatus.String() != "complete" || q.infoPolls != 2 {
+		t.Fatalf("%d users, status %s, %d polls", len(res.Users), res.SnapshotStatus, q.infoPolls)
+	}
+	if got := fmt.Sprint(q.programs()); got != "[QGYOLAUS QGYGTLE QGYGTLE QGYGTLE QGYGTLE QGYCLST]" {
+		t.Errorf("program calls = %s", got)
 	}
 }
