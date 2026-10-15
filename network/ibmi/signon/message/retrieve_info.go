@@ -9,8 +9,9 @@ import (
 
 // Credential types carried in the one-byte 0x7004 template.
 const (
-	CredentialTypeDES  byte = 0x01
-	CredentialTypeSHA1 byte = 0x03
+	CredentialTypeDES    byte = 0x01
+	CredentialTypeSHA1   byte = 0x03
+	CredentialTypeSHA512 byte = 0x07 // password level 4
 )
 
 // RetrieveInfoRequest is request 0x7004: it validates a password substitute.
@@ -26,7 +27,7 @@ type RetrieveInfoRequest struct {
 // Frame encodes the request: template = credential type, then CP 0x1113
 // client CCSID 13488, CP 0x1105 substitute and CP 0x1104 profile.
 func (r RetrieveInfoRequest) Frame() (hostserver.Frame, error) {
-	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20}[r.CredentialType]
+	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
 	if want == 0 {
 		return hostserver.Frame{}, fmt.Errorf("message: unsupported credential type 0x%02X", r.CredentialType)
 	}

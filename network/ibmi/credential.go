@@ -26,6 +26,8 @@ const (
 	PasswordFamilyDES = auth.FamilyDES
 	// PasswordFamilySHA1 is password levels 2 and 3.
 	PasswordFamilySHA1 = auth.FamilySHA1
+	// PasswordFamilySHA512 is password level 4.
+	PasswordFamilySHA512 = auth.FamilySHA512
 )
 
 // Credential validation errors, matched with errors.Is.

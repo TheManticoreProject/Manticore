@@ -60,8 +60,17 @@ func TestStartServerGolden(t *testing.T) {
 	if _, err := (message.StartServerRequest{CredentialType: message.CredentialTypeSHA1, Substitute: make([]byte, 8)}).Frame(); err == nil {
 		t.Error("SHA-1 type with an 8-byte substitute accepted")
 	}
-	if _, err := (message.StartServerRequest{CredentialType: 0x07, Substitute: make([]byte, 64)}).Frame(); err == nil {
-		t.Error("credential type 0x07 accepted")
+	if _, err := (message.StartServerRequest{CredentialType: 0x05, Substitute: make([]byte, 64)}).Frame(); err == nil {
+		t.Error("credential type 0x05 accepted")
+	}
+	if f, err := (message.StartServerRequest{CredentialType: message.CredentialTypeSHA512, Substitute: make([]byte, 64)}).Frame(); err != nil || f.Template[0] != 0x07 {
+		t.Errorf("level-4 7002 = %v, %v", f.Template, err)
+	}
+	if _, err := (message.StartServerRequest{CredentialType: message.CredentialTypeSHA512, Substitute: make([]byte, 20)}).Frame(); err == nil {
+		t.Error("SHA-512 type with a 20-byte substitute accepted")
+	}
+	if f := message.ExchangeSeedsFrameWithAttributes([8]byte{}, message.SeedAttributesLevel4); f.Header.Attributes != 0x0300 {
+		t.Errorf("level-4 seed attributes = 0x%04X", f.Header.Attributes)
 	}
 }
 

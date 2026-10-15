@@ -37,9 +37,12 @@
 //     layouts but have not been validated live.
 //   - Password levels: 0/1 (DES substitute) and 2/3 (SHA-1 substitute),
 //     both checked against JTOpen 4.8 known-answer vectors; the live V5R4
-//     system used level 0. Level 4 is rejected before any credential is
-//     sent (issue #1454). Tokens, Kerberos and additional factors are not
-//     supported (issue #1456).
+//     system used level 0. Level 4 (PBKDF2-HMAC-SHA512 token, 64-byte
+//     SHA-512 substitute, credential type 0x07) is checked against
+//     known-answer vectors from a current JTOpen release but has not been
+//     validated against a live level-4 system (issue #1461). Levels above 4
+//     are rejected before any credential is sent. Tokens, Kerberos and
+//     additional factors are not supported (issue #1456).
 //   - Remote Command data-stream level: validated live at level 7.
 //     Input/output parameters use usage 13 below level 5 and 33 from level
 //     5; "all messages" is honored from level 7 and downgraded below it;
