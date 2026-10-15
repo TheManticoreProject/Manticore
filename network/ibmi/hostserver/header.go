@@ -11,6 +11,7 @@ const HeaderLength = 20
 
 // Server IDs carried at header offset 6.
 const (
+	ServerIDDataQueue     uint16 = 0xE007
 	ServerIDRemoteCommand uint16 = 0xE008
 	ServerIDSignon        uint16 = 0xE009
 )

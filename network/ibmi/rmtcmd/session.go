@@ -11,9 +11,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/ibmi/ccsid"
 	ibminet "github.com/TheManticoreProject/Manticore/network/ibmi"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
-	"github.com/TheManticoreProject/Manticore/network/ibmi/internal/auth"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/internal/startup"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd/message"
-	"github.com/TheManticoreProject/Manticore/network/ibmi/signon"
 )
 
 // DefaultCleanupTimeout bounds the 0x1004 end request when no timeout is
@@ -74,15 +73,7 @@ func Start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, 
 	return s, nil
 }
 
-var (
-	expectSeeds = hostserver.Expect{ServerID: hostserver.ServerIDRemoteCommand, ReplyIDs: []uint16{message.ReplyExchangeSeeds}}
-	expectStart = hostserver.Expect{ServerID: hostserver.ServerIDRemoteCommand, ReplyIDs: []uint16{message.ReplyStartServer}}
-)
-
 func start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, family ibminet.PasswordFamily, opts StartOptions) (*Session, error) {
-	if cred == nil {
-		return nil, errors.New("rmtcmd: nil credential")
-	}
 	nlv := opts.NLV
 	if nlv == "" {
 		nlv = message.DefaultNLV
@@ -91,47 +82,9 @@ func start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, 
 	if err != nil {
 		return nil, err
 	}
-	clientSeed, err := auth.NewSeed(opts.Rand)
+	started, err := startup.Authenticate(ctx, conn, startup.Server{ID: hostserver.ServerIDRemoteCommand, Prefix: "rmtcmd", Stage: "remote command"}, cred, family, opts.Rand)
 	if err != nil {
 		return nil, err
-	}
-
-	attributes := message.SeedAttributes // the V5R4 golden value
-	if _, isPassword := cred.(*ibminet.PasswordCredential); isPassword && family == auth.FamilySHA512 {
-		attributes = message.SeedAttributesLevel4
-	}
-	f, _, err := conn.Exchange(ctx, message.ExchangeSeedsFrameWithAttributes(clientSeed, attributes), expectSeeds)
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: exchange seeds: %w", err)
-	}
-	seeds, err := message.ParseExchangeSeedsReply(f)
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: exchange seeds: %w", err)
-	}
-	if seeds.ReturnCode != 0 {
-		return nil, &signon.Error{Stage: "remote command exchange seeds", Code: signon.ReturnCode(seeds.ReturnCode)}
-	}
-
-	sub, err := auth.Derive(cred, family, clientSeed, seeds.ServerSeed)
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: %w", err)
-	}
-	req, err := message.StartServerRequest{CredentialType: sub.CredentialType, Substitute: sub.Value, Profile: sub.Profile}.Frame()
-	sub.Wipe()
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: %w", err)
-	}
-	f, _, err = conn.Exchange(ctx, req, expectStart)
-	clear(req.Variable) // holds the substitute and profile
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: start server: %w", err)
-	}
-	started, err := message.ParseStartServerReply(f)
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: start server: %w", err)
-	}
-	if started.ReturnCode != 0 {
-		return nil, &signon.Error{Stage: "remote command start server", Code: signon.ReturnCode(started.ReturnCode)}
 	}
 
 	s := &Session{conn: conn, limits: limits}
@@ -139,11 +92,11 @@ func start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, 
 	if err != nil {
 		return nil, err
 	}
-	req, err = message.ExchangeAttributesFrame(corr, nlv)
+	req, err := message.ExchangeAttributesFrame(corr, nlv)
 	if err != nil {
 		return nil, fmt.Errorf("rmtcmd: %w", err)
 	}
-	f, _, err = conn.Exchange(ctx, req, hostserver.Expect{
+	f, _, err := conn.Exchange(ctx, req, hostserver.Expect{
 		ServerID: hostserver.ServerIDRemoteCommand, ReplyIDs: []uint16{message.ReplyExchangeAttributes}, CorrelationID: corr,
 	})
 	if err != nil {

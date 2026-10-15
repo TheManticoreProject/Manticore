@@ -130,10 +130,13 @@ graph LR
   n_network_gssapi_status["status 🟢"]:::c2
   n_network_ibmi["ibmi 🟢"]:::c2
   n_network_ibmi_client["client 🟢"]:::c2
+  n_network_ibmi_dataqueue["dataqueue 🟢"]:::c2
+  n_network_ibmi_dataqueue_message["message 🟢"]:::c2
   n_network_ibmi_hostserver["hostserver 🟢"]:::c2
   n_network_ibmi_internal["internal 🟢"]:::c2
   n_network_ibmi_internal_auth["auth 🟢"]:::c2
   n_network_ibmi_internal_hosttest["hosttest 🟢"]:::c2
+  n_network_ibmi_internal_startup["startup 🟢"]:::c2
   n_network_ibmi_rmtcmd["rmtcmd 🟢"]:::c2
   n_network_ibmi_rmtcmd_message["message 🟢"]:::c2
   n_network_ibmi_servicemapper["servicemapper 🟢"]:::c2
@@ -417,10 +420,13 @@ graph LR
   n_network_gssapi --> n_network_gssapi_status
   n_network --> n_network_ibmi
   n_network_ibmi --> n_network_ibmi_client
+  n_network_ibmi --> n_network_ibmi_dataqueue
+  n_network_ibmi_dataqueue --> n_network_ibmi_dataqueue_message
   n_network_ibmi --> n_network_ibmi_hostserver
   n_network_ibmi --> n_network_ibmi_internal
   n_network_ibmi_internal --> n_network_ibmi_internal_auth
   n_network_ibmi_internal --> n_network_ibmi_internal_hosttest
+  n_network_ibmi_internal --> n_network_ibmi_internal_startup
   n_network_ibmi --> n_network_ibmi_rmtcmd
   n_network_ibmi_rmtcmd --> n_network_ibmi_rmtcmd_message
   n_network_ibmi --> n_network_ibmi_servicemapper

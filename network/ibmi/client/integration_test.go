@@ -3,8 +3,11 @@
 package client_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -14,6 +17,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/ibmi/api/users"
 	ibminet "github.com/TheManticoreProject/Manticore/network/ibmi"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/client"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/dataqueue"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/signon"
@@ -221,4 +225,161 @@ func TestLiveProfileToken(t *testing.T) {
 		t.Errorf("second use of a single-use token = %v", err)
 	}
 	t.Log("single-use token: one Sign-on validation succeeded; reuse refused locally")
+}
+
+// TestLiveDataQueue exercises every Data Queue operation on two queues it
+// creates for the run (a FIFO queue and a keyed queue with sender
+// information, named MNTDQ plus random hex) in MANTICORE_IBMI_DTAQ_LIBRARY
+// (default QGPL), and always deletes them. It never touches other objects.
+func TestLiveDataQueue(t *testing.T) {
+	host := os.Getenv("MANTICORE_IBMI_HOST")
+	profile := os.Getenv("MANTICORE_IBMI_USER")
+	password := os.Getenv("MANTICORE_IBMI_PASSWORD")
+	if host == "" || profile == "" || password == "" || os.Getenv("MANTICORE_IBMI_ALLOW_CLEARTEXT") != "1" {
+		t.Skip("needs MANTICORE_IBMI_HOST, _USER, _PASSWORD and _ALLOW_CLEARTEXT=1")
+	}
+	library := os.Getenv("MANTICORE_IBMI_DTAQ_LIBRARY")
+	if library == "" {
+		library = "QGPL"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cred, err := ibminet.NewPasswordCredential(profile, []byte(password))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cred.Destroy()
+	c, err := client.New(client.Config{Host: host, Transport: ibminet.TransportCleartextExplicit, OperationTimeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Connect(ctx, cred); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer c.Close()
+	dq, err := c.OpenDataQueue(ctx, cred)
+	if err != nil {
+		t.Fatalf("open data queue: %v", err)
+	}
+	// A cleanup, not a defer: it must run after the queue deletions below.
+	t.Cleanup(func() { dq.Close() })
+	t.Logf("data queue session: system CCSID %d, server job %q", dq.Info().SystemCCSID, dq.Info().ServerJob)
+
+	suffix := make([]byte, 2)
+	_, _ = rand.Read(suffix)
+	fifo := dataqueue.Queue{Library: library, Name: "MNTDQ" + strings.ToUpper(hex.EncodeToString(suffix)) + "F"}
+	keyed := dataqueue.Queue{Library: library, Name: "MNTDQ" + strings.ToUpper(hex.EncodeToString(suffix)) + "K"}
+
+	if _, err := dq.Attributes(ctx, fifo); !errors.Is(err, dataqueue.ErrQueueNotFound) {
+		t.Fatalf("attributes of a missing queue = %v", err)
+	}
+	var e *dataqueue.Error
+	if errors.As(err, &e) {
+		t.Logf("missing queue: return code 0x%04X, message %s", e.ReturnCode, e.MessageID)
+	}
+
+	if err := dq.Create(ctx, fifo, dataqueue.CreateOptions{MaxEntryLength: 128, Kind: dataqueue.FIFO, Authority: dataqueue.AuthorityExclude, Description: "Manticore live test"}); err != nil {
+		t.Fatalf("create FIFO: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dq.Delete(context.Background(), fifo); err != nil {
+			t.Errorf("delete FIFO: %v", err)
+		}
+	})
+	if err := dq.Create(ctx, keyed, dataqueue.CreateOptions{MaxEntryLength: 64, Kind: dataqueue.Keyed, KeyLength: 4, SaveSenderInfo: true, Authority: dataqueue.AuthorityExclude}); err != nil {
+		t.Fatalf("create keyed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dq.Delete(context.Background(), keyed); err != nil {
+			t.Errorf("delete keyed: %v", err)
+		}
+	})
+	if err := dq.Create(ctx, fifo, dataqueue.CreateOptions{MaxEntryLength: 128, Kind: dataqueue.FIFO}); !errors.Is(err, dataqueue.ErrAlreadyExists) {
+		t.Errorf("second create = %v", err)
+	}
+
+	a, err := dq.Attributes(ctx, fifo)
+	if err != nil {
+		t.Fatalf("attributes: %v", err)
+	}
+	if a.MaxEntryLength != 128 || a.Kind != dataqueue.FIFO || a.KeyLength != 0 || a.SaveSenderInfo || a.Description != "Manticore live test" {
+		t.Errorf("FIFO attributes = %+v", a)
+	}
+	if a, err = dq.Attributes(ctx, keyed); err != nil || a.Kind != dataqueue.Keyed || a.KeyLength != 4 || !a.SaveSenderInfo {
+		t.Errorf("keyed attributes = %+v, %v", a, err)
+	}
+
+	if e, err := dq.Read(ctx, fifo, 0); e != nil || err != nil {
+		t.Fatalf("read of an empty queue = %+v, %v", e, err)
+	}
+	start := time.Now()
+	if e, err := dq.Read(ctx, fifo, 2*time.Second); e != nil || err != nil || time.Since(start) < time.Second {
+		t.Fatalf("2s read of an empty queue = %+v, %v after %s", e, err, time.Since(start))
+	}
+	for _, data := range [][]byte{{1, 2, 3}, {0}, bytes.Repeat([]byte{0xAB}, 128)} {
+		if err := dq.Write(ctx, fifo, data); err != nil {
+			t.Fatalf("write %d bytes: %v", len(data), err)
+		}
+	}
+	// V5R4 refuses empty and oversized entries with a command check
+	// (CPF2498 for an empty one) and keeps the session.
+	for _, n := range []int{0, 129} {
+		if err := dq.Write(ctx, fifo, make([]byte, n)); !errors.As(err, &e) {
+			t.Errorf("write of %d bytes = %v", n, err)
+		} else {
+			t.Logf("%d-byte entry: return code 0x%04X, message %s", n, e.ReturnCode, e.MessageID)
+		}
+	}
+	if e, err := dq.Peek(ctx, fifo, 0); err != nil || e == nil || !bytes.Equal(e.Data, []byte{1, 2, 3}) {
+		t.Fatalf("peek = %+v, %v", e, err)
+	}
+	for i, want := range [][]byte{{1, 2, 3}, {0}, bytes.Repeat([]byte{0xAB}, 128)} {
+		e, err := dq.Read(ctx, fifo, 0)
+		if err != nil || e == nil || !bytes.Equal(e.Data, want) || e.Key != nil || e.Sender != nil {
+			t.Fatalf("read %d = %+v, %v", i, e, err)
+		}
+	}
+	if err := dq.Write(ctx, fifo, []byte{9}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dq.Clear(ctx, fifo); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if e, err := dq.Read(ctx, fifo, 0); e != nil || err != nil {
+		t.Fatalf("read after clear = %+v, %v", e, err)
+	}
+
+	for _, k := range []string{"0002", "0001", "0003", "0001"} {
+		if err := dq.WriteKey(ctx, keyed, []byte(k), []byte("entry "+k)); err != nil {
+			t.Fatalf("write key %s: %v", k, err)
+		}
+	}
+	e2, err := dq.PeekKey(ctx, keyed, dataqueue.SearchGreater, []byte("0001"), 0)
+	if err != nil || e2 == nil || string(e2.Key) != "0002" || e2.Sender == nil {
+		t.Fatalf("peek GT 0001 = %+v, %v", e2, err)
+	}
+	if !strings.EqualFold(e2.Sender.CurrentUser, profile) || !strings.HasSuffix(dq.Info().ServerJob, e2.Sender.JobName) {
+		t.Errorf("sender = %+v; want the server job and the signed-on profile", *e2.Sender)
+	}
+	t.Logf("sender: job %s, current user %s", e2.Sender.Job(), e2.Sender.CurrentUser)
+	if e, err := dq.ReadKey(ctx, keyed, dataqueue.SearchEqual, []byte("0001"), 0); err != nil || e == nil || string(e.Data) != "entry 0001" {
+		t.Fatalf("read EQ 0001 = %+v, %v", e, err)
+	}
+	if err := dq.ClearKey(ctx, keyed, []byte("0001")); err != nil {
+		t.Fatalf("clear key: %v", err)
+	}
+	if e, err := dq.ReadKey(ctx, keyed, dataqueue.SearchEqual, []byte("0001"), 0); e != nil || err != nil {
+		t.Fatalf("read EQ 0001 after clear key = %+v, %v", e, err)
+	}
+	if e, err := dq.ReadKey(ctx, keyed, dataqueue.SearchLessOrEqual, []byte("9999"), 0); err != nil || e == nil || string(e.Key) != "0002" {
+		t.Fatalf("read LE 9999 = %+v, %v", e, err)
+	}
+	if _, err := dq.Read(ctx, keyed, 0); !errors.Is(err, dataqueue.ErrWrongQueueKind) {
+		t.Errorf("sequential read of a keyed queue = %v", err)
+	} else if errors.As(err, &e) {
+		t.Logf("kind mismatch: return code 0x%04X, message %s", e.ReturnCode, e.MessageID)
+	}
+	if err := dq.Err(); err != nil {
+		t.Fatalf("session unusable: %v", err)
+	}
 }

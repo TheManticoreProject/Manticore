@@ -1,5 +1,6 @@
-// Package hosttest provides scripted, in-memory IBM i Sign-on and Remote
-// Command host servers for tests of the network/ibmi packages. It is test
+// Package hosttest provides scripted, in-memory IBM i Sign-on, Remote
+// Command and Data Queue host servers for tests of the network/ibmi
+// packages. It is test
 // infrastructure only: production code must never import it.
 //
 // A Server is reached through its Dial method (an ibminet.DialFunc), which
@@ -30,6 +31,7 @@ import (
 const (
 	SignonPort        = 8476
 	RemoteCommandPort = 8475
+	DataQueuePort     = 8472
 )
 
 // Request records one frame a server received.
@@ -78,6 +80,11 @@ type Server struct {
 
 	// TokenRC forces a 0xF007 return code.
 	TokenRC uint32
+
+	// DataQueueReply, when set, answers Data Queue requests after startup
+	// in place of the in-memory queues; ok=false falls through to them.
+	DataQueueReply func(req hostserver.Frame) (reply hostserver.Frame, ok bool)
+	dataQueues     map[string]*dataQueue
 
 	mu       sync.Mutex
 	requests []Request
@@ -140,6 +147,8 @@ func (s *Server) Dial(ctx context.Context, network, address string) (net.Conn, e
 		serve = s.serveSignon
 	case RemoteCommandPort:
 		serve = s.serveRemoteCommand
+	case DataQueuePort:
+		serve = s.serveDataQueue
 	default:
 		return nil, fmt.Errorf("hosttest: nothing listens on port %d", port)
 	}
@@ -342,9 +351,48 @@ func (s *Server) serveSignon(c net.Conn) {
 	}
 }
 
+// startup answers 0x7001 and 0x7002 for serverID, verifying the
+// substitute or token independently; it reports whether f was one of them.
+func (s *Server) startup(c net.Conn, f hostserver.Frame, req *Request, serverID uint16, serverSeed [8]byte, clientSeed *[8]byte) bool {
+	switch f.Header.RequestID {
+	case 0x7001:
+		copy(clientSeed[:], f.Template)
+		req.ClientSeed = *clientSeed
+		s.record(*req)
+		write(c, Reply(serverID, 0xF001, 0, append(u32(0), serverSeed[:]...)))
+	case 0x7002:
+		cred := s.credential()
+		defer cred.Destroy()
+		fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+		rc := s.StartRC
+		if req.CredentialType == 0x02 {
+			token, _ := fs.Get(0x1115)
+			req.Substitute = append([]byte(nil), token...)
+			if _, hasProfile := fs.Get(0x1104); rc == 0 && hasProfile {
+				rc = 0x00010010
+			}
+			if rc == 0 {
+				rc = s.tokenRC(token)
+			}
+		} else {
+			got, _ := fs.Get(0x1105)
+			req.Substitute = append([]byte(nil), got...)
+			if want, err := auth.Derive(cred, s.family(), *clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
+				rc = 0x0003000B
+			}
+		}
+		s.record(*req)
+		codec, _ := ccsid.Lookup(ccsid.CCSID37)
+		job, _ := ccsid.EncodeFixed(codec, s.JobName, 28)
+		write(c, Reply(serverID, 0xF002, 0, u32(rc),
+			hostserver.Field{CodePoint: 0x111F, Value: append([]byte{0, 0, 0, 0x25}, job...)}))
+	default:
+		return false
+	}
+	return true
+}
+
 func (s *Server) serveRemoteCommand(c net.Conn) {
-	cred := s.credential()
-	defer cred.Destroy()
 	serverSeed := [8]byte{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48}
 	var clientSeed [8]byte
 	for {
@@ -361,36 +409,10 @@ func (s *Server) serveRemoteCommand(c net.Conn) {
 			s.record(req)
 			continue
 		}
+		if s.startup(c, f, &req, hostserver.ServerIDRemoteCommand, serverSeed, &clientSeed) {
+			continue
+		}
 		switch h.RequestID {
-		case 0x7001:
-			copy(clientSeed[:], f.Template)
-			req.ClientSeed = clientSeed
-			s.record(req)
-			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF001, 0, append(u32(0), serverSeed[:]...)))
-		case 0x7002:
-			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
-			rc := s.StartRC
-			if req.CredentialType == 0x02 {
-				token, _ := fs.Get(0x1115)
-				req.Substitute = append([]byte(nil), token...)
-				if _, hasProfile := fs.Get(0x1104); rc == 0 && hasProfile {
-					rc = 0x00010010
-				}
-				if rc == 0 {
-					rc = s.tokenRC(token)
-				}
-			} else {
-				got, _ := fs.Get(0x1105)
-				req.Substitute = append([]byte(nil), got...)
-				if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
-					rc = 0x0003000B
-				}
-			}
-			s.record(req)
-			codec, _ := ccsid.Lookup(ccsid.CCSID37)
-			job, _ := ccsid.EncodeFixed(codec, s.JobName, 28)
-			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF002, 0, u32(rc),
-				hostserver.Field{CodePoint: 0x111F, Value: append([]byte{0, 0, 0, 0x25}, job...)}))
 		case 0x1001:
 			s.record(req)
 			body := make([]byte, 16)

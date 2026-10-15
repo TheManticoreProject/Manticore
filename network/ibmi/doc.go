@@ -3,13 +3,14 @@
 //
 // It owns service discovery (TCP/449 service mapper), the common 20-byte
 // host-server frame and LL/CP fields, transport policy, authentication, and
-// the Sign-on and Remote Command sessions. Client Access is an independent
-// protocol stack: it is not DCE/RPC, does not use NDR, does not traverse SMB
-// and is not a 5250 terminal session, so none of those packages are reused.
+// the Sign-on, Remote Command and Data Queue sessions. Client Access is an
+// independent protocol stack: it is not DCE/RPC, does not use NDR, does not
+// traverse SMB and is not a 5250 terminal session, so none of those
+// packages are reused.
 //
 // Start with network/ibmi/client (connection facade, Run Command, Program
-// Call) and ibmi/api/users (typed profile listing); see the package example
-// in network/ibmi/client.
+// Call, data queues through network/ibmi/dataqueue) and ibmi/api/users
+// (typed profile listing); see the package example in network/ibmi/client.
 //
 // IBM i platform definitions and program-call contracts live under the root
 // ibmi tree. Packages here may import only the root ibmi, ibmi/ccsid and
@@ -66,8 +67,15 @@
 //     asynchronously in a server job with bounded polling; both modes are
 //     validated live on V5R4. Generic Program Call can carry other
 //     programs, but no other API is claimed.
-//   - Host servers: Sign-on and Remote Command only (issue #1457); one
-//     server job per client, no pooling (issue #1458).
+//   - Host servers: Sign-on, Remote Command and Data Queue; File (IFS),
+//     Database and Network Print are not implemented (issue #1457). One
+//     server job per session, no pooling (issue #1458).
+//   - Data Queue: every operation (attributes, create, write, read, peek,
+//     keyed searches, clear, delete) validated live on V5R4 with the
+//     least-privileged profile, on queues the test creates and deletes.
+//     That system refuses empty entries with CPF2498; the sender
+//     information layout (job name, job user, job number, current user)
+//     was confirmed there.
 //
 // # TLS on V5R4
 //

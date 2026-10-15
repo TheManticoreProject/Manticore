@@ -379,3 +379,30 @@ func TestPoisonFromAbove(t *testing.T) {
 	}
 	wantPoisoned(t, c, err)
 }
+
+func TestExchangeWithinOverridesOperationTimeout(t *testing.T) {
+	c, server := newPipeConn(t, hostserver.Options{OperationTimeout: 50 * time.Millisecond})
+	// The reply arrives after the operation timeout but inside the
+	// per-exchange one.
+	go func() {
+		var hb [hostserver.HeaderLength]byte
+		if _, err := io.ReadFull(server, hb[:]); err != nil {
+			return
+		}
+		_, _ = io.ReadFull(server, make([]byte, binary.BigEndian.Uint32(hb[:])-hostserver.HeaderLength))
+		time.Sleep(200 * time.Millisecond)
+		_, _ = server.Write(replyBytes(t, hostserver.ServerIDRemoteCommand, 1, 0x8003))
+	}()
+	if _, _, err := c.ExchangeWithin(context.Background(), request(1), expect1, 5*time.Second); err != nil {
+		t.Fatalf("ExchangeWithin = %v", err)
+	}
+	// No timeout at all: only the context bounds the exchange.
+	serveOne(t, server, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	_, _, err := c.ExchangeWithin(ctx, request(2), hostserver.Expect{ServerID: hostserver.ServerIDRemoteCommand, ReplyIDs: []uint16{0x8003}, CorrelationID: 2}, 0)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unbounded exchange = %v; want the context deadline", err)
+	}
+	wantPoisoned(t, c, err)
+}

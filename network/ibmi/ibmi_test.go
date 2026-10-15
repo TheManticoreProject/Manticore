@@ -17,6 +17,8 @@ func TestMapperNames(t *testing.T) {
 		{ibminet.ServiceSignon, true, "as-signon-s"},
 		{ibminet.ServiceRemoteCommand, false, "as-rmtcmd"},
 		{ibminet.ServiceRemoteCommand, true, "as-rmtcmd-s"},
+		{ibminet.ServiceDataQueue, false, "as-dtaq"},
+		{ibminet.ServiceDataQueue, true, "as-dtaq-s"},
 	} {
 		if got := tt.s.MapperName(tt.tls); got != tt.name {
 			t.Errorf("%s.MapperName(%t) = %q, want %q", tt.s, tt.tls, got, tt.name)

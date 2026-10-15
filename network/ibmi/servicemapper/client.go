@@ -94,16 +94,21 @@ type DiscoverOptions struct {
 	MapperPort int
 	// Policy must be TLSRequired or CleartextExplicit.
 	Policy ibminet.TransportPolicy
-	// SignonPort and RemoteCommandPort, when nonzero, are used as-is and
-	// skip only that service's lookup. They do not change Policy.
+	// Services lists the services to resolve; nil means Sign-on and Remote
+	// Command.
+	Services []ibminet.Service
+	// SignonPort, RemoteCommandPort and DataQueuePort, when nonzero, are
+	// used as-is and skip only that service's lookup. They do not change
+	// Policy.
 	SignonPort        int
 	RemoteCommandPort int
+	DataQueuePort     int
 }
 
-// Discover resolves the Sign-on and Remote Command endpoints under
-// opts.Policy, one mapper connection per lookup. It may return a partial
-// catalog together with a joined error naming each failed service; a
-// failed TLS lookup is never replaced by a cleartext service.
+// Discover resolves opts.Services (by default Sign-on and Remote Command)
+// under opts.Policy, one mapper connection per lookup. It may return a
+// partial catalog together with a joined error naming each failed service;
+// a failed TLS lookup is never replaced by a cleartext service.
 func (c *Client) Discover(ctx context.Context, opts DiscoverOptions) (ibminet.ServiceCatalog, error) {
 	if err := opts.Policy.Validate(); err != nil {
 		return ibminet.ServiceCatalog{}, err
@@ -111,13 +116,25 @@ func (c *Client) Discover(ctx context.Context, opts DiscoverOptions) (ibminet.Se
 	if opts.Host == "" {
 		return ibminet.ServiceCatalog{}, errors.New("servicemapper: empty host")
 	}
+	services := opts.Services
+	if services == nil {
+		services = []ibminet.Service{ibminet.ServiceSignon, ibminet.ServiceRemoteCommand}
+	}
 	useTLS := opts.Policy.TLS()
 	var catalog ibminet.ServiceCatalog
 	var errs []error
-	for _, svc := range ibminet.Services() {
-		explicit := opts.SignonPort
-		if svc == ibminet.ServiceRemoteCommand {
-			explicit = opts.RemoteCommandPort
+	for _, svc := range services {
+		var explicit int
+		var slot *ibminet.Endpoint
+		switch svc {
+		case ibminet.ServiceSignon:
+			explicit, slot = opts.SignonPort, &catalog.Signon
+		case ibminet.ServiceRemoteCommand:
+			explicit, slot = opts.RemoteCommandPort, &catalog.RemoteCommand
+		case ibminet.ServiceDataQueue:
+			explicit, slot = opts.DataQueuePort, &catalog.DataQueue
+		default:
+			return ibminet.ServiceCatalog{}, fmt.Errorf("servicemapper: unsupported service %s", svc)
 		}
 		ep := ibminet.Endpoint{Service: svc, Name: svc.MapperName(useTLS), Host: opts.Host, TLS: useTLS}
 		if explicit != 0 {
@@ -136,11 +153,7 @@ func (c *Client) Discover(ctx context.Context, opts DiscoverOptions) (ibminet.Se
 			catalog.Missing = append(catalog.Missing, svc)
 			continue
 		}
-		if svc == ibminet.ServiceSignon {
-			catalog.Signon = ep
-		} else {
-			catalog.RemoteCommand = ep
-		}
+		*slot = ep
 	}
 	return catalog, errors.Join(errs...)
 }
