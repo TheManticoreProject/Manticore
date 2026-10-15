@@ -3,14 +3,15 @@
 //
 // It owns service discovery (TCP/449 service mapper), the common 20-byte
 // host-server frame and LL/CP fields, transport policy, authentication, and
-// the Sign-on, Remote Command and Data Queue sessions. Client Access is an
-// independent protocol stack: it is not DCE/RPC, does not use NDR, does not
-// traverse SMB and is not a 5250 terminal session, so none of those
-// packages are reused.
+// the Sign-on, Remote Command, Data Queue and File (IFS) sessions. Client
+// Access is an independent protocol stack: it is not DCE/RPC, does not use
+// NDR, does not traverse SMB and is not a 5250 terminal session, so none of
+// those packages are reused.
 //
 // Start with network/ibmi/client (connection facade, Run Command, Program
-// Call, data queues through network/ibmi/dataqueue) and ibmi/api/users
-// (typed profile listing); see the package example in network/ibmi/client.
+// Call, data queues through network/ibmi/dataqueue, IFS files through
+// network/ibmi/ifs) and ibmi/api/users (typed profile listing); see the
+// package example in network/ibmi/client.
 //
 // IBM i platform definitions and program-call contracts live under the root
 // ibmi tree. Packages here may import only the root ibmi, ibmi/ccsid and
@@ -67,15 +68,19 @@
 //     asynchronously in a server job with bounded polling; both modes are
 //     validated live on V5R4. Generic Program Call can carry other
 //     programs, but no other API is claimed.
-//   - Host servers: Sign-on, Remote Command and Data Queue; File (IFS),
-//     Database and Network Print are not implemented (issue #1457). One
-//     server job per session, no pooling (issue #1458).
+//   - Host servers: Sign-on, Remote Command, Data Queue and File (read
+//     only); Database and Network Print are not implemented (issue #1457).
+//     One server job per session, no pooling (issue #1458).
 //   - Data Queue: every operation (attributes, create, write, read, peek,
 //     keyed searches, clear, delete) validated live on V5R4 with the
 //     least-privileged profile, on queues the test creates and deletes.
 //     That system refuses empty entries with CPF2498; the sender
 //     information layout (job name, job user, job number, current user)
 //     was confirmed there.
+//   - File (IFS): open, read and close of a stream file validated live on
+//     V5R4 with the least-privileged profile (a 3.5 MB file read whole,
+//     end of file, missing file and directory errors). Writing, directory
+//     listing and attribute queries are not implemented.
 //
 // # TLS on V5R4
 //

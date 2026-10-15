@@ -111,6 +111,7 @@ type ServiceCatalog struct {
 	Signon        Endpoint
 	RemoteCommand Endpoint
 	DataQueue     Endpoint
+	File          Endpoint
 	Missing       []Service
 }
 
@@ -124,6 +125,8 @@ func (c ServiceCatalog) Endpoint(s Service) (Endpoint, bool) {
 		e = c.RemoteCommand
 	case ServiceDataQueue:
 		e = c.DataQueue
+	case ServiceFile:
+		e = c.File
 	}
 	return e, e.Service.Valid()
 }

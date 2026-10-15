@@ -1,5 +1,5 @@
 // Package hosttest provides scripted, in-memory IBM i Sign-on, Remote
-// Command and Data Queue host servers for tests of the network/ibmi
+// Command, Data Queue and File host servers for tests of the network/ibmi
 // packages. It is test
 // infrastructure only: production code must never import it.
 //
@@ -32,6 +32,7 @@ const (
 	SignonPort        = 8476
 	RemoteCommandPort = 8475
 	DataQueuePort     = 8472
+	FilePort          = 8473
 )
 
 // Request records one frame a server received.
@@ -86,6 +87,22 @@ type Server struct {
 	DataQueueReply func(req hostserver.Frame) (reply hostserver.Frame, ok bool)
 	dataQueues     map[string]*dataQueue
 
+	// Files maps IFS paths to their content for the File server.
+	Files map[string][]byte
+	// FileLevel is the 0x8009 data-stream level (default 12, what V5R4
+	// returns); FilePathCCSID the pathname CCSID (default 1200).
+	FileLevel     uint16
+	FilePathCCSID uint16
+	// FileChunk, when nonzero, splits read replies into chained packets of
+	// at most this many bytes.
+	FileChunk int
+	// FileEOFReturnCode signals end of file with 0x8001 return code 22
+	// instead of an empty 0x8003.
+	FileEOFReturnCode bool
+	// FileReply, when set, answers File requests after startup in place
+	// of the in-memory files; ok=false falls through to them.
+	FileReply func(req hostserver.Frame) (replies []hostserver.Frame, ok bool)
+
 	mu       sync.Mutex
 	requests []Request
 	open     int
@@ -131,6 +148,12 @@ func (s *Server) defaults() {
 	if s.JobName == "" {
 		s.JobName = "QZRCSRVS"
 	}
+	if s.FileLevel == 0 {
+		s.FileLevel = 12
+	}
+	if s.FilePathCCSID == 0 {
+		s.FilePathCCSID = 1200
+	}
 }
 
 // Dial is an ibminet.DialFunc routing SignonPort and RemoteCommandPort to
@@ -149,6 +172,8 @@ func (s *Server) Dial(ctx context.Context, network, address string) (net.Conn, e
 		serve = s.serveRemoteCommand
 	case DataQueuePort:
 		serve = s.serveDataQueue
+	case FilePort:
+		serve = s.serveFile
 	default:
 		return nil, fmt.Errorf("hosttest: nothing listens on port %d", port)
 	}

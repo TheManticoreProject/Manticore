@@ -34,12 +34,13 @@ type Config struct {
 	Host string
 	// MapperPort is the service-mapper port (default 449).
 	MapperPort int
-	// SignonPort, RemoteCommandPort and DataQueuePort, when nonzero, skip
-	// the mapper lookup for that service only. They do not change the
-	// transport policy.
+	// SignonPort, RemoteCommandPort, DataQueuePort and FilePort, when
+	// nonzero, skip the mapper lookup for that service only. They do not
+	// change the transport policy.
 	SignonPort        int
 	RemoteCommandPort int
 	DataQueuePort     int
+	FilePort          int
 	// Transport must be TransportTLSRequired or TransportCleartextExplicit.
 	Transport ibminet.TransportPolicy
 	// TLS configures verification for TLSRequired.
@@ -116,6 +117,9 @@ func (c Config) resolve() (Config, error) {
 		return Config{}, err
 	}
 	if err := checkPort("DataQueuePort", c.DataQueuePort, true); err != nil {
+		return Config{}, err
+	}
+	if err := checkPort("FilePort", c.FilePort, true); err != nil {
 		return Config{}, err
 	}
 	var err error

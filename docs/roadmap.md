@@ -133,6 +133,8 @@ graph LR
   n_network_ibmi_dataqueue["dataqueue 🟢"]:::c2
   n_network_ibmi_dataqueue_message["message 🟢"]:::c2
   n_network_ibmi_hostserver["hostserver 🟢"]:::c2
+  n_network_ibmi_ifs["ifs 🟢"]:::c2
+  n_network_ibmi_ifs_message["message 🟢"]:::c2
   n_network_ibmi_internal["internal 🟢"]:::c2
   n_network_ibmi_internal_auth["auth 🟢"]:::c2
   n_network_ibmi_internal_hosttest["hosttest 🟢"]:::c2
@@ -423,6 +425,8 @@ graph LR
   n_network_ibmi --> n_network_ibmi_dataqueue
   n_network_ibmi_dataqueue --> n_network_ibmi_dataqueue_message
   n_network_ibmi --> n_network_ibmi_hostserver
+  n_network_ibmi --> n_network_ibmi_ifs
+  n_network_ibmi_ifs --> n_network_ibmi_ifs_message
   n_network_ibmi --> n_network_ibmi_internal
   n_network_ibmi_internal --> n_network_ibmi_internal_auth
   n_network_ibmi_internal --> n_network_ibmi_internal_hosttest

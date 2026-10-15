@@ -86,7 +86,7 @@ func TestEncodeRequestByteExact(t *testing.T) {
 			t.Errorf("EncodeRequest(%q) = %q, %v", name, got, err)
 		}
 	}
-	for _, name := range []string{"", "as-file", "as-signon\n", "AS-SIGNON", "as-signon\x00"} {
+	for _, name := range []string{"", "as-central", "as-signon\n", "AS-SIGNON", "as-signon\x00"} {
 		if _, err := servicemapper.EncodeRequest(name); !errors.Is(err, servicemapper.ErrUnsupportedService) {
 			t.Errorf("EncodeRequest(%q) error = %v", name, err)
 		}
@@ -135,7 +135,7 @@ func TestLookup(t *testing.T) {
 	if _, err := c.Lookup(ctx, "127.0.0.1", m.port(), "as-rmtcmd-s"); !errors.Is(err, servicemapper.ErrProtocol) {
 		t.Errorf("truncated reply error = %v", err)
 	}
-	if _, err := c.Lookup(ctx, "127.0.0.1", m.port(), "as-file"); !errors.Is(err, servicemapper.ErrUnsupportedService) {
+	if _, err := c.Lookup(ctx, "127.0.0.1", m.port(), "as-central"); !errors.Is(err, servicemapper.ErrUnsupportedService) {
 		t.Errorf("unsupported name error = %v", err)
 	}
 	got := m.seen()

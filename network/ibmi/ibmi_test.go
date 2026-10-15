@@ -19,6 +19,8 @@ func TestMapperNames(t *testing.T) {
 		{ibminet.ServiceRemoteCommand, true, "as-rmtcmd-s"},
 		{ibminet.ServiceDataQueue, false, "as-dtaq"},
 		{ibminet.ServiceDataQueue, true, "as-dtaq-s"},
+		{ibminet.ServiceFile, false, "as-file"},
+		{ibminet.ServiceFile, true, "as-file-s"},
 	} {
 		if got := tt.s.MapperName(tt.tls); got != tt.name {
 			t.Errorf("%s.MapperName(%t) = %q, want %q", tt.s, tt.tls, got, tt.name)
@@ -28,7 +30,7 @@ func TestMapperNames(t *testing.T) {
 			t.Errorf("ServiceForMapperName(%q) = %s, %t, %t", tt.name, s, tls, ok)
 		}
 	}
-	for _, name := range []string{"", "as-svrmap", "as-file", "AS-SIGNON", "as-signon-s ", "as-signon\x00"} {
+	for _, name := range []string{"", "as-svrmap", "as-central", "AS-SIGNON", "as-signon-s ", "as-signon\x00"} {
 		if _, _, ok := ibminet.ServiceForMapperName(name); ok {
 			t.Errorf("ServiceForMapperName(%q) accepted", name)
 		}

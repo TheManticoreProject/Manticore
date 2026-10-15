@@ -97,12 +97,13 @@ type DiscoverOptions struct {
 	// Services lists the services to resolve; nil means Sign-on and Remote
 	// Command.
 	Services []ibminet.Service
-	// SignonPort, RemoteCommandPort and DataQueuePort, when nonzero, are
-	// used as-is and skip only that service's lookup. They do not change
-	// Policy.
+	// SignonPort, RemoteCommandPort, DataQueuePort and FilePort, when
+	// nonzero, are used as-is and skip only that service's lookup. They do
+	// not change Policy.
 	SignonPort        int
 	RemoteCommandPort int
 	DataQueuePort     int
+	FilePort          int
 }
 
 // Discover resolves opts.Services (by default Sign-on and Remote Command)
@@ -133,6 +134,8 @@ func (c *Client) Discover(ctx context.Context, opts DiscoverOptions) (ibminet.Se
 			explicit, slot = opts.RemoteCommandPort, &catalog.RemoteCommand
 		case ibminet.ServiceDataQueue:
 			explicit, slot = opts.DataQueuePort, &catalog.DataQueue
+		case ibminet.ServiceFile:
+			explicit, slot = opts.FilePort, &catalog.File
 		default:
 			return ibminet.ServiceCatalog{}, fmt.Errorf("servicemapper: unsupported service %s", svc)
 		}
