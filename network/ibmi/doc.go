@@ -28,9 +28,12 @@
 //   - Go: the version declared by go.mod; CI runs linux and windows on
 //     amd64 and 386, linux on arm64, and the race detector.
 //   - IBM i release: V5R4M0, validated live (Sign-on, Remote Command,
-//     DSPJOB, AUTU0150 user list). Request layouts follow the V5R4-era
-//     JTOpen 4.8 generation (Sign-on data-stream level 2, client CCSID
-//     13488). Later releases are expected to work from IBM's documented
+//     DSPJOB, AUTU0150 user list), both with an administrator profile and
+//     with a least-privileged *USER profile (no special authorities,
+//     limited capabilities): the latter gets the 0x8001 "limited user"
+//     warning and lists only the profiles it may read. Request layouts follow
+//     the V5R4-era JTOpen 4.8 generation (Sign-on data-stream level 2, client
+//     CCSID 13488). Later releases are expected to work from IBM's documented
 //     layouts but have not been validated live.
 //   - Password levels: 0/1 (DES substitute) and 2/3 (SHA-1 substitute),
 //     both checked against JTOpen 4.8 known-answer vectors; the live V5R4
@@ -47,14 +50,38 @@
 //   - Transport: verified TLS (TLS 1.2 or later unless
 //     hostserver.TLSOptions.AllowLegacy, never without certificate and name
 //     verification, never falling back to cleartext) or explicit cleartext
-//     for isolated labs. The validated V5R4 system had no TLS host servers,
-//     so only cleartext was exercised live (issue #1453).
+//     for isolated labs. Only cleartext has been exercised live; see
+//     "TLS on V5R4" below.
 //   - Program APIs: QGY/QGYOLAUS (formats AUTU0100, AUTU0150, AUTU0200 and
 //     AUTU0250; AUTU0250 has no V5R4-era evidence), QGY/QGYGTLE and
 //     QGY/QGYCLST, synchronous lists only (issue #1455). Generic Program
 //     Call can carry other programs, but no other API is claimed.
 //   - Host servers: Sign-on and Remote Command only (issue #1457); one
 //     server job per client, no pooling (issue #1458).
+//
+// # TLS on V5R4
+//
+// Probed on the validated V5R4M0 system with Go 1.24 (2026-10-15): the
+// service mapper returns ports for as-signon-s and as-rmtcmd-s, but every
+// secure host-server port (9470-9476) refuses connections, as do 992 and
+// 2010; port 448 accepts TCP and closes on the TLS ClientHello. No listener
+// completed a handshake, so direct TLS is unavailable as that system is
+// configured, and Connect with TransportTLSRequired fails without falling
+// back to cleartext.
+//
+// Making TLS work on V5R4 also depends on the Go toolchain, which this
+// library never adjusts through GODEBUG:
+//
+//   - SSLv3 is not supported by crypto/tls; TLS 1.0 and 1.1 need
+//     TLSOptions.AllowLegacy with an explicit MinVersion.
+//   - Since Go 1.24, certificates signed with SHA-1 cannot be verified at
+//     all, so the host servers need a certificate with a SHA-256 (or
+//     stronger) signature from a CA passed in TLSOptions.RootCAs.
+//   - Legacy suites such as 3DES or RSA key exchange must be listed in
+//     TLSOptions.CipherSuites with AllowLegacy.
+//
+// Where that is not possible, use a separately administered TLS gateway in
+// front of the host servers, or explicit cleartext on an isolated network.
 //
 // # Safety contract
 //
