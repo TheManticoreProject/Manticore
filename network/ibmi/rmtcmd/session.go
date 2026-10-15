@@ -95,7 +95,11 @@ func start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCre
 		return nil, err
 	}
 
-	f, _, err := conn.Exchange(ctx, message.ExchangeSeedsFrame(clientSeed), expectSeeds)
+	attributes := message.SeedAttributes // the V5R4 golden value
+	if family == auth.FamilySHA512 {
+		attributes = message.SeedAttributesLevel4
+	}
+	f, _, err := conn.Exchange(ctx, message.ExchangeSeedsFrameWithAttributes(clientSeed, attributes), expectSeeds)
 	if err != nil {
 		return nil, fmt.Errorf("rmtcmd: exchange seeds: %w", err)
 	}

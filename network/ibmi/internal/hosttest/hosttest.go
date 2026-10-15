@@ -40,6 +40,10 @@ type Request struct {
 	ClientSeed [8]byte
 	// Substitute is set for 0x7004 and 0x7002.
 	Substitute []byte
+	// Attributes is header byte 4 (client attributes).
+	Attributes byte
+	// CredentialType is the first template byte of 0x7004 and 0x7002.
+	CredentialType byte
 }
 
 // Server scripts both host servers. Configure the exported fields before
@@ -230,6 +234,9 @@ func (s *Server) serveSignon(c net.Conn) {
 			return
 		}
 		req := Request{ServerID: f.Header.ServerID, RequestID: f.Header.RequestID, CorrelationID: f.Header.CorrelationID}
+		if f.Header.RequestID == 0x7004 && len(f.Template) > 0 {
+			req.CredentialType = f.Template[0]
+		}
 		switch f.Header.RequestID {
 		case 0x7003:
 			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
@@ -273,7 +280,10 @@ func (s *Server) serveRemoteCommand(c net.Conn) {
 			return
 		}
 		h := f.Header
-		req := Request{ServerID: h.ServerID, RequestID: h.RequestID, CorrelationID: h.CorrelationID}
+		req := Request{ServerID: h.ServerID, RequestID: h.RequestID, CorrelationID: h.CorrelationID, Attributes: byte(h.Attributes >> 8)}
+		if len(f.Template) > 0 && (h.RequestID == 0x7002) {
+			req.CredentialType = f.Template[0]
+		}
 		if h.RequestID == s.SilentOn && s.SilentOn != 0 {
 			s.record(req)
 			continue

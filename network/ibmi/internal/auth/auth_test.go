@@ -218,12 +218,12 @@ func TestSHAPasswordRules(t *testing.T) {
 }
 
 func TestFamilyForLevel(t *testing.T) {
-	for level, want := range map[byte]Family{0: FamilyDES, 1: FamilyDES, 2: FamilySHA1, 3: FamilySHA1} {
+	for level, want := range map[byte]Family{0: FamilyDES, 1: FamilyDES, 2: FamilySHA1, 3: FamilySHA1, 4: FamilySHA512} {
 		if f, err := FamilyForLevel(level); err != nil || f != want {
 			t.Errorf("level %d = %s, %v", level, f, err)
 		}
 	}
-	for _, level := range []byte{4, 5, 255} {
+	for _, level := range []byte{5, 6, 255} {
 		if _, err := FamilyForLevel(level); !errors.Is(err, ErrUnsupportedPasswordLevel) {
 			t.Errorf("level %d accepted", level)
 		}

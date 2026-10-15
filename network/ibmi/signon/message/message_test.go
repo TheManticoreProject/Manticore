@@ -75,10 +75,16 @@ func TestRetrieveInfoRequestGolden(t *testing.T) {
 	if f, err := sha.Frame(); err != nil || f.Template[0] != 0x03 {
 		t.Errorf("SHA-1 7004 = %v, %v", f.Template, err)
 	}
+	l4 := req
+	l4.CredentialType, l4.Substitute = message.CredentialTypeSHA512, make([]byte, 64)
+	if f, err := l4.Frame(); err != nil || f.Template[0] != 0x07 {
+		t.Errorf("level-4 7004 = %v, %v", f.Template, err)
+	}
 	for name, bad := range map[string]message.RetrieveInfoRequest{
-		"DES with 20 bytes":  {CredentialType: message.CredentialTypeDES, Substitute: make([]byte, 20)},
-		"SHA-1 with 8 bytes": {CredentialType: message.CredentialTypeSHA1, Substitute: make([]byte, 8)},
-		"type 0x07":          {CredentialType: 0x07, Substitute: make([]byte, 64)},
+		"DES with 20 bytes":     {CredentialType: message.CredentialTypeDES, Substitute: make([]byte, 20)},
+		"SHA-1 with 8 bytes":    {CredentialType: message.CredentialTypeSHA1, Substitute: make([]byte, 8)},
+		"SHA-512 with 20 bytes": {CredentialType: message.CredentialTypeSHA512, Substitute: make([]byte, 20)},
+		"type 0x05":             {CredentialType: 0x05, Substitute: make([]byte, 64)},
 	} {
 		if _, err := bad.Frame(); err == nil {
 			t.Errorf("%s accepted", name)

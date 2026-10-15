@@ -16,6 +16,8 @@ const (
 	FamilyDES Family = iota + 1
 	// FamilySHA1 is password levels 2 and 3.
 	FamilySHA1
+	// FamilySHA512 is password level 4 (PBKDF2-HMAC-SHA512).
+	FamilySHA512
 )
 
 func (f Family) String() string {
@@ -24,18 +26,21 @@ func (f Family) String() string {
 		return "des"
 	case FamilySHA1:
 		return "sha1"
+	case FamilySHA512:
+		return "sha512"
 	}
 	return fmt.Sprintf("Family(%d)", uint8(f))
 }
 
 // Credential types sent in the 0x7004 and 0x7002 templates.
 const (
-	CredentialTypeDES  byte = 0x01
-	CredentialTypeSHA1 byte = 0x03
+	CredentialTypeDES    byte = 0x01
+	CredentialTypeSHA1   byte = 0x03
+	CredentialTypeSHA512 byte = 0x07
 )
 
 // ErrUnsupportedPasswordLevel is returned for password levels this client
-// does not implement (4 and above).
+// does not implement (5 and above).
 var ErrUnsupportedPasswordLevel = errors.New("auth: unsupported password level")
 
 // FamilyForLevel maps a server password level to its algorithm.
@@ -45,6 +50,8 @@ func FamilyForLevel(level byte) (Family, error) {
 		return FamilyDES, nil
 	case level <= 3:
 		return FamilySHA1, nil
+	case level == 4:
+		return FamilySHA512, nil
 	}
 	return 0, fmt.Errorf("%w: %d", ErrUnsupportedPasswordLevel, level)
 }
@@ -154,6 +161,20 @@ func Derive(c *PasswordCredential, family Family, clientSeed, serverSeed [SeedLe
 		sub := sha1Substitute(token, user, clientSeed, serverSeed)
 		wipe(token[:])
 		return Substitute{CredentialType: CredentialTypeSHA1, Value: sub[:], Profile: c.profile.EBCDIC}, nil
+	case FamilySHA512:
+		pw8, pw16, err := level4Password(c.password)
+		if err != nil {
+			return Substitute{}, err
+		}
+		user := c.profile.UTF16BE()
+		salt := level4Salt(user, pw16)
+		wipe(pw16)
+		token := level4Token(pw8, salt)
+		wipe(pw8)
+		wipe(salt[:])
+		sub := sha512Substitute(token, user, clientSeed, serverSeed)
+		wipe(token)
+		return Substitute{CredentialType: CredentialTypeSHA512, Value: sub[:], Profile: c.profile.EBCDIC}, nil
 	}
 	return Substitute{}, fmt.Errorf("auth: unknown password family %s", family)
 }

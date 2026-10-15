@@ -143,8 +143,11 @@ func (s *fakeSignon) serve(c net.Conn) {
 			s.substitutes = append(s.substitutes, append([]byte(nil), got...))
 			s.mu.Unlock()
 			family := auth.FamilyDES
-			if f.Template[0] == message.CredentialTypeSHA1 {
+			switch f.Template[0] {
+			case message.CredentialTypeSHA1:
 				family = auth.FamilySHA1
+			case message.CredentialTypeSHA512:
+				family = auth.FamilySHA512
 			}
 			want, _ := auth.Derive(expected, family, clientSeed, serverSeed)
 			rc := s.infoRC
@@ -290,7 +293,7 @@ func TestAttributeExchangeFailure(t *testing.T) {
 }
 
 func TestUnsupportedPasswordLevelSendsNoCredential(t *testing.T) {
-	s := &fakeSignon{passwordLevel: level(4)}
+	s := &fakeSignon{passwordLevel: level(5)}
 	_, err := run(t, s, testPassword, context.Background())
 	if !errors.Is(err, ibminet.ErrUnsupportedPasswordLevel) {
 		t.Fatalf("error = %v", err)
@@ -398,5 +401,19 @@ func TestReturnCodeReasons(t *testing.T) {
 	unknown := &signon.Error{Stage: "x", Code: 0x00090000}
 	if !errors.Is(unknown, signon.ErrRequestRejected) || errors.Is(unknown, signon.ErrAuthenticationRejected) {
 		t.Error("unclassified codes must not be reported as credential rejections")
+	}
+}
+
+func TestValidateSHA512(t *testing.T) {
+	s := &fakeSignon{passwordLevel: level(4)}
+	info, err := run(t, s, testPassword, context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.PasswordFamily != ibminet.PasswordFamilySHA512 || info.PasswordLevel != 4 || len(s.substitutes[0]) != 64 {
+		t.Errorf("info %+v, substitute %d bytes", info, len(s.substitutes[0]))
+	}
+	if _, err := run(t, &fakeSignon{passwordLevel: level(4)}, "WRONGPW1", context.Background()); !errors.Is(err, signon.ErrAuthenticationRejected) {
+		t.Errorf("wrong level-4 password = %v", err)
 	}
 }

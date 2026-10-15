@@ -6,16 +6,27 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
 )
 
-// SeedAttributes is header byte 4 of 0x7001: the JTOpen 4.8 client
-// advertises SHA-1 capability (0x01). Current JTOpen sends 0x03.
-const SeedAttributes byte = 0x01
+// Header byte 4 of 0x7001 advertises the client's password capabilities:
+// the JTOpen 4.8 client sends SeedAttributes (SHA-1 capable); current JTOpen
+// sends SeedAttributesLevel4, which also advertises the password level 4
+// algorithm (iSeriesNavigatorReverse docs/04).
+const (
+	SeedAttributes       byte = 0x01
+	SeedAttributesLevel4 byte = 0x03
+)
 
-// ExchangeSeedsFrame encodes request 0x7001: the 8-byte client seed is the
-// whole template.
+// ExchangeSeedsFrame encodes request 0x7001 with SeedAttributes: the 8-byte
+// client seed is the whole template.
 func ExchangeSeedsFrame(clientSeed [8]byte) hostserver.Frame {
+	return ExchangeSeedsFrameWithAttributes(clientSeed, SeedAttributes)
+}
+
+// ExchangeSeedsFrameWithAttributes encodes request 0x7001 with the given
+// client attributes byte.
+func ExchangeSeedsFrameWithAttributes(clientSeed [8]byte, attributes byte) hostserver.Frame {
 	return hostserver.Frame{
 		Header: hostserver.Header{
-			Attributes: uint16(SeedAttributes) << 8,
+			Attributes: uint16(attributes) << 8,
 			ServerID:   hostserver.ServerIDRemoteCommand,
 			RequestID:  RequestExchangeSeeds,
 		},

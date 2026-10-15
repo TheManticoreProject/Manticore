@@ -13,8 +13,9 @@ const StartAttributes byte = 0x02
 
 // Credential types carried in the first 0x7002 template byte.
 const (
-	CredentialTypeDES  byte = 0x01
-	CredentialTypeSHA1 byte = 0x03
+	CredentialTypeDES    byte = 0x01
+	CredentialTypeSHA1   byte = 0x03
+	CredentialTypeSHA512 byte = 0x07 // password level 4
 )
 
 // StartServerRequest is request 0x7002. Its frame contains the substitute:
@@ -29,7 +30,7 @@ type StartServerRequest struct {
 // Frame encodes the request: template = credential type and send-reply 1,
 // then CP 0x1105 substitute and CP 0x1104 profile.
 func (r StartServerRequest) Frame() (hostserver.Frame, error) {
-	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20}[r.CredentialType]
+	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
 	if want == 0 {
 		return hostserver.Frame{}, fmt.Errorf("message: unsupported credential type 0x%02X", r.CredentialType)
 	}
