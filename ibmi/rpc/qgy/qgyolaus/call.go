@@ -2,11 +2,12 @@
 // Authorized Users.
 //
 // NewCall builds the neutral rpc.Call; ParseOpen validates its result; Open
-// does both through an rpc.Caller. The list is built synchronously (records
-// to return = -1) with a zero-length receiver, as the V5R4-era JTOpen 4.8
-// client does, so the open call returns only list information and a handle;
-// records are read with qgygtle and the handle released with qgyclst on the
-// same server job.
+// does both through an rpc.Caller. By default the list is built
+// synchronously (records to return = -1) with a zero-length receiver, as the
+// V5R4-era JTOpen 4.8 client does, so the open call returns only list
+// information and a handle. BuildAsynchronous (0) returns at once while a
+// server job builds the list; poll it with qgygtle.GetInfo. Records are read
+// with qgygtle and the handle released with qgyclst on the same server job.
 //
 // IBM i returns only profiles the caller has *READ authority to, and
 // QGYOLAUS is not thread-safe: run open, get and close inside one
@@ -39,8 +40,27 @@ const (
 	parameterCount = 9
 )
 
-// synchronous asks the server to build the whole list before returning.
-const synchronous int32 = -1
+// BuildMode selects how the server builds the list (the "number of records
+// to return" parameter).
+type BuildMode uint8
+
+const (
+	// BuildSynchronous (-1) builds the whole list before QGYOLAUS returns.
+	BuildSynchronous BuildMode = iota
+	// BuildAsynchronous (0) returns at once while a server job builds the
+	// list; poll it with qgygtle.GetInfo until it is complete.
+	BuildAsynchronous
+)
+
+func (m BuildMode) recordsToReturn() (int32, error) {
+	switch m {
+	case BuildSynchronous:
+		return -1, nil
+	case BuildAsynchronous:
+		return 0, nil
+	}
+	return 0, fmt.Errorf("qgyolaus: undefined build mode %d", m)
+}
 
 // Selection is the selection-criteria parameter.
 type Selection uint8
@@ -84,6 +104,8 @@ type Request struct {
 	ErrorCode errorcode.Parameter
 	// MessageOption defaults to rpc.MessagesUpToTen.
 	MessageOption rpc.MessageOption
+	// Build defaults to BuildSynchronous.
+	Build BuildMode
 }
 
 var errZeroFormat = errors.New("qgyolaus: zero Format; use AUTU0100, AUTU0150, AUTU0200 or AUTU0250")
@@ -130,7 +152,8 @@ func input(b []byte) rpc.Parameter {
 //
 // Parameters, in order: receiver (zero-length input, the JTOpen 4.8 wire
 // form), receiver length 0, list information (output 80), records to return
-// -1, format name, selection, group, error code, profile.
+// (-1 synchronous, 0 asynchronous), format name, selection, group, error
+// code, profile.
 func NewCall[T any](format Format[T], req Request, codec ccsid.Codec) (rpc.Call, error) {
 	if format.IsZero() {
 		return rpc.Call{}, errZeroFormat
@@ -151,6 +174,10 @@ func NewCall[T any](format Format[T], req Request, codec ccsid.Codec) (rpc.Call,
 		return rpc.Call{}, errors.New("qgyolaus: Group is only valid with SelectMembers")
 	}
 	profile, err := validateProfile(req.Profile)
+	if err != nil {
+		return rpc.Call{}, err
+	}
+	records, err := req.Build.recordsToReturn()
 	if err != nil {
 		return rpc.Call{}, err
 	}
@@ -175,7 +202,7 @@ func NewCall[T any](format Format[T], req Request, codec ccsid.Codec) (rpc.Call,
 		rpc.EmptyInput(),
 		input(qgy.Binary4(0)),
 		listInfo,
-		input(qgy.Binary4(synchronous)),
+		input(qgy.Binary4(records)),
 		input(name),
 		input(selBytes),
 		input(groupBytes),
@@ -230,7 +257,9 @@ func ParseOpen[T any](format Format[T], call rpc.Call, req Request, res *rpc.Res
 	}
 	result.Info = info
 	switch {
-	case info.Status != openlist.StatusComplete:
+	case info.Status == openlist.StatusError:
+		err = fmt.Errorf("%w: the server reports an error building the list", ErrMetadata)
+	case req.Build == BuildSynchronous && info.Status != openlist.StatusComplete:
 		// The synchronous (-1) request is complete when it returns.
 		err = fmt.Errorf("%w: list status %s, want complete", ErrMetadata, info.Status)
 	case info.RecordsReturned != 0:

@@ -57,8 +57,10 @@
 //     "TLS on V5R4" below.
 //   - Program APIs: QGY/QGYOLAUS (formats AUTU0100, AUTU0150, AUTU0200 and
 //     AUTU0250; AUTU0250 has no V5R4-era evidence), QGY/QGYGTLE and
-//     QGY/QGYCLST, synchronous lists only (issue #1455). Generic Program
-//     Call can carry other programs, but no other API is claimed.
+//     QGY/QGYCLST. Lists are built synchronously by default or, on request,
+//     asynchronously in a server job with bounded polling; both modes are
+//     validated live on V5R4. Generic Program Call can carry other
+//     programs, but no other API is claimed.
 //   - Host servers: Sign-on and Remote Command only (issue #1457); one
 //     server job per client, no pooling (issue #1458).
 //

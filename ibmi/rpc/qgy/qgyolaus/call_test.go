@@ -234,3 +234,29 @@ func TestCompatibilityMatchesStructures(t *testing.T) {
 		t.Errorf("formats without a compatibility entry: %v", lengths)
 	}
 }
+
+func TestAsynchronousBuildMode(t *testing.T) {
+	call, err := qgyolaus.NewCall(qgyolaus.AUTU0150(), qgyolaus.Request{Build: qgyolaus.BuildAsynchronous}, codec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := call.Parameters()[3].InputBytes(); !bytes.Equal(got, []byte{0, 0, 0, 0}) {
+		t.Errorf("records to return = % x; asynchronous is 0", got)
+	}
+	if _, err := qgyolaus.NewCall(qgyolaus.AUTU0150(), qgyolaus.Request{Build: 9}, codec); err == nil {
+		t.Error("undefined build mode accepted")
+	}
+	async := qgyolaus.Request{Build: qgyolaus.BuildAsynchronous}
+	for _, status := range []byte{0xF0, 0xF1, 0xF4, 0xF2} { // pending, building, primed, complete
+		fc := &fakeCaller{respond: func(c rpc.Call) (*rpc.Result, error) { return result(c, listInfo(1, 0, handle, 62, status), nil), nil }}
+		if _, _, err := qgyolaus.Open(context.Background(), fc, qgyolaus.AUTU0150(), async, codec, codec); err != nil {
+			t.Errorf("asynchronous open with status 0x%02X: %v", status, err)
+		}
+	}
+	for _, req := range []qgyolaus.Request{{}, async} {
+		fc := &fakeCaller{respond: func(c rpc.Call) (*rpc.Result, error) { return result(c, listInfo(1, 0, handle, 62, 0xF3), nil), nil }}
+		if _, recovered, err := qgyolaus.Open(context.Background(), fc, qgyolaus.AUTU0150(), req, codec, codec); !errors.Is(err, qgyolaus.ErrMetadata) || !recovered {
+			t.Errorf("build %d with error status: %v, recovered %t", req.Build, err, recovered)
+		}
+	}
+}

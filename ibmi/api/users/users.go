@@ -120,6 +120,11 @@ type ListOptions struct {
 	// ProfilePattern is a profile name or IBM generic name ("AB*"); empty
 	// means all.
 	ProfilePattern string
+	// Asynchronous asks IBM i to build the list in a server job and polls
+	// until it is complete instead of building it during the open call.
+	Asynchronous bool
+	// MaxBuildWait bounds an asynchronous build (default 1 minute).
+	MaxBuildWait time.Duration
 }
 
 // UserSummary is one AUTU0150 entry.
@@ -137,7 +142,8 @@ type ListResult struct {
 	// caller may see.
 	TotalReported uint32
 	Selection     Selection
-	// SnapshotStatus is the list status when it was opened.
+	// SnapshotStatus is the list status once built: complete, or too much
+	// data when IBM i stopped building it early.
 	SnapshotStatus listinfo.Status
 	// Partial means Users stops before the end of the list. It is only set
 	// together with a non-nil error from List.
@@ -156,6 +162,9 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (*ListResult, error
 	}
 	format := qgyolaus.AUTU0150()
 	req := qgyolaus.Request{Library: c.opts.Library, Selection: sel, Group: opts.Group, Profile: opts.ProfilePattern}
+	if opts.Asynchronous {
+		req.Build = qgyolaus.BuildAsynchronous
+	}
 	if _, err := qgyolaus.NewCall(format, req, c.system); err != nil {
 		return nil, err // reject bad options before taking the reservation
 	}
@@ -167,6 +176,7 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (*ListResult, error
 		MaxReceiver:    c.opts.MaxReceiver,
 		CleanupTimeout: c.opts.CleanupTimeout,
 		JobCodec:       c.job,
+		MaxBuildWait:   opts.MaxBuildWait,
 	}
 	read, readErr := openlist.Read(ctx, c.caller, cfg, func(ctx context.Context, caller rpc.Caller) (openlist.Opened, error) {
 		res, recovered, err := qgyolaus.Open(ctx, caller, format, req, c.system, c.job)
