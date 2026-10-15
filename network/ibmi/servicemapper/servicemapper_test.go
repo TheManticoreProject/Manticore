@@ -287,3 +287,33 @@ func TestLookupUsesInjectedDialer(t *testing.T) {
 		t.Errorf("dialed %q; want the default mapper port", dialed)
 	}
 }
+
+func TestDiscoverSelectedServices(t *testing.T) {
+	m := newScriptedMapper(t, map[string][]byte{"as-dtaq": portReply(8472)})
+	c := &servicemapper.Client{Timeout: 5 * time.Second}
+	cat, err := c.Discover(context.Background(), servicemapper.DiscoverOptions{
+		Host: "127.0.0.1", MapperPort: m.port(), Policy: ibminet.TransportCleartextExplicit,
+		Services: []ibminet.Service{ibminet.ServiceDataQueue},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep, ok := cat.Endpoint(ibminet.ServiceDataQueue); !ok || ep.Port != 8472 || ep.Name != "as-dtaq" {
+		t.Errorf("DataQueue = %+v", cat.DataQueue)
+	}
+	if got := m.seen(); len(got) != 1 || got[0] != "as-dtaq" {
+		t.Errorf("mapper requests = %q; want only as-dtaq", got)
+	}
+	cat, err = c.Discover(context.Background(), servicemapper.DiscoverOptions{
+		Host: "127.0.0.1", MapperPort: m.port(), Policy: ibminet.TransportTLSRequired,
+		Services: []ibminet.Service{ibminet.ServiceDataQueue}, DataQueuePort: 9472,
+	})
+	if err != nil || cat.DataQueue.Port != 9472 || cat.DataQueue.Name != "as-dtaq-s" || cat.DataQueue.Source != ibminet.EndpointExplicit {
+		t.Errorf("explicit DataQueue = %+v, %v", cat.DataQueue, err)
+	}
+	if _, err := c.Discover(context.Background(), servicemapper.DiscoverOptions{
+		Host: "127.0.0.1", MapperPort: m.port(), Policy: ibminet.TransportCleartextExplicit, Services: []ibminet.Service{9},
+	}); err == nil {
+		t.Error("an unsupported service was accepted")
+	}
+}

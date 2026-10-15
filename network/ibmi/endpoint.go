@@ -110,6 +110,7 @@ func (e Endpoint) Address() string { return net.JoinHostPort(e.Host, strconv.Ito
 type ServiceCatalog struct {
 	Signon        Endpoint
 	RemoteCommand Endpoint
+	DataQueue     Endpoint
 	Missing       []Service
 }
 
@@ -121,6 +122,8 @@ func (c ServiceCatalog) Endpoint(s Service) (Endpoint, bool) {
 		e = c.Signon
 	case ServiceRemoteCommand:
 		e = c.RemoteCommand
+	case ServiceDataQueue:
+		e = c.DataQueue
 	}
 	return e, e.Service.Valid()
 }

@@ -67,6 +67,9 @@ func NewConn(c net.Conn, opts Options) (*Conn, error) {
 	return &Conn{conn: c, maxFrame: max, timeout: timeout, tracer: opts.Tracer}, nil
 }
 
+// OperationTimeout returns the effective per-operation timeout.
+func (c *Conn) OperationTimeout() time.Duration { return c.timeout }
+
 // MaxFrame returns the effective maximum frame size.
 func (c *Conn) MaxFrame() uint32 { return c.maxFrame }
 
@@ -74,14 +77,14 @@ func (c *Conn) MaxFrame() uint32 { return c.maxFrame }
 func (c *Conn) Send(ctx context.Context, f Frame) (SendReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.send(ctx, f)
+	return c.send(ctx, f, c.timeout)
 }
 
 // Receive reads one whole frame.
 func (c *Conn) Receive(ctx context.Context) (Frame, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.receive(ctx)
+	return c.receive(ctx, c.timeout)
 }
 
 // Expect describes the only acceptable reply to a request.
@@ -96,13 +99,21 @@ type Expect struct {
 // Conn. The receipt is returned even on failure so callers can tell whether
 // the request may have executed.
 func (c *Conn) Exchange(ctx context.Context, req Frame, expect Expect) (Frame, SendReceipt, error) {
+	return c.ExchangeWithin(ctx, req, expect, c.timeout)
+}
+
+// ExchangeWithin is Exchange with timeout bounding the send and the
+// receive in place of the operation timeout, for requests the server may
+// legitimately hold (a data-queue read that waits for an entry). A timeout
+// of 0 or less sets no deadline: only ctx bounds the exchange.
+func (c *Conn) ExchangeWithin(ctx context.Context, req Frame, expect Expect, timeout time.Duration) (Frame, SendReceipt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	receipt, err := c.send(ctx, req)
+	receipt, err := c.send(ctx, req, timeout)
 	if err != nil {
 		return Frame{}, receipt, err
 	}
-	reply, err := c.receive(ctx)
+	reply, err := c.receive(ctx, timeout)
 	if err != nil {
 		return Frame{}, receipt, err
 	}
@@ -183,14 +194,16 @@ func (c *Conn) trace(e Event) {
 	}
 }
 
-// arm bounds the next I/O by the operation timeout and by ctx: the socket
-// deadline is the operation timeout, and when ctx is done (cancelled or past
+// arm bounds the next I/O by timeout (none if timeout <= 0) and by ctx: the
+// socket deadline is the timeout, and when ctx is done (cancelled or past
 // its own deadline) an immediate deadline interrupts blocked I/O. Enforcing
 // the context deadline through ctx rather than the socket guarantees
 // ctx.Err() is already set when the I/O fails. The returned function disarms
 // it and clears the deadline.
-func (c *Conn) arm(ctx context.Context) func() {
-	_ = c.conn.SetDeadline(time.Now().Add(c.timeout))
+func (c *Conn) arm(ctx context.Context, timeout time.Duration) func() {
+	if timeout > 0 {
+		_ = c.conn.SetDeadline(time.Now().Add(timeout))
+	}
 	fired := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
 		defer close(fired)
@@ -212,7 +225,7 @@ func ioError(ctx context.Context, err error) error {
 	return err
 }
 
-func (c *Conn) send(ctx context.Context, f Frame) (SendReceipt, error) {
+func (c *Conn) send(ctx context.Context, f Frame, timeout time.Duration) (SendReceipt, error) {
 	if err := c.usable(); err != nil {
 		return SendReceipt{}, err
 	}
@@ -223,7 +236,7 @@ func (c *Conn) send(ctx context.Context, f Frame) (SendReceipt, error) {
 	if err := ctx.Err(); err != nil {
 		return SendReceipt{}, fmt.Errorf("%w: %w", ErrSendNotStarted, err)
 	}
-	disarm := c.arm(ctx)
+	disarm := c.arm(ctx, timeout)
 	total := 0
 	for total < len(b) {
 		n, werr := c.conn.Write(b[total:])
@@ -243,7 +256,7 @@ func (c *Conn) send(ctx context.Context, f Frame) (SendReceipt, error) {
 	return SendReceipt{BytesAccepted: total}, nil
 }
 
-func (c *Conn) receive(ctx context.Context) (Frame, error) {
+func (c *Conn) receive(ctx context.Context, timeout time.Duration) (Frame, error) {
 	if err := c.usable(); err != nil {
 		return Frame{}, err
 	}
@@ -252,7 +265,7 @@ func (c *Conn) receive(ctx context.Context) (Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return Frame{}, c.poison(fmt.Errorf("receive not started: %w", err))
 	}
-	disarm := c.arm(ctx)
+	disarm := c.arm(ctx, timeout)
 	defer disarm()
 
 	var hb [HeaderLength]byte

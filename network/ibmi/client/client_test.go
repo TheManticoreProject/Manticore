@@ -33,6 +33,7 @@ func newClient(t *testing.T, srv *hosttest.Server, mutate ...func(*Config)) *Cli
 		Transport:         ibminet.TransportCleartextExplicit,
 		SignonPort:        hosttest.SignonPort,
 		RemoteCommandPort: hosttest.RemoteCommandPort,
+		DataQueuePort:     hosttest.DataQueuePort,
 		Dial:              srv.Dial,
 		CleanupTimeout:    time.Second,
 	}

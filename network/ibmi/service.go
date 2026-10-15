@@ -15,10 +15,12 @@ const (
 	// ServiceRemoteCommand is the Remote Command and distributed Program
 	// Call host server (as-rmtcmd / as-rmtcmd-s).
 	ServiceRemoteCommand
+	// ServiceDataQueue is the Data Queue host server (as-dtaq / as-dtaq-s).
+	ServiceDataQueue
 )
 
 // Services lists every supported service in a stable order.
-func Services() []Service { return []Service{ServiceSignon, ServiceRemoteCommand} }
+func Services() []Service { return []Service{ServiceSignon, ServiceRemoteCommand, ServiceDataQueue} }
 
 func (s Service) String() string {
 	switch s {
@@ -26,12 +28,14 @@ func (s Service) String() string {
 		return "signon"
 	case ServiceRemoteCommand:
 		return "remote-command"
+	case ServiceDataQueue:
+		return "data-queue"
 	}
 	return fmt.Sprintf("Service(%d)", uint8(s))
 }
 
 // Valid reports whether s is a supported service.
-func (s Service) Valid() bool { return s == ServiceSignon || s == ServiceRemoteCommand }
+func (s Service) Valid() bool { return s >= ServiceSignon && s <= ServiceDataQueue }
 
 // MapperName returns the IBM i service-mapper name of s: the "-s" form when
 // tls is true, for example "as-signon-s". It returns "" for an invalid s.
@@ -42,6 +46,8 @@ func (s Service) MapperName(tls bool) string {
 		base = "as-signon"
 	case ServiceRemoteCommand:
 		base = "as-rmtcmd"
+	case ServiceDataQueue:
+		base = "as-dtaq"
 	default:
 		return ""
 	}

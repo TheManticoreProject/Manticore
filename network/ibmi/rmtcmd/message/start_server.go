@@ -1,22 +1,20 @@
 package message
 
 import (
-	"encoding/binary"
-	"fmt"
-
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/internal/startup"
 )
 
 // StartAttributes is header byte 4 of 0x7002: ask the server to return its
 // job information.
-const StartAttributes byte = 0x02
+const StartAttributes = startup.StartAttributes
 
 // Credential types carried in the first 0x7002 template byte.
 const (
-	CredentialTypeDES          byte = 0x01
-	CredentialTypeProfileToken byte = 0x02 // CP 0x1115, no profile
-	CredentialTypeSHA1         byte = 0x03
-	CredentialTypeSHA512       byte = 0x07 // password level 4
+	CredentialTypeDES          = startup.CredentialTypeDES
+	CredentialTypeProfileToken = startup.CredentialTypeProfileToken // CP 0x1115, no profile
+	CredentialTypeSHA1         = startup.CredentialTypeSHA1
+	CredentialTypeSHA512       = startup.CredentialTypeSHA512 // password level 4
 )
 
 // StartServerRequest is request 0x7002. Its frame contains the substitute:
@@ -32,62 +30,16 @@ type StartServerRequest struct {
 // then CP 0x1105 substitute and CP 0x1104 profile, or CP 0x1115 profile
 // token alone.
 func (r StartServerRequest) Frame() (hostserver.Frame, error) {
-	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeProfileToken: 32, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
-	if want == 0 {
-		return hostserver.Frame{}, fmt.Errorf("message: unsupported credential type 0x%02X", r.CredentialType)
-	}
-	if len(r.Substitute) != want {
-		return hostserver.Frame{}, fmt.Errorf("message: credential type 0x%02X needs %d bytes, got %d", r.CredentialType, want, len(r.Substitute))
-	}
-	var v []byte
-	if r.CredentialType == CredentialTypeProfileToken {
-		// A profile token identifies its profile; no CP 0x1104 is sent.
-		v, _ = hostserver.AppendField(v, CPAuthToken, r.Substitute)
-	} else {
-		v, _ = hostserver.AppendField(v, CPPasswordSubstitute, r.Substitute)
-		v, _ = hostserver.AppendField(v, CPUserID, r.Profile[:])
-	}
-	return hostserver.Frame{
-		Header: hostserver.Header{
-			Attributes: uint16(StartAttributes) << 8,
-			ServerID:   hostserver.ServerIDRemoteCommand,
-			RequestID:  RequestStartServer,
-		},
-		Template: []byte{r.CredentialType, 0x01},
-		Variable: v,
-	}, nil
+	return startup.StartServerRequest{
+		ServerID: hostserver.ServerIDRemoteCommand, CredentialType: r.CredentialType, Substitute: r.Substitute, Profile: r.Profile,
+	}.Frame()
 }
 
 // StartServerReply is reply 0xF002.
-type StartServerReply struct {
-	ReturnCode uint32
-	// JobIdentity is the raw CP 0x111F value: a 4-byte opaque prefix, then
-	// the server job name in the job CCSID. HasJobIdentity is false when
-	// absent.
-	JobIdentity    []byte
-	HasJobIdentity bool
-	Fields         hostserver.Fields
-}
+type StartServerReply = startup.StartServerReply
 
 // ParseStartServerReply decodes reply 0xF002: a 4-byte return code, then
 // LL/CP fields.
 func ParseStartServerReply(f hostserver.Frame) (*StartServerReply, error) {
-	b := body(f)
-	if len(b) < 4 {
-		return nil, short("0xF002 reply", len(b), 4)
-	}
-	fields, err := hostserver.ParseFields(b[4:], hostserver.FieldPolicy{
-		MaxFields: maxReplyFields, Singletons: map[uint16]bool{CPJobIdentity: true, CPUserID: true},
-	})
-	if err != nil {
-		return nil, err
-	}
-	r := &StartServerReply{ReturnCode: binary.BigEndian.Uint32(b), Fields: fields}
-	if v, ok := fields.Get(CPJobIdentity); ok {
-		if len(v) < 4 {
-			return nil, &hostserver.MalformedError{What: "field", Reason: fmt.Sprintf("job identity (CP 0x111F) has %d bytes, need at least 4", len(v))}
-		}
-		r.JobIdentity, r.HasJobIdentity = append([]byte(nil), v...), true
-	}
-	return r, nil
+	return startup.ParseStartServerReply(f)
 }
