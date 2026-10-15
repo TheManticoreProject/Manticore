@@ -1,6 +1,8 @@
 // Package message encodes and decodes the Sign-on host-server requests and
-// replies used for password validation: exchange attributes (0x7003/0xF003),
-// retrieve sign-on information (0x7004/0xF004) and end server (0x7006).
+// replies used for validation and tokens: exchange attributes
+// (0x7003/0xF003), retrieve sign-on information (0x7004/0xF004), generate
+// profile token (0x7007/0xF007, iSeriesNavigatorReverse docs/21) and end
+// server (0x7006).
 //
 // Layouts follow the JTOpen 4.8 generation the V5R4 baseline targets
 // (client data-stream level 2, client CCSID 13488), as recorded in
@@ -27,6 +29,8 @@ const (
 	RequestRetrieveInfo       uint16 = 0x7004
 	ReplyRetrieveInfo         uint16 = 0xF004
 	RequestEndServer          uint16 = 0x7006
+	RequestGenerateToken      uint16 = 0x7007
+	ReplyGenerateToken        uint16 = 0xF007
 )
 
 // Code points.
@@ -40,6 +44,9 @@ const (
 	CPServerCCSID        uint16 = 0x1114
 	CPPasswordLevel      uint16 = 0x1119
 	CPJobIdentity        uint16 = 0x111F
+	CPAuthToken          uint16 = 0x1115
+	CPTokenType          uint16 = 0x1116
+	CPTokenTimeout       uint16 = 0x1117
 )
 
 // Values sent by the JTOpen 4.8 generation.

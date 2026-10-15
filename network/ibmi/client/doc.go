@@ -1,9 +1,10 @@
 // Package client is the public IBM i Client Access connection facade.
 //
-// New validates a Config without I/O. Connect validates the credential once
-// with the Sign-on server, then starts an authenticated Remote Command
-// server job with its own fresh seeds; the credential is not retained after
-// Connect returns. SessionInfo returns an immutable, non-secret snapshot.
+// New validates a Config without I/O. Connect validates the credential (a
+// password, or a multiple-use profile token) once with the Sign-on server,
+// then starts an authenticated Remote Command server job, deriving a fresh
+// password substitute for it; the credential is not retained after Connect
+// returns. GenerateProfileToken issues a profile token from a password. SessionInfo returns an immutable, non-secret snapshot.
 // Close ends the server job and closes every socket; it is idempotent.
 //
 // Lifecycle:

@@ -41,8 +41,13 @@
 //     SHA-512 substitute, credential type 0x07) is checked against
 //     known-answer vectors from a current JTOpen release but has not been
 //     validated against a live level-4 system (issue #1461). Levels above 4
-//     are rejected before any credential is sent. Tokens, Kerberos and
-//     additional factors are not supported (issue #1456).
+//     are rejected before any password credential is sent.
+//   - Profile tokens: issued by the Sign-on server (0x7007) from a password
+//     and used for Sign-on and Remote Command as credential kind 0x02,
+//     validated live on V5R4 for single-use and multiple-use tokens.
+//     Kerberos, identity tokens and EIM-issued tokens are not supported
+//     (issue #1464), nor are additional authentication factors (issue
+//     #1465).
 //   - Remote Command data-stream level: validated live at level 7.
 //     Input/output parameters use usage 13 below level 5 and 33 from level
 //     5; "all messages" is honored from level 7 and downgraded below it;

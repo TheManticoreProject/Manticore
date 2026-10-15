@@ -16,6 +16,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/ibmi/client"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/signon"
 )
 
 // TestLiveReadOnlySequence runs the first-slice acceptance sequence against
@@ -152,4 +153,72 @@ func (e *eventCounter) Trace(ev hostserver.Event) {
 	case hostserver.EventFrameReceived:
 		e.received = append(e.received, ev.RequestID)
 	}
+}
+
+// TestLiveProfileToken issues profile tokens with the configured password
+// and authenticates with them: a multiple-use token for the full Connect
+// sequence, a single-use token for one Sign-on validation. Read-only apart
+// from issuing the tokens, which IBM i may record in its audit journal.
+func TestLiveProfileToken(t *testing.T) {
+	host := os.Getenv("MANTICORE_IBMI_HOST")
+	profile := os.Getenv("MANTICORE_IBMI_USER")
+	password := os.Getenv("MANTICORE_IBMI_PASSWORD")
+	if host == "" || profile == "" || password == "" || os.Getenv("MANTICORE_IBMI_ALLOW_CLEARTEXT") != "1" {
+		t.Skip("needs MANTICORE_IBMI_HOST, _USER, _PASSWORD and _ALLOW_CLEARTEXT=1")
+	}
+	cfg := client.Config{Host: host, Transport: ibminet.TransportCleartextExplicit, OperationTimeout: time.Minute}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cred, err := ibminet.NewPasswordCredential(profile, []byte(password))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cred.Destroy()
+	issuer, err := client.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	multi, err := issuer.GenerateProfileToken(ctx, cred, signon.TokenRequest{Type: ibminet.TokenMultipleUse, Timeout: time.Minute})
+	if err != nil {
+		t.Fatalf("generate multiple-use token: %v", err)
+	}
+	defer multi.Destroy()
+	c, err := client.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Connect(ctx, multi); err != nil {
+		t.Fatalf("connect with token: %v", err)
+	}
+	info := c.SessionInfo()
+	if _, err := c.RunCommand(ctx, "DSPJOB OUTPUT(*PRINT)", rmtcmd.RunCommandOptions{}); err != nil && !errors.Is(err, rmtcmd.ErrNative) {
+		t.Fatalf("DSPJOB with token: %v", err)
+	}
+	u, _ := users.New(c, users.Options{SystemCCSID: info.SystemCCSID, JobCCSID: info.JobCCSID})
+	res, err := u.List(ctx, users.ListOptions{})
+	if err != nil {
+		t.Fatalf("list users with token: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+	t.Logf("multiple-use token: connected (VRM %s, system CCSID %d), listed %d profiles", info.VRM, info.SystemCCSID, len(res.Users))
+
+	single, err := issuer.GenerateProfileToken(ctx, cred, signon.TokenRequest{Type: ibminet.TokenSingleUse, Timeout: time.Minute})
+	if err != nil {
+		t.Fatalf("generate single-use token: %v", err)
+	}
+	defer single.Destroy()
+	catalog, err := issuer.DiscoverServices(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signon.Validate(ctx, catalog.Signon, single, signon.Options{}); err != nil {
+		t.Fatalf("single-use token: %v", err)
+	}
+	if _, err := signon.Validate(ctx, catalog.Signon, single, signon.Options{}); !errors.Is(err, ibminet.ErrTokenConsumed) {
+		t.Errorf("second use of a single-use token = %v", err)
+	}
+	t.Log("single-use token: one Sign-on validation succeeded; reuse refused locally")
 }
