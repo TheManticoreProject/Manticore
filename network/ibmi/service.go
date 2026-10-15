@@ -17,10 +17,15 @@ const (
 	ServiceRemoteCommand
 	// ServiceDataQueue is the Data Queue host server (as-dtaq / as-dtaq-s).
 	ServiceDataQueue
+	// ServiceFile is the File host server for the integrated file system
+	// (as-file / as-file-s).
+	ServiceFile
 )
 
 // Services lists every supported service in a stable order.
-func Services() []Service { return []Service{ServiceSignon, ServiceRemoteCommand, ServiceDataQueue} }
+func Services() []Service {
+	return []Service{ServiceSignon, ServiceRemoteCommand, ServiceDataQueue, ServiceFile}
+}
 
 func (s Service) String() string {
 	switch s {
@@ -30,12 +35,14 @@ func (s Service) String() string {
 		return "remote-command"
 	case ServiceDataQueue:
 		return "data-queue"
+	case ServiceFile:
+		return "file"
 	}
 	return fmt.Sprintf("Service(%d)", uint8(s))
 }
 
 // Valid reports whether s is a supported service.
-func (s Service) Valid() bool { return s >= ServiceSignon && s <= ServiceDataQueue }
+func (s Service) Valid() bool { return s >= ServiceSignon && s <= ServiceFile }
 
 // MapperName returns the IBM i service-mapper name of s: the "-s" form when
 // tls is true, for example "as-signon-s". It returns "" for an invalid s.
@@ -48,6 +55,8 @@ func (s Service) MapperName(tls bool) string {
 		base = "as-rmtcmd"
 	case ServiceDataQueue:
 		base = "as-dtaq"
+	case ServiceFile:
+		base = "as-file"
 	default:
 		return ""
 	}

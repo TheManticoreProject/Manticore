@@ -34,6 +34,7 @@ func newClient(t *testing.T, srv *hosttest.Server, mutate ...func(*Config)) *Cli
 		SignonPort:        hosttest.SignonPort,
 		RemoteCommandPort: hosttest.RemoteCommandPort,
 		DataQueuePort:     hosttest.DataQueuePort,
+		FilePort:          hosttest.FilePort,
 		Dial:              srv.Dial,
 		CleanupTimeout:    time.Second,
 	}

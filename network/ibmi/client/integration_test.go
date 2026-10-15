@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/ibmi/client"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/dataqueue"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
+	"github.com/TheManticoreProject/Manticore/network/ibmi/ifs"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/rmtcmd"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/signon"
 )
@@ -380,6 +382,91 @@ func TestLiveDataQueue(t *testing.T) {
 		t.Logf("kind mismatch: return code 0x%04X, message %s", e.ReturnCode, e.MessageID)
 	}
 	if err := dq.Err(); err != nil {
+		t.Fatalf("session unusable: %v", err)
+	}
+}
+
+// TestLiveIFS reads one stream file through the File server and checks the
+// error forms. It is read-only. MANTICORE_IBMI_IFS_FILE names the file
+// (default /QIBM/ProdData/OS400/jt400/lib/jt400Native.jar, a ZIP archive
+// readable by *PUBLIC on V5R4).
+func TestLiveIFS(t *testing.T) {
+	host := os.Getenv("MANTICORE_IBMI_HOST")
+	profile := os.Getenv("MANTICORE_IBMI_USER")
+	password := os.Getenv("MANTICORE_IBMI_PASSWORD")
+	if host == "" || profile == "" || password == "" || os.Getenv("MANTICORE_IBMI_ALLOW_CLEARTEXT") != "1" {
+		t.Skip("needs MANTICORE_IBMI_HOST, _USER, _PASSWORD and _ALLOW_CLEARTEXT=1")
+	}
+	path := os.Getenv("MANTICORE_IBMI_IFS_FILE")
+	isDefault := path == ""
+	if isDefault {
+		path = "/QIBM/ProdData/OS400/jt400/lib/jt400Native.jar"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cred, err := ibminet.NewPasswordCredential(profile, []byte(password))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cred.Destroy()
+	c, err := client.New(client.Config{Host: host, Transport: ibminet.TransportCleartextExplicit, OperationTimeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Connect(ctx, cred); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer c.Close()
+	s, err := c.OpenIFS(ctx, cred)
+	if err != nil {
+		t.Fatalf("open IFS: %v", err)
+	}
+	defer s.Close()
+	info := s.Info()
+	t.Logf("file server: level %d, max block %d, path CCSID %d, server job %q", info.DataStreamLevel, info.MaxBlock, info.PathCCSID, info.ServerJob)
+
+	f, err := s.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	fi := f.Info()
+	t.Logf("file: %d bytes, data CCSID %d, modified %s", fi.Size, fi.DataCCSID, fi.Modified)
+	if fi.Size < 1 {
+		t.Fatalf("size %d", fi.Size)
+	}
+	if data, err := f.ReadAt(ctx, fi.Size, 16); !errors.Is(err, io.EOF) || len(data) != 0 {
+		t.Errorf("read at the end = %d bytes, %v", len(data), err)
+	}
+	if data, err := f.ReadAt(ctx, fi.Size-1, 16); err != nil || len(data) != 1 {
+		t.Errorf("read of the last byte = %d bytes, %v", len(data), err)
+	}
+	if err := f.Close(ctx); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	start := time.Now()
+	data, err := s.ReadFile(ctx, path, int(fi.Size))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if int64(len(data)) != fi.Size || isDefault && !bytes.HasPrefix(data, []byte("PK\x03\x04")) {
+		t.Errorf("read %d bytes (want %d), prefix % x", len(data), fi.Size, data[:min(4, len(data))])
+	}
+	t.Logf("read %d bytes in %s", len(data), time.Since(start).Round(time.Millisecond))
+	if _, err := s.ReadFile(ctx, path, int(fi.Size)-1); !errors.Is(err, ifs.ErrTooLarge) {
+		t.Errorf("limit below the size = %v", err)
+	}
+
+	if _, err := s.Open(ctx, "/manticore-missing-file"); !errors.Is(err, ifs.ErrNotFound) {
+		t.Errorf("missing file = %v", err)
+	}
+	var e *ifs.Error
+	if _, err := s.Open(ctx, "/QIBM"); !errors.As(err, &e) {
+		t.Errorf("open of a directory = %v", err)
+	} else {
+		t.Logf("open of a directory: return code %d", e.ReturnCode)
+	}
+	if err := s.Err(); err != nil {
 		t.Fatalf("session unusable: %v", err)
 	}
 }

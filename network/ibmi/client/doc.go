@@ -5,8 +5,9 @@
 // then starts an authenticated Remote Command server job, deriving a fresh
 // password substitute for it; the credential is not retained after Connect
 // returns. GenerateProfileToken issues a profile token from a password.
-// OpenDataQueue starts an independent Data Queue session (package
-// network/ibmi/dataqueue) for the credential Connect validated. SessionInfo
+// OpenDataQueue and OpenIFS start independent Data Queue and File server
+// sessions (packages network/ibmi/dataqueue and network/ibmi/ifs) for the
+// credential Connect validated. SessionInfo
 // returns an immutable, non-secret snapshot.
 // Close ends the server job and closes every socket; it is idempotent.
 //
