@@ -66,6 +66,10 @@ func TestConnectRejectsSingleUseTokenBeforeIO(t *testing.T) {
 	if token.Type() != ibminet.TokenSingleUse {
 		t.Fatalf("default token type = %s", token.Type())
 	}
+	// The issuing connection's best-effort 0x7006 is recorded asynchronously.
+	if err := srv.WaitClosed(2 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	before := len(srv.Requests())
 	if err := newClient(t, srv).Connect(context.Background(), token); !errors.Is(err, ErrSingleUseToken) {
 		t.Fatalf("Connect = %v", err)
@@ -117,6 +121,9 @@ func TestGenerateProfileTokenFailures(t *testing.T) {
 		"fractional second": {Timeout: 1500 * time.Millisecond},
 		"undefined type":    {Type: 9},
 	} {
+		if err := srv.WaitClosed(2 * time.Second); err != nil {
+			t.Fatal(err)
+		}
 		before := len(srv.Requests())
 		if _, err := c.GenerateProfileToken(context.Background(), credential(t, testPassword), req); err == nil || len(srv.Requests()) != before {
 			t.Errorf("%s: %v after %d requests", name, err, len(srv.Requests())-before)
