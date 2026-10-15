@@ -32,6 +32,7 @@ const (
 	CPUserID             uint16 = 0x1104
 	CPPasswordSubstitute uint16 = 0x1105
 	CPJobIdentity        uint16 = 0x111F
+	CPAuthToken          uint16 = 0x1115
 )
 
 // maxReplyFields bounds the LL/CP fields accepted in one startup reply.

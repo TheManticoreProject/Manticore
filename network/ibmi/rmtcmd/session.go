@@ -59,12 +59,13 @@ type Session struct {
 	closeErr  error
 }
 
-// Start authenticates conn as a Remote Command server job for cred, using a
-// fresh seed pair, and negotiates its attributes. family is the password
-// family learned from Sign-on. Start owns conn: on any error it is closed.
+// Start authenticates conn as a Remote Command server job for cred (a
+// password, with a fresh seed pair and substitute, or a profile token) and
+// negotiates its attributes. family is the password family learned from
+// Sign-on; it is ignored for a profile token. Start owns conn: on any error it is closed.
 // A rejected credential returns a *signon.Error matching
 // signon.ErrAuthenticationRejected and is never retried.
-func Start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCredential, family ibminet.PasswordFamily, opts StartOptions) (*Session, error) {
+func Start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, family ibminet.PasswordFamily, opts StartOptions) (*Session, error) {
 	s, err := start(ctx, conn, cred, family, opts)
 	if err != nil {
 		conn.Close()
@@ -78,7 +79,7 @@ var (
 	expectStart = hostserver.Expect{ServerID: hostserver.ServerIDRemoteCommand, ReplyIDs: []uint16{message.ReplyStartServer}}
 )
 
-func start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCredential, family ibminet.PasswordFamily, opts StartOptions) (*Session, error) {
+func start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, family ibminet.PasswordFamily, opts StartOptions) (*Session, error) {
 	if cred == nil {
 		return nil, errors.New("rmtcmd: nil credential")
 	}
@@ -96,7 +97,7 @@ func start(ctx context.Context, conn *hostserver.Conn, cred *ibminet.PasswordCre
 	}
 
 	attributes := message.SeedAttributes // the V5R4 golden value
-	if family == auth.FamilySHA512 {
+	if _, isPassword := cred.(*ibminet.PasswordCredential); isPassword && family == auth.FamilySHA512 {
 		attributes = message.SeedAttributesLevel4
 	}
 	f, _, err := conn.Exchange(ctx, message.ExchangeSeedsFrameWithAttributes(clientSeed, attributes), expectSeeds)

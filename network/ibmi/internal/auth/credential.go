@@ -56,6 +56,14 @@ func FamilyForLevel(level byte) (Family, error) {
 	return 0, fmt.Errorf("%w: %d", ErrUnsupportedPasswordLevel, level)
 }
 
+// Credential is a host-server credential: a *PasswordCredential or a
+// *ProfileToken. The interface is sealed.
+type Credential interface {
+	credential()
+}
+
+func (c *PasswordCredential) credential() {}
+
 // ErrCredentialDestroyed is returned when a destroyed credential is used.
 var ErrCredentialDestroyed = errors.New("auth: credential destroyed")
 
@@ -109,14 +117,19 @@ func (c *PasswordCredential) GoString() string { return redacted }
 // which would otherwise reach the struct fields.
 func (c *PasswordCredential) Format(f fmt.State, verb rune) { _, _ = io.WriteString(f, redacted) }
 
-// Substitute is one derived password substitute with what is needed to send
-// it. Wipe it after use.
+// Substitute is the authentication material for one request: a derived
+// password substitute (sent in CP 0x1105 with the profile in CP 0x1104) or a
+// profile token (CredentialTypeProfileToken, sent in CP 0x1115 without a
+// profile). Wipe it after use.
 type Substitute struct {
 	CredentialType byte
 	Value          []byte
-	// Profile is the 10-byte EBCDIC profile for CP 0x1104.
+	// Profile is the 10-byte EBCDIC profile for CP 0x1104; zero for a token.
 	Profile [ProfileLength]byte
 }
+
+// IsToken reports whether the material is a profile token.
+func (s Substitute) IsToken() bool { return s.CredentialType == CredentialTypeProfileToken }
 
 // Wipe clears the substitute value and profile.
 func (s *Substitute) Wipe() {
@@ -130,10 +143,24 @@ func (s Substitute) String() string { return "auth.Substitute{redacted}" }
 // GoString keeps the substitute out of %#v.
 func (s Substitute) GoString() string { return "auth.Substitute{redacted}" }
 
-// Derive computes the password substitute for one connection's seed pair.
-// Each host-server connection uses its own seeds, so a substitute must never
-// be reused across connections.
-func Derive(c *PasswordCredential, family Family, clientSeed, serverSeed [SeedLength]byte) (Substitute, error) {
+// Derive returns the authentication material of cred for one connection.
+// For a password it computes the substitute for this connection's seed
+// pair (a substitute must never be reused across connections); a profile
+// token ignores family and the seeds.
+func Derive(cred Credential, family Family, clientSeed, serverSeed [SeedLength]byte) (Substitute, error) {
+	switch c := cred.(type) {
+	case *PasswordCredential:
+		return derivePassword(c, family, clientSeed, serverSeed)
+	case *ProfileToken:
+		return c.substitute()
+	}
+	return Substitute{}, errors.New("auth: nil or unsupported credential")
+}
+
+func derivePassword(c *PasswordCredential, family Family, clientSeed, serverSeed [SeedLength]byte) (Substitute, error) {
+	if c == nil {
+		return Substitute{}, errors.New("auth: nil credential")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.destroyed {

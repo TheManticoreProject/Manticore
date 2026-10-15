@@ -162,3 +162,15 @@ func TestParseExchangeAttributesReply(t *testing.T) {
 		t.Errorf("short reply error = %v", err)
 	}
 }
+
+func TestStartServerWithToken(t *testing.T) {
+	token := bytes.Repeat([]byte{0x5A}, 32)
+	f, err := message.StartServerRequest{CredentialType: message.CredentialTypeProfileToken, Substitute: token, Profile: [10]byte{1}}.Frame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]byte{0, 0, 0, 38, 0x11, 0x15}, token...)
+	if f.Template[0] != 0x02 || f.Template[1] != 0x01 || !bytes.Equal(f.Variable, want) {
+		t.Errorf("7002 with token = % x / % x", f.Template, f.Variable)
+	}
+}

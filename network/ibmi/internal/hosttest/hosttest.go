@@ -12,6 +12,7 @@ package hosttest
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -75,10 +76,39 @@ type Server struct {
 	// script a mismatched reply.
 	AttributesCorrelationDelta uint32
 
+	// TokenRC forces a 0xF007 return code.
+	TokenRC uint32
+
 	mu       sync.Mutex
 	requests []Request
 	open     int
 	wg       sync.WaitGroup
+	// tokens maps issued profile tokens to their state.
+	tokens map[string]*issuedToken
+}
+
+type issuedToken struct {
+	singleUse bool
+	used      bool
+}
+
+// tokenRC checks a presented profile token, consuming a single-use one.
+func (s *Server) tokenRC(token []byte) uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tokens[string(token)]
+	if !ok || (t.singleUse && t.used) {
+		return 0x00060001 // profile token not valid
+	}
+	t.used = true
+	return 0
+}
+
+// Tokens returns how many profile tokens the server issued.
+func (s *Server) Tokens() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.tokens)
 }
 
 func (s *Server) defaults() {
@@ -254,15 +284,58 @@ func (s *Server) serveSignon(c net.Conn) {
 				hostserver.Field{CodePoint: 0x1119, Value: []byte{s.PasswordLevel}}))
 		case 0x7004:
 			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+			rc := s.SignonRC
+			if req.CredentialType == 0x02 {
+				token, _ := fs.Get(0x1115)
+				req.Substitute = append([]byte(nil), token...)
+				s.record(req)
+				if _, hasProfile := fs.Get(0x1104); rc == 0 && hasProfile {
+					rc = 0x00010010 // a token request carries no profile
+				}
+				if rc == 0 {
+					rc = s.tokenRC(token)
+				}
+				write(c, Reply(hostserver.ServerIDSignon, 0xF004, 0, u32(rc),
+					hostserver.Field{CodePoint: 0x1114, Value: u32(s.SystemCCSID)}))
+				continue
+			}
 			got, _ := fs.Get(0x1105)
 			req.Substitute = append([]byte(nil), got...)
 			s.record(req)
-			rc := s.SignonRC
 			if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
 				rc = 0x0003000B
 			}
 			write(c, Reply(hostserver.ServerIDSignon, 0xF004, 0, u32(rc),
 				hostserver.Field{CodePoint: 0x1114, Value: u32(s.SystemCCSID)}))
+		case 0x7007:
+			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
+			got, _ := fs.Get(0x1105)
+			typ, _ := fs.Get(0x1116)
+			req.Substitute = append([]byte(nil), got...)
+			req.CredentialType = f.Template[0]
+			s.record(req)
+			rc := s.TokenRC
+			if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
+				rc = 0x0003000B
+			}
+			if rc != 0 {
+				write(c, Reply(hostserver.ServerIDSignon, 0xF007, 0, u32(rc)))
+				continue
+			}
+			token := make([]byte, 32)
+			_, _ = rand.Read(token)
+			s.mu.Lock()
+			if s.tokens == nil {
+				s.tokens = map[string]*issuedToken{}
+			}
+			s.tokens[string(token)] = &issuedToken{singleUse: len(typ) == 1 && typ[0] == 0xF1}
+			s.mu.Unlock()
+			// Return code, a 6-byte prefix (CP 0x1115 envelope), the token.
+			body := append(u32(0), 0, 0, 0, 0x26, 0x11, 0x15)
+			write(c, hostserver.Frame{
+				Header:   hostserver.Header{ServerID: hostserver.ServerIDSignon, RequestID: 0xF007},
+				Template: body[:4], Variable: append(body[4:], token...),
+			})
 		default:
 			s.record(req) // 0x7006 and anything else: no reply
 		}
@@ -296,13 +369,24 @@ func (s *Server) serveRemoteCommand(c net.Conn) {
 			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF001, 0, append(u32(0), serverSeed[:]...)))
 		case 0x7002:
 			fs, _ := hostserver.ParseFields(f.Variable, hostserver.FieldPolicy{})
-			got, _ := fs.Get(0x1105)
-			req.Substitute = append([]byte(nil), got...)
-			s.record(req)
 			rc := s.StartRC
-			if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
-				rc = 0x0003000B
+			if req.CredentialType == 0x02 {
+				token, _ := fs.Get(0x1115)
+				req.Substitute = append([]byte(nil), token...)
+				if _, hasProfile := fs.Get(0x1104); rc == 0 && hasProfile {
+					rc = 0x00010010
+				}
+				if rc == 0 {
+					rc = s.tokenRC(token)
+				}
+			} else {
+				got, _ := fs.Get(0x1105)
+				req.Substitute = append([]byte(nil), got...)
+				if want, err := auth.Derive(cred, s.family(), clientSeed, serverSeed); rc == 0 && (err != nil || !bytes.Equal(got, want.Value)) {
+					rc = 0x0003000B
+				}
 			}
+			s.record(req)
 			codec, _ := ccsid.Lookup(ccsid.CCSID37)
 			job, _ := ccsid.EncodeFixed(codec, s.JobName, 28)
 			write(c, Reply(hostserver.ServerIDRemoteCommand, 0xF002, 0, u32(rc),

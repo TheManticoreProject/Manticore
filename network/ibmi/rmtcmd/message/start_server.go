@@ -13,9 +13,10 @@ const StartAttributes byte = 0x02
 
 // Credential types carried in the first 0x7002 template byte.
 const (
-	CredentialTypeDES    byte = 0x01
-	CredentialTypeSHA1   byte = 0x03
-	CredentialTypeSHA512 byte = 0x07 // password level 4
+	CredentialTypeDES          byte = 0x01
+	CredentialTypeProfileToken byte = 0x02 // CP 0x1115, no profile
+	CredentialTypeSHA1         byte = 0x03
+	CredentialTypeSHA512       byte = 0x07 // password level 4
 )
 
 // StartServerRequest is request 0x7002. Its frame contains the substitute:
@@ -28,18 +29,24 @@ type StartServerRequest struct {
 }
 
 // Frame encodes the request: template = credential type and send-reply 1,
-// then CP 0x1105 substitute and CP 0x1104 profile.
+// then CP 0x1105 substitute and CP 0x1104 profile, or CP 0x1115 profile
+// token alone.
 func (r StartServerRequest) Frame() (hostserver.Frame, error) {
-	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
+	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeProfileToken: 32, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
 	if want == 0 {
 		return hostserver.Frame{}, fmt.Errorf("message: unsupported credential type 0x%02X", r.CredentialType)
 	}
 	if len(r.Substitute) != want {
-		return hostserver.Frame{}, fmt.Errorf("message: credential type 0x%02X needs a %d-byte substitute, got %d", r.CredentialType, want, len(r.Substitute))
+		return hostserver.Frame{}, fmt.Errorf("message: credential type 0x%02X needs %d bytes, got %d", r.CredentialType, want, len(r.Substitute))
 	}
 	var v []byte
-	v, _ = hostserver.AppendField(v, CPPasswordSubstitute, r.Substitute)
-	v, _ = hostserver.AppendField(v, CPUserID, r.Profile[:])
+	if r.CredentialType == CredentialTypeProfileToken {
+		// A profile token identifies its profile; no CP 0x1104 is sent.
+		v, _ = hostserver.AppendField(v, CPAuthToken, r.Substitute)
+	} else {
+		v, _ = hostserver.AppendField(v, CPPasswordSubstitute, r.Substitute)
+		v, _ = hostserver.AppendField(v, CPUserID, r.Profile[:])
+	}
 	return hostserver.Frame{
 		Header: hostserver.Header{
 			Attributes: uint16(StartAttributes) << 8,

@@ -9,12 +9,39 @@ import (
 
 // Credential types carried in the one-byte 0x7004 template.
 const (
-	CredentialTypeDES    byte = 0x01
-	CredentialTypeSHA1   byte = 0x03
-	CredentialTypeSHA512 byte = 0x07 // password level 4
+	CredentialTypeDES          byte = 0x01
+	CredentialTypeProfileToken byte = 0x02 // CP 0x1115, no profile
+	CredentialTypeSHA1         byte = 0x03
+	CredentialTypeSHA512       byte = 0x07 // password level 4
 )
 
-// RetrieveInfoRequest is request 0x7004: it validates a password substitute.
+// credentialLengths is the exact material length of each credential type.
+var credentialLengths = map[byte]int{
+	CredentialTypeDES: 8, CredentialTypeProfileToken: 32, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64,
+}
+
+// credentialFields encodes the authentication material: a password
+// substitute in CP 0x1105 followed by the profile in CP 0x1104, or a
+// profile token in CP 0x1115 with no profile.
+func credentialFields(credType byte, material []byte, profile [10]byte) ([]hostserver.Field, error) {
+	want := credentialLengths[credType]
+	if want == 0 {
+		return nil, fmt.Errorf("message: unsupported credential type 0x%02X", credType)
+	}
+	if len(material) != want {
+		return nil, fmt.Errorf("message: credential type 0x%02X needs %d bytes, got %d", credType, want, len(material))
+	}
+	if credType == CredentialTypeProfileToken {
+		return []hostserver.Field{{CodePoint: CPAuthToken, Value: material}}, nil
+	}
+	return []hostserver.Field{
+		{CodePoint: CPPasswordSubstitute, Value: material},
+		{CodePoint: CPUserID, Value: profile[:]},
+	}, nil
+}
+
+// RetrieveInfoRequest is request 0x7004: it validates a password substitute
+// or a profile token.
 // The frame contains the substitute; never log it, and wipe the frame's
 // Variable slice after sending.
 type RetrieveInfoRequest struct {
@@ -25,23 +52,18 @@ type RetrieveInfoRequest struct {
 }
 
 // Frame encodes the request: template = credential type, then CP 0x1113
-// client CCSID 13488, CP 0x1105 substitute and CP 0x1104 profile.
+// client CCSID 13488 and the credential (CP 0x1105 substitute and CP 0x1104
+// profile, or CP 0x1115 profile token).
 func (r RetrieveInfoRequest) Frame() (hostserver.Frame, error) {
-	want := map[byte]int{CredentialTypeDES: 8, CredentialTypeSHA1: 20, CredentialTypeSHA512: 64}[r.CredentialType]
-	if want == 0 {
-		return hostserver.Frame{}, fmt.Errorf("message: unsupported credential type 0x%02X", r.CredentialType)
+	cred, err := credentialFields(r.CredentialType, r.Substitute, r.Profile)
+	if err != nil {
+		return hostserver.Frame{}, err
 	}
-	if len(r.Substitute) != want {
-		return hostserver.Frame{}, fmt.Errorf("message: credential type 0x%02X needs a %d-byte substitute, got %d", r.CredentialType, want, len(r.Substitute))
-	}
+	fields := append([]hostserver.Field{{CodePoint: CPClientCCSID, Value: u32(ClientCCSID)}}, cred...)
 	return hostserver.Frame{
 		Header:   hostserver.Header{ServerID: hostserver.ServerIDSignon, RequestID: RequestRetrieveInfo},
 		Template: []byte{r.CredentialType},
-		Variable: appendFields(
-			hostserver.Field{CodePoint: CPClientCCSID, Value: u32(ClientCCSID)},
-			hostserver.Field{CodePoint: CPPasswordSubstitute, Value: r.Substitute},
-			hostserver.Field{CodePoint: CPUserID, Value: r.Profile[:]},
-		),
+		Variable: appendFields(fields...),
 	}, nil
 }
 

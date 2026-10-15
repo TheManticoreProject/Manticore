@@ -33,6 +33,9 @@ var (
 	ErrAlreadyConnected = errors.New("client: Connect already called; create a new Client")
 	// ErrNotReady is matched when an operation needs a ready session.
 	ErrNotReady = errors.New("client: session not ready")
+	// ErrSingleUseToken is returned by Connect for a single-use profile
+	// token, which cannot authenticate both Sign-on and Remote Command.
+	ErrSingleUseToken = errors.New("client: Connect needs a multiple-use profile token")
 	// ErrReservationReleased is returned when a callback-scoped handle is
 	// used after its callback returned.
 	ErrReservationReleased = errors.New("client: exclusive reservation used after its callback returned")
@@ -101,11 +104,20 @@ func (c *Client) DiscoverServices(ctx context.Context) (ibminet.ServiceCatalog, 
 }
 
 // Connect validates cred with the Sign-on server, then starts the Remote
-// Command server job. It may be called once; on failure every socket it
-// opened is closed and the Client becomes closed. cred is not retained.
-func (c *Client) Connect(ctx context.Context, cred *ibminet.PasswordCredential) error {
+// Command server job. cred is a *PasswordCredential or a multiple-use
+// *ProfileToken (a single-use token is rejected with ErrSingleUseToken
+// because Connect authenticates twice). It may be called once; on failure
+// every socket it opened is closed and the Client becomes closed. cred is
+// not retained.
+func (c *Client) Connect(ctx context.Context, cred ibminet.Credential) error {
 	if cred == nil {
 		return errors.New("client: nil credential")
+	}
+	// Connect authenticates twice (Sign-on, then Remote Command), so a
+	// single-use token would be spent by the first and refused by the
+	// second. Reject it before any I/O.
+	if t, ok := cred.(*ibminet.ProfileToken); ok && t.Type() == ibminet.TokenSingleUse {
+		return ErrSingleUseToken
 	}
 	if err := c.acquire(ctx); err != nil {
 		return err
@@ -128,7 +140,7 @@ func (c *Client) Connect(ctx context.Context, cred *ibminet.PasswordCredential) 
 	return nil
 }
 
-func (c *Client) connect(ctx context.Context, cred *ibminet.PasswordCredential) (SessionInfo, *rmtcmd.Session, error) {
+func (c *Client) connect(ctx context.Context, cred ibminet.Credential) (SessionInfo, *rmtcmd.Session, error) {
 	catalog, err := c.DiscoverServices(ctx)
 	if err != nil {
 		return SessionInfo{}, nil, fmt.Errorf("client: discover services: %w", err)
@@ -197,4 +209,17 @@ func (c *Client) Close() error {
 	}
 	c.setState(stateClosed)
 	return err
+}
+
+// GenerateProfileToken authenticates cred with the Sign-on server and asks
+// it to issue a profile token (see signon.GenerateProfileToken). It needs
+// no connected session and does not change the Client's state. Use a
+// multiple-use token with Connect; a single-use token suits one
+// authentication elsewhere.
+func (c *Client) GenerateProfileToken(ctx context.Context, cred *ibminet.PasswordCredential, req signon.TokenRequest) (*ibminet.ProfileToken, error) {
+	catalog, err := c.DiscoverServices(ctx)
+	if err != nil && catalog.Signon.Port == 0 {
+		return nil, fmt.Errorf("client: discover services: %w", err)
+	}
+	return signon.GenerateProfileToken(ctx, catalog.Signon, cred, req, signon.Options{Dialer: c.cfg.dialer(), CleanupTimeout: c.cfg.CleanupTimeout})
 }
