@@ -35,8 +35,10 @@
 //     limited capabilities): the latter gets the 0x8001 "limited user"
 //     warning and lists only the profiles it may read. Request layouts follow
 //     the V5R4-era JTOpen 4.8 generation (Sign-on data-stream level 2, client
-//     CCSID 13488). Later releases are expected to work from IBM's documented
-//     layouts but have not been validated live.
+//     CCSID 13488). V7R5M0 is also validated live with an administrator
+//     profile (the same sequence plus profile tokens and data queues).
+//     Releases between them are expected to work but have not been
+//     validated live.
 //   - Password levels: 0/1 (DES substitute) and 2/3 (SHA-1 substitute),
 //     both checked against JTOpen 4.8 known-answer vectors; the live V5R4
 //     system used level 0. Level 4 (PBKDF2-HMAC-SHA512 token, 64-byte
@@ -50,10 +52,14 @@
 //     Kerberos, identity tokens and EIM-issued tokens are not supported
 //     (issue #1464), nor are additional authentication factors (issue
 //     #1465).
-//   - Remote Command data-stream level: validated live at level 7.
-//     Input/output parameters use usage 13 below level 5 and 33 from level
-//     5; "all messages" is honored from level 7 and downgraded below it;
-//     the explicit command CCSID form is used from level 10.
+//   - Remote Command data-stream level: validated live at level 7 (V5R4)
+//     and 11 (V7R5). Input/output parameters use usage 13 below level 5 and
+//     33 from level 5; "all messages" is honored from level 7 and
+//     downgraded below it. From level 10 commands are sent as UTF-16BE
+//     tagged CCSID 1200 (the only tagging V7R5 accepts) and messages come
+//     back as 0x1106 (level 10) or 0x1107 (level 11+, IBM's RCVM0300
+//     order) records, which also carry help text; level 10 itself has no
+//     live target, so its 0x1106 records were captured from V7R5.
 //   - CCSIDs: 37 and 1140 for both the system and job CCSID. Any other
 //     value fails the connection unless client.Config.JobCCSIDOverride names
 //     a supported one, which always adds a warning.

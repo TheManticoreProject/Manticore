@@ -504,3 +504,42 @@ func OutputEnvelope(usage uint16, length uint32, payload []byte) []byte {
 	b = binary.BigEndian.AppendUint16(b, usage)
 	return append(b, payload...)
 }
+
+// RCVM0300Record builds a 0x1107 message record, as level-11 Remote
+// Command servers return for message options 5 and 6: 26 length-prefixed
+// fields in QMHRCVPM RCVM0300 order, character fields in CCSID 37 and the
+// text and data CCSIDs set to 65535.
+func RCVM0300Record(id string, messageType uint8, severity uint32, file, library string, substitution []byte, text, help string) []byte {
+	codec, _ := ccsid.Lookup(ccsid.CCSID37)
+	enc := func(s string) []byte {
+		b, err := codec.Encode(s)
+		if err != nil {
+			panic("hosttest: " + err.Error())
+		}
+		return b
+	}
+	var body []byte
+	field := func(v []byte) { body = append(binary.BigEndian.AppendUint32(body, uint32(len(v))), v...) }
+	u32 := func(v uint32) []byte { return binary.BigEndian.AppendUint32(nil, v) }
+	field(u32(severity))
+	field(enc(id))
+	field([]byte{0xF0 | messageType/10, 0xF0 | messageType%10})
+	field(u32(0xCA)) // key
+	field(enc(file))
+	field(enc("*LIBL"))
+	field(enc(library))
+	for _, v := range []string{"QZRCSRVS", "QUSER", "000001", "QLICKOBJ", "025B", "1261019", "120000", "QZRCSRVS", "0000", "0", "1"} {
+		field(enc(v))
+	}
+	field(u32(1))
+	field(u32(2))
+	field(enc("*NO"))
+	field(u32(0xFFFF))
+	field(u32(0xFFFF))
+	field(substitution)
+	field(enc(text))
+	field(enc(help))
+	r := binary.BigEndian.AppendUint32(nil, uint32(6+len(body)))
+	r = binary.BigEndian.AppendUint16(r, 0x1107)
+	return append(r, body...)
+}

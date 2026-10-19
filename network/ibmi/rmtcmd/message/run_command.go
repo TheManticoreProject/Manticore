@@ -22,9 +22,15 @@ type RunCommandRequest struct {
 	MessageOption byte
 	Command       []byte
 	// CommandCCSID, when non-nil (Remote Command level 10 and later),
-	// selects CP 0x1104 with this 4-byte CCSID before the command bytes.
+	// selects CP 0x1104 with this 4-byte CCSID before the command bytes,
+	// which must then be in that CCSID. Servers accept CommandCCSIDUTF16.
 	CommandCCSID *uint32
 }
+
+// CommandCCSIDUTF16 tags a UTF-16BE command in CP 0x1104, the only form a
+// V7R5M0 server accepted: EBCDIC tagged 37 and UTF-16 tagged 13488 both
+// fail with return code 0x0401.
+const CommandCCSIDUTF16 uint32 = 1200
 
 // Frame encodes the request: a 1-byte template (message option), then the
 // command field.
