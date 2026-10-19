@@ -90,7 +90,9 @@ type Server struct {
 	// Files maps IFS paths to their content for the File server.
 	Files map[string][]byte
 	// FileLevel is the 0x8009 data-stream level (default 12, what V5R4
-	// returns); FilePathCCSID the pathname CCSID (default 1200).
+	// returns; V7R5 returns 24); FilePathCCSID the pathname CCSID (default
+	// 1200). Like a real server, the fake lays packets out by the level the
+	// client requested and rejects a level-8 open after a request of 16+.
 	FileLevel     uint16
 	FilePathCCSID uint16
 	// FileChunk, when nonzero, splits read replies into chained packets of

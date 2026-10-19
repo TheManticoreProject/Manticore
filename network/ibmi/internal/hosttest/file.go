@@ -13,6 +13,7 @@ func (s *Server) serveFile(c net.Conn) {
 	var clientSeed [8]byte
 	open := map[uint32][]byte{} // handle -> content
 	next := uint32(0x100)
+	var requested uint16 // the level asked for in 0x0016
 	for {
 		f, err := readFrame(c)
 		if err != nil {
@@ -39,7 +40,10 @@ func (s *Server) serveFile(c net.Conn) {
 				continue
 			}
 		}
-		for _, r := range s.fileReplies(f, open, &next) {
+		if h.RequestID == 0x0016 && len(f.Template) >= 4 {
+			requested = binary.BigEndian.Uint16(f.Template[2:])
+		}
+		for _, r := range s.fileReplies(f, open, &next, requested) {
 			write(c, r)
 		}
 	}
@@ -47,7 +51,7 @@ func (s *Server) serveFile(c net.Conn) {
 
 // fileReplies implements the docs/08 level-below-16 read path against
 // s.Files, with the reply forms observed on V5R4.
-func (s *Server) fileReplies(f hostserver.Frame, open map[uint32][]byte, next *uint32) []hostserver.Frame {
+func (s *Server) fileReplies(f hostserver.Frame, open map[uint32][]byte, next *uint32, requested uint16) []hostserver.Frame {
 	h := f.Header
 	b := append(append([]byte(nil), f.Template...), f.Variable...)
 	reply := func(id uint16, body []byte) hostserver.Frame {
@@ -63,7 +67,7 @@ func (s *Server) fileReplies(f hostserver.Frame, open map[uint32][]byte, next *u
 		body = append(body, 0, 0, 0, 8, 0, 0x0A)
 		return []hostserver.Frame{reply(0x8009, binary.BigEndian.AppendUint16(body, s.FilePathCCSID))}
 	case 0x0002:
-		if len(b) < 42 {
+		if len(b) < 42 || requested >= 16 && len(f.Template) == 36 {
 			return rc(17)
 		}
 		fields, err := hostserver.ParseFields(b[36:], hostserver.FieldPolicy{})

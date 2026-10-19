@@ -6,12 +6,12 @@
 // connection dialed to the File endpoint with the same credential and
 // password family as Sign-on (see network/ibmi/client.OpenIFS). Start
 // requests data-stream level 8, as the V5R3-V5R4 client does, and learns
-// the pathname CCSID. Every level below 16 shares the 32-bit layouts this
-// package implements (V5R4 answers 12); a server answering 16 or more is
-// refused rather than spoken to in the wrong layout. Paths
-// are sent exactly as given, in the negotiated pathname CCSID (UTF-16BE for
-// CCSIDs 1200 and 13488), with no case change or normalization; file bytes
-// are returned unconverted.
+// the pathname CCSID. The server lays its packets out by the level the
+// client requested, whatever level it reports itself (12 on V5R4, 24 on
+// V7R5), so every request uses the level-8, 32-bit layouts: files are
+// readable up to offset 2^31-1. Paths are sent exactly as given, in the
+// negotiated pathname CCSID (UTF-16BE for CCSIDs 1200 and 13488), with no
+// case change or normalization; file bytes are returned unconverted.
 //
 // Operations on a Session are serialized, so it is safe for concurrent
 // use. A read may be answered by a chain of replies; the whole chain is

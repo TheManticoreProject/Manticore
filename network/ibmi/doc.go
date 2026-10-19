@@ -79,7 +79,9 @@
 //     was confirmed there.
 //   - File (IFS): open, read and close of a stream file validated live on
 //     V5R4 with the least-privileged profile (a 3.5 MB file read whole,
-//     end of file, missing file and directory errors). Writing, directory
+//     end of file, missing file and directory errors) and on V7R5M0 with
+//     an administrator profile; requests always use the level-8 layouts,
+//     which V7R5 accepts although it reports level 24. Writing, directory
 //     listing and attribute queries are not implemented.
 //
 // # TLS on V5R4

@@ -40,7 +40,9 @@ type StartOptions struct {
 
 // Info is the non-secret state negotiated by Start.
 type Info struct {
-	// DataStreamLevel is the level the server returned (at most 15).
+	// DataStreamLevel is the server's own level as it reported it (12 on
+	// V5R4, 24 on V7R5). It does not select the layouts: the server reads
+	// the level-8 forms this package requested at every reported level.
 	DataStreamLevel uint16
 	// MaxBlock is the server's advertised maximum data block.
 	MaxBlock uint32
@@ -137,9 +139,6 @@ func start(ctx context.Context, conn *hostserver.Conn, cred ibminet.Credential, 
 	attrs, err := message.ParseAttributesReply(reply)
 	if err != nil {
 		return nil, s.replyOutcome(op, err)
-	}
-	if attrs.Level >= 16 {
-		return nil, fmt.Errorf("%w: data-stream level %d (only levels below 16 are implemented)", ErrUnsupported, attrs.Level)
 	}
 	if c := attrs.CCSIDs[0]; c != 1200 && c != 13488 {
 		return nil, fmt.Errorf("%w: pathname CCSID %d", ErrUnsupported, c)
