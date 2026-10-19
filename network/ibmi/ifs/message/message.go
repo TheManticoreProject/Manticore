@@ -17,6 +17,11 @@
 // point 0x0005 (kept, never checked); end of file is an empty 0x8003; a
 // read of 4 MiB came back as a single packet; close answers 0x8004 with
 // the return code followed by four zero bytes.
+//
+// Observed on V7R5 (2026-10-19): the server reports level 24 to a level-8
+// request yet accepts and answers the level-8 layouts (a 69-byte 0x8002);
+// after a level-16 request it rejects a level-8 open with return code 17.
+// The layout therefore follows the requested level, not the reported one.
 package message
 
 import (

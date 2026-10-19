@@ -107,7 +107,6 @@ func TestStartFailures(t *testing.T) {
 		t.Errorf("requests = %+v", srv.Requests())
 	}
 	for name, mutate := range map[string]func(*hosttest.Server){
-		"level 16":    func(s *hosttest.Server) { s.FileLevel = 16 },
 		"CCSID 61952": func(s *hosttest.Server) { s.FilePathCCSID = 61952 },
 	} {
 		srv := newServer()
@@ -128,6 +127,21 @@ func TestStartFailures(t *testing.T) {
 		if _, err := start(t, newServer(), password(t, testPassword), opts); err == nil {
 			t.Errorf("options %+v accepted", opts)
 		}
+	}
+}
+
+// A V6R1+ server reports its own level (24 on V7R5) yet reads the level-8
+// layouts the client requested; the session must work unchanged.
+func TestServerReportingLevel24(t *testing.T) {
+	srv := newServer()
+	srv.FileLevel = 24
+	s := session(t, srv, ifs.StartOptions{})
+	if s.Info().DataStreamLevel != 24 {
+		t.Errorf("info = %+v", s.Info())
+	}
+	data, err := s.ReadFile(context.Background(), "/big.bin", 300_000)
+	if err != nil || !bytes.Equal(data, content(300_000)) {
+		t.Fatalf("ReadFile = %d bytes, %v", len(data), err) // the fake rejects level-8 opens after a level-16 request
 	}
 }
 
