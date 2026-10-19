@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/ibmi/api/users"
+	"github.com/TheManticoreProject/Manticore/ibmi/rpc"
 	ibminet "github.com/TheManticoreProject/Manticore/network/ibmi"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/client"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/dataqueue"
@@ -100,7 +101,7 @@ func TestLiveReadOnlySequence(t *testing.T) {
 		info.RemoteCommandLevel, info.Capabilities, info.ServerJob, info.Warnings)
 
 	cmd, err := c.RunCommand(ctx, "DSPJOB OUTPUT(*PRINT) OPTION(*DFNA)", rmtcmd.RunCommandOptions{})
-	if err != nil && !errors.Is(err, rmtcmd.ErrNative) {
+	if err != nil {
 		t.Fatalf("DSPJOB: %v", err)
 	}
 	ids := []string{}
@@ -108,6 +109,29 @@ func TestLiveReadOnlySequence(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	t.Logf("DSPJOB return code 0x%04X, effective option %s, message IDs %v", cmd.ReturnCode, cmd.EffectiveMessageOption, ids)
+
+	// Read-only failures: the messages must decode in whatever format the
+	// negotiated level returns (classic, 0x1106 or 0x1107).
+	var ne *rmtcmd.NativeError
+	_, err = c.RunCommand(ctx, "CHKOBJ OBJ(QSYS/MNTNOSUCH) OBJTYPE(*MSGQ)", rmtcmd.RunCommandOptions{MessageOption: rpc.MessagesAll})
+	if !errors.As(err, &ne) || len(ne.Messages) == 0 || ne.Messages[0].ID != "CPF9801" || ne.Messages[0].Text == "" ||
+		info.RemoteCommandLevel >= 10 && ne.Messages[0].Help == "" {
+		t.Fatalf("CHKOBJ of a missing object = %v (%+v)", err, ne)
+	}
+	t.Logf("CHKOBJ of a missing object: return code 0x%04X, %s, help %d characters", ne.ReturnCode, ne.Messages[0], len(ne.Messages[0].Help))
+	lib, _ := rpc.NewObjectName("QSYS")
+	pgm, _ := rpc.NewObjectName("MNTNOSUCH")
+	call, err := rpc.NewCall(lib, pgm, nil, rpc.MessagesAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.Call(ctx, call); !errors.As(err, &ne) || len(ne.Messages) == 0 || ne.Messages[0].ID == "" {
+		t.Fatalf("call of a missing program = %v (%+v)", err, ne)
+	}
+	t.Logf("call of a missing program: return code 0x%04X, %s", ne.ReturnCode, ne.Messages[0])
+	if c.SessionInfo().Connected == false {
+		t.Fatal("the session was lost after native failures")
+	}
 
 	u, err := users.New(c, users.Options{SystemCCSID: info.SystemCCSID, JobCCSID: info.JobCCSID})
 	if err != nil {

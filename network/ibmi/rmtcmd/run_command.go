@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/TheManticoreProject/Manticore/ibmi/rpc"
 	"github.com/TheManticoreProject/Manticore/network/ibmi/hostserver"
@@ -52,17 +54,26 @@ func (s *Session) RunCommand(ctx context.Context, command string, opts RunComman
 	if !requested.Valid() {
 		return nil, fmt.Errorf("rmtcmd: %s: undefined message option %s", op, requested)
 	}
-	encoded, err := s.codec.Encode(command)
-	if err != nil {
-		return nil, fmt.Errorf("rmtcmd: %s: %w", op, err)
+	var req message.RunCommandRequest
+	if s.info.Capabilities.ExplicitCommandCCSID {
+		// Level 10+ servers accept the CCSID-tagged command only as
+		// UTF-16BE tagged 1200; EBCDIC tagged with the job CCSID fails
+		// with 0x0401 (observed on V7R5M0).
+		if !utf8.ValidString(command) {
+			return nil, fmt.Errorf("rmtcmd: %s: command is not valid UTF-8", op)
+		}
+		ccsid := message.CommandCCSIDUTF16
+		req.Command, req.CommandCCSID = utf16BE(command), &ccsid
+	} else {
+		encoded, err := s.codec.Encode(command)
+		if err != nil {
+			return nil, fmt.Errorf("rmtcmd: %s: %w", op, err)
+		}
+		req.Command = encoded
 	}
-	req := message.RunCommandRequest{Command: encoded}
 	var effective rpc.MessageOption
 	req.MessageOption, effective = wireMessageOption(requested, s.info.Capabilities)
-	if s.info.Capabilities.ExplicitCommandCCSID {
-		ccsid := s.info.JobCCSID
-		req.CommandCCSID = &ccsid
-	}
+	var err error
 	if req.Correlation, err = s.corr.Next(); err != nil {
 		return nil, err
 	}
@@ -107,4 +118,14 @@ func (s *Session) RunCommand(ctx context.Context, command string, opts RunComman
 		_ = s.conn.Poison(native)
 	}
 	return result, native
+}
+
+// utf16BE encodes s as big-endian UTF-16 code units, with no BOM.
+func utf16BE(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	b := make([]byte, 0, 2*len(units))
+	for _, u := range units {
+		b = append(b, byte(u>>8), byte(u))
+	}
+	return b
 }

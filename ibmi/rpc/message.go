@@ -20,6 +20,9 @@ type IBMMessage struct {
 	LibraryName string
 	// Text is the first-level message text, decoded from the job CCSID.
 	Text string
+	// Help is the second-level (help) text, when the server's message
+	// format carries it (Remote Command level 10 and later); else "".
+	Help string
 	// SubstitutionData is the raw replacement data for the message text.
 	SubstitutionData []byte
 }

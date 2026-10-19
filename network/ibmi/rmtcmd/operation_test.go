@@ -104,8 +104,14 @@ func TestRunCommandLayoutsByLevel(t *testing.T) {
 		if seen.Template[0] != tc.wantOpt || res.EffectiveMessageOption != tc.effective || cp != tc.wantCP {
 			t.Errorf("level %d: option %d effective %s CP 0x%04X", tc.level, seen.Template[0], res.EffectiveMessageOption, cp)
 		}
-		if tc.wantCP == 0x1104 && binary.BigEndian.Uint32(seen.Variable[6:]) != 37 {
-			t.Errorf("level %d: command CCSID % x", tc.level, seen.Variable[6:10])
+		// Level 10+ servers accept only UTF-16BE tagged 1200 (V7R5M0 rejects
+		// EBCDIC tagged 37 with 0x0401); earlier levels take job-CCSID EBCDIC.
+		want := []byte{0xC4, 0xE2, 0xD7, 0xD1, 0xD6, 0xC2} // DSPJOB, CCSID 37
+		if tc.wantCP == 0x1104 {
+			want = []byte{0, 0, 0x04, 0xB0, 0, 'D', 0, 'S', 0, 'P', 0, 'J', 0, 'O', 0, 'B'}
+		}
+		if got := seen.Variable[6:]; !bytes.Equal(got, want) {
+			t.Errorf("level %d: command field % x, want % x", tc.level, got, want)
 		}
 	}
 }
@@ -394,5 +400,31 @@ func TestCorrelationsIncrease(t *testing.T) {
 	}
 	if len(corrs) != 3 || corrs[0] != 2 || corrs[1] != 3 || corrs[2] != 4 {
 		t.Errorf("correlations = %v; 1 is the attribute exchange", corrs)
+	}
+}
+
+// Level-11 servers answer message options 5 and 6 with 0x1107 (RCVM0300)
+// records; Run Command and Program Call must decode them, help included.
+func TestLevel11MessageRecords(t *testing.T) {
+	rec := hosttest.RCVM0300Record("CPF9801", 15, 40, "QCPFMSG", "QSYS", []byte{1, 2}, "Object NOSUCHX in library QSYS not found.", "Cause . . . : The object was not found.")
+	srv := &hosttest.Server{RemoteCommandLevel: 11, Handle: func(f hostserver.Frame) (hostserver.Frame, bool) {
+		id := message.ReplyRunCommand
+		if f.Header.RequestID != message.RequestRunCommand {
+			id = 0x8003 // program call
+		}
+		return hosttest.OperationReply(id, f.Header.CorrelationID, 0x0400, 1, rec), true
+	}}
+	s := session(t, srv, rmtcmd.StartOptions{})
+	res, err := s.RunCommand(context.Background(), "CHKOBJ OBJ(QSYS/NOSUCHX) OBJTYPE(*MSGQ)", rmtcmd.RunCommandOptions{MessageOption: rpc.MessagesAll})
+	if !errors.Is(err, rmtcmd.ErrNative) || res == nil || len(res.Messages) != 1 {
+		t.Fatalf("RunCommand = %+v, %v", res, err)
+	}
+	m := res.Messages[0]
+	if m.ID != "CPF9801" || m.Type != 15 || m.Severity != 40 || m.FileName != "QCPFMSG" || m.LibraryName != "QSYS" ||
+		m.Text != "Object NOSUCHX in library QSYS not found." || m.Help != "Cause . . . : The object was not found." || !bytes.Equal(m.SubstitutionData, []byte{1, 2}) {
+		t.Errorf("message = %+v", m)
+	}
+	if err := s.Err(); err != nil {
+		t.Fatalf("session poisoned: %v", err)
 	}
 }

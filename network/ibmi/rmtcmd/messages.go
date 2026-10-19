@@ -30,7 +30,12 @@ func (s *Session) decodeMessages(count uint16, b []byte) ([]rpc.IBMMessage, erro
 		if err != nil {
 			return nil, err
 		}
-		text, err := s.codec.Decode(r.Text)
+		codec := s.textCodec(r.TextCCSID)
+		text, err := codec.Decode(r.Text)
+		if err != nil {
+			return nil, err
+		}
+		help, err := codec.Decode(r.Help)
 		if err != nil {
 			return nil, err
 		}
@@ -41,10 +46,23 @@ func (s *Session) decodeMessages(count uint16, b []byte) ([]rpc.IBMMessage, erro
 			FileName:         file,
 			LibraryName:      lib,
 			Text:             text,
+			Help:             help,
 			SubstitutionData: r.Substitution,
 		})
 	}
 	return out, nil
+}
+
+// textCodec returns the codec for message text tagged id: the job codec
+// for 0 and 65535 (untagged) and for a CCSID ibmi/ccsid does not support.
+func (s *Session) textCodec(id uint32) ccsid.Codec {
+	if id == 0 || id == 0xFFFF {
+		return s.codec
+	}
+	if c, err := ccsid.Lookup(ccsid.CCSID(id)); err == nil {
+		return c
+	}
+	return s.codec
 }
 
 // wireMessageOption maps a semantic option to the request byte for the
