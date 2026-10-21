@@ -241,8 +241,11 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 	if resp.DialectRevision == smb2dialects.SMB2_DIALECT_WILDCARD {
 		// Wildcard response — perform a follow-up native SMB2 negotiate on the
 		// same transport, offering the SMB2 dialects of the preference list (with
-		// the 3.1.1 negotiate contexts when 3.1.1 is among them).
+		// the 3.1.1 negotiate contexts when 3.1.1 is among them). The
+		// multi-protocol negotiate consumed MessageId 0, so [MS-SMB2] 3.2.5.2
+		// requires this request to use sequence number 1.
 		offerDialects(engine, offered)
+		engine.Connection.MessageId = 1
 		if err := engine.Negotiate(); err != nil {
 			t.Close()
 			return nil, fmt.Errorf("follow-up SMB2 negotiate after wildcard: %w", err)
