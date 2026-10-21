@@ -95,8 +95,13 @@ type AuthenticateMessage struct {
 
 // CreateAuthenticateMessage creates an NTLM AUTHENTICATE message from a cleartext
 // password. When the server negotiated extended session security it uses NTLMv2;
-// otherwise it falls back to NTLMv1.
+// otherwise it falls back to NTLMv1. An empty username and password request
+// anonymous authentication (see CreateAnonymousAuthenticateMessage).
 func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string) (*AuthenticateMessage, error) {
+	if username == "" && password == "" {
+		return CreateAnonymousAuthenticateMessage(challenge, domain, workstation)
+	}
+
 	var v2 *ntlmv2.NTLMv2Ctx
 	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) != 0 {
 		clientChallenge := [8]byte{}
@@ -132,6 +137,59 @@ func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, 
 	return newAuthenticateMessage(challenge, username, "", domain, workstation, v2)
 }
 
+// CreateAnonymousAuthenticateMessage creates the AUTHENTICATE message of an
+// anonymous (null session) authentication. [MS-NLMP] 3.3.1 and 3.3.2 define it as
+// the special case of ComputeResponse where User and Passwd are both empty: the
+// NtChallengeResponse is empty and the LmChallengeResponse is Z(1). The
+// NTLMSSP_NEGOTIATE_ANONYMOUS flag ([MS-NLMP] 2.2.2.5, J) marks the connection as
+// anonymous.
+//
+// No credential feeds the key derivation, so the KeyExchangeKey is Z(16), as the
+// Windows, Samba and impacket clients use. No MIC is sent: the MsvAvFlags that
+// would announce one travel inside the NtChallengeResponse, which is empty.
+func CreateAnonymousAuthenticateMessage(challenge *challenge.ChallengeMessage, domain, workstation string) (*AuthenticateMessage, error) {
+	msg := AuthenticateMessage{}
+	msg.NegotiateFlags = clientNegotiateFlags | flags.NTLMSSP_NEGOTIATE_ANONYMOUS
+
+	keyExchange := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_KEY_EXCH) != 0
+	if keyExchange {
+		msg.NegotiateFlags |= flags.NTLMSSP_NEGOTIATE_KEY_EXCH
+	}
+
+	setIdentityFields(&msg, challenge, domain, "", workstation)
+
+	msg.NtChallengeResponse = []byte{}
+	msg.LmChallengeResponse = []byte{0x00}
+
+	keyExchangeKey := make([]byte, 16)
+	if keyExchange {
+		exportedSessionKey := make([]byte, 16)
+		if _, err := rand.Read(exportedSessionKey); err != nil {
+			return nil, fmt.Errorf("failed to generate an exported session key: %w", err)
+		}
+		wrapped, err := rc4k(keyExchangeKey, exportedSessionKey)
+		if err != nil {
+			return nil, err
+		}
+		msg.EncryptedRandomSessionKey = wrapped
+		msg.SessionKey = exportedSessionKey
+	} else {
+		msg.EncryptedRandomSessionKey = []byte{}
+		msg.SessionKey = keyExchangeKey
+	}
+
+	v := version.DefaultVersion()
+	msg.Version = &v
+
+	return &msg, nil
+}
+
+// IsAnonymous reports whether the message is an anonymous AUTHENTICATE, as built by
+// CreateAnonymousAuthenticateMessage.
+func (msg *AuthenticateMessage) IsAnonymous() bool {
+	return msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_ANONYMOUS != 0
+}
+
 // newAuthenticateMessage builds the AUTHENTICATE message shared by the password and
 // pass-the-hash entry points. When v2 is non-nil the NTLMv2 (extended session security)
 // responses and session key are computed from it; otherwise it falls back to NTLMv1,
@@ -144,21 +202,7 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 	// server's CHALLENGE flags (which include server-only bits such as the target
 	// type and a server VERSION). This matches what the Windows client sends and
 	// what Windows Server 2016 (signing required) accepts.
-	msg.NegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
-		flags.NTLMSSP_REQUEST_TARGET |
-		flags.NTLMSSP_NEGOTIATE_SIGN |
-		flags.NTLMSSP_NEGOTIATE_SEAL |
-		flags.NTLMSSP_NEGOTIATE_NTLM |
-		flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
-		flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
-		flags.NTLMSSP_NEGOTIATE_TARGET_INFO |
-		flags.NTLMSSP_NEGOTIATE_128 |
-		flags.NTLMSSP_NEGOTIATE_56 |
-		// The Version field is physically present in the AUTHENTICATE structure
-		// whether or not this flag is set ([MS-NLMP] 2.2.1.3), and the payload
-		// offsets — and the position of the MIC when one is carried — follow from
-		// that. Emitting it keeps the layout the one a server expects.
-		flags.NTLMSSP_NEGOTIATE_VERSION
+	msg.NegotiateFlags = clientNegotiateFlags
 
 	// Key exchange is only asserted when the server offered it, since a server that
 	// sees the flag MUST then find a valid EncryptedRandomSessionKey or fail the
@@ -168,27 +212,7 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 		msg.NegotiateFlags |= flags.NTLMSSP_NEGOTIATE_KEY_EXCH
 	}
 
-	// Determine if we should use Unicode
-	useUnicode := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_UNICODE) != 0
-
-	// Prepare domain, username, and workstation.
-	//
-	// DomainName MUST be carried with its original case: it has to match, byte for
-	// byte, the domain folded into NTOWFv2 below (NTLMv2 uppercases only the username,
-	// never the domain — MS-NLMP 3.3.2). Uppercasing it here while NTOWFv2 used the
-	// caller's case made the server recompute a different NTProofStr and reject any
-	// mixed/lower-case domain (e.g. an FQDN like "host.example.local") with
-	// STATUS_LOGON_FAILURE; it only worked when the domain was already upper-case or
-	// empty.
-	if useUnicode {
-		msg.DomainName = utf16.EncodeUTF16LE(domain)
-		msg.UserName = utf16.EncodeUTF16LE(username)
-		msg.Workstation = utf16.EncodeUTF16LE(strings.ToUpper(workstation))
-	} else {
-		msg.DomainName = []byte(domain)
-		msg.UserName = []byte(username)
-		msg.Workstation = []byte(strings.ToUpper(workstation))
-	}
+	setIdentityFields(&msg, challenge, domain, username, workstation)
 
 	// Calculate NT response
 	var err error
@@ -289,6 +313,50 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 	msg.Version = &v
 
 	return &msg, nil
+}
+
+// clientNegotiateFlags are the flags the client asserts in every AUTHENTICATE.
+//
+// The AUTHENTICATE carries the client's negotiated flags, not an echo of the
+// server's CHALLENGE flags (which include server-only bits such as the target type
+// and a server VERSION). This matches what the Windows client sends and what
+// Windows Server 2016 (signing required) accepts.
+const clientNegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
+	flags.NTLMSSP_REQUEST_TARGET |
+	flags.NTLMSSP_NEGOTIATE_SIGN |
+	flags.NTLMSSP_NEGOTIATE_SEAL |
+	flags.NTLMSSP_NEGOTIATE_NTLM |
+	flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN |
+	flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
+	flags.NTLMSSP_NEGOTIATE_TARGET_INFO |
+	flags.NTLMSSP_NEGOTIATE_128 |
+	flags.NTLMSSP_NEGOTIATE_56 |
+	// The Version field is physically present in the AUTHENTICATE structure
+	// whether or not this flag is set ([MS-NLMP] 2.2.1.3), and the payload
+	// offsets — and the position of the MIC when one is carried — follow from
+	// that. Emitting it keeps the layout the one a server expects.
+	flags.NTLMSSP_NEGOTIATE_VERSION
+
+// setIdentityFields fills the DomainName, UserName and Workstation payloads in the
+// character set the server's CHALLENGE selected.
+//
+// DomainName MUST be carried with its original case: it has to match, byte for
+// byte, the domain folded into NTOWFv2 (NTLMv2 uppercases only the username, never
+// the domain — MS-NLMP 3.3.2). Uppercasing it here while NTOWFv2 used the caller's
+// case made the server recompute a different NTProofStr and reject any
+// mixed/lower-case domain (e.g. an FQDN like "host.example.local") with
+// STATUS_LOGON_FAILURE; it only worked when the domain was already upper-case or
+// empty.
+func setIdentityFields(msg *AuthenticateMessage, challenge *challenge.ChallengeMessage, domain, username, workstation string) {
+	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_UNICODE) != 0 {
+		msg.DomainName = utf16.EncodeUTF16LE(domain)
+		msg.UserName = utf16.EncodeUTF16LE(username)
+		msg.Workstation = utf16.EncodeUTF16LE(strings.ToUpper(workstation))
+	} else {
+		msg.DomainName = []byte(domain)
+		msg.UserName = []byte(username)
+		msg.Workstation = []byte(strings.ToUpper(workstation))
+	}
 }
 
 // rc4k applies RC4 keyed with key to data and returns the result, the RC4K

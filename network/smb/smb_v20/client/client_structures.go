@@ -240,6 +240,13 @@ type Session struct {
 	// disabled for anonymous sessions (MS-SMB2 3.2.5.3.1).
 	IsNull bool
 
+	// IsAnonymous is set when this client authenticated anonymously (an NTLM
+	// AUTHENTICATE without credentials). Per MS-SMB2 3.2.5.3.1 the client relies
+	// on its own security subsystem here, not only on IS_NULL: some servers
+	// (Samba) map anonymous to guest internally and return neither flag. Signing
+	// is disabled for anonymous sessions.
+	IsAnonymous bool
+
 	// nonceCounter provides the monotonically increasing nonce for the SMB2
 	// TRANSFORM_HEADER of each encrypted message, ensuring a nonce is never
 	// reused within the session (MS-SMB2 3.2.4.1.8).

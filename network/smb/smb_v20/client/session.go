@@ -172,16 +172,18 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		return fmt.Errorf("session setup failed: %s", formatNTStatus(status))
 	}
 
-	// Check whether the server authenticated the client as a guest or
-	// anonymously. Per MS-SMB2 3.2.5.3.1 both cases disable signing and
-	// encryption: the session key is meaningless.
+	// Check whether the session is a guest or an anonymous one. Per MS-SMB2
+	// 3.2.5.3.1 both cases disable signing and encryption: the session key is
+	// meaningless. Anonymity is known from this client's own AUTHENTICATE as well
+	// as from the server's IS_NULL flag, which Samba never sets.
 	resp2Cmd, _ := resp2.Command.(*commands.SessionSetupResponse)
 	if resp2Cmd != nil {
 		session.IsGuest = resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_IS_GUEST != 0
 		session.IsNull = resp2Cmd.SessionFlags&commands.SMB2_SESSION_FLAG_IS_NULL != 0
 	}
+	session.IsAnonymous = authCtx.IsAnonymous()
 
-	if session.IsGuest || session.IsNull {
+	if session.IsGuest || session.IsNull || session.IsAnonymous {
 		session.SessionKey = make([]byte, 16)
 		session.SigningKey = session.SessionKey
 		session.SigningActive = false
