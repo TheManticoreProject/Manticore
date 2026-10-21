@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	dcerpcsmb "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb"
@@ -36,6 +37,10 @@ func (b *smb1Backend) ConnectionInfo() ConnectionInfo {
 
 func (b *smb1Backend) Login(creds *credentials.Credentials) error {
 	return b.engine.SessionSetup(creds)
+}
+
+func (b *smb1Backend) LoginKerberos(kc *kerberos.KerberosClient, spn string) error {
+	return fmt.Errorf("Kerberos authentication is not supported over SMB1; negotiate SMB2 or higher")
 }
 
 func (b *smb1Backend) ServerIdentity() ServerIdentity {

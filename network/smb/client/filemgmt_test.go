@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -23,7 +24,12 @@ func (r *recordingBackend) Dialect() smb.SMBProtocolVersion      { return smb.SM
 func (r *recordingBackend) ConnectionInfo() ConnectionInfo       { return r.connInfo }
 func (r *recordingBackend) ServerIdentity() ServerIdentity       { return r.identity }
 func (r *recordingBackend) Login(*credentials.Credentials) error { return nil }
-func (r *recordingBackend) TreeConnect(string) error             { return nil }
+func (r *recordingBackend) LoginKerberos(kc *kerberos.KerberosClient, spn string) error {
+	r.calls = append(r.calls, "LoginKerberos")
+	r.args = append(r.args, spn)
+	return nil
+}
+func (r *recordingBackend) TreeConnect(string) error { return nil }
 func (r *recordingBackend) OpenFile(string, OpenOptions) (FileHandle, error) {
 	return FileHandle{}, nil
 }

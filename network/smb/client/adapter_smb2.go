@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	dcerpcsmb2 "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/smb2"
@@ -44,6 +45,10 @@ func (b *smb2Backend) ConnectionInfo() ConnectionInfo {
 
 func (b *smb2Backend) Login(creds *credentials.Credentials) error {
 	return b.engine.SessionSetup(creds)
+}
+
+func (b *smb2Backend) LoginKerberos(kc *kerberos.KerberosClient, spn string) error {
+	return b.engine.SessionSetupKerberosWithClient(kc, spn)
 }
 
 func (b *smb2Backend) ServerIdentity() ServerIdentity {
