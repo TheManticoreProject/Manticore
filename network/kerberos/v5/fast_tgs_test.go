@@ -86,7 +86,7 @@ func TestBuildFASTTGSReqStructure(t *testing.T) {
 	c := fastTGSClient(t, sessionKey, messages.ETypeAES256CTSHMACSHA196)
 	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
 
-	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, nil)
+	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, c.tgtEnc.Flags, nil)
 	if err != nil {
 		t.Fatalf("buildFASTTGSReq: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestFASTTGSArmorKeyFromAuthenticatorSubkey(t *testing.T) {
 	c := fastTGSClient(t, sessionKey, messages.ETypeAES256CTSHMACSHA196)
 	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
 
-	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, nil)
+	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, c.tgtEnc.Flags, nil)
 	if err != nil {
 		t.Fatalf("buildFASTTGSReq: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestFASTTGSReqRoundTrip(t *testing.T) {
 	c := fastTGSClient(t, sessionKey, messages.ETypeAES256CTSHMACSHA196)
 	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
 
-	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, nil)
+	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, c.tgtEnc.Flags, nil)
 	if err != nil {
 		t.Fatalf("buildFASTTGSReq: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestFASTTGSCookieEchoed(t *testing.T) {
 	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "host.corp.local"}}
 	cookie := &messages.PAData{PADataType: messages.PAFXCookie, PADataValue: []byte("opaque-cookie")}
 
-	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, cookie)
+	reqBytes, ctx, err := c.buildFASTTGSReq(testRealm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, c.tgtEnc.Flags, cookie)
 	if err != nil {
 		t.Fatalf("buildFASTTGSReq: %v", err)
 	}

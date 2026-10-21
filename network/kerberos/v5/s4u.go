@@ -43,7 +43,7 @@ func (c *KerberosClient) buildS4U2SelfTGSReq(impersonateUser, impersonateRealm s
 	}
 
 	body := messages.KDCReqBody{
-		KDCOptions: kdcOptionsForTGSReq(),
+		KDCOptions: kdcOptionsForTGSReq(c.tgtEnc.Flags),
 		Realm:      c.realm,
 		SName:      self,
 		Till:       c.now().Add(24 * time.Hour),

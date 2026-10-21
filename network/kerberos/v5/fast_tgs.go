@@ -107,9 +107,9 @@ func (c *KerberosClient) buildTGSAPReqWithSubkey(body messages.KDCReqBody, tgt m
 // tgsReqBody builds the KDC-REQ-BODY for a service-ticket request toward sname in
 // bodyRealm. It mirrors the body assembled by the non-FAST tgsExchange so the
 // armored (inner) request the KDC honors is identical in shape.
-func (c *KerberosClient) tgsReqBody(bodyRealm string, sname messages.PrincipalName, nonce int) messages.KDCReqBody {
+func (c *KerberosClient) tgsReqBody(bodyRealm string, sname messages.PrincipalName, nonce int, tgtFlags asn1.BitString) messages.KDCReqBody {
 	return messages.KDCReqBody{
-		KDCOptions: kdcOptionsForTGSReq(),
+		KDCOptions: kdcOptionsForTGSReq(tgtFlags),
 		Realm:      bodyRealm,
 		SName:      sname,
 		Till:       c.now().Add(24 * time.Hour),
@@ -127,7 +127,7 @@ func (c *KerberosClient) buildFASTTGSReq(
 	bodyRealm string,
 	sname messages.PrincipalName,
 	includePAC bool,
-	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int,
+	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, tgtFlags asn1.BitString,
 	cookie *messages.PAData,
 ) ([]byte, *fastTGSContext, error) {
 
@@ -149,7 +149,7 @@ func (c *KerberosClient) buildFASTTGSReq(
 	// Build the inner body first because the PA-TGS-REQ authenticator checksum
 	// binds to the body the FAST KDC will process.
 	nonce := randomNonce()
-	innerBody := c.tgsReqBody(bodyRealm, sname, nonce)
+	innerBody := c.tgsReqBody(bodyRealm, sname, nonce, tgtFlags)
 
 	// The AP-REQ carrying the subkey. It goes verbatim into the outer PA-TGS-REQ
 	// and is also the object the req-checksum covers (RFC 6113 §5.4.2).
@@ -218,7 +218,7 @@ func (c *KerberosClient) buildFASTTGSReq(
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 			{PADataType: messages.PAFXFast, PADataValue: fastValue},
 		},
-		ReqBody: c.tgsReqBody(bodyRealm, sname, randomNonce()),
+		ReqBody: c.tgsReqBody(bodyRealm, sname, randomNonce(), tgtFlags),
 	}
 	reqBytes, err := tgsReq.Marshal()
 	if err != nil {
@@ -319,12 +319,12 @@ func (c *KerberosClient) tgsExchangeFAST(
 	endpoints []kdcEndpoint,
 	sname messages.PrincipalName,
 	includePAC bool,
-	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int,
+	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, tgtFlags asn1.BitString,
 ) (*messages.TGSRep, *messages.EncTGSRepPart, *messages.KRBError, error) {
 
 	var cookie *messages.PAData
 	for attempt := 0; attempt < 2; attempt++ {
-		reqBytes, ctx, err := c.buildFASTTGSReq(bodyRealm, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType, cookie)
+		reqBytes, ctx, err := c.buildFASTTGSReq(bodyRealm, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType, tgtFlags, cookie)
 		if err != nil {
 			return nil, nil, nil, err
 		}
