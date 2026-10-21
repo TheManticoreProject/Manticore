@@ -19,24 +19,29 @@
 // Dialect selection is driven by a client-side preference list (Options.Preferred,
 // highest priority first) and a policy:
 //
-//   - PolicyStrictOrder (default) tries the preferred versions in order and
-//     selects the first one the server accepts. This honors the caller's order
-//     exactly — it can force SMB1 on a server that also supports SMB3.
+//   - PolicyStrictOrder (default) tries the protocol families in the order the
+//     list names them. It can force SMB1 on a server that also supports SMB3.
 //   - PolicyHighestInSet performs a single multi-protocol negotiate over the
 //     whole set and uses the server's highest-supported dialect within it.
 //
+// Under either policy only the listed dialects are offered: a dialect left out
+// of Options.Preferred is never negotiated.
+//
+// PolicyStrictOrder makes one native negotiate per family, reconnecting between
+// attempts and binding the first the server accepts. All the SMB2 dialects of
+// the list share a single attempt, made at the position of the first of them,
+// whose NEGOTIATE offers exactly those dialects; within that set the server
+// selects its highest ([MS-SMB2] 3.3.5.4). So [SMB 2.1] yields SMB 2.1 even on
+// an SMB 3.1.1 server, and [SMB 1.0, SMB 3.1.1] yields SMB1 on a server that
+// speaks both.
+//
 // PolicyHighestInSet uses the SMB1 multi-protocol negotiate: one request offers
 // the SMB1 and SMB2 dialect markers, and the reply is dispatched on its protocol
-// marker (\xFFSMB for SMB1, \xFESMB for SMB2). The SMB2 engine's ceiling is
-// SMB 2.0.2, so the "SMB 2.002" marker is offered and the server returns a
-// concrete SMB 2.0.2 response. (When SMB 2.1+/3.x engines exist, the "SMB 2.???"
-// wildcard will be offered, with a follow-up native SMB2 negotiate to pin the
-// exact revision.)
+// marker (\xFFSMB for SMB1, \xFESMB for SMB2). "SMB 2.002" is offered when 2.0.2
+// is listed, and the "SMB 2.???" wildcard when any later SMB2 dialect is; a
+// wildcard reply is followed by a native SMB2 negotiate offering the listed SMB2
+// dialects, which pins the exact revision.
 //
-// PolicyStrictOrder instead tries the preferred versions in order with a native
-// per-engine negotiate, reconnecting between attempts and binding the first the
-// server accepts — so a lower dialect listed first is selected even when the
-// server also supports a higher one.
-//
-// Backends supported today: SMB 1.0 and SMB 2.0.2. SMB 3.x awaits its engine.
+// Backends supported today: SMB 1.0 (network/smb/smb_v10) and SMB 2.0.2 through
+// 3.1.1 (network/smb/smb_v20).
 package client

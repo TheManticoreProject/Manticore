@@ -1,9 +1,12 @@
 package client
 
 import (
+	"net"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb"
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
+	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 )
 
@@ -73,5 +76,55 @@ func TestDefaultPreference(t *testing.T) {
 		if !(pref[i-1] > pref[i]) {
 			t.Errorf("default preference not strictly descending at %d: %s !> %s", i, pref[i-1], pref[i])
 		}
+	}
+}
+
+func TestSMB2DialectsFor(t *testing.T) {
+	cases := []struct {
+		name  string
+		prefs []smb.SMBProtocolVersion
+		want  []dialects.Dialect
+	}{
+		{"default preference", defaultPreference(), []dialects.Dialect{
+			dialects.SMB2_DIALECT_2_0_2, dialects.SMB2_DIALECT_2_1_0, dialects.SMB2_DIALECT_3_0_0,
+			dialects.SMB2_DIALECT_3_0_2, dialects.SMB2_DIALECT_3_1_1,
+		}},
+		{"single 2.0.2", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_0_2}, []dialects.Dialect{dialects.SMB2_DIALECT_2_0_2}},
+		{"unordered with SMB1 and duplicates", []smb.SMBProtocolVersion{
+			smb.SMB_VERSION_3_0, smb.SMB_VERSION_2_1, smb.SMB_VERSION_1_0, smb.SMB_VERSION_3_0,
+		}, []dialects.Dialect{dialects.SMB2_DIALECT_2_1_0, dialects.SMB2_DIALECT_3_0_0}},
+		{"family marker folds into 2.0.2", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_0, smb.SMB_VERSION_2_0_2}, []dialects.Dialect{dialects.SMB2_DIALECT_2_0_2}},
+		{"SMB1 only", []smb.SMBProtocolVersion{smb.SMB_VERSION_1_0}, nil},
+	}
+	for _, c := range cases {
+		got := smb2DialectsFor(c.prefs)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: smb2DialectsFor = %v, want %v", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: smb2DialectsFor = %v, want %v", c.name, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+// TestOfferDialectsClonesProfile checks that restricting one engine's offered
+// dialects leaves a profile shared with other engines untouched.
+func TestOfferDialectsClonesProfile(t *testing.T) {
+	shared := fingerprint.Default()
+	before := append([]dialects.Dialect(nil), shared.Dialects...)
+
+	engine := smb2.NewClientUsingTCPTransport(net.ParseIP("127.0.0.1"), 445)
+	engine.Profile = shared
+	offerDialects(engine, []dialects.Dialect{dialects.SMB2_DIALECT_2_1_0})
+
+	if len(engine.Profile.Dialects) != 1 || engine.Profile.Dialects[0] != dialects.SMB2_DIALECT_2_1_0 {
+		t.Errorf("engine offers %v, want [SMB 2.1]", engine.Profile.Dialects)
+	}
+	if engine.Profile == shared || len(shared.Dialects) != len(before) {
+		t.Errorf("offerDialects mutated the shared profile: %v, was %v", shared.Dialects, before)
 	}
 }

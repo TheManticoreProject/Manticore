@@ -1,6 +1,8 @@
 package client
 
 import (
+	"sort"
+
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 )
@@ -69,4 +71,20 @@ func defaultPreference() []smb.SMBProtocolVersion {
 		smb.SMB_VERSION_2_0_2,
 		smb.SMB_VERSION_1_0,
 	}
+}
+
+// smb2DialectsFor returns the SMB2 wire dialects named in a preference list,
+// de-duplicated and in the ascending order [MS-SMB2] 2.2.3 requires of the
+// NEGOTIATE Dialects array. SMB1 entries are skipped.
+func smb2DialectsFor(prefs []smb.SMBProtocolVersion) []dialects.Dialect {
+	seen := make(map[dialects.Dialect]bool)
+	var out []dialects.Dialect
+	for _, v := range prefs {
+		if d, ok := smb2DialectFor(v); ok && !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }

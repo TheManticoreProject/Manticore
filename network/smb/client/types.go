@@ -12,10 +12,12 @@ import (
 type NegotiationPolicy int
 
 const (
-	// PolicyStrictOrder tries the preferred versions in order and selects the
-	// first one the server accepts. It honors the caller's order exactly — it
-	// can select a lower dialect (e.g. SMB1) even when the server also supports
-	// a higher one. Out-of-order lists may cost a reconnect per attempt.
+	// PolicyStrictOrder tries the protocol families in the order the list names
+	// them and selects the first one the server accepts, so it can select SMB1
+	// even when the server also supports SMB2. The SMB2 dialects of the list are
+	// offered together in one native negotiate, in which the server selects its
+	// highest; dialects not listed are never offered. Each failed family costs a
+	// reconnect.
 	PolicyStrictOrder NegotiationPolicy = iota
 	// PolicyHighestInSet performs a single multi-protocol negotiate over the
 	// whole preference set and uses the server's highest-supported dialect

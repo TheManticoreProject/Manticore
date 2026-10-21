@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
@@ -128,5 +129,51 @@ func TestNegotiateExchange(t *testing.T) {
 	}
 	if sentReq.Header.MessageId != 0 || sentReq.Header.SessionId != 0 {
 		t.Errorf("sent NEGOTIATE MessageId/SessionId = %d/%d, want 0/0", sentReq.Header.MessageId, sentReq.Header.SessionId)
+	}
+}
+
+// TestNegotiateOffersProfileDialectsOnly checks that NEGOTIATE offers exactly the
+// profile's dialects, and attaches the SMB 3.1.1 negotiate contexts only when
+// 3.1.1 is among them ([MS-SMB2] 2.2.3: otherwise the fields are reserved).
+func TestNegotiateOffersProfileDialectsOnly(t *testing.T) {
+	cases := []struct {
+		offered      []dialects.Dialect
+		wantContexts bool
+	}{
+		{[]dialects.Dialect{dialects.SMB2_DIALECT_2_0_2}, false},
+		{[]dialects.Dialect{dialects.SMB2_DIALECT_2_1_0, dialects.SMB2_DIALECT_3_0_2}, false},
+		{[]dialects.Dialect{dialects.SMB2_DIALECT_3_0_2, dialects.SMB2_DIALECT_3_1_1}, true},
+	}
+	for _, tc := range cases {
+		ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponse(t)}}
+		c := newTestClient(ft)
+		c.Profile = fingerprint.Default()
+		c.Profile.Dialects = tc.offered
+
+		if err := c.Negotiate(); err != nil {
+			t.Fatalf("offered %v: Negotiate: %v", tc.offered, err)
+		}
+
+		sent := message.NewMessage()
+		if _, err := sent.Unmarshal(ft.sent[0]); err != nil {
+			t.Fatalf("offered %v: parsing sent NEGOTIATE: %v", tc.offered, err)
+		}
+		req, ok := sent.Command.(*commands.NegotiateRequest)
+		if !ok {
+			t.Fatalf("offered %v: sent command is %T, want *NegotiateRequest", tc.offered, sent.Command)
+		}
+		if len(req.Dialects) != len(tc.offered) {
+			t.Errorf("offered %v: NEGOTIATE carried dialects %v", tc.offered, req.Dialects)
+		} else {
+			for i := range req.Dialects {
+				if req.Dialects[i] != tc.offered[i] {
+					t.Errorf("offered %v: NEGOTIATE carried dialects %v", tc.offered, req.Dialects)
+					break
+				}
+			}
+		}
+		if got := len(req.Contexts) > 0; got != tc.wantContexts {
+			t.Errorf("offered %v: negotiate contexts present = %v, want %v", tc.offered, got, tc.wantContexts)
+		}
 	}
 }
