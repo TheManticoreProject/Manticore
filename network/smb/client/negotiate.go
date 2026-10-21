@@ -31,11 +31,12 @@ func engineSupportsSMB2(v smb.SMBProtocolVersion) bool {
 }
 
 // dialStrictOrder tries the preferred versions in order, reconnecting between
-// attempts, and returns the first the server accepts. Consecutive versions that
-// resolve to the same engine attempt (all the SMB2 dialects) are collapsed so the
-// same connection is not retried redundantly. This honors the caller's order
-// exactly — a lower dialect listed first wins even when the server supports a
-// higher one.
+// attempts, and returns the first the server accepts. All the SMB2 dialects of
+// the list resolve to a single engine attempt, made at the position of the first
+// one, whose NEGOTIATE offers exactly those dialects; within that set the server
+// selects its highest ([MS-SMB2] 3.3.5.4). The order between the SMB1 and SMB2
+// families is honored exactly — SMB1 listed first wins even when the server
+// supports SMB2 — and a dialect left out of the list is never negotiated.
 func dialStrictOrder(host string, ip net.IP, port int, opts Options, prefs []smb.SMBProtocolVersion) (*Client, error) {
 	triedSMB1, triedSMB2 := false, false
 	var lastErr error
@@ -58,7 +59,7 @@ func dialStrictOrder(host string, ip net.IP, port int, opts Options, prefs []smb
 				continue
 			}
 			triedSMB2 = true
-			c, err = dialSMB2(ip, host, port, opts)
+			c, err = dialSMB2(ip, host, port, opts, smb2DialectsFor(prefs))
 		default:
 			continue
 		}
@@ -134,7 +135,7 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 			t.Close()
 			return nil, fmt.Errorf("server selected SMB2 but it was not requested")
 		}
-		return finishSMB2(t, ip, host, port, opts, raw)
+		return finishSMB2(t, ip, host, port, opts, raw, smb2DialectsFor(prefs))
 	default:
 		t.Close()
 		return nil, fmt.Errorf("unrecognized negotiate response protocol marker from %s (% x)", host, raw[:4])
@@ -215,7 +216,7 @@ func finishSMB1(t transport.Transport, ip net.IP, host string, port int, opts Op
 //     expects a follow-up native SMB2 negotiate. The engine sends its own
 //     NEGOTIATE offering the full dialect range (2.0.2–3.1.1) with 3.1.1
 //     contexts, and the server's reply pins the concrete dialect.
-func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Options, raw []byte) (*Client, error) {
+func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Options, raw []byte, offered []smb2dialects.Dialect) (*Client, error) {
 	respMsg := smb2msg.NewMessage()
 	if _, err := respMsg.Header.Unmarshal(raw); err != nil {
 		t.Close()
@@ -239,9 +240,9 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 
 	if resp.DialectRevision == smb2dialects.SMB2_DIALECT_WILDCARD {
 		// Wildcard response — perform a follow-up native SMB2 negotiate on the
-		// same transport. The engine's Negotiate() offers the full profile dialect
-		// list (2.0.2–3.1.1) with pre-auth integrity, encryption, and signing
-		// negotiate contexts.
+		// same transport, offering the SMB2 dialects of the preference list (with
+		// the 3.1.1 negotiate contexts when 3.1.1 is among them).
+		offerDialects(engine, offered)
 		if err := engine.Negotiate(); err != nil {
 			t.Close()
 			return nil, fmt.Errorf("follow-up SMB2 negotiate after wildcard: %w", err)

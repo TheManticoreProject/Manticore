@@ -39,29 +39,33 @@ func (c *Client) Negotiate() error {
 	// SMB 3.1.1 negotiate contexts: pre-auth integrity (SHA-512 + random salt),
 	// encryption ciphers in preference order, the server's hostname (so a
 	// virtual-hosted server can select the correct node), and transport-level
-	// security acceptance.
-	salt := make([]byte, profile.PreauthSaltLength)
-	if _, err := rand.Read(salt); err != nil {
-		return fmt.Errorf("negotiate: failed to generate pre-auth salt: %w", err)
-	}
-	serverName := c.Connection.ServerName
-	if serverName == "" && c.Connection.Server.Host != nil {
-		serverName = c.Connection.Server.Host.String()
-	}
-	req.Contexts = []*commands.NegotiateContext{
-		commands.NewPreauthIntegrityContext(salt),
-		commands.NewEncryptionContext(profile.Ciphers),
-		commands.NewNetnameContext(serverName),
-		commands.NewTransportCapabilitiesContext(commands.SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY),
-	}
-	if len(profile.SigningAlgorithms) > 0 {
-		req.Contexts = append(req.Contexts,
-			commands.NewSigningCapabilitiesContext(profile.SigningAlgorithms))
-	}
-	if len(profile.CompressionAlgorithms) > 0 {
-		req.Contexts = append(req.Contexts,
-			commands.NewCompressionCapabilitiesContext(profile.CompressionAlgorithms,
-				commands.SMB2_COMPRESSION_CAPABILITIES_FLAG_NONE))
+	// security acceptance. They are sent only when 3.1.1 is offered: otherwise
+	// [MS-SMB2] 2.2.3 reserves the NegotiateContext fields, and the
+	// ClientStartTime they overlay MUST be zero.
+	if offersSMB311(req.Dialects) {
+		salt := make([]byte, profile.PreauthSaltLength)
+		if _, err := rand.Read(salt); err != nil {
+			return fmt.Errorf("negotiate: failed to generate pre-auth salt: %w", err)
+		}
+		serverName := c.Connection.ServerName
+		if serverName == "" && c.Connection.Server.Host != nil {
+			serverName = c.Connection.Server.Host.String()
+		}
+		req.Contexts = []*commands.NegotiateContext{
+			commands.NewPreauthIntegrityContext(salt),
+			commands.NewEncryptionContext(profile.Ciphers),
+			commands.NewNetnameContext(serverName),
+			commands.NewTransportCapabilitiesContext(commands.SMB2_ACCEPT_TRANSPORT_LEVEL_SECURITY),
+		}
+		if len(profile.SigningAlgorithms) > 0 {
+			req.Contexts = append(req.Contexts,
+				commands.NewSigningCapabilitiesContext(profile.SigningAlgorithms))
+		}
+		if len(profile.CompressionAlgorithms) > 0 {
+			req.Contexts = append(req.Contexts,
+				commands.NewCompressionCapabilitiesContext(profile.CompressionAlgorithms,
+					commands.SMB2_COMPRESSION_CAPABILITIES_FLAG_NONE))
+		}
 	}
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the
@@ -130,4 +134,14 @@ func (c *Client) ApplyNegotiateResponse(negotiateResponse *commands.NegotiateRes
 	if c.Connection.MessageId == 0 {
 		c.Connection.MessageId = 1
 	}
+}
+
+// offersSMB311 reports whether the offered dialect list includes SMB 3.1.1.
+func offersSMB311(offered []dialects.Dialect) bool {
+	for _, d := range offered {
+		if d == dialects.SMB2_DIALECT_3_1_1 {
+			return true
+		}
+	}
+	return false
 }

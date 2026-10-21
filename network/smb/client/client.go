@@ -5,8 +5,10 @@ import (
 	"net"
 
 	"github.com/TheManticoreProject/Manticore/network/smb"
+	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	smb2 "github.com/TheManticoreProject/Manticore/network/smb/smb_v20/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
@@ -49,13 +51,15 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 	return dialStrictOrder(host, ip, port, opts, prefs)
 }
 
-// dialSMB2 connects with the SMB2 engine and performs its native negotiate.
-// The connect/negotiate exchange runs under the per-attempt dial timeout so a
-// server that silently drops the probe fails the attempt instead of blocking;
-// the bound is lifted once the dialect is established.
-func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
+// dialSMB2 connects with the SMB2 engine and performs its native negotiate,
+// offering exactly the SMB2 dialects in offered. The connect/negotiate exchange
+// runs under the per-attempt dial timeout so a server that silently drops the
+// probe fails the attempt instead of blocking; the bound is lifted once the
+// dialect is established.
+func dialSMB2(ip net.IP, host string, port int, opts Options, offered []dialects.Dialect) (*Client, error) {
 	engine := smb2.NewClientUsingTCPTransport(ip, port)
 	engine.Connection.ServerName = host
+	offerDialects(engine, offered)
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
 	}
@@ -66,6 +70,18 @@ func dialSMB2(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	}
 	engine.Transport.SetTimeout(0)
 	return &Client{backend: newSMB2Backend(engine), host: host, port: port, opts: opts}, nil
+}
+
+// offerDialects restricts the SMB2 dialects the engine's NEGOTIATE offers to
+// offered, which must be in ascending order. The engine's profile is cloned
+// first, so the package-wide default profile is left untouched.
+func offerDialects(engine *smb2.Client, offered []dialects.Dialect) {
+	profile := engine.Profile.Clone()
+	if profile == nil {
+		profile = fingerprint.Default()
+	}
+	profile.Dialects = append([]dialects.Dialect(nil), offered...)
+	engine.Profile = profile
 }
 
 // dialSMB1 connects with the SMB1 engine and performs its native negotiate.
