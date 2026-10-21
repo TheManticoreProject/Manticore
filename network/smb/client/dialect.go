@@ -88,3 +88,14 @@ func smb2DialectsFor(prefs []smb.SMBProtocolVersion) []dialects.Dialect {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// withoutVersion returns prefs with every occurrence of v removed.
+func withoutVersion(prefs []smb.SMBProtocolVersion, v smb.SMBProtocolVersion) []smb.SMBProtocolVersion {
+	out := make([]smb.SMBProtocolVersion, 0, len(prefs))
+	for _, p := range prefs {
+		if p != v {
+			out = append(out, p)
+		}
+	}
+	return out
+}
