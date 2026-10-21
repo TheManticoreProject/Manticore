@@ -107,7 +107,7 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 		return nil, fmt.Errorf("no supported protocol version in preference list for %s", host)
 	}
 
-	t := transport.NewTransport("tcp")
+	t := opts.newTransport()
 	t.SetTimeout(opts.dialTimeout())
 	if err := t.Connect(ip, port); err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", host, err)

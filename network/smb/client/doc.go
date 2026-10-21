@@ -42,6 +42,13 @@
 // wildcard reply is followed by a native SMB2 negotiate offering the listed SMB2
 // dialects, which pins the exact revision.
 //
+// # Transports
+//
+// Options.Transport selects Direct TCP (the default, port 445) or NetBIOS over
+// TCP (TransportNetBIOS, port 139), which performs the RFC 1002 session
+// handshake before negotiating. SMB 3.1.1 is never offered over NetBIOS
+// ([MS-SMB2] 3.2.5.2).
+//
 // Backends supported today: SMB 1.0 (network/smb/smb_v10) and SMB 2.0.2 through
 // 3.1.1 (network/smb/smb_v20).
 package client

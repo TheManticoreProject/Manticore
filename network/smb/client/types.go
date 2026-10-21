@@ -3,7 +3,9 @@ package client
 import (
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/network/netbios/nbt"
 	"github.com/TheManticoreProject/Manticore/network/smb"
+	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
@@ -26,6 +28,21 @@ const (
 	PolicyHighestInSet
 )
 
+// TransportKind selects the transport an SMB connection runs over.
+type TransportKind int
+
+const (
+	// TransportDirectTCP is Direct TCP ([MS-SMB2] 2.1), conventionally on port
+	// 445. It is the zero value.
+	TransportDirectTCP TransportKind = iota
+	// TransportNetBIOS is NetBIOS over TCP (RFC 1001/1002, [MS-CIFS] 2.1.1.2),
+	// conventionally on port 139. Connect performs the RFC 1002 session
+	// handshake, calling the server as "*SMBSERVER" (falling back to its
+	// NetBIOS name) with Options.Workstation as the calling name. SMB 3.1.1 is
+	// never offered over it ([MS-SMB2] 3.2.5.2).
+	TransportNetBIOS
+)
+
 // Options configures a Dial.
 type Options struct {
 	// Preferred is the ordered list of protocol versions, highest priority
@@ -34,9 +51,12 @@ type Options struct {
 	// Policy selects how Preferred is applied. The zero value is
 	// PolicyStrictOrder.
 	Policy NegotiationPolicy
-	// Workstation is the NetBIOS workstation name sent during authentication.
-	// When empty, a default is used.
+	// Workstation is the NetBIOS workstation name sent during authentication,
+	// and the calling name of a TransportNetBIOS session. When empty, a default
+	// is used.
 	Workstation string
+	// Transport selects Direct TCP (the zero value) or NetBIOS over TCP.
+	Transport TransportKind
 	// DialTimeout bounds each connect/negotiate attempt during Dial, so that a
 	// server which silently drops a probe (e.g. an SMB1-only host receiving an
 	// SMB2 negotiate) fails the attempt instead of blocking forever, letting
@@ -159,3 +179,13 @@ const (
 	// SaclSecurityInformation requests the system ACL (requires extra privilege).
 	SaclSecurityInformation SecurityInformation = 0x00000008
 )
+
+// newTransport returns an unconnected transport of the kind o.Transport selects.
+func (o Options) newTransport() transport.Transport {
+	if o.Transport == TransportNetBIOS {
+		t := nbt.NewNBTTransport()
+		t.SetCallingName(o.Workstation)
+		return t
+	}
+	return transport.NewTransport("tcp")
+}

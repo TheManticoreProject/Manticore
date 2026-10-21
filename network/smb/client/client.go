@@ -44,6 +44,15 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 	if len(prefs) == 0 {
 		prefs = defaultPreference()
 	}
+	if opts.Transport == TransportNetBIOS {
+		// [MS-SMB2] 3.2.5.2: a client implementing SMB 3.1.1 must not complete
+		// a negotiate over NetBIOS (it must reconnect over Direct TCP), so 3.1.1
+		// is not offered on this transport.
+		prefs = withoutVersion(prefs, smb.SMB_VERSION_3_1_1)
+		if len(prefs) == 0 {
+			return nil, fmt.Errorf("SMB 3.1.1 is not available over NetBIOS: no other version in the preference list for %s", host)
+		}
+	}
 
 	if opts.Policy == PolicyHighestInSet {
 		return dialHighestInSet(host, ip, port, opts, prefs)
@@ -57,7 +66,7 @@ func Dial(host string, port int, opts Options) (*Client, error) {
 // probe fails the attempt instead of blocking; the bound is lifted once the
 // dialect is established.
 func dialSMB2(ip net.IP, host string, port int, opts Options, offered []dialects.Dialect) (*Client, error) {
-	engine := smb2.NewClientUsingTCPTransport(ip, port)
+	engine := smb2.NewFromTransport(opts.newTransport(), ip, port)
 	engine.Connection.ServerName = host
 	offerDialects(engine, offered)
 	if opts.Workstation != "" {
@@ -90,6 +99,7 @@ func offerDialects(engine *smb2.Client, offered []dialects.Dialect) {
 // the bound is lifted once the dialect is established.
 func dialSMB1(ip net.IP, host string, port int, opts Options) (*Client, error) {
 	engine := smb1.NewClientUsingTCPTransport(ip, port)
+	engine.Transport = opts.newTransport()
 	// The SMB1 session setup requires the NativeOS / NativeLanMan fields to be set.
 	if opts.Workstation != "" {
 		engine.Workstation = opts.Workstation
