@@ -163,3 +163,24 @@ func TestVerifyServerMechListMICAcceptsAbsentAndRejectsWrong(t *testing.T) {
 		t.Error("a zeroed mechListMIC was accepted, want a verification failure")
 	}
 }
+
+// TestComputeMechListMICAnonymous checks that an anonymous NTLM context sends no
+// mechListMIC: it has no credential-derived key to provide integrity with.
+func TestComputeMechListMICAnonymous(t *testing.T) {
+	der, err := MarshalMechTypeList([]asn1.ObjectIdentifier{NtlmOID})
+	if err != nil {
+		t.Fatalf("MarshalMechTypeList: %v", err)
+	}
+	ctx := &AuthContext{SessionKey: make([]byte, 16), MechListDER: der}
+	negFlg := flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | flags.NTLMSSP_NEGOTIATE_SIGN
+
+	mic, err := ctx.computeMechListMIC(negFlg | flags.NTLMSSP_NEGOTIATE_ANONYMOUS)
+	if err != nil || mic != nil {
+		t.Errorf("anonymous: computeMechListMIC = (% x, %v), want (nil, nil)", mic, err)
+	}
+
+	mic, err = ctx.computeMechListMIC(negFlg)
+	if err != nil || len(mic) != security.SignatureSize {
+		t.Errorf("named: computeMechListMIC = (% x, %v), want a %d-byte MIC", mic, err, security.SignatureSize)
+	}
+}

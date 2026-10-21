@@ -82,6 +82,14 @@ func (ctx *AuthContext) GetSessionKey() []byte {
 	return ctx.SessionKey
 }
 
+// IsAnonymous reports whether the context authenticated anonymously: its NTLM
+// AUTHENTICATE carried no credential and asserted NTLMSSP_NEGOTIATE_ANONYMOUS.
+// The session key of such a context is not derived from a secret, so callers
+// must not use it to sign or verify messages.
+func (ctx *AuthContext) IsAnonymous() bool {
+	return ctx.authenticateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_ANONYMOUS)
+}
+
 // NewAuthContext creates a new authentication context
 // Parameters:
 //   - authType: The type of authentication to use (NTLM or Kerberos)

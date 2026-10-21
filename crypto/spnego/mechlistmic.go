@@ -24,6 +24,12 @@ func (ctx *AuthContext) computeMechListMIC(negFlg flags.NegotiateFlags) ([]byte,
 	if len(ctx.SessionKey) == 0 || len(ctx.MechListDER) == 0 {
 		return nil, nil
 	}
+	// An anonymous NTLM context has no key derived from a credential, so it
+	// provides no integrity to protect the mech list with; like the Windows and
+	// Samba clients, send no mechListMIC.
+	if negFlg.HasFlag(flags.NTLMSSP_NEGOTIATE_ANONYMOUS) {
+		return nil, nil
+	}
 
 	sec, err := security.NewContext(ctx.SessionKey, negFlg)
 	if err != nil {
