@@ -2,6 +2,7 @@ package client
 
 import (
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/TheManticoreProject/Manticore/network/smb"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -24,6 +25,10 @@ type Backend interface {
 
 	// Login authenticates a session with the server.
 	Login(creds *credentials.Credentials) error
+
+	// LoginKerberos authenticates a session with Kerberos over SPNEGO, using
+	// the given native Kerberos client and target service principal name.
+	LoginKerberos(kc *kerberos.KerberosClient, spn string) error
 
 	// ServerIdentity reports the server identity (NetBIOS/DNS names, OS version)
 	// learned during authentication. It is meaningful only after a successful Login;
