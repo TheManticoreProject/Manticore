@@ -58,7 +58,7 @@ func TestTGSRequestBuildersChecksumRequestBody(t *testing.T) {
 	service := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"cifs", "server.corp.local"}}
 
 	normalBody := messages.KDCReqBody{
-		KDCOptions: kdcOptionsForTGSReq(), Realm: c.realm, SName: service,
+		KDCOptions: kdcOptionsForTGSReq(c.tgtEnc.Flags), Realm: c.realm, SName: service,
 		Till: c.now().Add(24 * 60 * 60 * 1e9), Nonce: 100, EType: c.serviceTicketETypes(),
 	}
 	normalAPReq, err := c.buildAPReq(normalBody)
@@ -93,7 +93,7 @@ func TestTGSRequestBuildersChecksumRequestBody(t *testing.T) {
 
 func TestFASTTGSAuthenticatorChecksumsInnerBody(t *testing.T) {
 	c := fakeTGTClient(t)
-	body := c.tgsReqBody(c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"ldap", "dc.corp.local"}}, 200)
+	body := c.tgsReqBody(c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"ldap", "dc.corp.local"}}, 200, c.tgtEnc.Flags)
 	subkey := make([]byte, kerbcrypto.KeyLen(c.sessionEType))
 	apReq, err := c.buildTGSAPReqWithSubkey(body, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, subkey)
 	if err != nil {

@@ -69,6 +69,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	tgtRaw := c.tgtTicketRaw
 	sessionKey := c.sessionKey
 	sessionEType := c.sessionEType
+	tgtFlags := c.tgtEnc.Flags
 
 	// bodyRealm is the KDC-REQ-BODY realm — the realm whose KDC we are asking.
 	bodyRealm := c.realm
@@ -90,7 +91,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 	skewRetried := false
 
 	for hop := 0; hop < maxReferralHops; hop++ {
-		rep, encRep, krbErr, err := c.tgsExchange(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
+		rep, encRep, krbErr, err := c.tgsExchange(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType, tgtFlags)
 		if err != nil {
 			return messages.Ticket{}, nil, nil, 0, err
 		}
@@ -140,6 +141,7 @@ func (c *KerberosClient) chaseServiceTicket(sname messages.PrincipalName, includ
 		tgtRaw = rep.TicketRaw
 		sessionKey = encRep.Key.KeyValue
 		sessionEType = encRep.Key.KeyType
+		tgtFlags = encRep.Flags
 	}
 
 	return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: too many cross-realm referrals (>%d) chasing %s", maxReferralHops, strings.Join(sname.NameString, "/"))
@@ -156,14 +158,14 @@ func (c *KerberosClient) tgsExchange(
 	endpoints []kdcEndpoint,
 	sname messages.PrincipalName,
 	includePAC bool,
-	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int,
+	tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, tgtFlags asn1.BitString,
 ) (*messages.TGSRep, *messages.EncTGSRepPart, *messages.KRBError, error) {
 
 	// When FAST (RFC 6113 Kerberos armoring) is enabled, armor the exchange with
 	// the TGT being presented at this hop (see fast_tgs.go). The armor is the TGT
 	// itself; no separate armor AP-REQ is used for the TGS case.
 	if c.fast != nil {
-		return c.tgsExchangeFAST(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType)
+		return c.tgsExchangeFAST(bodyRealm, endpoints, sname, includePAC, tgt, tgtRaw, sessionKey, sessionEType, tgtFlags)
 	}
 
 	nonce := randomNonce()
@@ -173,7 +175,7 @@ func (c *KerberosClient) tgsExchange(
 		pacBool = 0x00
 	}
 	body := messages.KDCReqBody{
-		KDCOptions: kdcOptionsForTGSReq(),
+		KDCOptions: kdcOptionsForTGSReq(tgtFlags),
 		Realm:      bodyRealm,
 		SName:      sname,
 		Till:       c.now().Add(24 * time.Hour),

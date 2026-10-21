@@ -847,18 +847,24 @@ func kdcOptionsForASReq() asn1.BitString {
 	return encodeKDCOptions(kdcOptionForwardable, kdcOptionProxiable, kdcOptionRenewable)
 }
 
-// kdcOptionsForTGSReq returns the KDCOptions BitString for a TGS-REQ. Adds
-// canonicalize (RFC 6806) so the KDC canonicalizes the requested SPN — AD
-// KDCs can otherwise respond with S_PRINCIPAL_UNKNOWN for non-canonical SPN
-// forms — and renewable-ok so the issued service ticket carries the same
-// renewable window as the TGT it was derived from.
-func kdcOptionsForTGSReq() asn1.BitString {
-	return encodeKDCOptions(
-		kdcOptionForwardable,
-		kdcOptionRenewable,
-		kdcOptionCanonicalize,
-		kdcOptionRenewableOK,
-	)
+// kdcOptionsForTGSReq returns the KDCOptions BitString for a TGS-REQ presenting
+// a ticket-granting ticket with the given ticket flags. It always asks for
+// canonicalize (RFC 6806) so the KDC canonicalizes the requested SPN — AD KDCs
+// can otherwise respond with S_PRINCIPAL_UNKNOWN for non-canonical SPN forms —
+// and renewable-ok. Forwardable and renewable are asked for only when the TGT
+// carries the matching flag: a ticket derived from a TGT cannot be more
+// forwardable or renewable than it (RFC 4120 2.3, 2.6), and a strict KDC
+// (Heimdal, i.e. Samba AD) rejects such a request with KDC_ERR_BADOPTION instead
+// of silently dropping the option as Windows does.
+func kdcOptionsForTGSReq(tgtFlags asn1.BitString) asn1.BitString {
+	options := []int{kdcOptionCanonicalize, kdcOptionRenewableOK}
+	if tgtFlags.At(iana.TicketFlagForwardable) == 1 {
+		options = append(options, kdcOptionForwardable)
+	}
+	if tgtFlags.At(iana.TicketFlagRenewable) == 1 {
+		options = append(options, kdcOptionRenewable)
+	}
+	return encodeKDCOptions(options...)
 }
 
 // parseSPN splits a service principal name into a PrincipalName.

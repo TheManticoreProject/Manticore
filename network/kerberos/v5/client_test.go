@@ -9,6 +9,7 @@ import (
 	"time"
 
 	kerbcrypto "github.com/TheManticoreProject/Manticore/network/kerberos/v5/crypto"
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
@@ -283,7 +284,7 @@ func TestKDCOptionsEncoding(t *testing.T) {
 		t.Error("AS-REQ must not set canonicalize")
 	}
 
-	tgs := kdcOptionsForTGSReq()
+	tgs := kdcOptionsForTGSReq(encodeKDCOptions(iana.TicketFlagForwardable, iana.TicketFlagRenewable))
 	for _, bit := range []int{kdcOptionForwardable, kdcOptionRenewable, kdcOptionCanonicalize, kdcOptionRenewableOK} {
 		if tgs.At(bit) != 1 {
 			t.Errorf("TGS-REQ option bit %d not set", bit)
