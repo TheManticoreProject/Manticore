@@ -156,6 +156,11 @@ func NewNegotiateResponse() *NegotiateResponse {
 	return c
 }
 
+// NoDialectSupported is the DialectIndex a server returns when it supports none
+// of the dialects offered in the SMB_COM_NEGOTIATE request ([MS-CIFS]
+// 2.2.4.52.2).
+const NoDialectSupported types.USHORT = 0xFFFF
+
 // GetSelectedDialect returns the selected dialect from the NegotiateResponse structure
 //
 // Parameters:
@@ -165,6 +170,9 @@ func NewNegotiateResponse() *NegotiateResponse {
 // - The selected dialect
 // - An error if the selected dialect is not found
 func (c *NegotiateResponse) GetSelectedDialect(dialects dialects.Dialects) (string, error) {
+	if c.DialectIndex == NoDialectSupported {
+		return "", fmt.Errorf("the server supports none of the offered dialects")
+	}
 	if c.DialectIndex >= types.USHORT(len(dialects.Dialects)) {
 		return "", fmt.Errorf("dialect index out of bounds")
 	}
@@ -330,6 +338,12 @@ func (c *NegotiateResponse) Unmarshal(marshalledData []byte) (int, error) {
 	}
 	c.DialectIndex = types.USHORT(binary.LittleEndian.Uint16(rawParametersContent[offset : offset+2]))
 	offset += 2
+	// A server that supports none of the offered dialects answers with
+	// WordCount 0x01 — the DialectIndex alone, set to 0xFFFF — and ByteCount
+	// 0x0000 ([MS-CIFS] 2.2.4.52.2). No other parameter follows.
+	if len(rawParametersContent) == 2 {
+		return offset, nil
+	}
 	// Unmarshalling parameter SecurityMode
 	if len(rawParametersContent) < offset+1 {
 		return offset, fmt.Errorf("rawParametersContent too short for SecurityMode")
