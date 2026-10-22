@@ -9,6 +9,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
@@ -139,8 +140,8 @@ func TestSendReceiveCompoundEncryption(t *testing.T) {
 			Client:        c,
 			SessionId:     0x99,
 			TreeId:        0x5,
-			SigningActive:  true,
-			SigningKey:     keyBytes,
+			SigningActive: true,
+			SigningKey:    keyBytes,
 			EncryptionKey: keyBytes,
 			DecryptionKey: keyBytes,
 			EncryptData:   true,
@@ -174,7 +175,7 @@ func TestSendReceiveCompoundEncryption(t *testing.T) {
 		if len(ft.sent) != 1 {
 			t.Fatalf("expected 1 frame sent, got %d", len(ft.sent))
 		}
-		if !isTransformHeader(ft.sent[0]) {
+		if !security.IsTransformHeader(ft.sent[0]) {
 			t.Errorf("sent frame is not encrypted (missing TRANSFORM_HEADER)")
 		}
 	})
@@ -360,7 +361,7 @@ func TestSendReceiveCompoundEncrypts(t *testing.T) {
 		if len(ft.sent) != 1 {
 			t.Fatalf("expected 1 sent frame, got %d", len(ft.sent))
 		}
-		if !isTransformHeader(ft.sent[0]) {
+		if !security.IsTransformHeader(ft.sent[0]) {
 			t.Fatal("compound request must be encrypted (TRANSFORM_HEADER) when EncryptData is set")
 		}
 	})

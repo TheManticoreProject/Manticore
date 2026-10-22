@@ -1,4 +1,6 @@
-package client
+// Package security implements SMB 2/3 message signing, the SMB 3.x key
+// derivation and TRANSFORM_HEADER encryption, shared by the client and server.
+package security
 
 import (
 	"crypto/aes"
@@ -210,13 +212,13 @@ func verifySignatureGMAC(key, message []byte) bool {
 	return hmac.Equal(received, tag[:signSignatureLength])
 }
 
-// signMessageForDialect signs a message in place with the algorithm appropriate
+// Sign signs a message in place with the algorithm appropriate
 // for the negotiated dialect and signing algorithm. When the SMB 3.1.1
 // SMB2_SIGNING_CAPABILITIES context negotiated a specific algorithm, that
 // algorithm is used; otherwise the dialect default applies (AES-128-CMAC for
 // SMB 3.x, HMAC-SHA256 for 2.x). A signingAlg of -1 means no signing
 // capabilities context was negotiated.
-func signMessageForDialect(dialect dialects.Dialect, signingAlg int, key, message []byte) {
+func Sign(dialect dialects.Dialect, signingAlg int, key, message []byte) {
 	if signingAlg == commands.SMB2_SIGNING_ALG_AES_GMAC {
 		signMessageGMAC(key, message)
 		return
@@ -225,24 +227,24 @@ func signMessageForDialect(dialect dialects.Dialect, signingAlg int, key, messag
 		signMessage(key, message)
 		return
 	}
-	if isSMB3Dialect(dialect) {
+	if IsSMB3(dialect) {
 		signMessageCMAC(key, message)
 		return
 	}
 	signMessage(key, message)
 }
 
-// verifySignatureForDialect verifies a message signature with the algorithm
+// Verify verifies a message signature with the algorithm
 // appropriate for the negotiated dialect and signing algorithm. A signingAlg of
 // -1 means no signing capabilities context was negotiated.
-func verifySignatureForDialect(dialect dialects.Dialect, signingAlg int, key, message []byte) bool {
+func Verify(dialect dialects.Dialect, signingAlg int, key, message []byte) bool {
 	if signingAlg == commands.SMB2_SIGNING_ALG_AES_GMAC {
 		return verifySignatureGMAC(key, message)
 	}
 	if signingAlg == commands.SMB2_SIGNING_ALG_HMAC_SHA256 {
 		return verifySignature(key, message)
 	}
-	if isSMB3Dialect(dialect) {
+	if IsSMB3(dialect) {
 		return verifySignatureCMAC(key, message)
 	}
 	return verifySignature(key, message)

@@ -210,7 +210,7 @@ func (h *CaptureHandler) Run(srv *Server, conn *Connection, w ResponseWriter, re
 		return false
 	}
 
-	h.record(conn, accept)
+	h.record(conn.Remote, accept)
 
 	if err := w.WriteError(h.config.Status); err != nil {
 		logger.Debugf("SMB1 server: failed to refuse the logon from %s: %v", conn.Remote, err)
@@ -219,7 +219,7 @@ func (h *CaptureHandler) Run(srv *Server, conn *Connection, w ResponseWriter, re
 }
 
 // record builds a Credential from an authentication exchange and reports it.
-func (h *CaptureHandler) record(conn *Connection, accept *spnego.AcceptContext) {
+func (h *CaptureHandler) record(remote net.Addr, accept *spnego.AcceptContext) {
 	authenticate := accept.Authenticate
 	if authenticate == nil {
 		return
@@ -228,7 +228,7 @@ func (h *CaptureHandler) record(conn *Connection, accept *spnego.AcceptContext) 
 	domain, username, workstation := accept.Identity()
 
 	credential := Credential{
-		RemoteAddr:      conn.Remote,
+		RemoteAddr:      remote,
 		Time:            time.Now().UTC(),
 		Domain:          domain,
 		Username:        username,
@@ -243,7 +243,7 @@ func (h *CaptureHandler) record(conn *Connection, accept *spnego.AcceptContext) 
 	// An anonymous or null-session attempt carries no response worth keeping.
 	if len(credential.NtResponse) == 0 {
 		logger.Debugf("SMB1 server: %s attempted an anonymous logon as %q, nothing to capture",
-			conn.Remote, credential.Account())
+			remote, credential.Account())
 		return
 	}
 
@@ -253,7 +253,7 @@ func (h *CaptureHandler) record(conn *Connection, accept *spnego.AcceptContext) 
 		if h.seen[key] {
 			h.mutex.Unlock()
 			logger.Debugf("SMB1 server: already captured %s, ignoring the retry from %s",
-				credential.Account(), conn.Remote)
+				credential.Account(), remote)
 			return
 		}
 		h.seen[key] = true

@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
@@ -62,7 +63,7 @@ func signCompound(dialect dialects.Dialect, signingAlg int, key, buf []byte) err
 		return err
 	}
 	for _, seg := range segments {
-		signMessageForDialect(dialect, signingAlg, key, seg)
+		security.Sign(dialect, signingAlg, key, seg)
 	}
 	return nil
 }
@@ -132,7 +133,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 		}
 
-		if isTransformHeader(raw) {
+		if security.IsTransformHeader(raw) {
 			plaintext, derr := c.decryptMessage(raw)
 			if derr != nil {
 				return nil, fmt.Errorf("%s: %w", label, derr)
@@ -173,7 +174,7 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		// single-message path (MS-SMB2 3.2.5.1.3). When the frame was
 		// encrypted, the AEAD tag already authenticated it.
 		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
-			if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
+			if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
 				return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
 			}
 		}

@@ -7,6 +7,7 @@ import (
 	spnego_ntlm_negotiate_flags "github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -120,8 +121,8 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 	// Fold the first SESSION_SETUP request/response into the SMB 3.1.1 pre-auth
 	// integrity hash (started from the connection hash after NEGOTIATE).
 	sessionHash := append([]byte(nil), c.Connection.PreauthIntegrityHashValue...)
-	sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
-	sessionHash = preauthUpdate(sessionHash, c.lastRecvBytes)
+	sessionHash = security.PreauthUpdate(sessionHash, c.lastSentBytes)
+	sessionHash = security.PreauthUpdate(sessionHash, c.lastRecvBytes)
 
 	sessionId := resp1.Header.SessionId
 	challengeResp, ok := resp1.Command.(*commands.SessionSetupResponse)
@@ -191,13 +192,13 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		// SMB 3.x: fold the (unsigned) AUTHENTICATE request into the pre-auth hash —
 		// the final SUCCESS response is excluded — then derive the key hierarchy and
 		// verify the server's signature over that response.
-		if isSMB3Dialect(c.Connection.Dialect) {
-			sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+		if security.IsSMB3(c.Connection.Dialect) {
+			sessionHash = security.PreauthUpdate(sessionHash, c.lastSentBytes)
 			finalRespBytes := append([]byte(nil), c.lastRecvBytes...)
 			session.PreauthHash = sessionHash
 			deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
 
-			if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
+			if len(finalRespBytes) >= 64 && !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
 				c.Session = nil
 				return fmt.Errorf("session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
 			}

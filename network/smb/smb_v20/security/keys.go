@@ -1,4 +1,4 @@
-package client
+package security
 
 import (
 	"crypto/hmac"
@@ -10,15 +10,15 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 )
 
-// preauthHashLength is the size of the SMB 3.1.1 pre-authentication integrity
+// PreauthHashSize is the size of the SMB 3.1.1 pre-authentication integrity
 // hash (SHA-512 digest).
-const preauthHashLength = 64
+const PreauthHashSize = 64
 
-// preauthUpdate folds a message into the running SMB 3.1.1 pre-authentication
+// PreauthUpdate folds a message into the running SMB 3.1.1 pre-authentication
 // integrity hash: hash_new = SHA-512(hash_prev || message), where hash_prev is
 // the 64-byte previous value (all zero at the start of the connection). See
 // MS-SMB2 3.1.4.2 / the pre-auth integrity computation.
-func preauthUpdate(prev, message []byte) []byte {
+func PreauthUpdate(prev, message []byte) []byte {
 	h := sha512.New()
 	h.Write(prev)
 	h.Write(message)
@@ -78,41 +78,46 @@ func sp800108CounterKDF(ki, label, context []byte, bits int) []byte {
 	return mac.Sum(nil)[:bits/8]
 }
 
-// deriveSMB3Keys computes the SMB 3.x signing, encryption, decryption, and
-// application keys for a session from its 16-byte SessionKey, per MS-SMB2
-// 3.1.4.2. For the 3.1.1 dialect the KDF context is the session's
-// pre-authentication integrity hash value; for 3.0/3.0.2 it is a set of fixed
-// constants. The derived SigningKey replaces the session key as the signing key
-// (unlike the 2.x dialects, where the two are identical).
-//
-// EncryptionKey is the key this client uses to encrypt the messages it sends;
-// DecryptionKey is the key it uses to decrypt the server's replies. When the
-// negotiated cipher is AES-256-CCM or AES-256-GCM the encryption and decryption
-// keys are 256 bits; all other keys remain 128 bits.
-func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte, cipher uint16, _ int) {
-	key := session.SessionKey
+// Keys is the SMB 3.x key hierarchy of one session (MS-SMB2 3.1.4.2).
+// ClientToServer encrypts what the client sends; ServerToClient what the server
+// sends. With an AES-256 cipher both are 256 bits, every other key is 128 bits.
+type Keys struct {
+	Signing        []byte
+	Application    []byte
+	ClientToServer []byte
+	ServerToClient []byte
+}
 
+// DeriveKeys derives the SMB 3.x keys from a 16-byte session key. For 3.1.1 the
+// KDF context is the session's pre-authentication integrity hash; 3.0 and 3.0.2
+// use constant contexts. Other dialects yield empty keys.
+func DeriveKeys(sessionKey []byte, dialect dialects.Dialect, preauthHash []byte, cipher uint16) Keys {
 	switch dialect {
 	case dialects.SMB2_DIALECT_3_0_0, dialects.SMB2_DIALECT_3_0_2:
-		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning30, kdfContextSign30, 128)
-		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp30, kdfContextApp30, 128)
-		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerIn, 128)
-		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelCipher30, kdfContextServerOut, 128)
+		return Keys{
+			Signing:        sp800108CounterKDF(sessionKey, kdfLabelSigning30, kdfContextSign30, 128),
+			Application:    sp800108CounterKDF(sessionKey, kdfLabelApp30, kdfContextApp30, 128),
+			ClientToServer: sp800108CounterKDF(sessionKey, kdfLabelCipher30, kdfContextServerIn, 128),
+			ServerToClient: sp800108CounterKDF(sessionKey, kdfLabelCipher30, kdfContextServerOut, 128),
+		}
 	case dialects.SMB2_DIALECT_3_1_1:
 		cipherBits := 128
 		if cipher == commands.SMB2_ENCRYPTION_AES256_CCM || cipher == commands.SMB2_ENCRYPTION_AES256_GCM {
 			cipherBits = 256
 		}
-		session.SigningKey = sp800108CounterKDF(key, kdfLabelSigning311, preauthHash, 128)
-		session.ApplicationKey = sp800108CounterKDF(key, kdfLabelApp311, preauthHash, 128)
-		session.EncryptionKey = sp800108CounterKDF(key, kdfLabelC2SCipher, preauthHash, cipherBits)
-		session.DecryptionKey = sp800108CounterKDF(key, kdfLabelS2CCipher, preauthHash, cipherBits)
+		return Keys{
+			Signing:        sp800108CounterKDF(sessionKey, kdfLabelSigning311, preauthHash, 128),
+			Application:    sp800108CounterKDF(sessionKey, kdfLabelApp311, preauthHash, 128),
+			ClientToServer: sp800108CounterKDF(sessionKey, kdfLabelC2SCipher, preauthHash, cipherBits),
+			ServerToClient: sp800108CounterKDF(sessionKey, kdfLabelS2CCipher, preauthHash, cipherBits),
+		}
 	}
+	return Keys{}
 }
 
-// isSMB3Dialect reports whether a negotiated dialect belongs to the SMB 3.x
+// IsSMB3 reports whether a negotiated dialect belongs to the SMB 3.x
 // family, which uses the SP800-108 key hierarchy and AES-based signing.
-func isSMB3Dialect(d dialects.Dialect) bool {
+func IsSMB3(d dialects.Dialect) bool {
 	switch d {
 	case dialects.SMB2_DIALECT_3_0_0, dialects.SMB2_DIALECT_3_0_2, dialects.SMB2_DIALECT_3_1_1:
 		return true

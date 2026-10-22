@@ -9,6 +9,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
@@ -158,7 +159,7 @@ func (c *Client) WaitBreakNotification() (*BreakNotification, error) {
 	// When per-session encryption is active, the server wraps unsolicited
 	// notifications in an SMB2 TRANSFORM_HEADER (MS-SMB2 3.2.5.19).
 	wasEncrypted := false
-	if isTransformHeader(raw) {
+	if security.IsTransformHeader(raw) {
 		plaintext, derr := c.decryptMessage(raw)
 		if derr != nil {
 			return nil, fmt.Errorf("break notification: %w", derr)
@@ -179,7 +180,7 @@ func (c *Client) WaitBreakNotification() (*BreakNotification, error) {
 		return nil, fmt.Errorf("break notification is not an SMB2 message (ProtocolId % x)", msg.Header.ProtocolId)
 	}
 	if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(msg) {
-		if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
+		if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 			return nil, fmt.Errorf("break notification failed SMB2 signature verification")
 		}
 	}

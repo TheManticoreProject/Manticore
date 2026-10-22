@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
 
 // TreeConnect connects to a share on the server and selects it for subsequent
@@ -49,7 +50,7 @@ func (c *Client) TreeConnect(shareName string) error {
 	// An SMB 3.x share may require encryption; when the server sets the
 	// SMB2_SHAREFLAG_ENCRYPT_DATA flag, encrypt all subsequent traffic on this
 	// session.
-	if isSMB3Dialect(c.Connection.Dialect) &&
+	if security.IsSMB3(c.Connection.Dialect) &&
 		treeConnectResponse.ShareFlags&commands.SMB2_SHAREFLAG_ENCRYPT_DATA != 0 &&
 		len(c.Session.EncryptionKey) > 0 {
 		c.Session.EncryptData = true
@@ -64,7 +65,7 @@ func (c *Client) TreeConnect(shareName string) error {
 		ShareFlags:        treeConnectResponse.ShareFlags,
 		ShareCapabilities: treeConnectResponse.Capabilities,
 		MaximalAccess:     treeConnectResponse.MaximalAccess,
-		CompressData: isSMB3Dialect(c.Connection.Dialect) &&
+		CompressData: security.IsSMB3(c.Connection.Dialect) &&
 			treeConnectResponse.ShareFlags&commands.SMB2_SHAREFLAG_COMPRESS_DATA != 0 &&
 			len(c.Connection.CompressionAlgorithms) > 0,
 	}

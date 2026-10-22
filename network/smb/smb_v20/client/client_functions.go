@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
 
 // newClient builds a client over the given transport, targeting host:port.
@@ -92,7 +93,7 @@ func (c *Client) EnableEncryption() error {
 	if c.Session == nil {
 		return fmt.Errorf("cannot enable encryption: no session established")
 	}
-	if !isSMB3Dialect(c.Connection.Dialect) {
+	if !security.IsSMB3(c.Connection.Dialect) {
 		return fmt.Errorf("cannot enable encryption: dialect %s does not support SMB3 encryption", c.Connection.Dialect)
 	}
 	if len(c.Session.EncryptionKey) == 0 {

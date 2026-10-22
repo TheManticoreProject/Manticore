@@ -7,6 +7,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/filesystem"
@@ -34,7 +35,7 @@ func (c *Client) requiresSecureNegotiateValidation() bool {
 	if c.Session == nil {
 		return false
 	}
-	if !isSMB3Dialect(c.Connection.Dialect) || c.Connection.Dialect == dialects.SMB2_DIALECT_3_1_1 {
+	if !security.IsSMB3(c.Connection.Dialect) || c.Connection.Dialect == dialects.SMB2_DIALECT_3_1_1 {
 		return false
 	}
 	return c.Session.SigningActive || c.Session.EncryptData

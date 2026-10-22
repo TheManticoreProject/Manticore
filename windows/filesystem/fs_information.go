@@ -21,6 +21,16 @@ type FileFsSizeInformation struct {
 // FileFsSizeInformationSize is the fixed wire size of FILE_FS_SIZE_INFORMATION.
 const FileFsSizeInformationSize = 24
 
+// Marshal encodes the structure to its 24-byte wire form.
+func (fi *FileFsSizeInformation) Marshal() ([]byte, error) {
+	b := make([]byte, FileFsSizeInformationSize)
+	binary.LittleEndian.PutUint64(b[0:8], uint64(fi.TotalAllocationUnits))
+	binary.LittleEndian.PutUint64(b[8:16], uint64(fi.AvailableAllocationUnits))
+	binary.LittleEndian.PutUint32(b[16:20], fi.SectorsPerAllocationUnit)
+	binary.LittleEndian.PutUint32(b[20:24], fi.BytesPerSector)
+	return b, nil
+}
+
 // Unmarshal decodes the structure from its wire form.
 func (fi *FileFsSizeInformation) Unmarshal(data []byte) error {
 	if len(data) < FileFsSizeInformationSize {

@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
@@ -51,7 +52,7 @@ func (c *Client) Cancel() error {
 	// signing is active.
 	encrypt := c.Session != nil && c.Session.EncryptData
 	if !encrypt && c.Session != nil && c.Session.SigningActive {
-		signMessageForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
+		security.Sign(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
 	}
 
 	wire := marshalled
