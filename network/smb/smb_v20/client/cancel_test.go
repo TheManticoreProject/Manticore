@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
@@ -68,7 +69,7 @@ func TestCancelEncryptsWhenSessionEncrypts(t *testing.T) {
 	}
 
 	sent := ft.sent[0]
-	if !isTransformHeader(sent) {
+	if !security.IsTransformHeader(sent) {
 		t.Fatal("CANCEL must be encrypted (TRANSFORM_HEADER) when EncryptData is set")
 	}
 }
@@ -79,9 +80,9 @@ func TestCancelSignsWhenSigningActiveNoEncryption(t *testing.T) {
 	c := newTestClient(ft)
 	c.Connection.Dialect = dialects.SMB2_DIALECT_2_0_2
 	c.Session = &Session{
-		Client:       c,
-		SessionId:    0x99,
-		TreeId:       0x5,
+		Client:        c,
+		SessionId:     0x99,
+		TreeId:        0x5,
 		SigningKey:    key,
 		SigningActive: true,
 	}
@@ -96,10 +97,10 @@ func TestCancelSignsWhenSigningActiveNoEncryption(t *testing.T) {
 	}
 
 	sent := ft.sent[0]
-	if isTransformHeader(sent) {
+	if security.IsTransformHeader(sent) {
 		t.Fatal("CANCEL should be signed, not encrypted, when EncryptData is false")
 	}
-	if !verifySignature(key, sent) {
+	if !security.Verify(dialects.SMB2_DIALECT_2_0_2, -1, key, sent) {
 		t.Error("CANCEL must be signed when SigningActive is set")
 	}
 }

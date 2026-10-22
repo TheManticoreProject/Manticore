@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
 
 // newRequest builds an SMB2 request message with the header fields common to
@@ -69,7 +70,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	// mandates (AES-128-CMAC for SMB 3.x, HMAC-SHA256 for SMB 2.x).
 	encrypt := c.Session != nil && c.Session.EncryptData
 	if !encrypt && c.Session != nil && c.Session.SigningActive {
-		signMessageForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
+		security.Sign(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, marshalled)
 	}
 
 	// Preserve the plaintext wire bytes of the request for the pre-auth hash.
@@ -102,7 +103,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// A response wrapped in an SMB2 TRANSFORM_HEADER is decrypted first; the
 		// AEAD tag authenticates it, so no separate signature check is needed.
 		wasEncrypted := false
-		if isTransformHeader(raw) {
+		if security.IsTransformHeader(raw) {
 			plaintext, derr := c.decryptMessage(raw)
 			if derr != nil {
 				return nil, fmt.Errorf("%s: %w", label, derr)
@@ -144,7 +145,7 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// arrives unsigned (zeroed signature) fails verification and is
 		// rejected rather than silently accepted.
 		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(response) {
-			if !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
+			if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 				return nil, fmt.Errorf("%s response failed SMB2 signature verification", label)
 			}
 		}

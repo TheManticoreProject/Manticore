@@ -6,6 +6,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -128,7 +129,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	// carried the AP-REQ; the final SUCCESS response is excluded from the hash
 	// used to derive keys.
 	sessionHash := append([]byte(nil), c.Connection.PreauthIntegrityHashValue...)
-	sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+	sessionHash = security.PreauthUpdate(sessionHash, c.lastSentBytes)
 	firstRespBytes := append([]byte(nil), c.lastRecvBytes...)
 
 	status := statusFromResponse(resp)
@@ -195,7 +196,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	finalSetupResp := setupResp
 	if status == ntStatusMoreProcessingRequired {
 		// Two-leg: the interim response and the second request also feed the hash.
-		sessionHash = preauthUpdate(sessionHash, firstRespBytes)
+		sessionHash = security.PreauthUpdate(sessionHash, firstRespBytes)
 
 		req2 := commands.NewSessionSetupRequest()
 		req2.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
@@ -209,7 +210,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 			c.Session = nil
 			return err
 		}
-		sessionHash = preauthUpdate(sessionHash, c.lastSentBytes)
+		sessionHash = security.PreauthUpdate(sessionHash, c.lastSentBytes)
 		finalRespBytes = append([]byte(nil), c.lastRecvBytes...)
 		if st := statusFromResponse(resp2); st != 0x00000000 {
 			c.Session = nil
@@ -234,13 +235,13 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 		// SMB 3.x: derive the signing/encryption/application keys from the session key
 		// via the SP800-108 KDF, using the per-session pre-auth hash as the 3.1.1 KDF
 		// context. For the 2.x dialects the session key remains the signing key.
-		if isSMB3Dialect(c.Connection.Dialect) {
+		if security.IsSMB3(c.Connection.Dialect) {
 			session.PreauthHash = sessionHash
 			deriveSMB3Keys(session, c.Connection.Dialect, sessionHash, c.Connection.Cipher, c.Connection.SigningAlgorithmId)
 
 			// The server signs the final SESSION_SETUP response with the derived signing
 			// key; verify it to confirm the key hierarchy is correct.
-			if len(finalRespBytes) >= 64 && !verifySignatureForDialect(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
+			if len(finalRespBytes) >= 64 && !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, session.SigningKey, finalRespBytes) {
 				c.Session = nil
 				return fmt.Errorf("kerberos session setup: SMB3 signature of final SESSION_SETUP response did not verify (derived signing key mismatch)")
 			}
