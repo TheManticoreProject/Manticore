@@ -232,8 +232,11 @@ func (c *Connection) decodeRequest(data []byte, encrypted bool) (*request, int, 
 func (c *Connection) process(r, previous *request, previousStatus nt_status.NT_STATUS) (*response, nt_status.NT_STATUS, error) {
 	h := r.header
 	if h.Command == codes.SMB2_CANCEL {
-		// A CANCEL consumes no credit and gets no response of its own.
-		c.cancel(h)
+		// A CANCEL consumes no credit and gets no response of its own, but it is
+		// held to its session's signing and encryption like any other request.
+		if c.authorizeSession(r).IsSuccess() {
+			c.cancel(h, r.session)
+		}
 		return nil, nt_status.NT_STATUS_SUCCESS, nil
 	}
 	if !c.credits.consume(h.MessageId, h.CreditCharge) {
@@ -306,6 +309,26 @@ func (c *Connection) authorize(r *request) nt_status.NT_STATUS {
 		return nt_status.NT_STATUS_SUCCESS
 	}
 
+	if status := c.authorizeSession(r); !status.IsSuccess() {
+		return status
+	}
+	session := r.session
+
+	switch h.Command {
+	case codes.SMB2_LOGOFF, codes.SMB2_TREE_CONNECT:
+		return nt_status.NT_STATUS_SUCCESS
+	}
+	r.tree = session.trees[h.TreeId]
+	if r.tree == nil {
+		return nt_status.NT_STATUS_NETWORK_NAME_DELETED
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
+// authorizeSession resolves the established session a request runs in and
+// enforces its signing and encryption requirements.
+func (c *Connection) authorizeSession(r *request) nt_status.NT_STATUS {
+	h := r.header
 	session := c.sessions[h.SessionId]
 	if session == nil || !session.established {
 		return nt_status.NT_STATUS_USER_SESSION_DELETED
@@ -323,15 +346,6 @@ func (c *Connection) authorize(r *request) nt_status.NT_STATUS {
 		} else if session.signingRequired {
 			return nt_status.NT_STATUS_ACCESS_DENIED
 		}
-	}
-
-	switch h.Command {
-	case codes.SMB2_LOGOFF, codes.SMB2_TREE_CONNECT:
-		return nt_status.NT_STATUS_SUCCESS
-	}
-	r.tree = session.trees[h.TreeId]
-	if r.tree == nil {
-		return nt_status.NT_STATUS_NETWORK_NAME_DELETED
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }

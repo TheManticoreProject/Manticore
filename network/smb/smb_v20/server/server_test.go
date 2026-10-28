@@ -18,6 +18,8 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/server"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -623,6 +625,185 @@ func TestServerReadCreditCharge(t *testing.T) {
 				t.Errorf("correctly charged READ: status 0x%08x, want STATUS_SUCCESS", got)
 			}
 		})
+	}
+}
+
+func TestServerCancelRequiresSessionProtection(t *testing.T) {
+	for _, config := range []server.Config{{RequireSigning: true}, {RequireEncryption: true}} {
+		_, port := startServer(t, config)
+		watcher, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := watcher.CreateFile("", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE, fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionID := watcher.Session.SessionId
+
+		changes := make(chan []filesystem.FileNotifyInformation, 1)
+		errs := make(chan error, 1)
+		go func() {
+			got, err := watcher.ChangeNotify(root, filesystem.FILE_NOTIFY_CHANGE_FILE_NAME, false)
+			changes <- got
+			errs <- err
+		}()
+		time.Sleep(100 * time.Millisecond) // let the request reach the server first
+
+		// An unsigned, unencrypted CANCEL naming the pending request (the first
+		// AsyncId the connection hands out) must be ignored.
+		forged := message.NewMessage()
+		forged.Header.SetFlags(flags.SMB2_FLAGS_ASYNC_COMMAND)
+		forged.Header.SetAsyncId(1)
+		forged.Header.SessionId = sessionID
+		forged.SetCommand(commands.NewCancelRequest())
+		wire, err := forged.Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := watcher.Transport.Send(wire); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		if _, err := writer.CreateFile("created.txt", fileflags.GENERIC_WRITE, 0, fileflags.FILE_CREATE, 0); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-changes:
+			if err := <-errs; err != nil || len(got) == 0 || got[0].FileName != "created.txt" {
+				t.Fatalf("ChangeNotify (%+v) = %+v, %v; want created.txt, not a cancellation", config, got, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no change notification (%+v)", config)
+		}
+	}
+}
+
+// changedFileSystem reports a change as soon as a directory is watched.
+type changedFileSystem struct {
+	*smb1.MemoryFileSystem
+}
+
+func (fs changedFileSystem) Watch(path string, recursive bool) (<-chan smb1.ChangeNotification, func(), error) {
+	changes := make(chan smb1.ChangeNotification, 1)
+	changes <- smb1.ChangeNotification{Action: uint32(filesystem.FileActionAdded), Name: "created.txt"}
+	return changes, func() {}, nil
+}
+
+func TestServerChangeNotifyInterimFirst(t *testing.T) {
+	config := withTestIdentity(&server.Config{})
+	srv, err := server.NewServer(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.AddShare(&server.Share{Name: "files", FS: changedFileSystem{smb1.NewMemoryFileSystem("FILES")}}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := transport.ListenTCP("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(listener)
+	t.Cleanup(func() { srv.Close() })
+
+	c, err := dial(t, listener.Addr().(*net.TCPAddr).Port, dialects.SMB2_DIALECT_2_1_0, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.CreateFile("", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ, fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 500; i++ {
+		notify := commands.NewChangeNotifyRequest()
+		notify.FileId, notify.OutputBufferLength = root, 4096
+		notify.CompletionFilter = filesystem.FILE_NOTIFY_CHANGE_FILE_NAME
+		wire, err := c.NewRequest(notify).Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Transport.Send(wire); err != nil {
+			t.Fatal(err)
+		}
+		var statuses []uint32
+		for len(statuses) < 2 {
+			raw, err := c.Transport.Receive()
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := header.NewHeader()
+			if _, err := h.Unmarshal(raw); err != nil {
+				t.Fatal(err)
+			}
+			statuses = append(statuses, h.Status)
+		}
+		if statuses[0] != uint32(nt_status.NT_STATUS_PENDING) || statuses[1] != uint32(nt_status.NT_STATUS_SUCCESS) {
+			t.Fatalf("CHANGE_NOTIFY %d answered 0x%08x then 0x%08x; want STATUS_PENDING then STATUS_SUCCESS", i, statuses[0], statuses[1])
+		}
+	}
+}
+
+func TestServerChangeNotifyLimit(t *testing.T) {
+	fs, port := startServer(t, server.Config{MaxNotifiesPerConnection: 2})
+	c, err := dial(t, port, dialects.SMB2_DIALECT_2_1_0, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.CreateFile("", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE, fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// notify sends a CHANGE_NOTIFY and returns the status it is first answered with.
+	notify := func() uint32 {
+		t.Helper()
+		req := commands.NewChangeNotifyRequest()
+		req.FileId, req.OutputBufferLength = root, 4096
+		req.CompletionFilter = filesystem.FILE_NOTIFY_CHANGE_FILE_NAME
+		wire, err := c.NewRequest(req).Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Transport.Send(wire); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := c.Transport.Receive()
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := header.NewHeader()
+		if _, err := h.Unmarshal(raw); err != nil {
+			t.Fatal(err)
+		}
+		return h.Status
+	}
+
+	for i := 0; i < 2; i++ {
+		if status := notify(); status != uint32(nt_status.NT_STATUS_PENDING) {
+			t.Fatalf("CHANGE_NOTIFY %d answered 0x%08x, want STATUS_PENDING", i, status)
+		}
+	}
+	if status := notify(); status != uint32(nt_status.NT_STATUS_INSUFFICIENT_RESOURCES) {
+		t.Fatalf("CHANGE_NOTIFY over the limit answered 0x%08x, want STATUS_INSUFFICIENT_RESOURCES", status)
+	}
+
+	// Completing the pending requests frees their slots.
+	if err := fs.AddFile("created.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	for completed := 0; completed < 2; completed++ {
+		if _, err := c.Transport.Receive(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status := notify(); status != uint32(nt_status.NT_STATUS_PENDING) {
+		t.Fatalf("CHANGE_NOTIFY after completions answered 0x%08x, want STATUS_PENDING", status)
 	}
 }
 
