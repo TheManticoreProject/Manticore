@@ -80,8 +80,18 @@ func (c *Connection) changeNotify(r *request, resp *response) nt_status.NT_STATU
 	}
 	c.trackNotify(open, p)
 
+	// The final response must not overtake the interim one (MS-SMB2 3.3.4.2), so
+	// the watch only starts reporting once the interim response is on the wire.
+	interimSent := make(chan struct{})
+	resp.onSent = func([]byte) { close(interimSent) }
+
 	go func() {
 		defer stopWatch()
+		select {
+		case <-interimSent:
+		case <-p.stopped:
+			return
+		}
 		for {
 			select {
 			case <-p.stopped:
