@@ -20,6 +20,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/server"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 	"github.com/TheManticoreProject/Manticore/windows/filesystem"
 	"github.com/TheManticoreProject/Manticore/windows/filesystem/infoclass"
@@ -549,5 +550,51 @@ func TestServerHandlerChain(t *testing.T) {
 	}
 	if handler.seen == 0 {
 		t.Fatal("the handler did not intercept ECHO")
+	}
+}
+
+func TestServerReadCreditCharge(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dialect dialects.Dialect
+		length  uint32
+		charge  uint16
+	}{
+		{"SMB 3.1.1 one credit for 1 MiB", dialects.SMB2_DIALECT_3_1_1, 1 << 20, 1},
+		{"SMB 3.1.1 one credit short", dialects.SMB2_DIALECT_3_1_1, 1<<16 + 1, 1},
+		{"SMB 2.0.2 over 64 KiB", dialects.SMB2_DIALECT_2_0_2, 1<<16 + 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, port := startServer(t, server.Config{})
+			c, err := dial(t, port, tc.dialect, "Passw0rd!")
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, err := c.CreateFile("hello.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ, fileflags.FILE_OPEN, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var msgs []*message.Message
+			for _, length := range []uint32{tc.length, 11} {
+				read := commands.NewReadRequest()
+				read.FileId, read.Length = id, length
+				msg := c.NewRequest(read)
+				if length == tc.length {
+					msg.Header.CreditCharge = tc.charge
+				}
+				msgs = append(msgs, msg)
+			}
+			answers, err := c.SendUnrelatedCompound(msgs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := answers[0].Header.Status; got != uint32(nt_status.NT_STATUS_INVALID_PARAMETER) {
+				t.Errorf("under-charged READ of %d bytes: status 0x%08x, want STATUS_INVALID_PARAMETER", tc.length, got)
+			}
+			if got := answers[1].Header.Status; got != uint32(nt_status.NT_STATUS_SUCCESS) {
+				t.Errorf("correctly charged READ: status 0x%08x, want STATUS_SUCCESS", got)
+			}
+		})
 	}
 }
