@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -381,5 +382,69 @@ func TestTCPTransport_SendRejectsOversizedPayload(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("TCPTransport.Send() wrote %d byte(s) for a rejected message, want 0", n)
+	}
+}
+
+// TestTCPTransport_ReceiveAllocatesAsPayloadArrives checks that a peer which
+// announces a large frame and then stalls does not make Receive allocate the
+// whole announced length.
+func TestTCPTransport_ReceiveAllocatesAsPayloadArrives(t *testing.T) {
+	tr, accepted := dialLoopback(t)
+	peer := <-accepted
+	if peer == nil {
+		t.Fatal("no connection accepted")
+	}
+	go func() {
+		defer peer.Close()
+		_, _ = peer.Write([]byte{0x00, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4})
+	}()
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if _, err := tr.Receive(); err == nil {
+		t.Fatal("Receive() accepted a truncated frame")
+	}
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 1<<20 {
+		t.Errorf("Receive() allocated %d bytes for a frame of which 4 bytes arrived", allocated)
+	}
+}
+
+// TestTCPTransport_ReceiveReassemblesPiecewisePayload checks that a frame sent
+// in small writes is returned whole and intact.
+func TestTCPTransport_ReceiveReassemblesPiecewisePayload(t *testing.T) {
+	const payloadLen = 3*1024*1024 + 17
+	payload := make([]byte, payloadLen)
+	for i := range payload {
+		payload[i] = byte(i * 7)
+	}
+
+	tr, accepted := dialLoopback(t)
+	tr.SetTimeout(10 * time.Second)
+	peer := <-accepted
+	if peer == nil {
+		t.Fatal("no connection accepted")
+	}
+	go func() {
+		defer peer.Close()
+		if _, err := peer.Write([]byte{0x00, byte(payloadLen >> 16), byte(payloadLen >> 8 & 0xFF), byte(payloadLen & 0xFF)}); err != nil {
+			return
+		}
+		for rest := payload; len(rest) > 0; {
+			n := min(len(rest), 1000)
+			if _, err := peer.Write(rest[:n]); err != nil {
+				return
+			}
+			rest = rest[n:]
+		}
+	}()
+
+	got, err := tr.Receive()
+	if err != nil {
+		t.Fatalf("Receive() error = %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("Receive() returned %d bytes that differ from the %d sent", len(got), payloadLen)
 	}
 }

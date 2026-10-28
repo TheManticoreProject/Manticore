@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"time"
 )
 
@@ -23,6 +24,10 @@ const MaxDirectTCPFrameLength = 0xFFFFFF
 // side sets per connection with SetMaxPayloadSize, not something a constant shared
 // with the client can express.
 const MaxDirectTCPPayloadSize = MaxDirectTCPFrameLength
+
+// receiveChunkSize is how much of a frame's payload Receive allocates before any
+// of it has arrived; the buffer then doubles as the payload comes in.
+const receiveChunkSize = 64 * 1024
 
 // TCPTransport implements the Transport interface for Direct TCP transport
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/f906c680-330c-43ae-9a71-f854e24aeee6
@@ -172,12 +177,20 @@ func (t *TCPTransport) Receive() ([]byte, error) {
 		return nil, fmt.Errorf("Direct TCP payload length %d exceeds maximum %d", length, cap)
 	}
 
-	buffer := make([]byte, length)
-
-	// Read the actual data
-	_, err = io.ReadFull(t.conn, buffer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read Direct TCP data: %v", err)
+	// Read the payload as it arrives instead of allocating the announced length
+	// up front, so a peer that announces a large frame and stalls holds only
+	// what it actually sent.
+	buffer := make([]byte, 0, min(length, receiveChunkSize))
+	for len(buffer) < length {
+		if len(buffer) == cap(buffer) {
+			buffer = slices.Grow(buffer, min(length-len(buffer), len(buffer)))
+		}
+		end := min(cap(buffer), length)
+		n, err := io.ReadFull(t.conn, buffer[len(buffer):end])
+		buffer = buffer[:len(buffer)+n]
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Direct TCP data: %v", err)
+		}
 	}
 
 	return buffer, nil
