@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -191,7 +192,17 @@ func (c *Connection) read(r *request, resp *response) nt_status.NT_STATUS {
 	if status := open.require(readDataRights); !status.IsSuccess() {
 		return status
 	}
-	if req.Length > c.server.config.MaxReadSize {
+	// A multi-credit connection pays one credit per 64 KiB read (MS-SMB2
+	// 3.3.5.2.5); one without LARGE_MTU was offered 64 KiB at most.
+	limit := c.server.config.MaxReadSize
+	if c.capabilities.Has(capabilities.SMB2_GLOBAL_CAP_LARGE_MTU) {
+		if uint64(max(r.header.CreditCharge, 1))<<16 < uint64(req.Length) {
+			return nt_status.NT_STATUS_INVALID_PARAMETER
+		}
+	} else {
+		limit = min(limit, 1<<16)
+	}
+	if req.Length > limit {
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 
