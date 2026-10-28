@@ -65,6 +65,9 @@ func (c *Connection) changeNotify(r *request, resp *response) nt_status.NT_STATU
 	if !ok {
 		return nt_status.NT_STATUS_NOT_SUPPORTED
 	}
+	if c.pendingNotifies() >= c.server.config.MaxNotifiesPerConnection {
+		return nt_status.NT_STATUS_INSUFFICIENT_RESOURCES
+	}
 	changes, stopWatch, err := watcher.Watch(open.path, req.Flags&commands.SMB2_WATCH_TREE != 0)
 	if err != nil {
 		return smb1.StatusForFSError(err)
@@ -128,6 +131,17 @@ func (c *Connection) trackNotify(open *Open, p *pendingNotify) {
 	}
 	open.notifies = append(kept, p)
 	c.notifies[p.asyncID] = p
+}
+
+// pendingNotifies counts the CHANGE_NOTIFY requests still pending on the
+// connection, forgetting the ones that already completed.
+func (c *Connection) pendingNotifies() int {
+	for id, p := range c.notifies {
+		if p.finished() {
+			delete(c.notifies, id)
+		}
+	}
+	return len(c.notifies)
 }
 
 // cancel answers a CANCEL by completing the request it names, by AsyncId for an

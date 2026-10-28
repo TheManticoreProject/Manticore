@@ -748,3 +748,61 @@ func TestServerChangeNotifyInterimFirst(t *testing.T) {
 		}
 	}
 }
+
+func TestServerChangeNotifyLimit(t *testing.T) {
+	fs, port := startServer(t, server.Config{MaxNotifiesPerConnection: 2})
+	c, err := dial(t, port, dialects.SMB2_DIALECT_2_1_0, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.CreateFile("", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE, fileflags.FILE_OPEN, fileflags.FILE_DIRECTORY_FILE)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// notify sends a CHANGE_NOTIFY and returns the status it is first answered with.
+	notify := func() uint32 {
+		t.Helper()
+		req := commands.NewChangeNotifyRequest()
+		req.FileId, req.OutputBufferLength = root, 4096
+		req.CompletionFilter = filesystem.FILE_NOTIFY_CHANGE_FILE_NAME
+		wire, err := c.NewRequest(req).Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Transport.Send(wire); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := c.Transport.Receive()
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := header.NewHeader()
+		if _, err := h.Unmarshal(raw); err != nil {
+			t.Fatal(err)
+		}
+		return h.Status
+	}
+
+	for i := 0; i < 2; i++ {
+		if status := notify(); status != uint32(nt_status.NT_STATUS_PENDING) {
+			t.Fatalf("CHANGE_NOTIFY %d answered 0x%08x, want STATUS_PENDING", i, status)
+		}
+	}
+	if status := notify(); status != uint32(nt_status.NT_STATUS_INSUFFICIENT_RESOURCES) {
+		t.Fatalf("CHANGE_NOTIFY over the limit answered 0x%08x, want STATUS_INSUFFICIENT_RESOURCES", status)
+	}
+
+	// Completing the pending requests frees their slots.
+	if err := fs.AddFile("created.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	for completed := 0; completed < 2; completed++ {
+		if _, err := c.Transport.Receive(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status := notify(); status != uint32(nt_status.NT_STATUS_PENDING) {
+		t.Fatalf("CHANGE_NOTIFY after completions answered 0x%08x, want STATUS_PENDING", status)
+	}
+}
