@@ -223,7 +223,9 @@ graph LR
   n_network_smb_smb_v20_message_commands_command_interface["command_interface 🟠"]:::c1
   n_network_smb_smb_v20_message_header["header 🟢"]:::c2
   n_network_smb_smb_v20_message_header_flags["flags 🟢"]:::c2
+  n_network_smb_smb_v20_security["security 🟢"]:::c2
   n_network_smb_smb_v20_securitymode["securitymode 🟢"]:::c2
+  n_network_smb_smb_v20_server["server 🟢"]:::c2
   n_network_smb_smb_v20_types["types 🟢"]:::c2
   n_network_smb_smb_v21["smb_v21 🔴"]:::c0
   n_network_smb_smb_v30["smb_v30 🔴"]:::c0
@@ -515,7 +517,9 @@ graph LR
   n_network_smb_smb_v20_message_commands --> n_network_smb_smb_v20_message_commands_command_interface
   n_network_smb_smb_v20_message --> n_network_smb_smb_v20_message_header
   n_network_smb_smb_v20_message_header --> n_network_smb_smb_v20_message_header_flags
+  n_network_smb_smb_v20 --> n_network_smb_smb_v20_security
   n_network_smb_smb_v20 --> n_network_smb_smb_v20_securitymode
+  n_network_smb_smb_v20 --> n_network_smb_smb_v20_server
   n_network_smb_smb_v20 --> n_network_smb_smb_v20_types
   n_network_smb --> n_network_smb_smb_v21
   n_network_smb --> n_network_smb_smb_v30

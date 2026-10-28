@@ -6,6 +6,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
 
 // Negotiate performs the SMB2 NEGOTIATE exchange, offering the full range of
@@ -70,7 +71,7 @@ func (c *Client) Negotiate() error {
 
 	// Seed the pre-auth integrity hash with 64 zero bytes; it is folded with the
 	// NEGOTIATE request and response bytes below.
-	c.Connection.PreauthIntegrityHashValue = make([]byte, preauthHashLength)
+	c.Connection.PreauthIntegrityHashValue = make([]byte, security.PreauthHashSize)
 
 	msg := c.newRequest(req)
 	// NEGOTIATE is sent before any session exists; SessionId MUST be 0.
@@ -82,8 +83,8 @@ func (c *Client) Negotiate() error {
 	}
 
 	// Fold the exact request and response wire bytes into the pre-auth hash.
-	c.Connection.PreauthIntegrityHashValue = preauthUpdate(c.Connection.PreauthIntegrityHashValue, c.lastSentBytes)
-	c.Connection.PreauthIntegrityHashValue = preauthUpdate(c.Connection.PreauthIntegrityHashValue, c.lastRecvBytes)
+	c.Connection.PreauthIntegrityHashValue = security.PreauthUpdate(c.Connection.PreauthIntegrityHashValue, c.lastSentBytes)
+	c.Connection.PreauthIntegrityHashValue = security.PreauthUpdate(c.Connection.PreauthIntegrityHashValue, c.lastRecvBytes)
 
 	if status := statusFromResponse(response); status != 0x00000000 {
 		return fmt.Errorf("negotiate failed: 0x%08x", status)

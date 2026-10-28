@@ -32,6 +32,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/securitymode"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -179,7 +180,7 @@ func negotiate21(c *Client) error {
 
 	// The 2.x dialects carry no pre-auth integrity; keep the buffer non-nil so the
 	// (unused for 2.x) hash-folding in the session setup is harmless.
-	c.Connection.PreauthIntegrityHashValue = make([]byte, preauthHashLength)
+	c.Connection.PreauthIntegrityHashValue = make([]byte, security.PreauthHashSize)
 
 	msg := c.newRequest(req)
 	msg.Header.SessionId = 0

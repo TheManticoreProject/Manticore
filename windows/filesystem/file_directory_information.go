@@ -94,6 +94,75 @@ func ParseFileFullDirectoryInformationList(buf []byte) []FileFullDirectoryInform
 	return out
 }
 
+// FileIdFullDirectoryInformation is FILE_ID_FULL_DIR_INFORMATION
+// (FileInformationClass 38): a FILE_FULL_DIR_INFORMATION entry plus the file's
+// 8-byte FileId.
+//
+// [MS-FSCC] 2.4.18 FileIdFullDirectoryInformation:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ab8e7558-899c-4be1-a7c5-3a9ae8ab76a0
+type FileIdFullDirectoryInformation struct {
+	NextEntryOffset uint32
+	FileIndex       uint32
+	CreationTime    uint64
+	LastAccessTime  uint64
+	LastWriteTime   uint64
+	ChangeTime      uint64
+	EndOfFile       int64
+	AllocationSize  int64
+	FileAttributes  uint32
+	EaSize          uint32
+	FileId          uint64
+	FileName        string
+}
+
+// fileIdFullDirInfoFixedSize is the fixed portion preceding FileName: the
+// full-dir prefix (68) plus Reserved(4) FileId(8).
+const fileIdFullDirInfoFixedSize = 80
+
+// Marshal encodes a single entry (fixed prefix + FileName).
+func (fi *FileIdFullDirectoryInformation) Marshal() ([]byte, error) {
+	full := FileFullDirectoryInformation{
+		NextEntryOffset: fi.NextEntryOffset, FileIndex: fi.FileIndex,
+		CreationTime: fi.CreationTime, LastAccessTime: fi.LastAccessTime,
+		LastWriteTime: fi.LastWriteTime, ChangeTime: fi.ChangeTime,
+		EndOfFile: fi.EndOfFile, AllocationSize: fi.AllocationSize,
+		FileAttributes: fi.FileAttributes, EaSize: fi.EaSize,
+	}
+	b, err := full.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	name := encodeUTF16LE(fi.FileName)
+	binary.LittleEndian.PutUint32(b[60:64], uint32(len(name)))
+	b = binary.LittleEndian.AppendUint32(b, 0) // Reserved
+	b = binary.LittleEndian.AppendUint64(b, fi.FileId)
+	return append(b, name...), nil
+}
+
+// Unmarshal decodes a single entry from the start of data.
+func (fi *FileIdFullDirectoryInformation) Unmarshal(data []byte) error {
+	if len(data) < fileIdFullDirInfoFixedSize {
+		return fmt.Errorf("FILE_ID_FULL_DIR_INFORMATION: need %d bytes, got %d", fileIdFullDirInfoFixedSize, len(data))
+	}
+	var full FileFullDirectoryInformation
+	if err := full.Unmarshal(data[:fileFullDirInfoFixedSize]); err != nil {
+		return err
+	}
+	*fi = FileIdFullDirectoryInformation{
+		NextEntryOffset: full.NextEntryOffset, FileIndex: full.FileIndex,
+		CreationTime: full.CreationTime, LastAccessTime: full.LastAccessTime,
+		LastWriteTime: full.LastWriteTime, ChangeTime: full.ChangeTime,
+		EndOfFile: full.EndOfFile, AllocationSize: full.AllocationSize,
+		FileAttributes: full.FileAttributes, EaSize: full.EaSize,
+		FileId: binary.LittleEndian.Uint64(data[72:80]),
+	}
+	nameLen := int(binary.LittleEndian.Uint32(data[60:64]))
+	if nameLen > 0 && fileIdFullDirInfoFixedSize+nameLen <= len(data) {
+		fi.FileName = decodeUTF16LE(data[fileIdFullDirInfoFixedSize : fileIdFullDirInfoFixedSize+nameLen])
+	}
+	return nil
+}
+
 // FileBothDirectoryInformation is FILE_BOTH_DIR_INFORMATION (FileInformationClass
 // 3): a FILE_FULL_DIR_INFORMATION entry plus the 8.3 short name.
 //

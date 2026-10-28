@@ -64,12 +64,44 @@ func writeLength(buf *bytes.Buffer, length int) {
 
 // ExtractNTLMToken extracts the NTLM token from a SPNEGO token (init or resp)
 func ExtractNTLMToken(spnegoToken []byte) ([]byte, error) {
-	// Strip GSS header
+	inner, err := unwrapSPNEGO(spnegoToken)
+	if err != nil {
+		return nil, err
+	}
+	// Try NegTokenInit
+	var init NegTokenInit
+	if _, err := asn1.Unmarshal(inner, &init); err == nil && len(init.MechToken) > 0 {
+		return init.MechToken, nil
+	}
+	// Try NegTokenResp
+	var resp NegTokenResp
+	if _, err := asn1.Unmarshal(inner, &resp); err == nil && len(resp.ResponseToken) > 0 {
+		return resp.ResponseToken, nil
+	}
+	return nil, errors.New("no NTLM token found in SPNEGO message")
+}
+
+// ParseNegTokenInit decodes the GSS-wrapped NegTokenInit an initiator sends
+// first, so an acceptor can tell which mechanism its optimistic token is for.
+func ParseNegTokenInit(spnegoToken []byte) (*NegTokenInit, error) {
+	inner, err := unwrapSPNEGO(spnegoToken)
+	if err != nil {
+		return nil, err
+	}
+	var init NegTokenInit
+	if _, err := asn1.Unmarshal(inner, &init); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal NegTokenInit: %v", err)
+	}
+	return &init, nil
+}
+
+// unwrapSPNEGO strips the GSS header, checks the SPNEGO OID and returns the
+// content of the [0] context tag that follows it.
+func unwrapSPNEGO(spnegoToken []byte) ([]byte, error) {
 	naked, err := stripGSSHeader(spnegoToken)
 	if err != nil {
 		return nil, err
 	}
-	// Unmarshal OID
 	var oid asn1.ObjectIdentifier
 	rest, err := asn1.Unmarshal(naked, &oid)
 	if err != nil {
@@ -78,26 +110,14 @@ func ExtractNTLMToken(spnegoToken []byte) ([]byte, error) {
 	if !oid.Equal(SpnegoOID) {
 		return nil, fmt.Errorf("unexpected SPNEGO OID: %v", oid)
 	}
-	// Strip [0]
 	var raw asn1.RawValue
-	_, err = asn1.Unmarshal(rest, &raw)
-	if err != nil {
+	if _, err := asn1.Unmarshal(rest, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal context tag: %v", err)
 	}
 	if raw.Class != asn1.ClassContextSpecific || raw.Tag != 0 {
 		return nil, errors.New("missing SPNEGO inner context tag")
 	}
-	// Try NegTokenInit
-	var init NegTokenInit
-	if _, err := asn1.Unmarshal(raw.Bytes, &init); err == nil && len(init.MechToken) > 0 {
-		return init.MechToken, nil
-	}
-	// Try NegTokenResp
-	var resp NegTokenResp
-	if _, err := asn1.Unmarshal(raw.Bytes, &resp); err == nil && len(resp.ResponseToken) > 0 {
-		return resp.ResponseToken, nil
-	}
-	return nil, errors.New("no NTLM token found in SPNEGO message")
+	return raw.Bytes, nil
 }
 
 // stripGSSHeader removes the [APPLICATION 0] tag and returns the inner content
