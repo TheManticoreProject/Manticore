@@ -90,6 +90,21 @@ func dial(t *testing.T, port int, dialect dialects.Dialect, password string) (*c
 	return c, nil
 }
 
+// dialAnonymous connects and sets up a null session.
+func dialAnonymous(t *testing.T, port int) error {
+	t.Helper()
+	c := client.NewClientUsingTCPTransport(net.IPv4(127, 0, 0, 1), port)
+	t.Cleanup(func() { c.Disconnect() })
+	if err := c.Connect(net.IPv4(127, 0, 0, 1), port); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	creds, err := credentials.NewCredentials("", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c.SessionSetup(creds)
+}
+
 // exerciseShare runs the core file operations and checks their effects.
 func exerciseShare(t *testing.T, c *client.Client, fs *smb1.MemoryFileSystem) {
 	t.Helper()
@@ -245,6 +260,18 @@ func TestServerAuthenticationPolicy(t *testing.T) {
 		}
 		if !c.Session.IsGuest {
 			t.Error("the session is not flagged as guest")
+		}
+	})
+	t.Run("anonymous without AllowGuest", func(t *testing.T) {
+		_, port := startServer(t, server.Config{AllowAnonymous: true})
+		if err := dialAnonymous(t, port); err != nil {
+			t.Fatalf("null session refused with AllowAnonymous: %v", err)
+		}
+	})
+	t.Run("anonymous refused", func(t *testing.T) {
+		_, port := startServer(t, server.Config{AllowGuest: true})
+		if err := dialAnonymous(t, port); err == nil {
+			t.Fatal("a null session was accepted without AllowAnonymous")
 		}
 	})
 }

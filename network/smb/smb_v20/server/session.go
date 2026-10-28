@@ -196,7 +196,7 @@ func (c *Connection) establish(session *Session, req *commands.SessionSetupReque
 	config := c.server.config
 	keyless := who.guest || who.anonymous
 	switch {
-	case keyless && (who.anonymous && !config.AllowAnonymous || !config.AllowGuest):
+	case who.anonymous && !config.AllowAnonymous, who.guest && !config.AllowGuest:
 		return nt_status.NT_STATUS_LOGON_FAILURE
 	case keyless && (config.RequireSigning || config.RequireEncryption):
 		// A session without a key could not carry a single request.
