@@ -116,3 +116,19 @@ func TestAuthContext(t *testing.T) {
 		t.Errorf("Expected message type 1 (NEGOTIATE), got %d", messageType)
 	}
 }
+
+func TestStripGSSHeaderRejectsOverflowingLength(t *testing.T) {
+	for _, token := range [][]byte{
+		{0x60, 0x88, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+		{0x60, 0x84, 0xFF, 0xFF, 0xFF, 0xFF, 0x00},
+		{0x60, 0x84, 0x7F, 0xFF, 0xFF, 0xFF, 0x00},
+		{0x60, 0x85, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00},
+	} {
+		if _, err := spnego.ParseNegTokenInit(token); err == nil {
+			t.Errorf("ParseNegTokenInit(% x) accepted an overflowing length", token)
+		}
+		if _, err := spnego.ExtractNTLMToken(token); err == nil {
+			t.Errorf("ExtractNTLMToken(% x) accepted an overflowing length", token)
+		}
+	}
+}
