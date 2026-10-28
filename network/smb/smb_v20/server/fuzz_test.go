@@ -35,7 +35,7 @@ func FuzzHandleFrame(f *testing.F) {
 		}
 		c := newConnection(srv, discardTransport{}, nil)
 		c.handleFrame(frame)
-		c.dialect, c.credits = dialects.SMB2_DIALECT_3_1_1, creditWindow{granted: 1 << 20, available: maxCredits}
+		c.dialect, c.credits = dialects.SMB2_DIALECT_3_1_1, creditWindow{granted: maxWindow, used: make(map[uint64]struct{})}
 		c.handleFrame(frame)
 	})
 }

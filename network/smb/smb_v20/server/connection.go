@@ -69,7 +69,7 @@ func newConnection(s *Server, t transport.Transport, remote net.Addr) *Connectio
 		transport:        t,
 		remote:           remote,
 		signingAlgorithm: -1,
-		credits:          creditWindow{granted: 1, available: 1},
+		credits:          newCreditWindow(),
 		sessions:         make(map[uint64]*Session),
 		opens:            make(map[uint64]*Open),
 		notifies:         make(map[uint64]*pendingNotify),
@@ -483,35 +483,68 @@ func smb1DialectStrings(frame []byte) (map[string]bool, error) {
 	return offered, nil
 }
 
-// creditWindow tracks which MessageIds the client may use (MS-SMB2 3.3.1.1).
-//
-// Only the upper bound is checked: a MessageId reused below it is not detected,
-// which a bitmap of the window would add.
+// creditWindow is the connection's command sequence window (MS-SMB2 3.3.1.1):
+// the MessageIds granted to the client, each of which it may use once, in any
+// order.
 type creditWindow struct {
-	granted   uint64 // MessageIds below this have been granted
-	available uint64 // credits granted and not yet consumed
+	low     uint64              // MessageIds below this were used or expired
+	granted uint64              // MessageIds below this have been granted
+	used    map[uint64]struct{} // MessageIds at or above low already used
 }
 
 // maxCredits bounds the credits a client may hold at once.
 const maxCredits = 512
 
-// consume charges a request against the window.
+// maxWindow bounds the span from the oldest unused MessageId to the newest
+// granted one, so a MessageId the client never uses cannot keep the window, and
+// the record of used MessageIds above it, growing.
+const maxWindow = 8 * maxCredits
+
+func newCreditWindow() creditWindow {
+	return creditWindow{granted: 1, used: make(map[uint64]struct{})}
+}
+
+// available is the number of granted MessageIds not yet used.
+func (w *creditWindow) available() uint64 {
+	return w.granted - w.low - uint64(len(w.used))
+}
+
+// consume charges a request against the window: every MessageId it spans must
+// be granted and not used before.
 func (w *creditWindow) consume(messageID uint64, charge uint16) bool {
 	n := uint64(max(charge, 1))
-	if n > w.available || messageID+n > w.granted || messageID+n < messageID {
+	if messageID < w.low || messageID+n > w.granted || messageID+n < messageID {
 		return false
 	}
-	w.available -= n
+	for id := messageID; id < messageID+n; id++ {
+		if _, seen := w.used[id]; seen {
+			return false
+		}
+	}
+	for id := messageID; id < messageID+n; id++ {
+		w.used[id] = struct{}{}
+	}
+	for {
+		if _, seen := w.used[w.low]; !seen {
+			break
+		}
+		delete(w.used, w.low)
+		w.low++
+	}
 	return true
 }
 
 // grant hands the client up to requested credits, never leaving it with none.
 func (w *creditWindow) grant(requested uint16) uint16 {
-	n := min(uint64(max(requested, 1)), maxCredits-w.available)
-	if n == 0 && w.available == 0 {
-		n = 1
+	var n uint64
+	if available := w.available(); available < maxCredits {
+		n = min(uint64(max(requested, 1)), maxCredits-available)
 	}
-	w.available += n
 	w.granted += n
+	// The oldest MessageIds the client skipped expire once the window is full.
+	for w.granted-w.low > maxWindow {
+		delete(w.used, w.low)
+		w.low++
+	}
 	return uint16(n)
 }
