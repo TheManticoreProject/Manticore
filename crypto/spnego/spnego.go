@@ -150,9 +150,14 @@ func parseLength(b []byte) (int, int, error) {
 	if n == 0 || n > len(b)-1 {
 		return 0, 0, errors.New("invalid long-form length")
 	}
-	length := 0
+	// The length is bounded by the bytes that follow it, which also keeps it
+	// from overflowing int.
+	var length uint64
 	for i := 0; i < n; i++ {
-		length = (length << 8) | int(b[1+i])
+		length = (length << 8) | uint64(b[1+i])
+		if length > uint64(len(b)-1-n) {
+			return 0, 0, errors.New("long-form length exceeds the data")
+		}
 	}
-	return length, 1 + n, nil
+	return int(length), 1 + n, nil
 }
