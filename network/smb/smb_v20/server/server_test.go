@@ -625,3 +625,30 @@ func TestServerReadCreditCharge(t *testing.T) {
 		})
 	}
 }
+
+func TestServerRefusesReplayedMessageId(t *testing.T) {
+	_, port := startServer(t, server.Config{})
+	c, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := c.NewRequest(commands.NewEchoRequest()).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Transport.Send(wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Transport.Receive(); err != nil {
+		t.Fatalf("the ECHO was not answered: %v", err)
+	}
+
+	// The same request again reuses its MessageId: the server drops the connection.
+	if _, err := c.Transport.Send(wire); err != nil {
+		t.Fatal(err)
+	}
+	c.Transport.SetTimeout(5 * time.Second)
+	if raw, err := c.Transport.Receive(); err == nil {
+		t.Fatalf("the replayed ECHO was answered: % x", raw[:min(len(raw), 16)])
+	}
+}
