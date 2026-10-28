@@ -23,6 +23,7 @@ import (
 type pendingNotify struct {
 	asyncID   uint64
 	messageID uint64
+	session   *Session
 	once      sync.Once
 	stopped   chan struct{}
 	reply     func(nt_status.NT_STATUS, command_interface.CommandInterface)
@@ -73,6 +74,7 @@ func (c *Connection) changeNotify(r *request, resp *response) nt_status.NT_STATU
 	p := &pendingNotify{
 		asyncID:   c.nextAsyncID,
 		messageID: r.header.MessageId,
+		session:   r.session,
 		stopped:   make(chan struct{}),
 		reply:     c.asyncReplier(r, c.nextAsyncID),
 	}
@@ -119,9 +121,12 @@ func (c *Connection) trackNotify(open *Open, p *pendingNotify) {
 }
 
 // cancel answers a CANCEL by completing the request it names, by AsyncId for an
-// asynchronous one and by MessageId otherwise.
-func (c *Connection) cancel(h *header.Header) {
+// asynchronous one and by MessageId otherwise, among those of session.
+func (c *Connection) cancel(h *header.Header, session *Session) {
 	for id, p := range c.notifies {
+		if p.session != session {
+			continue
+		}
 		if h.Flags.IsAsync() && id == h.AsyncId || !h.Flags.IsAsync() && p.messageID == h.MessageId {
 			delete(c.notifies, id)
 			p.finish(nt_status.NT_STATUS_CANCELLED, nil)
