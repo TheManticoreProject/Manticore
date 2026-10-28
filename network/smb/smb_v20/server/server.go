@@ -56,12 +56,14 @@ type Config struct {
 	MaxReadSize  uint32
 	MaxWriteSize uint32
 
-	// MaxSessionsPerConnection, MaxTreesPerSession and MaxOpensPerConnection
-	// bound what one client may hold, so it cannot exhaust identifiers or
-	// handles. Zero applies the default.
+	// MaxSessionsPerConnection, MaxTreesPerSession, MaxOpensPerConnection and
+	// MaxNotifiesPerConnection bound what one client may hold, so it cannot
+	// exhaust identifiers, handles or the watches behind pending CHANGE_NOTIFY
+	// requests. Zero applies the default.
 	MaxSessionsPerConnection int
 	MaxTreesPerSession       int
 	MaxOpensPerConnection    int
+	MaxNotifiesPerConnection int
 
 	// MaxConnections bounds the connections served at once; one arriving at the
 	// limit is closed. Zero means unbounded.
@@ -77,6 +79,7 @@ const (
 	DefaultMaxSessionsPerConnection = 64
 	DefaultMaxTreesPerSession       = 64
 	DefaultMaxOpensPerConnection    = 1024
+	DefaultMaxNotifiesPerConnection = 64
 )
 
 // Share is a disk share. Its FileSystem comes from the SMB1 server package,
@@ -129,6 +132,7 @@ func NewServer(config Config) (*Server, error) {
 		"MaxSessionsPerConnection": &config.MaxSessionsPerConnection,
 		"MaxTreesPerSession":       &config.MaxTreesPerSession,
 		"MaxOpensPerConnection":    &config.MaxOpensPerConnection,
+		"MaxNotifiesPerConnection": &config.MaxNotifiesPerConnection,
 	} {
 		if *limit < 0 {
 			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, *limit)
@@ -145,6 +149,9 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.MaxOpensPerConnection == 0 {
 		config.MaxOpensPerConnection = DefaultMaxOpensPerConnection
+	}
+	if config.MaxNotifiesPerConnection == 0 {
+		config.MaxNotifiesPerConnection = DefaultMaxNotifiesPerConnection
 	}
 	if config.MaxReadSize == 0 {
 		config.MaxReadSize = DefaultMaxIOSize
