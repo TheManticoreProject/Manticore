@@ -269,15 +269,23 @@ func (c *Connection) releaseResponder(responder *asyncResponder) {
 }
 
 // cancelResponders closes the cancellation channel of every deferred request
-// matching a PID and MID, and reports how many it found.
+// matching a UID, TID, PID and MID, and reports how many it found.
 //
-// SMB_COM_NT_CANCEL names the request to cancel by the PID and MID in its own
-// header, which is how a client refers to something it has not had an answer for.
-func (c *Connection) cancelResponders(pid uint32, mid uint16) int {
+// SMB_COM_NT_CANCEL names the request to cancel by the UID, TID, PID and MID in
+// its own header, which is how a client refers to something it has not had an
+// answer for. [MS-CIFS] 3.3.5.52 has the server match all four: PID and MID alone
+// are chosen by the client and repeat across the sessions sharing a connection, so
+// matching on them would let one session cancel another's request.
+func (c *Connection) cancelResponders(uid uint16, tid uint16, pid uint32, mid uint16) int {
 	c.responderMutex.Lock()
 	matching := []*asyncResponder{}
 	for responder := range c.responders {
-		if responder.request.GetPID() == pid && uint16(responder.request.MID) == mid {
+		// The request's own header identifies it, not the UID or TID a handler
+		// set for the response: the client names what it sent.
+		if uint16(responder.request.UID) == uid &&
+			uint16(responder.request.TID) == tid &&
+			responder.request.GetPID() == pid &&
+			uint16(responder.request.MID) == mid {
 			matching = append(matching, responder)
 		}
 	}

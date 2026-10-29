@@ -300,9 +300,11 @@ func TestNotifyChangeStopsWatchingWhenCancelled(t *testing.T) {
 	replies := watchDirectory(t, client, "watched", 0, false, 4096)
 	waitFor(t, func() bool { return fs.watches.count() == 1 }, "the watch was not registered")
 
-	// The cancel names the watch's own PID and MID, which newRequest fixes.
+	// The cancel names the watch's own UID, TID, PID and MID; newRequest fixes the
+	// PID and MID.
 	request := newRequest(codes.SMB_COM_NT_CANCEL)
 	request.Header.UID = client.Session.SessionUID
+	request.Header.TID = client.Session.TreeID
 	request.AddCommand(commands.NewNtCancelRequest())
 
 	marshalled, err := request.Marshal()

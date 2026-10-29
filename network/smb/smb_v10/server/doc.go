@@ -252,10 +252,10 @@
 //
 // Deferral is also what makes the receive loop concurrent without a worker pool: a
 // handler that defers returns at once, so the loop goes back to reading while the
-// answer is still owed. SMB_COM_NT_CANCEL cancels a deferred request by the PID
-// and MID it names, and closing the connection cancels everything outstanding — a
-// deferred answer with nowhere to send its reply is told to stop rather than left
-// to discover it on a failed write.
+// answer is still owed. SMB_COM_NT_CANCEL cancels a deferred request by the UID,
+// TID, PID and MID it names, and closing the connection cancels everything
+// outstanding — a deferred answer with nowhere to send its reply is told to stop
+// rather than left to discover it on a failed write.
 //
 // A server-initiated message — the oplock break of [MS-CIFS] 2.2.4.32.1, the one
 // place the server sends a request — goes out through Connection.SendUnsolicited,
