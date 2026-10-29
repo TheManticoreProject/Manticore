@@ -83,6 +83,17 @@ type Config struct {
 	MaxSearchesPerConnection int
 	MaxNotifiesPerConnection int
 
+	// MaxLocksPerConnection bounds the byte-range locks one connection may hold
+	// at once, across all of its handles. Zero applies the default.
+	//
+	// Locks live in a table the whole share consults under one mutex, and every
+	// lock request scans the locks already held on its file, so a client allowed
+	// to pile up locks without limit makes every other client's lock requests on
+	// that share slower. A request that would go over the limit is refused with
+	// STATUS_INSUFF_SERVER_RESOURCES, which [MS-CIFS] section 2.2.4.32.2 lists for
+	// "Insufficient server resources to place the lock".
+	MaxLocksPerConnection int
+
 	// HandshakeTimeout bounds each read on a connection that has no
 	// authenticated session yet, so a client that opens a socket and never logs
 	// on does not hold a goroutine forever. IdleTimeout bounds each read on a
@@ -155,6 +166,7 @@ const (
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxSearchesPerConnection = 128
 	DefaultMaxNotifiesPerConnection = 64
+	DefaultMaxLocksPerConnection    = 1024
 
 	// DefaultMaxLargeTransfer is the ceiling on one large read or write: 64 KiB,
 	// which is what CAP_LARGE_READX and CAP_LARGE_WRITEX exist to reach and what
@@ -336,12 +348,16 @@ func NewServer(config Config) (*Server, error) {
 	if config.MaxNotifiesPerConnection == 0 {
 		config.MaxNotifiesPerConnection = DefaultMaxNotifiesPerConnection
 	}
+	if config.MaxLocksPerConnection == 0 {
+		config.MaxLocksPerConnection = DefaultMaxLocksPerConnection
+	}
 	for name, limit := range map[string]int{
 		"MaxSessionsPerConnection": config.MaxSessionsPerConnection,
 		"MaxTreesPerConnection":    config.MaxTreesPerConnection,
 		"MaxOpensPerConnection":    config.MaxOpensPerConnection,
 		"MaxSearchesPerConnection": config.MaxSearchesPerConnection,
 		"MaxNotifiesPerConnection": config.MaxNotifiesPerConnection,
+		"MaxLocksPerConnection":    config.MaxLocksPerConnection,
 	} {
 		if limit < 0 {
 			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, limit)

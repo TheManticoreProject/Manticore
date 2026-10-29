@@ -99,10 +99,27 @@ func handleLockingAndx(conn *Connection, w ResponseWriter, req *message.Message)
 		return nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
+	// The request is refused outright if granting it would take the connection
+	// past its lock limit. A successful Apply changes the count by exactly the
+	// difference, since every unlock must match a held lock for it to succeed.
+	// [MS-CIFS] section 2.2.4.32.2 lists STATUS_INSUFF_SERVER_RESOURCES for
+	// "Insufficient server resources to place the lock".
+	limit := conn.Server.config.MaxLocksPerConnection
+	if limit <= 0 {
+		limit = DefaultMaxLocksPerConnection
+	}
+	growth := len(locks) - len(unlocks)
+	if growth > 0 && conn.locksHeld+growth > limit {
+		logger.Warnf("SMB1 server: refusing a lock request from %s: it would hold more than %d locks",
+			conn.Remote, limit)
+		return nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES
+	}
+
 	deadline, waits := lockDeadline(conn, uint32(request.Timeout))
 	for {
 		switch outcome := locksTable.Apply(open, unlocks, locks, shared); outcome {
 		case lockOutcomeGranted:
+			conn.locksHeld += growth
 			logger.Debugf("SMB1 server: %s locked %d and unlocked %d ranges of %q",
 				conn.Remote, len(locks), len(unlocks), open.Path)
 			return answerLocking(conn, w)

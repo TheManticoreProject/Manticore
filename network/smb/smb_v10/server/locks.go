@@ -227,9 +227,13 @@ func (t *lockTable) Blocks(path string, open *Open, offset, length uint64, writi
 // the locks to be released in a nondeterministic order." Releasing them all at
 // once satisfies that and leaves no lock owned by a handle that no longer exists —
 // which would otherwise be a lock nothing could ever release.
-func (t *lockTable) ReleaseAll(open *Open) {
+//
+// Returns:
+//   - The number of locks released, so the owning connection can stop counting
+//     them against its limit
+func (t *lockTable) ReleaseAll(open *Open) int {
 	if open == nil {
-		return
+		return 0
 	}
 
 	t.mutex.Lock()
@@ -237,7 +241,7 @@ func (t *lockTable) ReleaseAll(open *Open) {
 
 	held, present := t.granted[open.Path]
 	if !present {
-		return
+		return 0
 	}
 
 	kept := held[:0]
@@ -246,11 +250,13 @@ func (t *lockTable) ReleaseAll(open *Open) {
 			kept = append(kept, lock)
 		}
 	}
+	released := len(held) - len(kept)
 	if len(kept) == 0 {
 		delete(t.granted, open.Path)
-		return
+		return released
 	}
 	t.granted[open.Path] = kept
+	return released
 }
 
 // HeldOn returns how many locks are held on a path, for tests and for a caller
