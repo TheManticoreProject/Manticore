@@ -58,7 +58,7 @@ func (c *Connection) anyTreeFor(req *message.Message) (*Tree, nt_status.NT_STATU
 }
 
 // openFor resolves the handle a request acts on, checking it belongs to the tree
-// the request named.
+// the request named and that the tree belongs to the request's session.
 func (c *Connection) openFor(req *message.Message, fid uint16) (*Open, nt_status.NT_STATUS) {
 	open := c.Open(fid)
 	if open == nil {
@@ -67,6 +67,17 @@ func (c *Connection) openFor(req *message.Message, fid uint16) (*Open, nt_status
 	if open.Tree == nil || open.Tree.TID != uint16(req.Header.TID) {
 		logger.Debugf("SMB1 server: %s used FID 0x%04X on TID 0x%04X, which does not hold it",
 			c.Remote, fid, uint16(req.Header.TID))
+		return nil, nt_status.NT_STATUS_SMB_BAD_FID
+	}
+	// Matching the TID is not enough: the handles and trees of every session on
+	// a connection share one table, so another session quoting the owner's TID
+	// would reach the handle. The tree is resolved through anyTreeFor, the single
+	// place a TID's owning session is checked.
+	tree, status := c.anyTreeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return nil, status
+	}
+	if open.Tree != tree {
 		return nil, nt_status.NT_STATUS_SMB_BAD_FID
 	}
 	return open, nt_status.NT_STATUS_SUCCESS
