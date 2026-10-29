@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/netbios/nbt"
@@ -75,8 +76,20 @@ func ListenNBT(addr string, acceptedNames []string) (Listener, error) {
 	}
 	names := make([]string, len(acceptedNames))
 	copy(names, acceptedNames)
-	return &nbtListener{listener: ln, acceptedNames: names}, nil
+	l := &nbtListener{
+		listener:         ln,
+		acceptedNames:    names,
+		handshakeTimeout: nbtHandshakeTimeout,
+		ready:            make(chan acceptedNBT),
+		done:             make(chan struct{}),
+	}
+	go l.acceptLoop()
+	return l, nil
 }
+
+// nbtHandshakeTimeout bounds how long a connection may take to complete the
+// NetBIOS session handshake before it is dropped.
+var nbtHandshakeTimeout = 30 * time.Second
 
 // withDefaultPort appends defaultPort to addr when addr does not already carry
 // one, so callers can pass a bare host or an empty string.
@@ -114,35 +127,75 @@ func (l *tcpListener) Close() error { return l.listener.Close() }
 func (l *tcpListener) Addr() net.Addr { return l.listener.Addr() }
 
 // nbtListener adapts a net.Listener into a Listener yielding NetBIOS over TCP
-// transports, performing the session handshake on each connection as it arrives.
+// transports. Each connection's session handshake runs on its own goroutine
+// under a deadline, so a client that is slow or silent delays only itself.
 type nbtListener struct {
-	listener      net.Listener
-	acceptedNames []string
+	listener         net.Listener
+	acceptedNames    []string
+	handshakeTimeout time.Duration
+
+	// ready carries the connections whose handshake completed to Accept.
+	ready chan acceptedNBT
+	// done is closed, after err is set, when the underlying listener fails.
+	done chan struct{}
+	err  error
 }
 
-// Accept accepts connections until one completes the NetBIOS session handshake.
-// A connection whose handshake fails is logged and closed rather than surfaced
-// as an error: a client addressing the wrong CALLED name, or speaking something
-// other than the session service, must not take the listener down. The loop ends
-// when the underlying listener itself fails, which is also how Close unblocks it.
-func (l *nbtListener) Accept() (Transport, net.Addr, error) {
+// acceptedNBT is a connection that completed the session handshake.
+type acceptedNBT struct {
+	transport *nbt.NBTTransport
+	remote    net.Addr
+}
+
+// acceptLoop accepts connections until the underlying listener fails, which is
+// also how Close stops it, and starts each one's handshake.
+func (l *nbtListener) acceptLoop() {
 	for {
 		conn, err := l.listener.Accept()
 		if err != nil {
-			return nil, nil, err
+			l.err = err
+			close(l.done)
+			return
 		}
+		go l.handshake(conn)
+	}
+}
 
-		remote := conn.RemoteAddr()
-		nbtTransport := nbt.NewNBTTransportFromConn(conn)
-		called, calling, err := nbtTransport.AcceptSession(l.acceptedNames)
-		if err != nil {
-			logger.Debugf("NetBIOS session handshake with %s failed: %v", remote, err)
-			nbtTransport.Close()
-			continue
-		}
+// handshake completes the NetBIOS session handshake on conn and hands the
+// transport to Accept. A connection whose handshake fails or times out is
+// logged and closed rather than surfaced as an error: a client addressing the
+// wrong CALLED name, or speaking something other than the session service,
+// must not take the listener down.
+func (l *nbtListener) handshake(conn net.Conn) {
+	remote := conn.RemoteAddr()
+	nbtTransport := nbt.NewNBTTransportFromConn(conn)
+	nbtTransport.SetTimeout(l.handshakeTimeout)
+	called, calling, err := nbtTransport.AcceptSession(l.acceptedNames)
+	if err != nil {
+		logger.Debugf("NetBIOS session handshake with %s failed: %v", remote, err)
+		nbtTransport.Close()
+		return
+	}
+	// The deadline covered the handshake only; the caller sets its own.
+	nbtTransport.SetTimeout(0)
 
-		logger.Debugf("NetBIOS session established with %s (called %q, calling %q)", remote, called, calling)
-		return nbtTransport, remote, nil
+	logger.Debugf("NetBIOS session established with %s (called %q, calling %q)", remote, called, calling)
+	select {
+	case l.ready <- acceptedNBT{transport: nbtTransport, remote: remote}:
+	case <-l.done:
+		nbtTransport.Close()
+	}
+}
+
+// Accept returns the next connection that completed the NetBIOS session
+// handshake. It fails once the underlying listener does, which is how Close
+// unblocks it.
+func (l *nbtListener) Accept() (Transport, net.Addr, error) {
+	select {
+	case accepted := <-l.ready:
+		return accepted.transport, accepted.remote, nil
+	case <-l.done:
+		return nil, nil, l.err
 	}
 }
 

@@ -2,6 +2,7 @@ package transport_test
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -243,5 +244,55 @@ func TestListenDefaultPorts(t *testing.T) {
 				t.Fatalf("bound port = %s, want the default %s", port, tc.port)
 			}
 		})
+	}
+}
+
+// TestListenNBTSilentClientDoesNotBlockOthers verifies a client that connects
+// and never sends its SESSION REQUEST does not hold up the handshake of the
+// clients after it, and is itself dropped once its handshake deadline passes.
+func TestListenNBTSilentClientDoesNotBlockOthers(t *testing.T) {
+	defer transport.SetNBTHandshakeTimeoutForTest(300 * time.Millisecond)()
+
+	listener, err := transport.ListenNBT("127.0.0.1:0", []string{"FILESERVER"})
+	if err != nil {
+		t.Fatalf("ListenNBT() error = %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().(*net.TCPAddr)
+
+	silent, err := net.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Close()
+	results := acceptOnce(listener)
+	time.Sleep(50 * time.Millisecond) // the silent client is accepted first
+
+	client := nbt.NewNBTTransport()
+	client.SetCalledName("FILESERVER")
+	client.SetCallingName("TESTCLIENT")
+	client.SetTimeout(2 * time.Second)
+	if err := client.Connect(addr.IP, addr.Port); err != nil {
+		t.Fatalf("client Connect() behind a silent client: %v", err)
+	}
+	defer client.Close()
+
+	select {
+	case got := <-results:
+		if got.err != nil {
+			t.Fatalf("Accept() error = %v", got.err)
+		}
+		defer got.transport.Close()
+		got.transport.SetTimeout(5 * time.Second)
+		exchange(t, client, got.transport)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Accept() did not return the client queued behind a silent one")
+	}
+
+	silent.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err = silent.Read(make([]byte, 1))
+	var timeout net.Error
+	if err == nil || errors.As(err, &timeout) && timeout.Timeout() {
+		t.Errorf("the silent client was not dropped after its handshake deadline (read: %v)", err)
 	}
 }
