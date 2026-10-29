@@ -481,6 +481,152 @@ func TestReplayedSequenceNumberIsDropped(t *testing.T) {
 	}
 }
 
+// sendNtCancelOnSession sends a signed SMB_COM_NT_CANCEL naming the given PID and
+// MID, and advances the session's sequence by the one number a cancel consumes.
+// Nothing is read back: a cancel has no response of its own.
+func sendNtCancelOnSession(t *testing.T, session *authSession, pid uint32, mid uint16) {
+	t.Helper()
+
+	request := newRequest(codes.SMB_COM_NT_CANCEL)
+	request.Header.UID = session.uid
+	request.Header.Flags2 |= flags2.FLAGS2_SECURITY_SIGNATURE
+	request.Header.SetPID(pid)
+	request.Header.MID = types.USHORT(mid)
+	request.AddCommand(commands.NewNtCancelRequest())
+
+	marshalled, err := request.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the cancel: %v", err)
+	}
+	signing.Sign(session.key, marshalled, session.sequence)
+	if _, err := session.client.Send(marshalled); err != nil {
+		t.Fatalf("client Send() error = %v", err)
+	}
+	// [MS-SMB] section 3.3.5.1: a cancel consumes one number, not two.
+	session.sequence++
+}
+
+// TestSignedNtCancelConsumesOneSequenceNumber asserts a signed SMB_COM_NT_CANCEL
+// advances the connection's sequence by one rather than two, so the request after
+// it verifies. [MS-SMB] section 3.3.5.1 increments ServerNextReceiveSequenceNumber
+// by one for a cancel because no response is sent for it; a server that advanced
+// it by two rejected the next request and dropped the connection.
+func TestSignedNtCancelConsumesOneSequenceNumber(t *testing.T) {
+	_, addr := serverWithAccount(t, SigningRequired, nil)
+	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, true)
+
+	// A cancel naming nothing outstanding is still a signed request, and still
+	// consumes its number.
+	sendNtCancelOnSession(t, session, 0x00001234, 0x0099)
+	if session.sequence != 3 {
+		t.Fatalf("the request after the cancel is at sequence %d, want 3", session.sequence)
+	}
+
+	// sendOnSession fails the test if the connection was dropped or the response
+	// is not signed at the number after the echo's own.
+	session.client.SetTimeout(5 * time.Second)
+	echo := commands.NewEchoRequest()
+	echo.EchoCount = 1
+	echo.Data = []byte("after cancel")
+	response := sendOnSession(t, session, codes.SMB_COM_ECHO, echo)
+	if response.Header.Status != 0 {
+		t.Fatalf("the echo after the cancel answered 0x%08X, want success", response.Header.Status)
+	}
+}
+
+// deferFirstEcho is a Handler that defers the first ECHO it sees and lets every
+// later one through to the built-in dispatch.
+type deferFirstEcho struct {
+	deferred chan deferredRequest
+	used     bool
+}
+
+func (h *deferFirstEcho) Run(srv *Server, conn *Connection, w ResponseWriter, req *message.Message) bool {
+	// Handlers run on the connection's single receive goroutine, so the flag
+	// needs no locking.
+	if req.Header.Command != codes.SMB_COM_ECHO || h.used {
+		return false
+	}
+	h.used = true
+	h.deferred <- deferredRequest{
+		responder:  w.Defer(),
+		connection: conn,
+		pid:        req.Header.GetPID(),
+		mid:        uint16(req.Header.MID),
+	}
+	return true
+}
+
+// TestSignedNtCancelOfAPendingRequestKeepsSequencesInStep asserts the full cancel
+// exchange on a signing connection: the cancelled request is still answered at the
+// response number its own request reserved, and the request after the cancel
+// verifies at the number the client reached by counting the cancel as one.
+func TestSignedNtCancelOfAPendingRequestKeepsSequencesInStep(t *testing.T) {
+	srv, addr := serverWithAccount(t, SigningRequired, nil)
+	session := establishSession(t, addr, captureDomain, captureUsername, capturePassword, true)
+
+	handler := &deferFirstEcho{deferred: make(chan deferredRequest, 1)}
+	srv.RegisterHandler(handler)
+
+	// The ECHO at sequence 2 is deferred; its answer is owed at sequence 3.
+	pendingSequence := session.sequence
+	request := newRequest(codes.SMB_COM_ECHO)
+	request.Header.UID = session.uid
+	request.Header.Flags2 |= flags2.FLAGS2_SECURITY_SIGNATURE
+	echo := commands.NewEchoRequest()
+	echo.EchoCount = 1
+	echo.Data = []byte("cancel me")
+	request.AddCommand(echo)
+	marshalled, err := request.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the echo: %v", err)
+	}
+	signing.Sign(session.key, marshalled, pendingSequence)
+	if _, err := session.client.Send(marshalled); err != nil {
+		t.Fatalf("client Send() error = %v", err)
+	}
+	session.sequence = signing.NextRequestSequenceNumber(pendingSequence)
+
+	var deferred deferredRequest
+	select {
+	case deferred = <-handler.deferred:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the echo was never deferred")
+	}
+
+	// The cancel is signed at 4 and leaves the next request at 5.
+	sendNtCancelOnSession(t, session, deferred.pid, deferred.mid)
+	select {
+	case <-deferred.responder.Cancelled():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancel never reached the deferred request")
+	}
+	if err := deferred.responder.RespondWithError(nt_status.NT_STATUS_CANCELLED); err != nil {
+		t.Fatalf("RespondWithError() error = %v", err)
+	}
+
+	session.client.SetTimeout(5 * time.Second)
+	cancelled, raw := receiveResponse(t, session.client)
+	if nt_status.NT_STATUS(cancelled.Header.Status) != nt_status.NT_STATUS_CANCELLED {
+		t.Fatalf("the cancelled request answered 0x%08X, want STATUS_CANCELLED", cancelled.Header.Status)
+	}
+	if responseSequence := signing.ResponseSequenceNumber(pendingSequence); !signing.Verify(session.key, raw, responseSequence) {
+		t.Fatalf("the cancelled request's answer is not signed at sequence %d", responseSequence)
+	}
+
+	// The request after the cancel is at 5, and its answer at 6.
+	if session.sequence != 5 {
+		t.Fatalf("the request after the cancel is at sequence %d, want 5", session.sequence)
+	}
+	followUp := commands.NewEchoRequest()
+	followUp.EchoCount = 1
+	followUp.Data = []byte("after cancel")
+	response := sendOnSession(t, session, codes.SMB_COM_ECHO, followUp)
+	if response.Header.Status != 0 {
+		t.Fatalf("the echo after the cancel answered 0x%08X, want success", response.Header.Status)
+	}
+}
+
 // TestCommandWithoutSessionIsRefused asserts a command that acts within a session
 // is refused when the UID names none, and that the three commands defined to work
 // without one still do.
