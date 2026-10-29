@@ -279,6 +279,59 @@ func TestGuestSessionIsReported(t *testing.T) {
 	}
 }
 
+// TestAnonymousIsGovernedByAllowAnonymousAlone asserts a null session is
+// admitted by AllowAnonymous without AllowGuest, and refused by AllowGuest
+// without AllowAnonymous: the two flags are independent.
+func TestAnonymousIsGovernedByAllowAnonymousAlone(t *testing.T) {
+	cases := []struct {
+		name           string
+		allowGuest     bool
+		allowAnonymous bool
+		want           uint32
+	}{
+		{"anonymous only", false, true, 0},
+		{"guest only", true, false, uint32(nt_status.NT_STATUS_LOGON_FAILURE)},
+		{"both", true, true, 0},
+		{"neither", false, false, uint32(nt_status.NT_STATUS_LOGON_FAILURE)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, addr := serverWithAccount(t, SigningDisabled, func(c *Config) {
+				c.AllowGuest = tc.allowGuest
+				c.AllowAnonymous = tc.allowAnonymous
+			})
+
+			_, status := rawLogon(t, addr, "", "", "", false)
+			if status != tc.want {
+				t.Fatalf("anonymous logon answered 0x%08X, want 0x%08X", status, tc.want)
+			}
+		})
+	}
+}
+
+// TestNamedGuestIsGovernedByAllowGuestAlone asserts an unverifiable named
+// identity is still admitted only under AllowGuest: AllowAnonymous does not
+// admit it.
+func TestNamedGuestIsGovernedByAllowGuestAlone(t *testing.T) {
+	_, addr := serverWithAccount(t, SigningDisabled, func(c *Config) { c.AllowAnonymous = true })
+
+	_, status := rawLogon(t, addr, captureDomain, "nobody", capturePassword, false)
+	if status != uint32(nt_status.NT_STATUS_LOGON_FAILURE) {
+		t.Fatalf("Status = 0x%08X, want NT_STATUS_LOGON_FAILURE", status)
+	}
+}
+
+// TestAnonymousIsRefusedWhenSigningIsRequired asserts a null session admitted by
+// AllowAnonymous is still refused under a policy that requires signatures, since
+// it derives no key.
+func TestAnonymousIsRefusedWhenSigningIsRequired(t *testing.T) {
+	_, addr := serverWithAccount(t, SigningRequired, func(c *Config) { c.AllowAnonymous = true })
+
+	if _, status := rawLogon(t, addr, "", "", "", true); status != uint32(nt_status.NT_STATUS_LOGON_FAILURE) {
+		t.Fatalf("anonymous logon under SigningRequired answered 0x%08X, want NT_STATUS_LOGON_FAILURE", status)
+	}
+}
+
 // TestGuestIsRefusedWhenSigningIsRequired asserts a session that cannot sign is
 // refused under a policy that requires signatures, rather than being established
 // and then failing on its first request.

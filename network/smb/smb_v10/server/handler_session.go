@@ -156,9 +156,15 @@ func (c *Connection) finishAuthentication(
 	case errors.Is(verifyErr, spnego.ErrUnknownIdentity), errors.Is(verifyErr, spnego.ErrCaptureOnly):
 		// Either there is no credential store at all, or it does not know this
 		// identity. Both are admissible only as a guest, and only where a caller
-		// has asked for that.
+		// has asked for that: a null session under AllowAnonymous, any other
+		// identity under AllowGuest. The two are independent, so neither flag
+		// admits what the other governs.
 		anonymous := isAnonymousAttempt(accept)
-		if !c.Server.config.AllowGuest || (anonymous && !c.Server.config.AllowAnonymous) {
+		admitted := c.Server.config.AllowGuest
+		if anonymous {
+			admitted = c.Server.config.AllowAnonymous
+		}
+		if !admitted {
 			logger.Debugf("SMB1 server: refusing %s from %s: %v", session.Account(), c.Remote, verifyErr)
 			c.uids.Release(uid)
 			return nt_status.NT_STATUS_LOGON_FAILURE
