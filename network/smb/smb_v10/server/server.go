@@ -80,8 +80,18 @@ type Config struct {
 	MaxOpensPerConnection    int
 	MaxSearchesPerConnection int
 
-	// Timeout bounds each read on a connection, so a client that opens a socket
-	// and says nothing does not hold a goroutine forever. Zero means no bound.
+	// HandshakeTimeout bounds each read on a connection that has no
+	// authenticated session yet, so a client that opens a socket and never logs
+	// on does not hold a goroutine forever. IdleTimeout bounds each read on a
+	// connection that is authenticated but holds no open file and no deferred
+	// request, the way Windows disconnects idle sessions; a client with a file
+	// open or a NOTIFY_CHANGE pending may stay quiet for as long as it likes.
+	// Zero applies the default and a negative value means no bound.
+	HandshakeTimeout time.Duration
+	IdleTimeout      time.Duration
+
+	// Timeout bounds every read on a connection, whatever its state; it caps
+	// HandshakeTimeout and IdleTimeout. Zero means no bound.
 	Timeout time.Duration
 
 	// MaxLargeTransfer bounds one read or write that exceeds the negotiated
@@ -104,7 +114,8 @@ type Config struct {
 
 	// MaxConnections bounds the number of connections served at once. A
 	// connection arriving while the server is at the limit is closed
-	// immediately. Zero means unbounded.
+	// immediately. Zero applies the default and a negative value means
+	// unbounded.
 	MaxConnections int
 }
 
@@ -170,6 +181,16 @@ const (
 	// be released, and short enough that a client that asked to wait forever gets
 	// an answer.
 	DefaultMaxLockWait = 30 * time.Second
+
+	// DefaultMaxConnections bounds the connections served at once, so a peer
+	// cannot hold an unbounded number of them and their goroutines.
+	DefaultMaxConnections = 1024
+
+	// DefaultHandshakeTimeout is how long a connection without an authenticated
+	// session may stay quiet, and DefaultIdleTimeout how long an authenticated
+	// one holding nothing may; the latter is the Windows autodisconnect default.
+	DefaultHandshakeTimeout = time.Minute
+	DefaultIdleTimeout      = 15 * time.Minute
 )
 
 // SigningPolicy selects a server's stance on SMB message signing.
@@ -252,8 +273,8 @@ type Server struct {
 	shares    map[string]*Share
 	closed    bool
 
-	// slots bounds concurrent connections when MaxConnections is set. It is nil
-	// when the limit is unbounded.
+	// slots bounds concurrent connections when MaxConnections is positive. It is
+	// nil when the limit is unbounded.
 	slots chan struct{}
 
 	wg sync.WaitGroup
@@ -268,11 +289,17 @@ type Server struct {
 //   - The server
 //   - An error if the configuration is invalid
 func NewServer(config Config) (*Server, error) {
-	if config.MaxConnections < 0 {
-		return nil, fmt.Errorf("MaxConnections cannot be negative (got %d)", config.MaxConnections)
-	}
 	if config.Timeout < 0 {
 		return nil, fmt.Errorf("Timeout cannot be negative (got %s)", config.Timeout)
+	}
+	if config.MaxConnections == 0 {
+		config.MaxConnections = DefaultMaxConnections
+	}
+	if config.HandshakeTimeout == 0 {
+		config.HandshakeTimeout = DefaultHandshakeTimeout
+	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = DefaultIdleTimeout
 	}
 
 	if config.NativeOS == "" {
@@ -422,10 +449,6 @@ func (s *Server) Serve(listener transport.Listener) error {
 			continue
 		}
 
-		if s.config.Timeout > 0 {
-			conn.SetTimeout(s.config.Timeout)
-		}
-
 		connection := newConnection(s, conn, remote)
 		if !s.trackConnection(connection) {
 			// The server was closed between Accept and here.
@@ -451,7 +474,7 @@ func (s *Server) Serve(listener transport.Listener) error {
 // connection. Serve is this in a loop behind a listener.
 //
 // The connection is closed when serving finishes. The server's connection limit
-// and idle timeout apply, and Close tears this connection down like any other.
+// and read timeouts apply, and Close tears this connection down like any other.
 //
 // Parameters:
 //   - conn: the transport to serve, already connected and handshaken
@@ -468,10 +491,6 @@ func (s *Server) ServeConn(conn transport.Transport, remote net.Addr) error {
 		return fmt.Errorf("already serving the maximum of %d connections", s.config.MaxConnections)
 	}
 	defer s.releaseSlot()
-
-	if s.config.Timeout > 0 {
-		conn.SetTimeout(s.config.Timeout)
-	}
 
 	connection := newConnection(s, conn, remote)
 	if !s.trackConnection(connection) {

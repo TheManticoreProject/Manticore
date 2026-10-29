@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
@@ -214,6 +215,7 @@ func (c *Connection) serve() {
 	logger.Debugf("SMB1 server: serving %s", c.Remote)
 
 	for {
+		c.Transport.SetTimeout(c.readTimeout())
 		raw, err := c.Transport.Receive()
 		if err != nil {
 			// A closed connection, a timeout on an idle client and a truncated
@@ -228,6 +230,29 @@ func (c *Connection) serve() {
 			return
 		}
 	}
+}
+
+// readTimeout bounds the next read according to what the connection holds: a
+// connection without an authenticated session gets HandshakeTimeout, one holding
+// no open and no deferred request gets IdleTimeout, and Timeout caps both. Zero
+// means no bound.
+//
+// It is applied before every Receive. The transport reads it only when receiving,
+// never when sending, so a deferred answer or an oplock break written from
+// another goroutine does not race with it.
+func (c *Connection) readTimeout() time.Duration {
+	config := c.Server.config
+	var limit time.Duration
+	switch {
+	case len(c.sessions) == 0:
+		limit = config.HandshakeTimeout
+	case len(c.opens) == 0 && c.OutstandingResponses() == 0:
+		limit = config.IdleTimeout
+	}
+	if limit <= 0 || config.Timeout > 0 && config.Timeout < limit {
+		limit = max(config.Timeout, 0)
+	}
+	return limit
 }
 
 // handleFrame decodes one received frame and answers it.
