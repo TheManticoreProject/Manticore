@@ -879,3 +879,37 @@ func TestServerDropsUnauthenticatedAndIdleConnections(t *testing.T) {
 		t.Errorf("a connection holding an open was dropped while quiet: %v", err)
 	}
 }
+
+func TestServerEcho(t *testing.T) {
+	for _, dialect := range allDialects {
+		_, port := startServer(t, server.Config{})
+		c, err := dial(t, port, dialect, "Passw0rd!")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Echo(); err != nil {
+			t.Errorf("%s: ECHO on a signed session: %v", dialect, err)
+		}
+	}
+	for _, config := range []server.Config{{RequireSigning: true}, {RequireEncryption: true}} {
+		_, port := startServer(t, config)
+		c, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Echo(); err != nil {
+			t.Errorf("ECHO (%+v): %v", config, err)
+		}
+	}
+
+	// Before any session, an ECHO carries no SessionId and is answered unsigned.
+	_, port := startServer(t, server.Config{})
+	c := client.NewClientUsingTCPTransport(net.IPv4(127, 0, 0, 1), port)
+	t.Cleanup(func() { c.Disconnect() })
+	if err := c.Connect(net.IPv4(127, 0, 0, 1), port); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Echo(); err != nil {
+		t.Errorf("ECHO without a session: %v", err)
+	}
+}

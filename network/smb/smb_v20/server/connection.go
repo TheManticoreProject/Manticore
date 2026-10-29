@@ -333,7 +333,14 @@ func (c *Connection) authorize(r *request) nt_status.NT_STATUS {
 		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 	switch h.Command {
-	case codes.SMB2_NEGOTIATE, codes.SMB2_ECHO:
+	case codes.SMB2_NEGOTIATE:
+		return nt_status.NT_STATUS_SUCCESS
+	case codes.SMB2_ECHO:
+		// An ECHO needs no session, but one that names an established session
+		// is held to it, and answered signed when it was signed.
+		if session := c.sessions[h.SessionId]; session != nil && session.established {
+			return c.authorizeSession(r)
+		}
 		return nt_status.NT_STATUS_SUCCESS
 	case codes.SMB2_SESSION_SETUP:
 		// The handler resolves its own session: one being set up has no key yet.
