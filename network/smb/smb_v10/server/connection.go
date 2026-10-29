@@ -12,6 +12,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -270,6 +271,17 @@ func (c *Connection) handleFrame(raw []byte) error {
 		}
 		responseSequenceNumber = signing.ResponseSequenceNumber(expected)
 		c.ExpectedRequestSequenceNumber = signing.NextRequestSequenceNumber(expected)
+
+		// SMB_COM_NT_CANCEL is the exception: it has no response of its own, so it
+		// consumes only the one number it was signed at. [MS-SMB] section 3.3.5.1
+		// says so outright — "IF request command EQUALS SMB_COM_NT_CANCEL THEN
+		// INCREMENT ServerNextReceiveSequenceNumber" — where every other request,
+		// even one that receives no response, advances it by 2. The client counts
+		// the same way, so advancing by 2 here would put the next request one
+		// number behind the server and fail its verification.
+		if requestHeader.Command == codes.SMB_COM_NT_CANCEL {
+			c.ExpectedRequestSequenceNumber = expected + 1
+		}
 	}
 
 	request := message.NewMessage()
