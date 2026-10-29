@@ -111,6 +111,8 @@ func handleTransaction(conn *Connection, w ResponseWriter, req *message.Message)
 		// The Name is OEM or UTF-16 according to the request's own flag, as every
 		// other name-carrying field is.
 		name:    decodeWireString(request.Name.Buffer, req.Header.Flags2.IsUnicode()),
+		uid:     uint16(req.Header.UID),
+		tid:     uint16(req.Header.TID),
 		started: time.Now(),
 	}
 
@@ -141,6 +143,14 @@ func handleTransactionSecondary(conn *Connection, w ResponseWriter, req *message
 	if reassembly == nil || reassembly.family != "TRANSACTION" {
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
+	// The pending transaction belongs to the session and tree that began it. A
+	// secondary from anywhere else is refused without disturbing it, so another
+	// session on the connection can neither write into it nor complete it.
+	if !reassembly.startedBy(req) {
+		logger.Debugf("SMB1 server: %s sent a TRANSACTION_SECONDARY from UID 0x%04X on TID 0x%04X, which did not begin the transaction",
+			conn.Remote, uint16(req.Header.UID), uint16(req.Header.TID))
+		return nt_status.NT_STATUS_INVALID_SMB
+	}
 	if time.Since(reassembly.started) > transactionReassemblyTimeout {
 		conn.transaction = nil
 		return nt_status.NT_STATUS_IO_TIMEOUT
@@ -167,9 +177,11 @@ func handleTransactionSecondary(conn *Connection, w ResponseWriter, req *message
 
 // runTransaction dispatches an assembled TRANSACTION to its pipe operation.
 func (c *Connection) runTransaction(w ResponseWriter, req *message.Message, reassembly *transactionReassembly) nt_status.NT_STATUS {
-	tree := c.Tree(uint16(req.Header.TID))
-	if tree == nil {
-		return nt_status.NT_STATUS_SMB_BAD_TID
+	// Resolved through anyTreeFor so a session reaches only the trees it
+	// connected: another session's TID on the same connection is refused.
+	tree, status := c.anyTreeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return status
 	}
 	if tree.Share.Type != ShareTypeNamedPipe {
 		logger.Debugf("SMB1 server: %s sent a pipe transaction on share %q, which is a %q share",
@@ -185,10 +197,10 @@ func (c *Connection) runTransaction(w ResponseWriter, req *message.Message, reas
 		return c.transactNamedPipe(w, req, tree, reassembly)
 
 	case subcommands.TRANS_READ_NMPIPE:
-		return c.readNamedPipe(w, reassembly)
+		return c.readNamedPipe(w, tree, reassembly)
 
 	case subcommands.TRANS_PEEK_NMPIPE:
-		return c.peekNamedPipe(w, reassembly)
+		return c.peekNamedPipe(w, tree, reassembly)
 
 	case subcommands.TRANS_WAIT_NMPIPE:
 		// The pipe is available as soon as the handler will open it, so waiting
@@ -262,12 +274,17 @@ func pipeReadBudget(maxDataCount int) int {
 // [MS-CIFS] sections 3.3.5.57.6, 3.3.5.57.7 and 3.3.5.57.9 all identify the pipe
 // by the FID in Setup[1], so this is the one place that reads it.
 //
+// The handle must have been opened on the tree the request resolved to: handles
+// of every session on a connection share one table, so a FID found there may
+// belong to another session's tree.
+//
 // Parameters:
+//   - tree: the tree the request resolved to, already checked against its UID
 //   - reassembly: the assembled transaction
 //
 // Returns:
 //   - The open handle, or the status that says why there is none
-func (c *Connection) pipeOpenFrom(reassembly *transactionReassembly) (*Open, nt_status.NT_STATUS) {
+func (c *Connection) pipeOpenFrom(tree *Tree, reassembly *transactionReassembly) (*Open, nt_status.NT_STATUS) {
 	if len(reassembly.setup) < 2 {
 		logger.Debugf("SMB1 server: %s sent pipe operation 0x%04X with no FID in its setup words",
 			c.Remote, reassembly.subcommand)
@@ -279,6 +296,10 @@ func (c *Connection) pipeOpenFrom(reassembly *transactionReassembly) (*Open, nt_
 	switch {
 	case open == nil:
 		logger.Debugf("SMB1 server: %s sent a pipe operation on FID 0x%04X, which is not open", c.Remote, fid)
+		return nil, nt_status.NT_STATUS_SMB_BAD_FID
+	case open.Tree != tree:
+		logger.Debugf("SMB1 server: %s sent a pipe operation on FID 0x%04X on TID 0x%04X, which does not hold it",
+			c.Remote, fid, tree.TID)
 		return nil, nt_status.NT_STATUS_SMB_BAD_FID
 	case !open.IsPipe:
 		logger.Debugf("SMB1 server: %s sent a pipe operation on FID 0x%04X, which is a file", c.Remote, fid)
@@ -302,8 +323,8 @@ func (c *Connection) pipeOpenFrom(reassembly *transactionReassembly) (*Open, nt_
 // Wire format: [MS-CIFS] section 2.2.5.8.2. Server behaviour: section 3.3.5.57.9.
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/
-func (c *Connection) readNamedPipe(w ResponseWriter, reassembly *transactionReassembly) nt_status.NT_STATUS {
-	open, status := c.pipeOpenFrom(reassembly)
+func (c *Connection) readNamedPipe(w ResponseWriter, tree *Tree, reassembly *transactionReassembly) nt_status.NT_STATUS {
+	open, status := c.pipeOpenFrom(tree, reassembly)
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return status
 	}
@@ -336,8 +357,8 @@ func (c *Connection) readNamedPipe(w ResponseWriter, reassembly *transactionReas
 // Wire format: [MS-CIFS] section 2.2.5.5.2. Server behaviour: section 3.3.5.57.6.
 //
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/
-func (c *Connection) peekNamedPipe(w ResponseWriter, reassembly *transactionReassembly) nt_status.NT_STATUS {
-	open, status := c.pipeOpenFrom(reassembly)
+func (c *Connection) peekNamedPipe(w ResponseWriter, tree *Tree, reassembly *transactionReassembly) nt_status.NT_STATUS {
+	open, status := c.pipeOpenFrom(tree, reassembly)
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return status
 	}
@@ -412,7 +433,7 @@ func (c *Connection) transactNamedPipe(
 	var open *Open
 	name := ""
 	if len(reassembly.setup) >= 2 {
-		resolved, status := c.pipeOpenFrom(reassembly)
+		resolved, status := c.pipeOpenFrom(tree, reassembly)
 		if status != nt_status.NT_STATUS_SUCCESS {
 			return status
 		}

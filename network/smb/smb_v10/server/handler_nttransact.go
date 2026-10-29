@@ -54,6 +54,8 @@ func handleNtTransact(conn *Connection, w ResponseWriter, req *message.Message) 
 		maxParameterCount: int(request.MaxParameterCount),
 		maxDataCount:      int(request.MaxDataCount),
 		setup:             request.Setup,
+		uid:               uint16(req.Header.UID),
+		tid:               uint16(req.Header.TID),
 		started:           time.Now(),
 	}
 
@@ -91,6 +93,13 @@ func handleNtTransactSecondary(conn *Connection, w ResponseWriter, req *message.
 	if reassembly == nil || reassembly.family != "NT_TRANSACT" {
 		logger.Debugf("SMB1 server: %s sent an NT_TRANSACT_SECONDARY with no matching transaction in progress",
 			conn.Remote)
+		return nt_status.NT_STATUS_INVALID_SMB
+	}
+	// Refused without disturbing the pending transaction, which belongs to the
+	// session and tree that began it.
+	if !reassembly.startedBy(req) {
+		logger.Debugf("SMB1 server: %s sent an NT_TRANSACT_SECONDARY from UID 0x%04X on TID 0x%04X, which did not begin the transaction",
+			conn.Remote, uint16(req.Header.UID), uint16(req.Header.TID))
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 	if time.Since(reassembly.started) > transactionReassemblyTimeout {

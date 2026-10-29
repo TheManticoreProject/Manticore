@@ -83,7 +83,19 @@ type transactionReassembly struct {
 	// pipe it is talking to. The other two families carry no name.
 	name string
 
+	// uid and tid are the session and tree of the primary message. Every
+	// connection holds one pending transaction whichever session began it, so a
+	// secondary is matched against these before it is folded in.
+	uid uint16
+	tid uint16
+
 	started time.Time
+}
+
+// startedBy reports whether a secondary message comes from the session and tree
+// that began the transaction.
+func (r *transactionReassembly) startedBy(req *message.Message) bool {
+	return r.uid == uint16(req.Header.UID) && r.tid == uint16(req.Header.TID)
 }
 
 // complete reports whether every declared byte has arrived.
@@ -218,6 +230,8 @@ func handleTransaction2(conn *Connection, w ResponseWriter, req *message.Message
 		data:              make([]byte, totalData),
 		maxParameterCount: int(request.MaxParameterCount),
 		maxDataCount:      int(request.MaxDataCount),
+		uid:               uint16(req.Header.UID),
+		tid:               uint16(req.Header.TID),
 		started:           time.Now(),
 	}
 
@@ -259,6 +273,13 @@ func handleTransaction2Secondary(conn *Connection, w ResponseWriter, req *messag
 	reassembly := conn.transaction
 	if reassembly == nil {
 		logger.Debugf("SMB1 server: %s sent a TRANSACTION2_SECONDARY with no transaction in progress", conn.Remote)
+		return nt_status.NT_STATUS_INVALID_SMB
+	}
+	// Refused without disturbing the pending transaction, which belongs to the
+	// session and tree that began it.
+	if !reassembly.startedBy(req) {
+		logger.Debugf("SMB1 server: %s sent a TRANSACTION2_SECONDARY from UID 0x%04X on TID 0x%04X, which did not begin the transaction",
+			conn.Remote, uint16(req.Header.UID), uint16(req.Header.TID))
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 	if time.Since(reassembly.started) > transactionReassemblyTimeout {

@@ -5,9 +5,13 @@ import (
 	"encoding/binary"
 	"strings"
 	"testing"
+	"time"
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -983,6 +987,79 @@ func TestTransactionCompletesOutOfOrder(t *testing.T) {
 		want := byte(index/10 + 1)
 		if value != want {
 			t.Fatalf("data[%d] = %d, want %d", index, value, want)
+		}
+	}
+}
+
+// TestSecondaryFromAnotherSessionLeavesThePendingTransaction asserts each
+// family's secondary is refused when it comes from a session or tree other than
+// the one that began the pending transaction, and writes nothing into it.
+//
+// A connection holds one pending transaction whatever session began it, so a
+// secondary folded in without that check let another session on the connection
+// overwrite part of a request its owner then completed and ran.
+func TestSecondaryFromAnotherSessionLeavesThePendingTransaction(t *testing.T) {
+	const ownerUID, ownerTID = 1, 1
+
+	families := []struct {
+		family    string
+		handle    func(*Connection, ResponseWriter, *message.Message) nt_status.NT_STATUS
+		code      codes.CommandCode
+		secondary func() command_interface.CommandInterface
+	}{
+		{"TRANSACTION", handleTransactionSecondary, codes.SMB_COM_TRANSACTION_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewTransactionSecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.Trans2_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+		{"TRANSACTION2", handleTransaction2Secondary, codes.SMB_COM_TRANSACTION2_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewTransaction2SecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.Trans2_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+		{"NT_TRANSACT", handleNtTransactSecondary, codes.SMB_COM_NT_TRANSACT_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewNtTransactSecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.NT_Trans_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+	}
+	senders := []struct {
+		name     string
+		uid, tid types.USHORT
+	}{
+		{"another session on the owner's TID", 2, ownerTID},
+		{"the owner on another TID", ownerUID, 2},
+	}
+
+	for _, family := range families {
+		for _, sender := range senders {
+			pending := &transactionReassembly{
+				family:     family.family,
+				parameters: make([]byte, 8),
+				uid:        ownerUID,
+				tid:        ownerTID,
+				started:    time.Now(),
+			}
+			conn := &Connection{transaction: pending}
+
+			request := newRequest(family.code)
+			request.Header.UID = sender.uid
+			request.Header.TID = sender.tid
+			request.AddCommand(family.secondary())
+
+			if status := family.handle(conn, nil, request); status == nt_status.NT_STATUS_SUCCESS {
+				t.Errorf("%s secondary from %s was accepted, want it refused", family.family, sender.name)
+			}
+			if conn.transaction != pending {
+				t.Errorf("%s secondary from %s dropped the owner's pending transaction", family.family, sender.name)
+			}
+			if !bytes.Equal(pending.parameters, make([]byte, 8)) {
+				t.Errorf("%s secondary from %s wrote % x into the owner's transaction",
+					family.family, sender.name, pending.parameters)
+			}
 		}
 	}
 }
