@@ -239,7 +239,7 @@ func (c *Connection) closeOpen(fid uint16) error {
 	// nothing could ever release it and the range would stay locked for the life
 	// of the share.
 	if open.Tree != nil && open.Tree.Share != nil && open.Tree.Share.locks != nil {
-		open.Tree.Share.locks.ReleaseAll(open)
+		c.locksHeld -= open.Tree.Share.locks.ReleaseAll(open)
 	}
 
 	// An oplock goes the same way, and for the same reason: it is a promise made

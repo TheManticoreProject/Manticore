@@ -106,6 +106,12 @@ type Connection struct {
 	searches map[uint16]*Search
 	sids     *identifierAllocator
 
+	// locksHeld counts the byte-range locks this connection's handles hold, which
+	// Config.MaxLocksPerConnection bounds. The locks themselves live in the
+	// share's table; this is only the tally, kept here because the limit is per
+	// connection and the table is per share.
+	locksHeld int
+
 	// writeMutex serialises every write to the transport.
 	//
 	// The receive loop is not the only writer any more: a deferred answer sends

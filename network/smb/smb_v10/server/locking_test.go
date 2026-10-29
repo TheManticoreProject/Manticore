@@ -379,3 +379,63 @@ func TestBlockedLockWaitsAndThenFails(t *testing.T) {
 	}
 
 }
+
+// TestLockLimitPerConnection asserts a connection cannot hold more byte-range
+// locks than the limit, that the refusal is the status [MS-CIFS] section
+// 2.2.4.32.2 gives for "Insufficient server resources to place the lock", and
+// that unlocking and closing give the capacity back.
+//
+// The limit is across the connection's handles rather than per handle, so the
+// locks are spread over both.
+func TestLockLimitPerConnection(t *testing.T) {
+	client, first, second := lockableServer(t, "0123456789abcdef")
+
+	limit := DefaultMaxLocksPerConnection
+	for index := 0; index < limit; index++ {
+		fid := first
+		if index%2 == 1 {
+			fid = second
+		}
+		if err := client.LockFile(fid, uint64(index), 1, true); err != nil {
+			t.Fatalf("lock %d of %d failed: %v", index+1, limit, err)
+		}
+	}
+
+	over := wideRange(0x1234, uint64(limit), 1)
+	statusOf := func(raw []byte) uint32 { return binary.LittleEndian.Uint32(raw[5:9]) }
+
+	raw := sendLockingRequest(t, client, second, commands.LockingAndxLargeFiles, 0, nil,
+		[]types.LOCKING_ANDX_RANGE64{over})
+	if status := statusOf(raw); status != uint32(nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES) {
+		t.Fatalf("lock %d reported 0x%08X, want STATUS_INSUFF_SERVER_RESOURCES (0x%08X)",
+			limit+1, status, uint32(nt_status.NT_STATUS_INSUFF_SERVER_RESOURCES))
+	}
+
+	// Releasing one lock makes room for one more.
+	if err := client.UnlockFile(first, 0, 1); err != nil {
+		t.Fatalf("unlocking [0,1) failed: %v", err)
+	}
+	raw = sendLockingRequest(t, client, second, commands.LockingAndxLargeFiles, 0, nil,
+		[]types.LOCKING_ANDX_RANGE64{over})
+	if status := statusOf(raw); status != uint32(nt_status.NT_STATUS_SUCCESS) {
+		t.Fatalf("a lock after an unlock reported 0x%08X, want success", status)
+	}
+
+	// At the limit, a request that releases as many as it takes is still granted.
+	raw = sendLockingRequest(t, client, second, commands.LockingAndxLargeFiles, 0,
+		[]types.LOCKING_ANDX_RANGE64{over},
+		[]types.LOCKING_ANDX_RANGE64{wideRange(0x1234, uint64(limit)+1, 1)})
+	if status := statusOf(raw); status != uint32(nt_status.NT_STATUS_SUCCESS) {
+		t.Fatalf("swapping one lock for another at the limit reported 0x%08X, want success", status)
+	}
+
+	// Closing a handle gives back everything it held.
+	if err := client.CloseFile(first); err != nil {
+		t.Fatalf("closing the first handle failed: %v", err)
+	}
+	raw = sendLockingRequest(t, client, second, commands.LockingAndxLargeFiles, 0, nil,
+		[]types.LOCKING_ANDX_RANGE64{over})
+	if status := statusOf(raw); status != uint32(nt_status.NT_STATUS_SUCCESS) {
+		t.Fatalf("a lock after closing a holding handle reported 0x%08X, want success", status)
+	}
+}
