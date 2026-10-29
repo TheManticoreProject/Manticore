@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"bytes"
+	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -831,5 +833,49 @@ func TestServerRefusesReplayedMessageId(t *testing.T) {
 	c.Transport.SetTimeout(5 * time.Second)
 	if raw, err := c.Transport.Receive(); err == nil {
 		t.Fatalf("the replayed ECHO was answered: % x", raw[:min(len(raw), 16)])
+	}
+}
+
+func TestServerDropsUnauthenticatedAndIdleConnections(t *testing.T) {
+	const bound = 300 * time.Millisecond
+	_, port := startServer(t, server.Config{HandshakeTimeout: bound, IdleTimeout: bound})
+
+	// closedWithin reports whether the server closes conn within d.
+	closedWithin := func(conn net.Conn, d time.Duration) bool {
+		conn.SetReadDeadline(time.Now().Add(d))
+		_, err := conn.Read(make([]byte, 1))
+		var timeout net.Error
+		return err != nil && !(errors.As(err, &timeout) && timeout.Timeout())
+	}
+
+	silent, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Close()
+	if !closedWithin(silent, 5*time.Second) {
+		t.Error("a connection that never negotiated was kept")
+	}
+
+	idle, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * bound)
+	if _, err := idle.CreateFile("hello.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ, fileflags.FILE_OPEN, 0); err == nil {
+		t.Error("an authenticated connection holding no open was kept past IdleTimeout")
+	}
+
+	busy, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := busy.CreateFile("hello.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * bound)
+	if _, err := busy.ReadFile(id, 0, 5); err != nil {
+		t.Errorf("a connection holding an open was dropped while quiet: %v", err)
 	}
 }

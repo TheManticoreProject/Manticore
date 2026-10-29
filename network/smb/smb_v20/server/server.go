@@ -66,10 +66,21 @@ type Config struct {
 	MaxNotifiesPerConnection int
 
 	// MaxConnections bounds the connections served at once; one arriving at the
-	// limit is closed. Zero means unbounded.
+	// limit is closed. Zero applies the default and a negative value means
+	// unbounded.
 	MaxConnections int
 
-	// Timeout bounds each read on a connection. Zero means no bound.
+	// HandshakeTimeout bounds each read on a connection that has no established
+	// session yet, so a peer that never authenticates is dropped. IdleTimeout
+	// bounds each read on a connection that holds no open, the way Windows
+	// disconnects idle sessions; a client with a file open or a CHANGE_NOTIFY
+	// pending may stay quiet for as long as it likes. Zero applies the default
+	// and a negative value means no bound.
+	HandshakeTimeout time.Duration
+	IdleTimeout      time.Duration
+
+	// Timeout bounds every read on a connection, whatever its state; it caps
+	// HandshakeTimeout and IdleTimeout. Zero means no bound.
 	Timeout time.Duration
 }
 
@@ -80,6 +91,9 @@ const (
 	DefaultMaxTreesPerSession       = 64
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxNotifiesPerConnection = 64
+	DefaultMaxConnections           = 1024
+	DefaultHandshakeTimeout         = time.Minute
+	DefaultIdleTimeout              = 15 * time.Minute
 )
 
 // Share is a disk share. Its FileSystem comes from the SMB1 server package,
@@ -108,7 +122,7 @@ type Server struct {
 	conns     map[*Connection]struct{}
 	closed    bool
 
-	// slots holds one token per connection served when MaxConnections is set.
+	// slots holds one token per connection served when MaxConnections is positive.
 	slots chan struct{}
 
 	nextSessionID atomic.Uint64
@@ -138,8 +152,17 @@ func NewServer(config Config) (*Server, error) {
 			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, *limit)
 		}
 	}
-	if config.MaxConnections < 0 || config.Timeout < 0 {
-		return nil, fmt.Errorf("MaxConnections and Timeout cannot be negative")
+	if config.Timeout < 0 {
+		return nil, fmt.Errorf("Timeout cannot be negative")
+	}
+	if config.MaxConnections == 0 {
+		config.MaxConnections = DefaultMaxConnections
+	}
+	if config.HandshakeTimeout == 0 {
+		config.HandshakeTimeout = DefaultHandshakeTimeout
+	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = DefaultIdleTimeout
 	}
 	if config.MaxSessionsPerConnection == 0 {
 		config.MaxSessionsPerConnection = DefaultMaxSessionsPerConnection
@@ -277,10 +300,6 @@ func (s *Server) ServeConn(t transport.Transport, remote net.Addr) error {
 			return fmt.Errorf("already serving the maximum of %d connections", s.config.MaxConnections)
 		}
 	}
-	if s.config.Timeout > 0 {
-		t.SetTimeout(s.config.Timeout)
-	}
-
 	conn := newConnection(s, t, remote)
 	s.mutex.Lock()
 	if s.closed {
