@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
@@ -116,6 +117,7 @@ func (c *Connection) serve() {
 	}()
 
 	for {
+		c.transport.SetTimeout(c.readTimeout())
 		frame, err := c.transport.Receive()
 		if err != nil {
 			logger.Debugf("SMB2 server: connection with %s ended: %v", c.remote, err)
@@ -126,6 +128,35 @@ func (c *Connection) serve() {
 			return
 		}
 	}
+}
+
+// readTimeout bounds the next read according to what the connection holds: a
+// connection without an established session gets HandshakeTimeout, one without
+// an open gets IdleTimeout, and Timeout caps both. Zero means no bound.
+func (c *Connection) readTimeout() time.Duration {
+	config := c.server.config
+	var limit time.Duration
+	switch {
+	case !c.hasEstablishedSession():
+		limit = config.HandshakeTimeout
+	case len(c.opens) == 0:
+		limit = config.IdleTimeout
+	}
+	if limit <= 0 || config.Timeout > 0 && config.Timeout < limit {
+		limit = max(config.Timeout, 0)
+	}
+	return limit
+}
+
+// hasEstablishedSession reports whether any session on the connection has
+// completed authentication.
+func (c *Connection) hasEstablishedSession() bool {
+	for _, session := range c.sessions {
+		if session.established {
+			return true
+		}
+	}
+	return false
 }
 
 // release closes everything the connection still holds.
