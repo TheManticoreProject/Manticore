@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/binary"
 	"net"
 	"strconv"
 	"testing"
@@ -19,10 +20,12 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/network/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
 // serverWithAccount stands up a server that will authenticate the test identity,
@@ -576,6 +579,143 @@ func TestSeveralSessionsOnOneConnection(t *testing.T) {
 	}
 	if firstUID == secondUID {
 		t.Fatalf("both sessions were assigned UID 0x%04X", uint16(firstUID))
+	}
+}
+
+// TestSessionCannotReachAnotherSessionsHandles asserts a session cannot act on a
+// tree, a file handle or a search that another session on the same connection
+// opened, even when it quotes the owner's TID.
+//
+// anyTreeFor checks the session owning a TID, but openFor only matched the FID to
+// the request's TID, TREE_DISCONNECT removed whatever tree the TID named, and
+// FIND_CLOSE2 closed whatever search the SID named. A guest session could close
+// another session's files and searches and disconnect its trees.
+func TestSessionCannotReachAnotherSessionsHandles(t *testing.T) {
+	config := conformanceConfig(SigningDisabled)
+	config.AllowGuest = true
+	srv, transportEnd := pipedServer(t, config)
+
+	fs := NewMemoryFileSystem("FILES")
+	for _, name := range []string{"first.txt", "second.txt"} {
+		if err := fs.AddFile(name, []byte("0123456789")); err != nil {
+			t.Fatalf("AddFile() error = %v", err)
+		}
+	}
+	if err := srv.AddShare(&Share{Name: fileShareName, Type: ShareTypeDisk, FS: fs}); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	// The owner: an authenticated session with a tree, a file and a search open.
+	client := smb1client.NewFromTransport(transportEnd, net.IPv4(127, 0, 0, 1), 445)
+	if err := client.Negotiate(); err != nil {
+		t.Fatalf("Negotiate() error = %v", err)
+	}
+	creds, err := credentials.NewCredentials(captureDomain, captureUsername, capturePassword, "")
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+	if err := client.SessionSetup(creds); err != nil {
+		t.Fatalf("SessionSetup() error = %v", err)
+	}
+	if err := client.TreeConnect(fileShareName); err != nil {
+		t.Fatalf("TreeConnect() error = %v", err)
+	}
+	fid, err := client.OpenFile("first.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+		fileflags.FILE_OPEN, fileflags.FILE_NON_DIRECTORY_FILE)
+	if err != nil {
+		t.Fatalf("OpenFile() error = %v", err)
+	}
+
+	// SearchCount 1 of two entries, and no close flags, so the search stays open.
+	findFirst := []byte{}
+	findFirst = binary.LittleEndian.AppendUint16(findFirst, 0x0016) // SearchAttributes
+	findFirst = binary.LittleEndian.AppendUint16(findFirst, 1)      // SearchCount
+	findFirst = binary.LittleEndian.AppendUint16(findFirst, 0)      // Flags
+	findFirst = binary.LittleEndian.AppendUint16(findFirst, smbFindFileBothDirectoryInfo)
+	findFirst = binary.LittleEndian.AppendUint32(findFirst, 0) // SearchStorageType
+	findFirst = append(findFirst, []byte("\\*\x00")...)
+	parameters, _, status := sendTrans2(t, client, subcommands.TRANS2_FIND_FIRST2, findFirst, nil)
+	if status != 0 || len(parameters) < 2 {
+		t.Fatalf("FIND_FIRST2 answered 0x%08X", status)
+	}
+	sid := binary.LittleEndian.Uint16(parameters[0:2])
+
+	// The intruder: a guest session on the same connection.
+	auth := spnego.NewAuthContext(spnego.AuthTypeNTLM, captureDomain, "mallory", "wrong", "CLIENT01", true)
+	v := ntlmversion.DefaultVersion()
+	negotiateToken, err := auth.CreateNegotiateToken(testClientNegotiateFlags, &v)
+	if err != nil {
+		t.Fatalf("CreateNegotiateToken() error = %v", err)
+	}
+	first := sendSessionSetupSigned(t, transportEnd, negotiateToken, 0, false, nil, 0)
+	challenge := first.Command.(*commands.SessionSetupAndxResponse)
+	authenticateToken, err := auth.CreateAuthenticateTokenFromChallengeToken([]byte(challenge.SecurityBlob))
+	if err != nil {
+		t.Fatalf("CreateAuthenticateTokenFromChallengeToken() error = %v", err)
+	}
+	second := sendSessionSetupSigned(t, transportEnd, authenticateToken, first.Header.UID, false, nil, 0)
+	if second.Header.Status != 0 {
+		t.Fatalf("the guest session setup answered 0x%08X", second.Header.Status)
+	}
+	ownerUID, guestUID := client.Session.SessionUID, second.Header.UID
+
+	// Every request below quotes the owner's TID from the guest's UID.
+	client.Session.SessionUID = guestUID
+
+	queryInfo := []byte{}
+	queryInfo = binary.LittleEndian.AppendUint16(queryInfo, uint16(fid))
+	queryInfo = binary.LittleEndian.AppendUint16(queryInfo, smbQueryFileBasicInfo)
+
+	closeFile := commands.NewCloseRequest()
+	closeFile.FID = types.USHORT(fid)
+	closeSearch := commands.NewFindClose2Request()
+	closeSearch.SearchHandle = types.USHORT(sid)
+
+	attempts := []struct {
+		name string
+		send func() uint32
+	}{
+		{"READ_ANDX", func() uint32 {
+			return binary.LittleEndian.Uint32(sendReadAndx(t, client, fid, 10, 0)[5:9])
+		}},
+		{"TRANS2_QUERY_FILE_INFORMATION", func() uint32 {
+			_, _, status := sendTrans2(t, client, subcommands.TRANS2_QUERY_FILE_INFORMATION, queryInfo, nil)
+			return status
+		}},
+		{"CLOSE", func() uint32 {
+			status, _ := sendLegacy(t, client, codes.SMB_COM_CLOSE, closeFile)
+			return status
+		}},
+		{"FIND_CLOSE2", func() uint32 {
+			status, _ := sendLegacy(t, client, codes.SMB_COM_FIND_CLOSE2, closeSearch)
+			return status
+		}},
+		{"TREE_DISCONNECT", func() uint32 {
+			status, _ := sendLegacy(t, client, codes.SMB_COM_TREE_DISCONNECT, commands.NewTreeDisconnectRequest())
+			return status
+		}},
+	}
+	for _, attempt := range attempts {
+		if status := attempt.send(); status != uint32(nt_status.NT_STATUS_SMB_BAD_TID) {
+			t.Errorf("the guest's %s on the owner's tree answered 0x%08X, want NT_STATUS_SMB_BAD_TID",
+				attempt.name, status)
+		}
+	}
+
+	// The owner's tree, file and search all survived the attempts.
+	client.Session.SessionUID = ownerUID
+	data, err := client.ReadFile(fid, 0, 10)
+	if err != nil {
+		t.Fatalf("the owner's read after the guest's attempts failed: %v", err)
+	}
+	if string(data) != "0123456789" {
+		t.Errorf("the owner read %q", data)
+	}
+	if status, _ := sendLegacy(t, client, codes.SMB_COM_FIND_CLOSE2, closeSearch); status != 0 {
+		t.Errorf("the owner's FIND_CLOSE2 answered 0x%08X", status)
+	}
+	if err := client.CloseFile(fid); err != nil {
+		t.Errorf("the owner's close failed: %v", err)
 	}
 }
 

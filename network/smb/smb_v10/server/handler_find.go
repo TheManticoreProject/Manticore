@@ -255,9 +255,25 @@ func handleFindClose2(conn *Connection, w ResponseWriter, req *message.Message) 
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 
-	if !conn.closeSearch(uint16(request.SearchHandle)) {
+	// The search is checked against the request's tree, resolved through
+	// anyTreeFor, the same way FIND_NEXT2 checks it: closing by identifier alone
+	// let another session on the connection close this one's enumeration.
+	sid := uint16(request.SearchHandle)
+	search := conn.Search(sid)
+	if search == nil {
 		return nt_status.NT_STATUS_INVALID_HANDLE
 	}
+	tree, status := conn.anyTreeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return status
+	}
+	if search.Tree != tree {
+		logger.Debugf("SMB1 server: %s closed search 0x%04X on TID 0x%04X, which does not hold it",
+			conn.Remote, sid, uint16(req.Header.TID))
+		return nt_status.NT_STATUS_INVALID_HANDLE
+	}
+
+	conn.closeSearch(sid)
 
 	return conn.answer(w, commands.NewFindClose2Response())
 }

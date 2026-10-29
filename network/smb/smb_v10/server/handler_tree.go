@@ -134,6 +134,13 @@ func (c *Connection) connectTree(req *message.Message, path, service string) (*T
 func handleTreeDisconnect(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
 	tid := uint16(req.Header.TID)
 
+	// Resolved through anyTreeFor so only the session that connected the tree
+	// can disconnect it; removing by TID alone let any session on the connection
+	// tear down another's tree and every handle open on it.
+	if _, status := conn.anyTreeFor(req); status != nt_status.NT_STATUS_SUCCESS {
+		return status
+	}
+
 	tree := conn.removeTree(tid)
 	if tree == nil {
 		return nt_status.NT_STATUS_SMB_BAD_TID
