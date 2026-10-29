@@ -74,11 +74,14 @@ type Config struct {
 
 	// MaxSessionsPerConnection, MaxTreesPerConnection and MaxOpensPerConnection
 	// bound what one connection may hold at once, so a client cannot exhaust an
-	// identifier space or the backend's handles. Zero applies the default.
+	// identifier space or the backend's handles. MaxNotifiesPerConnection bounds
+	// the NT_TRANSACT_NOTIFY_CHANGE requests pending at once, each of which holds
+	// a backend watch and a goroutine. Zero applies the default.
 	MaxSessionsPerConnection int
 	MaxTreesPerConnection    int
 	MaxOpensPerConnection    int
 	MaxSearchesPerConnection int
+	MaxNotifiesPerConnection int
 
 	// Timeout bounds each read on a connection, so a client that opens a socket
 	// and says nothing does not hold a goroutine forever. Zero means no bound.
@@ -140,6 +143,7 @@ const (
 	DefaultMaxTreesPerConnection    = 64
 	DefaultMaxOpensPerConnection    = 1024
 	DefaultMaxSearchesPerConnection = 128
+	DefaultMaxNotifiesPerConnection = 64
 
 	// DefaultMaxLargeTransfer is the ceiling on one large read or write: 64 KiB,
 	// which is what CAP_LARGE_READX and CAP_LARGE_WRITEX exist to reach and what
@@ -302,11 +306,15 @@ func NewServer(config Config) (*Server, error) {
 	if config.MaxSearchesPerConnection == 0 {
 		config.MaxSearchesPerConnection = DefaultMaxSearchesPerConnection
 	}
+	if config.MaxNotifiesPerConnection == 0 {
+		config.MaxNotifiesPerConnection = DefaultMaxNotifiesPerConnection
+	}
 	for name, limit := range map[string]int{
 		"MaxSessionsPerConnection": config.MaxSessionsPerConnection,
 		"MaxTreesPerConnection":    config.MaxTreesPerConnection,
 		"MaxOpensPerConnection":    config.MaxOpensPerConnection,
 		"MaxSearchesPerConnection": config.MaxSearchesPerConnection,
+		"MaxNotifiesPerConnection": config.MaxNotifiesPerConnection,
 	} {
 		if limit < 0 {
 			return nil, fmt.Errorf("%s cannot be negative (got %d)", name, limit)

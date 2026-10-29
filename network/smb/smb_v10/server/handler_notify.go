@@ -63,6 +63,15 @@ func handleNotifyChange(
 		return nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
+	// Every pending watch holds a backend watch and a goroutine until it is
+	// answered, so the number a connection may have pending is bounded. The check
+	// comes before the watch starts, so a refused request costs nothing.
+	if conn.pendingNotifies() >= conn.Server.config.MaxNotifiesPerConnection {
+		logger.Debugf("SMB1 server: %s already has %d directory watches pending",
+			conn.Remote, conn.Server.config.MaxNotifiesPerConnection)
+		return nt_status.NT_STATUS_INSUFFICIENT_RESOURCES
+	}
+
 	changes, stop, err := watcher.Watch(open.Path, watchTree)
 	if err != nil {
 		return statusForFSError(err)
@@ -71,38 +80,127 @@ func handleNotifyChange(
 	// Everything the answer needs is captured now: the responder is the only part
 	// of the connection safe to touch from the goroutine below, and the handle
 	// and share tables belong to the receive loop.
-	responder := w.Defer()
+	pending := &pendingNotify{
+		responder: w.Defer(),
+		closed:    make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+	open.notifies = append(open.notifies, pending)
 	budget := reassembly.maxParameterCount
 
 	go func() {
+		defer close(pending.done)
 		defer stop()
-		defer responder.Done()
+		defer pending.responder.Done()
 
-		waitForChange(conn, responder, changes, completionFilter, budget)
+		waitForChange(conn, pending.responder, pending.closed, changes, completionFilter, budget)
 	}()
 
 	// The handler has answered by deferring; the response comes from above.
 	return nt_status.NT_STATUS_SUCCESS
 }
 
+// pendingNotify is one NT_TRANSACT_NOTIFY_CHANGE request waiting for a change,
+// recorded on the handle it watches.
+//
+// It is recorded there because the handle bounds its life: [MS-CIFS] section
+// 3.3.5.59.4 completes the request when "the FID is closed, either by an explicit
+// Close operation or another cause, such as an SMB_COM_PROCESS_EXIT [...] or
+// SMB_COM_TREE_DISCONNECT". A watch that outlived its handle would hold a backend
+// watch and a goroutine that nothing could reach until the connection ended.
+type pendingNotify struct {
+	// responder is the deferred answer.
+	responder AsyncResponder
+
+	// closed is closed by the receive loop when the handle goes, after it has
+	// answered the request, and tells the goroutine to stop watching.
+	closed chan struct{}
+
+	// done is closed by the goroutine when it has finished, whichever way the
+	// request ended.
+	done chan struct{}
+}
+
+// finished reports whether the request is no longer pending.
+func (p *pendingNotify) finished() bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// pendingNotifies counts the NT_TRANSACT_NOTIFY_CHANGE requests still pending on
+// the connection, forgetting the ones that have finished.
+//
+// Only the open handles are consulted: closing a handle completes every request
+// pending on it, so a closed handle has none left to count.
+func (c *Connection) pendingNotifies() int {
+	count := 0
+	for _, open := range c.opens {
+		kept := open.notifies[:0]
+		for _, pending := range open.notifies {
+			if !pending.finished() {
+				kept = append(kept, pending)
+			}
+		}
+		clear(open.notifies[len(kept):])
+		open.notifies = kept
+		count += len(kept)
+	}
+	return count
+}
+
+// cleanupNotifies completes every NT_TRANSACT_NOTIFY_CHANGE request pending on a
+// handle that is being closed, and stops their watches.
+//
+// The status is STATUS_NOTIFY_CLEANUP, which [MS-ERREF] section 2.3.1 defines as
+// "a notify change request has been completed due to closing the handle that
+// made the notify change request", and which Windows sends in this case
+// ([MS-SMB2] section 3.3.5.10 requires it of the SMB2 CLOSE). [MS-CIFS] section
+// 3.3.5.59.4 is what requires the request to complete at all.
+//
+// The answer is sent here, on the receive loop, rather than left to the watch's
+// goroutine, so it reaches the client before the response to whatever closed the
+// handle. A request the goroutine has already answered reports ErrResponderDone,
+// which is the expected outcome of that race and not worth logging.
+func (c *Connection) cleanupNotifies(open *Open) {
+	for _, pending := range open.notifies {
+		if err := pending.responder.RespondWithError(nt_status.NT_STATUS_NOTIFY_CLEANUP); err != nil &&
+			err != ErrResponderDone {
+			logger.Debugf("SMB1 server: failed to end a watch for %s: %v", c.Remote, err)
+		}
+		close(pending.closed)
+	}
+	open.notifies = nil
+}
+
 // waitForChange blocks until something the filter admits happens, the request is
-// cancelled, or the watch ends, and answers accordingly.
+// cancelled, its handle is closed, or the watch ends, and answers accordingly.
 //
 // Parameters:
 //   - conn: the connection, for logging
 //   - responder: the deferred answer to complete
+//   - closed: closed when the handle goes, by which time the request is answered
 //   - changes: the watch's notifications
 //   - completionFilter: the changes the client asked about
 //   - budget: how many bytes of notification the client will take
 func waitForChange(
 	conn *Connection,
 	responder AsyncResponder,
+	closed <-chan struct{},
 	changes <-chan ChangeNotification,
 	completionFilter uint32,
 	budget int,
 ) {
 	for {
 		select {
+		case <-closed:
+			// The handle was closed, and the receive loop has already answered.
+			logger.Debugf("SMB1 server: a directory watch for %s ended with its handle", conn.Remote)
+			return
+
 		case <-responder.Cancelled():
 			// The client withdrew the request, or the connection went away.
 			// Either way there is nobody to answer.
