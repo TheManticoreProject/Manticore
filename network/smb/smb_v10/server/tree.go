@@ -91,6 +91,11 @@ type Open struct {
 
 	// Created is when the handle was opened.
 	Created time.Time
+
+	// notifies are the NT_TRANSACT_NOTIFY_CHANGE requests pending on the handle,
+	// which closing it completes. They belong to the receive loop like the rest
+	// of the handle.
+	notifies []*pendingNotify
 }
 
 // Tree returns the tree a TID names on this connection, or nil when it names
@@ -232,6 +237,12 @@ func (c *Connection) closeOpen(fid uint16) error {
 	}
 	delete(c.opens, fid)
 	c.fids.Release(fid)
+
+	// A directory watch pending on the handle ends with it. Every path that
+	// closes a handle — a close, a process exit, a tree disconnect and a logoff —
+	// comes through here, so none of them can leave a watch running behind a
+	// handle that no longer exists.
+	c.cleanupNotifies(open)
 
 	// Locks go first, and unconditionally. [MS-CIFS] section 2.2.4.32.1: "Closing
 	// a file with locks still in force causes the locks to be released". A lock

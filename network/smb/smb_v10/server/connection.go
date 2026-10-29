@@ -6,12 +6,14 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/signing"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -220,6 +222,7 @@ func (c *Connection) serve() {
 	logger.Debugf("SMB1 server: serving %s", c.Remote)
 
 	for {
+		c.Transport.SetTimeout(c.readTimeout())
 		raw, err := c.Transport.Receive()
 		if err != nil {
 			// A closed connection, a timeout on an idle client and a truncated
@@ -234,6 +237,29 @@ func (c *Connection) serve() {
 			return
 		}
 	}
+}
+
+// readTimeout bounds the next read according to what the connection holds: a
+// connection without an authenticated session gets HandshakeTimeout, one holding
+// no open and no deferred request gets IdleTimeout, and Timeout caps both. Zero
+// means no bound.
+//
+// It is applied before every Receive. The transport reads it only when receiving,
+// never when sending, so a deferred answer or an oplock break written from
+// another goroutine does not race with it.
+func (c *Connection) readTimeout() time.Duration {
+	config := c.Server.config
+	var limit time.Duration
+	switch {
+	case len(c.sessions) == 0:
+		limit = config.HandshakeTimeout
+	case len(c.opens) == 0 && c.OutstandingResponses() == 0:
+		limit = config.IdleTimeout
+	}
+	if limit <= 0 || config.Timeout > 0 && config.Timeout < limit {
+		limit = max(config.Timeout, 0)
+	}
+	return limit
 }
 
 // handleFrame decodes one received frame and answers it.
@@ -276,6 +302,17 @@ func (c *Connection) handleFrame(raw []byte) error {
 		}
 		responseSequenceNumber = signing.ResponseSequenceNumber(expected)
 		c.ExpectedRequestSequenceNumber = signing.NextRequestSequenceNumber(expected)
+
+		// SMB_COM_NT_CANCEL is the exception: it has no response of its own, so it
+		// consumes only the one number it was signed at. [MS-SMB] section 3.3.5.1
+		// says so outright — "IF request command EQUALS SMB_COM_NT_CANCEL THEN
+		// INCREMENT ServerNextReceiveSequenceNumber" — where every other request,
+		// even one that receives no response, advances it by 2. The client counts
+		// the same way, so advancing by 2 here would put the next request one
+		// number behind the server and fail its verification.
+		if requestHeader.Command == codes.SMB_COM_NT_CANCEL {
+			c.ExpectedRequestSequenceNumber = expected + 1
+		}
 	}
 
 	request := message.NewMessage()

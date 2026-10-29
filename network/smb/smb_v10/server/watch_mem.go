@@ -70,16 +70,17 @@ func (r *watchRegistry) add(path string, recursive bool) (<-chan ChangeNotificat
 //   - path: the share-relative path that changed
 //   - action: the FILE_ACTION_* value describing what happened
 func (r *watchRegistry) publish(path string, action uint32) {
+	// The sends happen with the lock held. stop removes a watch under this lock
+	// before closing its channel, so a watch still in the map has an open
+	// channel; sending after unlocking would race that close and panic. Holding
+	// the lock costs nothing, because no send here can block.
 	r.mutex.Lock()
-	interested := make([]*memoryWatch, 0, len(r.watches))
-	for watch := range r.watches {
-		if watch.covers(path) {
-			interested = append(interested, watch)
-		}
-	}
-	r.mutex.Unlock()
+	defer r.mutex.Unlock()
 
-	for _, watch := range interested {
+	for watch := range r.watches {
+		if !watch.covers(path) {
+			continue
+		}
 		notification := ChangeNotification{
 			Action: action,
 			Name:   watch.relative(path),

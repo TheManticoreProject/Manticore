@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
+	ntlmversion "github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
 	"github.com/TheManticoreProject/Manticore/network/tcp"
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
@@ -35,6 +37,8 @@ type deferringHandler struct {
 type deferredRequest struct {
 	responder  AsyncResponder
 	connection *Connection
+	uid        uint16
+	tid        uint16
 	pid        uint32
 	mid        uint16
 }
@@ -46,6 +50,8 @@ func (h *deferringHandler) Run(srv *Server, conn *Connection, w ResponseWriter, 
 	h.deferred <- deferredRequest{
 		responder:  w.Defer(),
 		connection: conn,
+		uid:        uint16(req.Header.UID),
+		tid:        uint16(req.Header.TID),
 		pid:        req.Header.GetPID(),
 		mid:        uint16(req.Header.MID),
 	}
@@ -188,14 +194,12 @@ func TestNtCancelCancelsAnOutstandingRequest(t *testing.T) {
 	deferred := <-handler.deferred
 	responder := deferred.responder
 
-	// The cancel has to name the same PID and MID the deferred request carried,
-	// which the handler published rather than the test guessing at the client's
-	// numbering.
+	// The cancel has to name the same UID, TID, PID and MID the deferred request
+	// carried, which the handler published rather than the test guessing at the
+	// client's numbering.
 	request := newRequest(codes.SMB_COM_NT_CANCEL)
-	// The cancel needs the session's UID: SMB_COM_NT_CANCEL is not one of the
-	// commands that may arrive without a session, so the dispatcher refuses it
-	// before the handler sees it otherwise.
-	request.Header.UID = client.Session.SessionUID
+	request.Header.UID = types.USHORT(deferred.uid)
+	request.Header.TID = types.USHORT(deferred.tid)
 	request.Header.SetPID(deferred.pid)
 	request.Header.MID = types.USHORT(deferred.mid)
 	request.AddCommand(commands.NewNtCancelRequest())
@@ -218,6 +222,117 @@ func TestNtCancelCancelsAnOutstandingRequest(t *testing.T) {
 	// the responder's choice: here it reports the cancellation.
 	if err := responder.RespondWithError(nt_status.NT_STATUS_CANCELLED); err != nil {
 		t.Fatalf("RespondWithError() error = %v", err)
+	}
+}
+
+// TestNtCancelMatchesOnlyTheRequestItNames asserts SMB_COM_NT_CANCEL cancels a
+// deferred request only when its UID, TID, PID and MID all match.
+//
+// [MS-CIFS] 3.3.5.52 has the server look for a pending request matching the UID,
+// TID, PID and MID of the cancel. PID and MID are the client's own numbering and
+// repeat across the sessions sharing a connection, so a cancel matched on those
+// alone let one session cancel another's request.
+func TestNtCancelMatchesOnlyTheRequestItNames(t *testing.T) {
+	srv, addr := serverWithAccount(t, SigningDisabled, func(c *Config) { c.AllowGuest = true })
+	client := dialServer(t, addr)
+	negotiateWithRawClient(t, client)
+
+	// Two sessions on one connection: the account the server knows, and a guest
+	// for one it does not.
+	logon := func(username string) types.USHORT {
+		t.Helper()
+		auth := spnego.NewAuthContext(spnego.AuthTypeNTLM, captureDomain, username, capturePassword, "CLIENT01", true)
+		version := ntlmversion.DefaultVersion()
+		negotiate, err := auth.CreateNegotiateToken(testClientNegotiateFlags, &version)
+		if err != nil {
+			t.Fatalf("CreateNegotiateToken() error = %v", err)
+		}
+		challenge := sendSessionSetupSigned(t, client, negotiate, 0, false, nil, 0)
+		setup, ok := challenge.Command.(*commands.SessionSetupAndxResponse)
+		if !ok {
+			t.Fatalf("the first session setup for %q was answered with status 0x%08X", username, challenge.Header.Status)
+		}
+		authenticate, err := auth.CreateAuthenticateTokenFromChallengeToken([]byte(setup.SecurityBlob))
+		if err != nil {
+			t.Fatalf("CreateAuthenticateTokenFromChallengeToken() error = %v", err)
+		}
+		response := sendSessionSetupSigned(t, client, authenticate, challenge.Header.UID, false, nil, 0)
+		if response.Header.Status != 0 {
+			t.Fatalf("the logon for %q failed with status 0x%08X", username, response.Header.Status)
+		}
+		return response.Header.UID
+	}
+	owner := logon(captureUsername)
+	other := logon("mallory")
+	if owner == other {
+		t.Fatalf("both logons were given UID 0x%04X", owner)
+	}
+
+	handler := &deferringHandler{deferred: make(chan deferredRequest, 4)}
+	srv.RegisterHandler(handler)
+
+	// sendEcho sends an ECHO the handler defers, and returns what it saw.
+	sendEcho := func(mid types.USHORT) deferredRequest {
+		t.Helper()
+		echo := commands.NewEchoRequest()
+		echo.EchoCount = 1
+		echo.Data = []types.UCHAR("pending")
+		request := newRequest(codes.SMB_COM_ECHO)
+		request.Header.UID = owner
+		request.Header.MID = mid
+		request.AddCommand(echo)
+		sendRequest(t, client, request)
+		select {
+		case deferred := <-handler.deferred:
+			return deferred
+		case <-time.After(5 * time.Second):
+			t.Fatal("the handler never deferred the request")
+		}
+		return deferredRequest{}
+	}
+	sendCancel := func(uid, tid types.USHORT, pid uint32, mid types.USHORT) {
+		t.Helper()
+		request := newRequest(codes.SMB_COM_NT_CANCEL)
+		request.Header.UID = uid
+		request.Header.TID = tid
+		request.Header.SetPID(pid)
+		request.Header.MID = mid
+		request.AddCommand(commands.NewNtCancelRequest())
+		sendRequest(t, client, request)
+	}
+
+	pending := sendEcho(0x0100)
+	responder := pending.responder
+	t.Cleanup(responder.Done)
+	uid, tid, pid, mid := types.USHORT(pending.uid), types.USHORT(pending.tid), pending.pid, types.USHORT(pending.mid)
+
+	for _, tc := range []struct {
+		name string
+		uid  types.USHORT
+		tid  types.USHORT
+	}{
+		{name: "another session's UID", uid: other, tid: tid},
+		{name: "another TID", uid: uid, tid: tid + 1},
+	} {
+		sendCancel(tc.uid, tc.tid, pid, mid)
+
+		// The connection handles requests in order, so once a later ECHO has been
+		// deferred the cancel before it has been dealt with.
+		sendEcho(0x0200).responder.Done()
+
+		select {
+		case <-responder.Cancelled():
+			t.Fatalf("a cancel naming %s cancelled the pending request", tc.name)
+		default:
+		}
+	}
+
+	// The cancel naming the request exactly still reaches it.
+	sendCancel(uid, tid, pid, mid)
+	select {
+	case <-responder.Cancelled():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancel naming the request's own UID, TID, PID and MID never reached it")
 	}
 }
 

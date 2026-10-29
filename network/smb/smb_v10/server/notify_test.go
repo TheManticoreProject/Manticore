@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/binary"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -300,9 +302,11 @@ func TestNotifyChangeStopsWatchingWhenCancelled(t *testing.T) {
 	replies := watchDirectory(t, client, "watched", 0, false, 4096)
 	waitFor(t, func() bool { return fs.watches.count() == 1 }, "the watch was not registered")
 
-	// The cancel names the watch's own PID and MID, which newRequest fixes.
+	// The cancel names the watch's own UID, TID, PID and MID; newRequest fixes the
+	// PID and MID.
 	request := newRequest(codes.SMB_COM_NT_CANCEL)
 	request.Header.UID = client.Session.SessionUID
+	request.Header.TID = client.Session.TreeID
 	request.AddCommand(commands.NewNtCancelRequest())
 
 	marshalled, err := request.Marshal()
@@ -324,5 +328,73 @@ func TestNotifyChangeStopsWatchingWhenCancelled(t *testing.T) {
 	case reply := <-replies:
 		t.Fatalf("a cancelled watch was answered anyway, with status 0x%08X", reply.status)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestMemoryWatchStopRacingAChangeDoesNotPanic stops watches while changes are
+// being published to them.
+//
+// A publish that picked a watch and then sent to it after its stop had closed the
+// channel panicked with "send on closed channel", and for a change the embedding
+// application made directly there is no recover above it to catch that. Each
+// stop here lands while writers are publishing into the watched directory, so the
+// window is hit many times over; under -race the test also fails on any
+// unsynchronised access between the two.
+func TestMemoryWatchStopRacingAChangeDoesNotPanic(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.Mkdir("watched"); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+
+	done := make(chan struct{})
+	var writers sync.WaitGroup
+	panics := make(chan interface{}, 4)
+
+	for i := 0; i < 4; i++ {
+		writers.Add(1)
+		go func(writer int) {
+			defer writers.Done()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					panics <- recovered
+				}
+			}()
+			name := fmt.Sprintf("watched/file%d", writer)
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if err := fs.AddFile(name, []byte("x")); err != nil {
+					t.Errorf("AddFile() error = %v", err)
+					return
+				}
+				if err := fs.Remove(name); err != nil {
+					t.Errorf("Remove() error = %v", err)
+					return
+				}
+			}
+		}(i)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		_, stop, err := fs.Watch("watched", false)
+		if err != nil {
+			t.Fatalf("Watch() error = %v", err)
+		}
+		stop()
+	}
+	close(done)
+	writers.Wait()
+
+	select {
+	case recovered := <-panics:
+		t.Fatalf("publishing a change while a watch stopped panicked: %v", recovered)
+	default:
+	}
+	if count := fs.watches.count(); count != 0 {
+		t.Fatalf("watches.count() = %d after every watch stopped, want 0", count)
 	}
 }

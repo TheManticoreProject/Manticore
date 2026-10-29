@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
+	ntlmversion "github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -16,6 +18,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/network/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
@@ -1149,5 +1152,221 @@ func TestNamedPipePeekReportsAndPreservesTheAnswer(t *testing.T) {
 	collected := append([]byte(response.Trans_Data), rest...)
 	if !bytes.Equal(collected, answer) {
 		t.Fatalf("after peeking the answer reassembled to %d bytes, want %d", len(collected), len(answer))
+	}
+}
+
+// crossSessionPipe is a connection carrying two sessions: an authenticated owner
+// with a pipe open on its IPC$ tree, and a guest with an IPC$ tree of its own.
+type crossSessionPipe struct {
+	client    *smb1client.Client
+	transport *tcp.TCPTransport
+	pipes     *echoPipe
+	fid       smb1client.FID
+
+	ownerUID, ownerTID types.USHORT
+	guestUID, guestTID types.USHORT
+}
+
+// newCrossSessionPipe stands up a crossSessionPipe. The client is left acting as
+// the owner.
+func newCrossSessionPipe(t *testing.T) *crossSessionPipe {
+	t.Helper()
+
+	config := conformanceConfig(SigningDisabled)
+	config.AllowGuest = true
+	srv, transportEnd := pipedServer(t, config)
+	pipes := newEchoPipe("lsarpc")
+	if err := srv.AddShare(&Share{Name: "IPC$", Type: ShareTypeNamedPipe, Pipes: pipes}); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	client := smb1client.NewFromTransport(transportEnd, net.IPv4(127, 0, 0, 1), 445)
+	if err := client.Negotiate(); err != nil {
+		t.Fatalf("Negotiate() error = %v", err)
+	}
+	creds, err := credentials.NewCredentials(captureDomain, captureUsername, capturePassword, "")
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+	if err := client.SessionSetup(creds); err != nil {
+		t.Fatalf("SessionSetup() error = %v", err)
+	}
+	if err := client.TreeConnect("IPC$"); err != nil {
+		t.Fatalf("TreeConnect() error = %v", err)
+	}
+	fid, err := openPipeHandle(t, client, `\PIPE\lsarpc`)
+	if err != nil {
+		t.Fatalf("opening the pipe failed: %v", err)
+	}
+
+	// The guest logs on with an identity the server does not know.
+	auth := spnego.NewAuthContext(spnego.AuthTypeNTLM, captureDomain, "mallory", "wrong", "CLIENT01", true)
+	version := ntlmversion.DefaultVersion()
+	negotiateToken, err := auth.CreateNegotiateToken(testClientNegotiateFlags, &version)
+	if err != nil {
+		t.Fatalf("CreateNegotiateToken() error = %v", err)
+	}
+	first := sendSessionSetupSigned(t, transportEnd, negotiateToken, 0, false, nil, 0)
+	challenge := first.Command.(*commands.SessionSetupAndxResponse)
+	authenticateToken, err := auth.CreateAuthenticateTokenFromChallengeToken([]byte(challenge.SecurityBlob))
+	if err != nil {
+		t.Fatalf("CreateAuthenticateTokenFromChallengeToken() error = %v", err)
+	}
+	second := sendSessionSetupSigned(t, transportEnd, authenticateToken, first.Header.UID, false, nil, 0)
+	if second.Header.Status != 0 {
+		t.Fatalf("the guest session setup answered 0x%08X", second.Header.Status)
+	}
+
+	fixture := &crossSessionPipe{
+		client:    client,
+		transport: transportEnd,
+		pipes:     pipes,
+		fid:       fid,
+		ownerUID:  client.Session.SessionUID,
+		ownerTID:  client.Session.TreeID,
+		guestUID:  second.Header.UID,
+	}
+
+	fixture.actAs(fixture.guestUID, 0)
+	if err := client.TreeConnect("IPC$"); err != nil {
+		t.Fatalf("the guest's TreeConnect() error = %v", err)
+	}
+	fixture.guestTID = client.Session.TreeID
+	fixture.actAs(fixture.ownerUID, fixture.ownerTID)
+	return fixture
+}
+
+// actAs points the client's requests at a session and tree.
+func (f *crossSessionPipe) actAs(uid, tid types.USHORT) {
+	f.client.Session.SessionUID = uid
+	f.client.Session.TreeID = tid
+}
+
+// TestNamedPipeIsNotReachableFromAnotherSession asserts a session cannot transact
+// on, read or peek at a pipe handle another session on the same connection
+// opened, whether it quotes the owner's TID or its own.
+//
+// runTransaction resolved the TID without checking which session owned it, and
+// the FID in the setup words was looked up without checking which tree held it,
+// so a guest could drive an authenticated session's bound RPC pipe.
+func TestNamedPipeIsNotReachableFromAnotherSession(t *testing.T) {
+	f := newCrossSessionPipe(t)
+
+	operations := []struct {
+		name       string
+		subcommand subcommands.TransactionSubcommand
+		data       []byte
+	}{
+		{"TRANS_TRANSACT_NMPIPE", subcommands.TRANS_TRANSACT_NMPIPE, []byte("hijack")},
+		{"TRANS_READ_NMPIPE", subcommands.TRANS_READ_NMPIPE, nil},
+		{"TRANS_PEEK_NMPIPE", subcommands.TRANS_PEEK_NMPIPE, nil},
+	}
+	trees := []struct {
+		name string
+		tid  types.USHORT
+	}{
+		{"owner's TID", f.ownerTID},
+		{"guest's own TID", f.guestTID},
+	}
+
+	for _, tree := range trees {
+		for _, operation := range operations {
+			f.actAs(f.guestUID, tree.tid)
+			setup := []types.USHORT{types.USHORT(operation.subcommand), types.USHORT(f.fid)}
+			response, status := sendTransaction(t, f.client, setup, `\PIPE\`, nil, operation.data)
+			if status == 0 {
+				t.Errorf("%s from the guest on the %s succeeded and returned %q, want it refused",
+					operation.name, tree.name, response.Trans_Data)
+			}
+		}
+	}
+
+	if got := f.pipes.sessionAt(0).transactCount(); got != 0 {
+		t.Errorf("the owner's pipe session saw %d transactions from the guest, want 0", got)
+	}
+
+	// The owner's own handle still works.
+	f.actAs(f.ownerUID, f.ownerTID)
+	answer, status := transactPipe(t, f.client, f.fid, []byte("own"))
+	if status != 0 || string(answer) != "echo:own" {
+		t.Fatalf("the owner's transaction answered 0x%08X with %q, want success with %q", status, answer, "echo:own")
+	}
+}
+
+// TestTransactionSecondaryFromAnotherSessionIsRefused asserts a
+// TRANSACTION_SECONDARY from a session that did not begin the pending
+// transaction is refused, and that the transaction survives for its owner.
+//
+// A connection holds one pending transaction whatever session began it, and a
+// secondary was folded into it without checking where it came from: another
+// session could write into it, complete it, and receive the answer of the
+// owner's pipe.
+func TestTransactionSecondaryFromAnotherSessionIsRefused(t *testing.T) {
+	f := newCrossSessionPipe(t)
+
+	// The owner begins a transaction on its pipe declaring eight bytes of data
+	// and sending four.
+	primary := newRequest(codes.SMB_COM_TRANSACTION)
+	primary.Header.UID = f.ownerUID
+	primary.Header.TID = f.ownerTID
+	primary.Header.Flags2 &^= flags2.Flags2(flags2.FLAGS2_UNICODE)
+	transaction := commands.NewTransactionRequest()
+	transaction.Setup = []types.USHORT{types.USHORT(subcommands.TRANS_TRANSACT_NMPIPE), types.USHORT(f.fid)}
+	transaction.SetupCount = types.UCHAR(len(transaction.Setup))
+	transaction.MaxParameterCount = 1024
+	transaction.MaxDataCount = 4096
+	if err := transaction.Name.SetString(`\PIPE\`); err != nil {
+		t.Fatalf("Name.SetString() error = %v", err)
+	}
+	transaction.TotalDataCount = 8
+	transaction.DataCount = 4
+	transaction.Trans_Data = []types.UCHAR("ownr")
+	primary.AddCommand(transaction)
+	// An incomplete primary gets no response.
+	sendRequest(t, f.transport, primary)
+
+	secondary := func(uid, tid types.USHORT, data string) (*message.Message, []byte) {
+		t.Helper()
+		request := newRequest(codes.SMB_COM_TRANSACTION_SECONDARY)
+		request.Header.UID = uid
+		request.Header.TID = tid
+		continuation := commands.NewTransactionSecondaryRequest()
+		continuation.TotalDataCount = 8
+		continuation.DataCount = types.USHORT(len(data))
+		continuation.DataDisplacement = 4
+		continuation.Trans2_Data = []types.UCHAR(data)
+		request.AddCommand(continuation)
+		sendRequest(t, f.transport, request)
+		return receiveResponse(t, f.transport)
+	}
+
+	for _, foreign := range []struct {
+		name     string
+		uid, tid types.USHORT
+	}{
+		{"the guest on the owner's TID", f.guestUID, f.ownerTID},
+		{"the guest on its own TID", f.guestUID, f.guestTID},
+	} {
+		response, _ := secondary(foreign.uid, foreign.tid, "hjck")
+		if response.Header.Status == 0 {
+			t.Errorf("a TRANSACTION_SECONDARY from %s was accepted, want it refused", foreign.name)
+		}
+	}
+	if got := f.pipes.sessionAt(0).transactCount(); got != 0 {
+		t.Fatalf("the owner's pipe session saw %d transactions from the guest, want 0", got)
+	}
+
+	// The owner's own secondary completes the transaction it began.
+	// The answer is looked for in the raw frame: the response carries the
+	// secondary's command code, which decodes as a different structure.
+	response, raw := secondary(f.ownerUID, f.ownerTID, "data")
+	if response.Header.Status != 0 {
+		t.Fatalf("the owner's TRANSACTION_SECONDARY answered 0x%08X, want success", response.Header.Status)
+	}
+	if got := f.pipes.sessionAt(0).transactCount(); got != 1 {
+		t.Fatalf("the owner's pipe session saw %d transactions, want 1", got)
+	}
+	if !bytes.Contains(raw, []byte("echo:ownrdata")) {
+		t.Fatalf("the owner's transaction answer % x does not carry %q", raw, "echo:ownrdata")
 	}
 }

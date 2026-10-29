@@ -54,6 +54,8 @@ func handleNtTransact(conn *Connection, w ResponseWriter, req *message.Message) 
 		maxParameterCount: int(request.MaxParameterCount),
 		maxDataCount:      int(request.MaxDataCount),
 		setup:             request.Setup,
+		uid:               uint16(req.Header.UID),
+		tid:               uint16(req.Header.TID),
 		started:           time.Now(),
 	}
 
@@ -91,6 +93,13 @@ func handleNtTransactSecondary(conn *Connection, w ResponseWriter, req *message.
 	if reassembly == nil || reassembly.family != "NT_TRANSACT" {
 		logger.Debugf("SMB1 server: %s sent an NT_TRANSACT_SECONDARY with no matching transaction in progress",
 			conn.Remote)
+		return nt_status.NT_STATUS_INVALID_SMB
+	}
+	// Refused without disturbing the pending transaction, which belongs to the
+	// session and tree that began it.
+	if !reassembly.startedBy(req) {
+		logger.Debugf("SMB1 server: %s sent an NT_TRANSACT_SECONDARY from UID 0x%04X on TID 0x%04X, which did not begin the transaction",
+			conn.Remote, uint16(req.Header.UID), uint16(req.Header.TID))
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 	if time.Since(reassembly.started) > transactionReassemblyTimeout {
@@ -387,15 +396,19 @@ func fsctlHandleIsPathnameValid(conn *Connection, open *Open, input []byte) ([]b
 // command is accepted silently — which is what it is defined to do, since a cancel
 // carries no response of its own.
 func handleNtCancel(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
+	uid := uint16(req.Header.UID)
+	tid := uint16(req.Header.TID)
 	pid := req.Header.GetPID()
 	mid := uint16(req.Header.MID)
 
-	// The command names the request to cancel by the PID and MID in its own
-	// header, which is how a client refers to something it has had no answer for.
-	cancelled := conn.cancelResponders(pid, mid)
+	// The command names the request to cancel by the UID, TID, PID and MID in its
+	// own header, which is how a client refers to something it has had no answer
+	// for. All four are matched ([MS-CIFS] 3.3.5.52), so a session can cancel only
+	// its own requests.
+	cancelled := conn.cancelResponders(uid, tid, pid, mid)
 
-	logger.Debugf("SMB1 server: %s cancelled PID 0x%08X MID 0x%04X, matching %d outstanding request(s)",
-		conn.Remote, pid, mid, cancelled)
+	logger.Debugf("SMB1 server: %s cancelled UID 0x%04X TID 0x%04X PID 0x%08X MID 0x%04X, matching %d outstanding request(s)",
+		conn.Remote, uid, tid, pid, mid, cancelled)
 
 	// SMB_COM_NT_CANCEL is answered with silence whether or not it matched: the
 	// cancelled request produces the response, and a reply to the cancel itself

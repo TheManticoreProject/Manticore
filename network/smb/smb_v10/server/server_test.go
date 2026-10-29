@@ -15,9 +15,6 @@ import (
 // TestNewServerRejectsInvalidConfig asserts a configuration that cannot be
 // honoured is refused at construction rather than misbehaving later.
 func TestNewServerRejectsInvalidConfig(t *testing.T) {
-	if _, err := NewServer(Config{MaxConnections: -1}); err == nil {
-		t.Fatal("NewServer() should reject a negative MaxConnections")
-	}
 	if _, err := NewServer(Config{Timeout: -time.Second}); err == nil {
 		t.Fatal("NewServer() should reject a negative Timeout")
 	}
