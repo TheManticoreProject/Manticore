@@ -331,14 +331,21 @@ func FromFormatX(data string) (*GUID, error) {
 		return nil, err
 	}
 
-	d, err := strconv.ParseUint(parts[3][2:], 16, 8)
+	d1, err := strconv.ParseUint(parts[3][2:], 16, 8)
 	if err != nil {
 		return nil, err
 	}
 
+	d2, err := strconv.ParseUint(parts[4][2:], 16, 8)
+	if err != nil {
+		return nil, err
+	}
+
+	d := d1<<8 | d2
+
 	e := uint64(0)
-	for i := 0; i < 8; i++ {
-		val, err := strconv.ParseUint(parts[3+i][2:], 16, 8)
+	for i := 0; i < 6; i++ {
+		val, err := strconv.ParseUint(parts[5+i][2:], 16, 8)
 		if err != nil {
 			return nil, err
 		}

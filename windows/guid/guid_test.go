@@ -208,3 +208,31 @@ func TestNewGUIDFormatsAsV4(t *testing.T) {
 		t.Errorf("fourth group of %q starts with %q, want one of 8/9/a/b", formatted, c)
 	}
 }
+
+// TestFromFormatXRoundTrip guards the defect: FromFormatX read D from the single
+// byte parts[3] and built E from the eight bytes parts[3..10], so the two bytes
+// of D leaked into E and a GUID did not survive a ToFormatX/FromFormatX round
+// trip. D is parts[3..4] and E is the six bytes parts[5..10].
+func TestFromFormatXRoundTrip(t *testing.T) {
+	g, err := FromString("01234567-89ab-cdef-0123-456789abcdef")
+	if err != nil {
+		t.Fatalf("Error parsing GUID: %s", err)
+	}
+	formatX := g.ToFormatX()
+	back, err := FromFormatX(formatX)
+	if err != nil {
+		t.Fatalf("Error parsing GUID %s: %s", formatX, err)
+	}
+	if back.D != 0x0123 {
+		t.Errorf("Expected D 0x0123, but got 0x%04x", back.D)
+	}
+	if back.E != 0x456789abcdef {
+		t.Errorf("Expected E 0x456789abcdef, but got 0x%x", back.E)
+	}
+	if *back != *g {
+		t.Errorf("Expected %s, but got %s", g.ToFormatD(), back.ToFormatD())
+	}
+	if result := back.ToFormatX(); result != formatX {
+		t.Errorf("Expected %s, but got %s", formatX, result)
+	}
+}
