@@ -184,3 +184,15 @@ func TestComputeMechListMICAnonymous(t *testing.T) {
 		t.Errorf("named: computeMechListMIC = (% x, %v), want a %d-byte MIC", mic, err, security.SignatureSize)
 	}
 }
+
+// TestComputeMechListMICWithoutESSIsSkipped checks that a session the server did
+// not negotiate extended session security for sends no mechListMIC instead of
+// failing the exchange: only extended session security signing is implemented,
+// and a MIC keyed that way would not be the one the server computes.
+func TestComputeMechListMICWithoutESSIsSkipped(t *testing.T) {
+	ctx := authContextForMIC(t)
+	ctx.authenticateFlags &^= flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY
+	if mic, err := ctx.computeMechListMIC(ctx.authenticateFlags); err != nil || mic != nil {
+		t.Errorf("without extended session security: got (% x, %v), want (nil, nil)", mic, err)
+	}
+}

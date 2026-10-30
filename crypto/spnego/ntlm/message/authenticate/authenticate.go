@@ -121,14 +121,11 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 }
 
 // CreateAuthenticateMessageWithNTHash creates an NTLM AUTHENTICATE message from an NT
-// hash instead of a cleartext password (pass-the-hash). It requires the server to have
-// negotiated extended session security, as the derived session key needed for RPC/SMB
-// signing and sealing only exists on the NTLMv2 path; NTLMv1 pass-the-hash is not
-// supported.
+// hash instead of a cleartext password (pass-the-hash), using NTLMv2. As with
+// CreateAuthenticateMessage, the NTLMv2 response and its session key do not depend on
+// the server offering NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY ([MS-NLMP] 3.3.2),
+// so a CHALLENGE without it is answered the same way.
 func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, username string, ntHash [16]byte, domain, workstation string) (*AuthenticateMessage, error) {
-	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) == 0 {
-		return nil, fmt.Errorf("pass-the-hash requires NTLMv2: server did not negotiate extended session security")
-	}
 	clientChallenge := [8]byte{}
 	if _, err := rand.Read(clientChallenge[:]); err != nil {
 		return nil, err
@@ -152,7 +149,7 @@ func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, 
 // would announce one travel inside the NtChallengeResponse, which is empty.
 func CreateAnonymousAuthenticateMessage(challenge *challenge.ChallengeMessage, domain, workstation string) (*AuthenticateMessage, error) {
 	msg := AuthenticateMessage{}
-	msg.NegotiateFlags = clientNegotiateFlags | flags.NTLMSSP_NEGOTIATE_ANONYMOUS
+	msg.NegotiateFlags = negotiatedClientFlags(challenge) | flags.NTLMSSP_NEGOTIATE_ANONYMOUS
 
 	keyExchange := (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_KEY_EXCH) != 0
 	if keyExchange {
@@ -203,7 +200,7 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, dom
 	// server's CHALLENGE flags (which include server-only bits such as the target
 	// type and a server VERSION). This matches what the Windows client sends and
 	// what Windows Server 2016 (signing required) accepts.
-	msg.NegotiateFlags = clientNegotiateFlags
+	msg.NegotiateFlags = negotiatedClientFlags(challenge)
 
 	// Key exchange is only asserted when the server offered it, since a server that
 	// sees the flag MUST then find a valid EncryptedRandomSessionKey or fail the
@@ -285,7 +282,8 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, dom
 	return &msg, nil
 }
 
-// clientNegotiateFlags are the flags the client asserts in every AUTHENTICATE.
+// clientNegotiateFlags are the flags the client asserts in an AUTHENTICATE, less
+// any serverOfferedFlags the server did not offer (see negotiatedClientFlags).
 //
 // The AUTHENTICATE carries the client's negotiated flags, not an echo of the
 // server's CHALLENGE flags (which include server-only bits such as the target type
@@ -306,6 +304,23 @@ const clientNegotiateFlags = flags.NTLMSSP_NEGOTIATE_UNICODE |
 	// offsets — and the position of the MIC when one is carried — follow from
 	// that. Emitting it keeps the layout the one a server expects.
 	flags.NTLMSSP_NEGOTIATE_VERSION
+
+// serverOfferedFlags are the client flags that only hold for the session when the
+// server's CHALLENGE also carries them: the AUTHENTICATE states the negotiated set,
+// the flags both sides agreed on ([MS-NLMP] 2.2.2.5, 3.1.5.1.2). Each one selects
+// how the signing and sealing keys are derived (extended session security, and the
+// 128- or 56-bit sealing key strength, [MS-NLMP] 3.4.5), and the client derives its
+// security context from the flags in its own AUTHENTICATE. Asserting one the server
+// did not offer leaves the two sides keyed differently, so every signature fails.
+const serverOfferedFlags = flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY |
+	flags.NTLMSSP_NEGOTIATE_128 |
+	flags.NTLMSSP_NEGOTIATE_56
+
+// negotiatedClientFlags returns clientNegotiateFlags with the serverOfferedFlags the
+// server's CHALLENGE did not carry cleared.
+func negotiatedClientFlags(challenge *challenge.ChallengeMessage) flags.NegotiateFlags {
+	return clientNegotiateFlags &^ (serverOfferedFlags &^ challenge.NegotiateFlags)
+}
 
 // setIdentityFields fills the DomainName, UserName and Workstation payloads in the
 // character set the server's CHALLENGE selected.

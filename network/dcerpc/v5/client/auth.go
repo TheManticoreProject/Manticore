@@ -219,6 +219,14 @@ func (c *Client) completeAuth(bindAckFrag []byte) ([]byte, error) {
 	if len(auth.SessionKey) == 0 {
 		return nil, fmt.Errorf("no session key derived (NTLMv1 is not supported for RPC auth)")
 	}
+	// CONNECT authenticates the bind alone, so it needs no per-PDU security
+	// context. Only extended session security signing and sealing is implemented:
+	// against a server that did not negotiate it, a per-PDU level fails below
+	// rather than protecting PDUs under keys the server does not use.
+	if c.authLevel < pdu.AuthLevelPkt && !auth.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) {
+		c.sessionKey = append([]byte(nil), auth.SessionKey...)
+		return nil, nil
+	}
 	sec, err := security.NewContext(auth.SessionKey, auth.NegotiateFlags)
 	if err != nil {
 		return nil, fmt.Errorf("init security context: %w", err)
