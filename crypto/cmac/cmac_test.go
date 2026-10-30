@@ -3,6 +3,7 @@ package cmac
 import (
 	"bytes"
 	"crypto/aes"
+	"crypto/des"
 	"encoding/hex"
 
 	"testing"
@@ -94,5 +95,37 @@ func TestCMAC(t *testing.T) {
 
 	if !bytes.Equal(h.Sum(nil), sum4) {
 		t.Error("fail")
+	}
+}
+
+// BlockSize must report the underlying cipher's block size, which is 8 bytes
+// for a 64-bit block cipher such as TDEA, not a fixed 16.
+func TestCMACBlockSizeFollowsCipher(t *testing.T) {
+	aesBlock, err := aes.NewCipher(make([]byte, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdeaBlock, err := des.NewTripleDESCipher(make([]byte, 24))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		mac  interface {
+			BlockSize() int
+			Size() int
+		}
+		want int
+	}{
+		{"AES", New(aesBlock), 16},
+		{"TDEA", New(tdeaBlock), 8},
+	} {
+		if got := tt.mac.BlockSize(); got != tt.want {
+			t.Errorf("%s: BlockSize() = %d, want %d", tt.name, got, tt.want)
+		}
+		if got := tt.mac.Size(); got != tt.want {
+			t.Errorf("%s: Size() = %d, want %d", tt.name, got, tt.want)
+		}
 	}
 }
