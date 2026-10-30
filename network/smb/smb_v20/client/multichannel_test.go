@@ -107,6 +107,29 @@ func TestParseNetworkInterfacesTooShort(t *testing.T) {
 	}
 }
 
+func TestParseNetworkInterfacesNextOutOfRange(t *testing.T) {
+	// A Next that does not point at a full entry inside the buffer must be
+	// rejected. 0xFFFFFF00 wraps to -256 on 32-bit builds.
+	for _, next := range []uint32{1, 151, 152 + 1, 0x7FFFFFFF, 0x80000000, 0xFFFFFF00, 0xFFFFFFFF} {
+		e1 := buildNetworkInterfaceEntry(1, INTERFACE_CAP_RSS, 1_000_000_000, 2, net.IPv4(10, 0, 0, 1), 445, next)
+		e2 := buildNetworkInterfaceEntry(2, INTERFACE_CAP_RSS, 1_000_000_000, 2, net.IPv4(10, 0, 0, 2), 445, 0)
+		data := append(e1, e2...)
+		ifaces, err := parseNetworkInterfaces(data)
+		if err == nil {
+			t.Errorf("Next=0x%08X: expected error, got %d interfaces", next, len(ifaces))
+		}
+	}
+}
+
+func TestParseNetworkInterfacesNextPastLastEntry(t *testing.T) {
+	// Next pointing exactly at the end of the buffer claims an entry that is
+	// not there.
+	e1 := buildNetworkInterfaceEntry(1, INTERFACE_CAP_RSS, 1_000_000_000, 2, net.IPv4(10, 0, 0, 1), 445, 152)
+	if _, err := parseNetworkInterfaces(e1); err == nil {
+		t.Error("expected error for Next pointing past the last entry")
+	}
+}
+
 func TestQueryNetworkInterfaceInfoRequiresTree(t *testing.T) {
 	ft := &fakeTransport{connected: true}
 	c := newTestClient(ft)
