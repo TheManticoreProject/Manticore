@@ -70,6 +70,8 @@ func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
 // sendReceive marshals msg, sends it on the transport, and returns both the parsed
 // response message and the raw response bytes (the raw bytes are needed by callers
 // that index into the message by an absolute offset, e.g. ReadAndx DataOffset).
+// A message without SMB_FLAGS_REPLY is rejected: it is decoded as a request, not
+// as the response the caller expects.
 func (c *Client) sendReceive(msg *message.Message, label string) (*message.Message, []byte, error) {
 	marshalled, err := msg.Marshal()
 	if err != nil {
@@ -98,6 +100,10 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	response := message.NewMessage()
 	if err = response.Unmarshal(raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal %s response: %v", label, err)
+	}
+
+	if !response.Header.IsResponse() {
+		return nil, nil, fmt.Errorf("%s: server reply lacks SMB_FLAGS_REPLY", label)
 	}
 
 	return response, raw, nil
