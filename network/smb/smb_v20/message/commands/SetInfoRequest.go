@@ -94,7 +94,7 @@ func (c *SetInfoRequest) Unmarshal(data []byte) (int, error) {
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	c.InfoType = data[2]
 	c.FileInfoClass = data[3]
-	bufferLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	bufferLength := wireInt(binary.LittleEndian.Uint32(data[4:8]))
 	bufferOffset := int(binary.LittleEndian.Uint16(data[8:10]))
 	c.Reserved = binary.LittleEndian.Uint16(data[10:12])
 	c.AdditionalInformation = binary.LittleEndian.Uint32(data[12:16])
@@ -105,7 +105,7 @@ func (c *SetInfoRequest) Unmarshal(data []byte) (int, error) {
 	consumed := setInfoRequestFixedSize
 	if bufferLength > 0 {
 		start := bufferOffset - header.SMB2_HEADER_SIZE
-		if start < setInfoRequestFixedSize || start+bufferLength > len(data) {
+		if start < setInfoRequestFixedSize || bufferLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 SET_INFO Request buffer out of bounds: offset %d length %d", bufferOffset, bufferLength)
 		}
 		c.Buffer = make([]byte, bufferLength)

@@ -67,12 +67,12 @@ func (c *QueryInfoResponse) Unmarshal(data []byte) (int, error) {
 
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	outputOffset := int(binary.LittleEndian.Uint16(data[2:4]))
-	outputLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	outputLength := wireInt(binary.LittleEndian.Uint32(data[4:8]))
 
 	consumed := queryInfoResponseFixedSize
 	if outputLength > 0 {
 		start := outputOffset - header.SMB2_HEADER_SIZE
-		if start < queryInfoResponseFixedSize || start+outputLength > len(data) {
+		if start < queryInfoResponseFixedSize || outputLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 QUERY_INFO Response output out of bounds: offset %d length %d", outputOffset, outputLength)
 		}
 		c.OutputBuffer = make([]byte, outputLength)

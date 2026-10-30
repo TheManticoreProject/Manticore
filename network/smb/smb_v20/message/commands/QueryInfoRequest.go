@@ -112,7 +112,7 @@ func (c *QueryInfoRequest) Unmarshal(data []byte) (int, error) {
 	c.OutputBufferLength = binary.LittleEndian.Uint32(data[4:8])
 	inputOffset := int(binary.LittleEndian.Uint16(data[8:10]))
 	c.Reserved = binary.LittleEndian.Uint16(data[10:12])
-	inputLength := int(binary.LittleEndian.Uint32(data[12:16]))
+	inputLength := wireInt(binary.LittleEndian.Uint32(data[12:16]))
 	c.AdditionalInformation = binary.LittleEndian.Uint32(data[16:20])
 	c.Flags = binary.LittleEndian.Uint32(data[20:24])
 	if _, err := c.FileId.Unmarshal(data[24:40]); err != nil {
@@ -122,7 +122,7 @@ func (c *QueryInfoRequest) Unmarshal(data []byte) (int, error) {
 	consumed := queryInfoRequestFixedSize
 	if inputLength > 0 {
 		start := inputOffset - header.SMB2_HEADER_SIZE
-		if start < queryInfoRequestFixedSize || start+inputLength > len(data) {
+		if start < queryInfoRequestFixedSize || inputLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 QUERY_INFO Request input out of bounds: offset %d length %d", inputOffset, inputLength)
 		}
 		c.Input = make([]byte, inputLength)

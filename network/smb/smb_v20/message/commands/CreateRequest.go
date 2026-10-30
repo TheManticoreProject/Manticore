@@ -147,13 +147,13 @@ func (c *CreateRequest) Unmarshal(data []byte) (int, error) {
 	c.CreateOptions = binary.LittleEndian.Uint32(data[40:44])
 	nameOffset := int(binary.LittleEndian.Uint16(data[44:46]))
 	nameLength := int(binary.LittleEndian.Uint16(data[46:48]))
-	ccOffset := int(binary.LittleEndian.Uint32(data[48:52]))
-	ccLength := int(binary.LittleEndian.Uint32(data[52:56]))
+	ccOffset := wireInt(binary.LittleEndian.Uint32(data[48:52]))
+	ccLength := wireInt(binary.LittleEndian.Uint32(data[52:56]))
 
 	consumed := createRequestFixedSize
 	if nameLength > 0 {
 		start := nameOffset - header.SMB2_HEADER_SIZE
-		if start < createRequestFixedSize || start+nameLength > len(data) {
+		if start < createRequestFixedSize || nameLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 CREATE Request name out of bounds: offset %d length %d", nameOffset, nameLength)
 		}
 		c.Name = utf16LEDecode(data[start : start+nameLength])
@@ -166,7 +166,7 @@ func (c *CreateRequest) Unmarshal(data []byte) (int, error) {
 
 	if ccLength > 0 {
 		start := ccOffset - header.SMB2_HEADER_SIZE
-		if start < createRequestFixedSize || start+ccLength > len(data) {
+		if start < createRequestFixedSize || ccLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 CREATE Request create-contexts out of bounds: offset %d length %d", ccOffset, ccLength)
 		}
 		c.CreateContexts = make([]byte, ccLength)

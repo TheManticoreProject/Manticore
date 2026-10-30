@@ -53,8 +53,8 @@ func (c *ErrorResponse) Unmarshal(data []byte) (int, error) {
 	}
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	c.ErrorContextCount = data[2]
-	byteCount := int(binary.LittleEndian.Uint32(data[4:8]))
-	if 8+byteCount > len(data) {
+	byteCount := wireInt(binary.LittleEndian.Uint32(data[4:8]))
+	if byteCount > len(data)-8 {
 		return 0, fmt.Errorf("SMB2 ERROR Response data out of bounds: %d bytes declared, %d available", byteCount, len(data)-8)
 	}
 	c.ErrorData = append([]byte{}, data[8:8+byteCount]...)

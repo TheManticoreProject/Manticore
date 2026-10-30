@@ -128,13 +128,13 @@ func (c *CreateResponse) Unmarshal(data []byte) (int, error) {
 	if _, err := c.FileId.Unmarshal(data[64:80]); err != nil {
 		return 0, err
 	}
-	ccOffset := int(binary.LittleEndian.Uint32(data[80:84]))
-	ccLength := int(binary.LittleEndian.Uint32(data[84:88]))
+	ccOffset := wireInt(binary.LittleEndian.Uint32(data[80:84]))
+	ccLength := wireInt(binary.LittleEndian.Uint32(data[84:88]))
 
 	consumed := createResponseFixedSize
 	if ccLength > 0 {
 		start := ccOffset - header.SMB2_HEADER_SIZE
-		if start < createResponseFixedSize || start+ccLength > len(data) {
+		if start < createResponseFixedSize || ccLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 CREATE Response create-contexts out of bounds: offset %d length %d", ccOffset, ccLength)
 		}
 		c.CreateContexts = make([]byte, ccLength)

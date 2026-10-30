@@ -78,14 +78,14 @@ func (c *ReadResponse) Unmarshal(data []byte) (int, error) {
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	dataOffset := int(data[2])
 	c.Reserved = data[3]
-	dataLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	dataLength := wireInt(binary.LittleEndian.Uint32(data[4:8]))
 	c.DataRemaining = binary.LittleEndian.Uint32(data[8:12])
 	c.Flags = binary.LittleEndian.Uint32(data[12:16])
 
 	consumed := readResponseFixedSize
 	if dataLength > 0 {
 		start := dataOffset - header.SMB2_HEADER_SIZE
-		if start < readResponseFixedSize || start+dataLength > len(data) {
+		if start < readResponseFixedSize || dataLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 READ Response data out of bounds: offset %d length %d", dataOffset, dataLength)
 		}
 		c.Data = make([]byte, dataLength)
