@@ -1,6 +1,9 @@
 package crypto
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 type SecretEncryptionType struct {
 	Value int
@@ -34,6 +37,9 @@ const (
 // Parameters:
 // - value: A byte array containing the SecretEncryptionType to be parsed.
 func (set *SecretEncryptionType) Unmarshal(value []byte) (int, error) {
+	if len(value) < 4 {
+		return 0, fmt.Errorf("invalid SecretEncryptionType length: got %d bytes, want 4", len(value))
+	}
 	set.RawBytes = value[:4]
 	set.RawBytesSize = 4
 	bytesRead := 4
