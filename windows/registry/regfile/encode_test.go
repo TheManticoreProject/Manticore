@@ -1,6 +1,7 @@
 package regfile
 
 import (
+	"bytes"
 	"reflect"
 	"strings"
 	"testing"
@@ -99,6 +100,40 @@ func TestRegSzInteriorNulFallsBackToHex1(t *testing.T) {
 	}
 	if got := out[0].Values[0].Value; !reflect.DeepEqual(got, v) {
 		t.Errorf("hex(1) REG_SZ did not round-trip: got %#v, want %#v", got, v)
+	}
+}
+
+// Data that the quoted or dword: forms cannot reproduce exactly must fall back
+// to the raw hex(1) / hex(4) form so Parse(Marshal(x)) == x.
+func TestNonCanonicalSzAndDwordRoundTrip(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  registry.Value
+		prefix string
+	}{
+		{"REG_SZ without NUL terminator", registry.Value{Type: registry.RegSz, Data: []byte{0x61, 0x00, 0x62, 0x00}}, "hex(1):"},
+		{"REG_SZ with two NUL terminators", registry.Value{Type: registry.RegSz, Data: []byte{0x61, 0x00, 0x00, 0x00, 0x00, 0x00}}, "hex(1):"},
+		{"REG_SZ with no data", registry.Value{Type: registry.RegSz, Data: []byte{}}, "hex(1):"},
+		{"REG_SZ with an unpaired surrogate", registry.Value{Type: registry.RegSz, Data: []byte{0x00, 0xd8, 0x00, 0x00}}, "hex(1):"},
+		{"REG_DWORD with 8 bytes", registry.Value{Type: registry.RegDword, Data: []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00}}, "hex(4):"},
+		{"REG_DWORD with 2 bytes", registry.Value{Type: registry.RegDword, Data: []byte{0x01, 0x02}}, "hex(4):"},
+		{"canonical REG_SZ", registry.StringValue("ab"), `"ab"`},
+		{"canonical REG_DWORD", registry.DwordValue(1), "dword:00000001"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := FormatValueLine("V", tt.value)
+			if !strings.HasPrefix(line, `"V"=`+tt.prefix) {
+				t.Errorf("FormatValueLine = %q, want prefix %q", line, `"V"=`+tt.prefix)
+			}
+			out, err := Parse(Marshal([]KeyBlock{{Path: `HKEY_X\K`, Values: []ValueLine{{Name: "V", Value: tt.value}}}}))
+			if err != nil {
+				t.Fatalf("Parse error: %v", err)
+			}
+			if got := out[0].Values[0].Value; got.Type != tt.value.Type || !bytes.Equal(got.Data, tt.value.Data) {
+				t.Errorf("did not round-trip: got %#v, want %#v", got, tt.value)
+			}
+		})
 	}
 }
 
