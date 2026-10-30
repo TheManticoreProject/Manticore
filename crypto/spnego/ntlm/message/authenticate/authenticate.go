@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheManticoreProject/Manticore/crypto/ntlmv1"
 	"github.com/TheManticoreProject/Manticore/crypto/ntlmv2"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/avpair"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/datafields"
@@ -90,32 +89,35 @@ type AuthenticateMessage struct {
 	// SessionKey (16 bytes): The exported session key derived during authentication.
 	// This is not transmitted on the wire; it is retained so callers (e.g. SMB message
 	// signing) can use it as the MAC key. When no key exchange is negotiated it equals
-	// the NTLMv2 SessionBaseKey. It is nil for the NTLMv1 path.
+	// the NTLMv2 SessionBaseKey.
 	SessionKey []byte
 }
 
 // CreateAuthenticateMessage creates an NTLM AUTHENTICATE message from a cleartext
-// password. When the server negotiated extended session security it uses NTLMv2;
-// otherwise it falls back to NTLMv1. An empty username and password request
-// anonymous authentication (see CreateAnonymousAuthenticateMessage).
+// password, using NTLMv2. An empty username and password request anonymous
+// authentication (see CreateAnonymousAuthenticateMessage).
+//
+// NTLMv2 is used whether or not the server's CHALLENGE offers
+// NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY: the NTLMv2 response does not depend
+// on that flag ([MS-NLMP] 3.3.2), and Windows clients at the default
+// LmCompatibilityLevel send it regardless. Falling back to NTLMv1 would let any
+// server obtain a crackable NTLMv1 and LM response by clearing the bit, while the
+// AUTHENTICATE still asserted extended session security and key exchange with no
+// session key behind them.
 func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string) (*AuthenticateMessage, error) {
 	if username == "" && password == "" {
 		return CreateAnonymousAuthenticateMessage(challenge, domain, workstation)
 	}
 
-	var v2 *ntlmv2.NTLMv2Ctx
-	if (challenge.NegotiateFlags & flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) != 0 {
-		clientChallenge := [8]byte{}
-		if _, err := rand.Read(clientChallenge[:]); err != nil {
-			return nil, err
-		}
-		var err error
-		v2, err = ntlmv2.NewNTLMv2CtxWithPassword(domain, username, password, challenge.ServerChallenge, clientChallenge)
-		if err != nil {
-			return nil, err
-		}
+	clientChallenge := [8]byte{}
+	if _, err := rand.Read(clientChallenge[:]); err != nil {
+		return nil, err
 	}
-	return newAuthenticateMessage(challenge, username, password, domain, workstation, v2)
+	v2, err := ntlmv2.NewNTLMv2CtxWithPassword(domain, username, password, challenge.ServerChallenge, clientChallenge)
+	if err != nil {
+		return nil, err
+	}
+	return newAuthenticateMessage(challenge, username, domain, workstation, v2)
 }
 
 // CreateAuthenticateMessageWithNTHash creates an NTLM AUTHENTICATE message from an NT
@@ -135,7 +137,7 @@ func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, 
 	if err != nil {
 		return nil, err
 	}
-	return newAuthenticateMessage(challenge, username, "", domain, workstation, v2)
+	return newAuthenticateMessage(challenge, username, domain, workstation, v2)
 }
 
 // CreateAnonymousAuthenticateMessage creates the AUTHENTICATE message of an
@@ -192,10 +194,8 @@ func (msg *AuthenticateMessage) IsAnonymous() bool {
 }
 
 // newAuthenticateMessage builds the AUTHENTICATE message shared by the password and
-// pass-the-hash entry points. When v2 is non-nil the NTLMv2 (extended session security)
-// responses and session key are computed from it; otherwise it falls back to NTLMv1,
-// which is driven by the cleartext password.
-func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string, v2 *ntlmv2.NTLMv2Ctx) (*AuthenticateMessage, error) {
+// pass-the-hash entry points, computing the NTLMv2 responses and session key from v2.
+func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, domain, workstation string, v2 *ntlmv2.NTLMv2Ctx) (*AuthenticateMessage, error) {
 	// Create the AuthenticateMessage struct
 	msg := AuthenticateMessage{}
 
@@ -215,96 +215,65 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, pas
 
 	setIdentityFields(&msg, challenge, domain, username, workstation)
 
-	// Calculate NT response
+	// Calculate the NTLMv2 responses (MS-NLMP 3.3.2)
 	var err error
 
-	if v2 != nil {
-		// Use NTLMv2 (MS-NLMP 3.3.2)
-
-		// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
-		timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
-		serverSuppliedTimestamp := len(timestamp) == 8
-		if !serverSuppliedTimestamp {
-			windowsFiletime := (uint64(time.Now().Unix()) + 116444736000) * 10000000
-			timestamp = make([]byte, 8)
-			binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
-		}
-
-		// A MIC binds the NEGOTIATE and CHALLENGE to this AUTHENTICATE. It is emitted
-		// whenever the server supplied an MsvAvTimestamp — the same condition under
-		// which MS-NLMP 3.1.5.1.2 zeroes the LM response, and the signal that the
-		// server is recent enough to verify one.
-		msg.NeedsMIC = serverSuppliedTimestamp
-
-		// Prepare TargetInfo for the blob: the MsvAvTargetName (SPN) AVPair and the
-		// channel-bindings pair as the Windows client sends, plus the MsvAvFlags
-		// MIC-present bit when a MIC will follow. All are added before the NT
-		// response is computed, so they are covered by the NTProofStr as well as by
-		// the MIC.
-		blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, msg.NeedsMIC)
-
-		var ntProofStr []byte
-		msg.NtChallengeResponse, ntProofStr, err = v2.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
-		if err != nil {
-			return nil, err
-		}
-		// When the server supplied an MsvAvTimestamp, MS-NLMP 3.1.5.1.2 requires
-		// Z(24) here rather than a computed response. KXKEY for NTLMv2 derives
-		// KeyExchangeKey from SessionBaseKey alone and does not consume this field
-		// (MS-NLMP 3.4.5.1), so zeroing it changes no derived key.
-		msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(serverSuppliedTimestamp)
-
-		// KXKEY for NTLMv2 is the SessionBaseKey itself (MS-NLMP 3.4.5.1).
-		keyExchangeKey := v2.ComputeSessionBaseKey(ntProofStr)
-
-		// With key exchange, the key that protects signing and sealing is generated
-		// here and travels RC4-wrapped under the KeyExchangeKey; without it, the
-		// KeyExchangeKey is used directly (MS-NLMP 3.1.5.1.2).
-		if keyExchange {
-			exportedSessionKey := make([]byte, 16)
-			if _, err := rand.Read(exportedSessionKey); err != nil {
-				return nil, fmt.Errorf("failed to generate an exported session key: %w", err)
-			}
-			wrapped, err := rc4k(keyExchangeKey, exportedSessionKey)
-			if err != nil {
-				return nil, err
-			}
-			msg.EncryptedRandomSessionKey = wrapped
-			msg.SessionKey = exportedSessionKey
-		} else {
-			msg.SessionKey = keyExchangeKey
-		}
-	} else {
-		// Use NTLMv1
-		ntlmv1Ctx, err := ntlmv1.NewNTLMv1CtxWithPassword(domain, username, password, challenge.ServerChallenge)
-		if err != nil {
-			return nil, err
-		}
-
-		response, err := ntlmv1Ctx.ComputeResponse()
-		if err != nil {
-			return nil, err
-		}
-
-		lmChallengeResponse := response.GetLmChallengeResponse()
-		msg.LmChallengeResponse = lmChallengeResponse[:]
-		if err != nil {
-			return nil, err
-		}
-
-		ntChallengeResponse := response.GetNtChallengeResponse()
-		msg.NtChallengeResponse = ntChallengeResponse[:]
-		if err != nil {
-			return nil, err
-		}
+	// Use server's MsvAvTimestamp when present; otherwise derive current Windows FILETIME
+	timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
+	serverSuppliedTimestamp := len(timestamp) == 8
+	if !serverSuppliedTimestamp {
+		windowsFiletime := (uint64(time.Now().Unix()) + 116444736000) * 10000000
+		timestamp = make([]byte, 8)
+		binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
 	}
 
+	// A MIC binds the NEGOTIATE and CHALLENGE to this AUTHENTICATE. It is emitted
+	// whenever the server supplied an MsvAvTimestamp — the same condition under
+	// which MS-NLMP 3.1.5.1.2 zeroes the LM response, and the signal that the
+	// server is recent enough to verify one.
+	msg.NeedsMIC = serverSuppliedTimestamp
+
+	// Prepare TargetInfo for the blob: the MsvAvTargetName (SPN) AVPair and the
+	// channel-bindings pair as the Windows client sends, plus the MsvAvFlags
+	// MIC-present bit when a MIC will follow. All are added before the NT
+	// response is computed, so they are covered by the NTProofStr as well as by
+	// the MIC.
+	blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, msg.NeedsMIC)
+
+	var ntProofStr []byte
+	msg.NtChallengeResponse, ntProofStr, err = v2.ComputeNTChallengeResponse(timestamp, blobTargetInfo)
 	if err != nil {
 		return nil, err
 	}
+	// When the server supplied an MsvAvTimestamp, MS-NLMP 3.1.5.1.2 requires
+	// Z(24) here rather than a computed response. KXKEY for NTLMv2 derives
+	// KeyExchangeKey from SessionBaseKey alone and does not consume this field
+	// (MS-NLMP 3.4.5.1), so zeroing it changes no derived key.
+	msg.LmChallengeResponse = v2.ComputeLMChallengeResponse(serverSuppliedTimestamp)
 
-	// The NTLMv2 path sets EncryptedRandomSessionKey via key exchange above; only
-	// default it to empty when it was not produced (e.g. the NTLMv1 path).
+	// KXKEY for NTLMv2 is the SessionBaseKey itself (MS-NLMP 3.4.5.1).
+	keyExchangeKey := v2.ComputeSessionBaseKey(ntProofStr)
+
+	// With key exchange, the key that protects signing and sealing is generated
+	// here and travels RC4-wrapped under the KeyExchangeKey; without it, the
+	// KeyExchangeKey is used directly (MS-NLMP 3.1.5.1.2).
+	if keyExchange {
+		exportedSessionKey := make([]byte, 16)
+		if _, err := rand.Read(exportedSessionKey); err != nil {
+			return nil, fmt.Errorf("failed to generate an exported session key: %w", err)
+		}
+		wrapped, err := rc4k(keyExchangeKey, exportedSessionKey)
+		if err != nil {
+			return nil, err
+		}
+		msg.EncryptedRandomSessionKey = wrapped
+		msg.SessionKey = exportedSessionKey
+	} else {
+		msg.SessionKey = keyExchangeKey
+	}
+
+	// EncryptedRandomSessionKey is only produced by key exchange above; default it
+	// to empty otherwise.
 	if msg.EncryptedRandomSessionKey == nil {
 		msg.EncryptedRandomSessionKey = []byte{}
 	}
