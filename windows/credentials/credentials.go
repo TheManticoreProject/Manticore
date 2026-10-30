@@ -57,8 +57,12 @@ func NewCredentials(authDomain, authUsername, authPassword, authHashes string) (
 
 // ParseLMNTHashes parses the NT/LM hashes and returns the LM hash and NT hash.
 func ParseLMNTHashes(authHashes string) (string, string, error) {
+	// Validate and split the same trimmed value, so surrounding whitespace
+	// (e.g. a trailing newline from a file) does not blank the hashes
+	authHashes = strings.TrimSpace(authHashes)
+
 	// Check if the authHashes string matches the pattern
-	matched, err := regexp.MatchString(`(?i)^([0-9a-f]{32})?(:[0-9a-f]{32})?$`, strings.TrimSpace(authHashes))
+	matched, err := regexp.MatchString(`(?i)^([0-9a-f]{32})?(:[0-9a-f]{32})?$`, authHashes)
 	if err != nil {
 		return "", "", err
 	}
