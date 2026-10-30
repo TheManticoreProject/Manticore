@@ -145,6 +145,18 @@ func (cki *CustomKeyInformation) Unmarshal(data []byte, kcv version.KeyCredentia
 		return bytesRead, nil
 	}
 
+	// Reserved (10 bytes) precedes the extended custom key information.
+	if len(data[bytesRead:]) >= 10 {
+		cki.Reserved = new(Reserved)
+		bytesReadReserved, err := cki.Reserved.Unmarshal(data[bytesRead:])
+		if err != nil {
+			return 0, err
+		}
+		bytesRead += bytesReadReserved
+	} else {
+		return bytesRead, nil
+	}
+
 	// Extended custom key information.
 	if len(data[bytesRead:]) >= 2 {
 		cki.EncodedExtendedCKI = new(EncodedExtendedCKI)
