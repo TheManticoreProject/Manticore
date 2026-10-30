@@ -51,7 +51,12 @@ func NewTCPPortRangeFromString(s string) (*TCPPortRange, error) {
 		return nil, fmt.Errorf("invalid port range format")
 	}
 
+	// The pattern above allows whitespace around each port, so trim it before
+	// parsing the numbers
 	parts := strings.Split(s, "-")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
 
 	if len(parts) == 2 {
 		start := uint64(0)
@@ -76,6 +81,10 @@ func NewTCPPortRangeFromString(s string) (*TCPPortRange, error) {
 			if end > 65535 {
 				return nil, fmt.Errorf("port range end must be between 0 and 65535")
 			}
+		}
+
+		if start > end {
+			return nil, fmt.Errorf("port range start %d is greater than its end %d", start, end)
 		}
 
 		return NewTCPPortRange(uint16(start), uint16(end)), nil
