@@ -190,7 +190,7 @@ func handleNtTransactCreate(
 	desiredAccess := binary.LittleEndian.Uint32(reassembly.parameters[8:12])
 	createDisposition := binary.LittleEndian.Uint32(reassembly.parameters[28:32])
 	createOptions := binary.LittleEndian.Uint32(reassembly.parameters[32:36])
-	nameLength := int(binary.LittleEndian.Uint32(reassembly.parameters[40:44]))
+	nameLength := binary.LittleEndian.Uint32(reassembly.parameters[40:44])
 
 	// RootDirectoryFID names a directory handle the name is relative to. Nothing
 	// here can resolve one, and treating the name as share-relative instead would
@@ -201,10 +201,12 @@ func handleNtTransactCreate(
 		return nil, nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
-	if nameLength < 0 || fixed+nameLength > len(reassembly.parameters) {
+	// NameLength is bounded while still unsigned: as an int it is negative on a
+	// 32-bit build from 0x80000000, and fixed+NameLength wraps from 0x7FFFFFFF.
+	if uint64(nameLength) > uint64(len(reassembly.parameters)-fixed) {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
 	}
-	name := decodeWireString([]types.UCHAR(reassembly.parameters[fixed:fixed+nameLength]),
+	name := decodeWireString([]types.UCHAR(reassembly.parameters[fixed:fixed+int(nameLength)]),
 		req.Header.Flags2.IsUnicode())
 
 	flags, status := openFlagsFor(desiredAccess, createDisposition, createOptions)

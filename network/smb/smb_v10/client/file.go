@@ -257,15 +257,19 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 		// DataLengthHigh, so reading DataLength alone decodes a 64 KiB response as
 		// zero bytes — which the loop below treats as end of file, silently
 		// truncating the read.
-		dataLen := int(readResponse.DataLengthHigh)<<16 | int(readResponse.DataLength)
+		//
+		// The words are combined as a uint32 and bounded in uint64: shifted in an
+		// int, DataLengthHigh 0x8000 is negative on a 32-bit build.
+		wireDataLen := uint32(readResponse.DataLengthHigh)<<16 | uint32(readResponse.DataLength)
 		dataOff := int(readResponse.DataOffset)
-		if dataLen == 0 {
+		if wireDataLen == 0 {
 			// End of file reached.
 			break
 		}
-		if dataOff < 0 || dataOff+dataLen > len(raw) {
-			return result, fmt.Errorf("ReadAndx data window [%d:%d] out of bounds (response is %d bytes)", dataOff, dataOff+dataLen, len(raw))
+		if uint64(dataOff)+uint64(wireDataLen) > uint64(len(raw)) {
+			return result, fmt.Errorf("ReadAndx data window [%d:%d] out of bounds (response is %d bytes)", dataOff, uint64(dataOff)+uint64(wireDataLen), len(raw))
 		}
+		dataLen := int(wireDataLen)
 
 		result = append(result, raw[dataOff:dataOff+dataLen]...)
 
