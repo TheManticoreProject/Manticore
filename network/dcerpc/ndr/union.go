@@ -98,9 +98,14 @@ func unionArmAlignment(rt reflect.Type, syntax Syntax) int {
 
 // marshalUnion writes the discriminant then the single arm it selects. The arm is
 // written through the inline-field path so a pointer arm (the common case — each arm is
-// a [unique]/[ref] pointer to a structure) emits a referent id with its body deferred to
-// the end of the union construction.
-func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
+// a [unique]/[ref] pointer to a structure) emits a referent id with its body deferred.
+// When deferred is non-nil the union is embedded in an enclosing construction (a struct
+// field or an array element) and the arm's referent is appended to that construction's
+// queue, landing after its later fields/elements ([C706] 14.3.12.3 — deferral iterates
+// to the outermost construction), exactly as for an embedded struct. When deferred is
+// nil the union is its own construction (a top-level parameter or a referent body) and
+// the referent follows the union.
+func marshalUnion(e *Encoder, rv reflect.Value, swIdx int, deferred *[]func() error) error {
 	rt := rv.Type()
 	swf := rt.Field(swIdx)
 	swTag := parseTag(swf.Tag.Get("ndr"))
@@ -125,16 +130,20 @@ func marshalUnion(e *Encoder, rv reflect.Value, swIdx int) error {
 	}
 	e.Align(unionArmAlignment(rt, e.syntax))
 	f := rt.Field(armIdx)
-	var deferred []func() error
-	if err := marshalFieldInline(e, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &deferred, true); err != nil {
+	if deferred != nil {
+		return marshalFieldInline(e, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), deferred, true)
+	}
+	var local []func() error
+	if err := marshalFieldInline(e, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &local, true); err != nil {
 		return err
 	}
-	return runDeferred(deferred)
+	return runDeferred(local)
 }
 
 // unmarshalUnion reads the discriminant, selects the matching arm, and leaves the other
-// arm fields zero.
-func unmarshalUnion(d *Decoder, rv reflect.Value, swIdx int) error {
+// arm fields zero. deferred has the same meaning as for marshalUnion: non-nil threads an
+// enclosing construction's queue, nil makes the union its own construction.
+func unmarshalUnion(d *Decoder, rv reflect.Value, swIdx int, deferred *[]func() error) error {
 	rt := rv.Type()
 	swf := rt.Field(swIdx)
 	swTag := parseTag(swf.Tag.Get("ndr"))
@@ -153,9 +162,12 @@ func unmarshalUnion(d *Decoder, rv reflect.Value, swIdx int) error {
 	}
 	d.Align(unionArmAlignment(rt, d.syntax)) // arm aligned to the largest alignment among all arms
 	f := rt.Field(armIdx)
-	var deferred []func() error
-	if err := unmarshalFieldInline(d, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &deferred, true); err != nil {
+	if deferred != nil {
+		return unmarshalFieldInline(d, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), deferred, true)
+	}
+	var local []func() error
+	if err := unmarshalFieldInline(d, rv.Field(armIdx), parseTag(f.Tag.Get("ndr")), &local, true); err != nil {
 		return err
 	}
-	return runDeferred(deferred)
+	return runDeferred(local)
 }

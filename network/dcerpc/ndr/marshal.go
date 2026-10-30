@@ -285,7 +285,11 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		return marshalReferentBody(e, fv, tag)
 	case reflect.Struct:
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
-			return marshalUnion(e, fv, swIdx)
+			// Same deferral scope rule as the struct case below.
+			if embedded && deferred != nil {
+				return marshalUnion(e, fv, swIdx, deferred)
+			}
+			return marshalUnion(e, fv, swIdx, nil)
 		}
 		// A struct value nested inside another construction (embedded) is part of that
 		// construction: its pointers defer to the enclosing flush point, not the end of
@@ -578,7 +582,11 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 		return unmarshalReferentBody(d, fv, tag)
 	case reflect.Struct:
 		if swIdx := unionSwitchIndex(fv.Type()); swIdx >= 0 {
-			return unmarshalUnion(d, fv, swIdx)
+			// Same deferral scope rule as the struct case below.
+			if embedded && deferred != nil {
+				return unmarshalUnion(d, fv, swIdx, deferred)
+			}
+			return unmarshalUnion(d, fv, swIdx, nil)
 		}
 		// Symmetric with marshal: a struct value nested inside another construction threads
 		// the enclosing deferred queue; a top-level parameter struct or a referent body
@@ -1153,7 +1161,7 @@ func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func
 	if ev.Kind() == reflect.Struct {
 		if _, ok := asMarshaler(ev); !ok {
 			if swIdx := unionSwitchIndex(ev.Type()); swIdx >= 0 {
-				return marshalUnion(e, ev, swIdx)
+				return marshalUnion(e, ev, swIdx, deferred)
 			}
 			_, err := marshalStructFields(e, ev, true, deferred)
 			return err
@@ -1275,7 +1283,7 @@ func unmarshalElement(d *Decoder, ev reflect.Value, tag fieldTag, deferred *[]fu
 	if ev.Kind() == reflect.Struct {
 		if _, ok := asMarshalerAddr(ev); !ok {
 			if swIdx := unionSwitchIndex(ev.Type()); swIdx >= 0 {
-				return unmarshalUnion(d, ev, swIdx)
+				return unmarshalUnion(d, ev, swIdx, deferred)
 			}
 			_, err := unmarshalStructFields(d, ev, true, deferred)
 			return err
