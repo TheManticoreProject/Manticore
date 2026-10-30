@@ -32,7 +32,9 @@ func (s RPC_SID) authority() uint64 {
 }
 
 // String renders the SID in the standard "S-R-I-S1-S2-…" textual form ([MS-DTYP]
-// 2.4.2.1 SID String Format): authorities below 2^32 are decimal, larger ones hex.
+// 2.4.2.1 SID String Format): authorities below 2^32 are decimal, larger ones
+// "0x" followed by exactly 12 lower-case hex digits, as RtlConvertSidToUnicodeString
+// prints them.
 func (s RPC_SID) String() string {
 	auth := s.authority()
 	var b strings.Builder
@@ -40,8 +42,7 @@ func (s RPC_SID) String() string {
 	b.WriteString(strconv.FormatUint(uint64(s.Revision), 10))
 	b.WriteString("-")
 	if auth >= 1<<32 {
-		b.WriteString("0x")
-		b.WriteString(strconv.FormatUint(auth, 16))
+		fmt.Fprintf(&b, "0x%012x", auth)
 	} else {
 		b.WriteString(strconv.FormatUint(auth, 10))
 	}

@@ -265,12 +265,19 @@ func TestParseSID_Errors(t *testing.T) {
 			t.Errorf("ParseSID(%q): expected error", s)
 		}
 	}
-	// Round-trip a hex authority.
-	sid, err := ParseSID("S-1-0x10000000000-1")
-	if err != nil {
-		t.Fatalf("ParseSID hex authority: %v", err)
-	}
-	if got := sid.String(); got != "S-1-0x10000000000-1" {
-		t.Errorf("hex authority round trip: got %q", got)
+	// A hex authority is rendered as "0x" plus exactly 12 lower-case hex
+	// digits ([MS-DTYP] 2.4.2.1), whatever form it was parsed from.
+	for _, tt := range []struct{ in, want string }{
+		{"S-1-0x10000000000-1", "S-1-0x010000000000-1"},
+		{"S-1-0x000100000000-5", "S-1-0x000100000000-5"},
+		{"S-1-0xABCDEF123456-7", "S-1-0xabcdef123456-7"},
+	} {
+		sid, err := ParseSID(tt.in)
+		if err != nil {
+			t.Fatalf("ParseSID(%q): %v", tt.in, err)
+		}
+		if got := sid.String(); got != tt.want {
+			t.Errorf("ParseSID(%q).String() = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
