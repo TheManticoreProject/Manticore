@@ -41,7 +41,7 @@ func TestSearchResumePositionPastInt32Ends(t *testing.T) {
 func TestNtTransactCreateNameLengthOverflowRefused(t *testing.T) {
 	for _, nameLength := range []uint32{0x7FFFFFF0, 0x80000000, 0xFFFFFFFF} {
 		params := make([]byte, 64)
-		binary.LittleEndian.PutUint32(params[40:44], nameLength)
+		binary.LittleEndian.PutUint32(params[44:48], nameLength)
 		reassembly := &transactionReassembly{parameters: params}
 
 		var status nt_status.NT_STATUS
