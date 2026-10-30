@@ -6,5 +6,5 @@ package mssamr
 type RPC_STRING struct {
 	Length        uint16
 	MaximumLength uint16
-	Buffer        []byte `ndr:"unique,varying"`
+	Buffer        []byte `ndr:"unique,varying,size_is=MaximumLength,length_is=Length"`
 }

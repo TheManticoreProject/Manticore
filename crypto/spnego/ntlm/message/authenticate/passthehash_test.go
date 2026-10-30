@@ -52,12 +52,23 @@ func TestCreateAuthenticateMessageWithNTHash(t *testing.T) {
 	}
 }
 
-// TestCreateAuthenticateMessageWithNTHashRequiresNTLMv2 confirms pass-the-hash is
-// rejected when the server did not negotiate extended session security, since no
-// session key could be derived for signing/sealing.
-func TestCreateAuthenticateMessageWithNTHashRequiresNTLMv2(t *testing.T) {
+// TestCreateAuthenticateMessageWithNTHashWithoutESS confirms pass-the-hash answers a
+// CHALLENGE that does not offer extended session security the way password
+// authentication does: with an NTLMv2 response and a session key, and without
+// asserting the extended session security the server did not offer.
+func TestCreateAuthenticateMessageWithNTHashWithoutESS(t *testing.T) {
 	chal := newTestChallenge(flags.NTLMSSP_NEGOTIATE_UNICODE)
-	if _, err := CreateAuthenticateMessageWithNTHash(chal, "User", nt.NTHash("Password"), "Domain", "WORKSTATION"); err == nil {
-		t.Fatal("expected error without extended session security, got nil")
+	msg, err := CreateAuthenticateMessageWithNTHash(chal, "User", nt.NTHash("Password"), "Domain", "WORKSTATION")
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessageWithNTHash: %v", err)
+	}
+	if len(msg.NtChallengeResponse) <= 24 {
+		t.Errorf("NtChallengeResponse is %d bytes, want an NTLMv2 response (> 24 bytes)", len(msg.NtChallengeResponse))
+	}
+	if len(msg.SessionKey) != 16 {
+		t.Errorf("SessionKey length = %d, want 16", len(msg.SessionKey))
+	}
+	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY != 0 {
+		t.Error("AUTHENTICATE asserts extended session security although the CHALLENGE did not offer it")
 	}
 }

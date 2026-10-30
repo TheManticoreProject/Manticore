@@ -15,10 +15,10 @@ import (
 )
 
 // writeAndxOverhead is the space a WriteAndx request needs beyond its data: the
-// SMB header, the 24-byte parameter words of the 32-bit-offset form with their
-// WordCount, the ByteCount and the pad byte. Reserving it keeps a chunk inside the
-// negotiated buffer.
-const writeAndxOverhead = header.SMB_HEADER_SIZE + 1 + 24 + 2 + 1
+// SMB header, the 28-byte parameter words of the 64-bit-offset form (OffsetHigh is
+// sent once the offset reaches 4 GiB) with their WordCount, the ByteCount and the
+// pad byte. Reserving it keeps a chunk inside the negotiated buffer at any offset.
+const writeAndxOverhead = header.SMB_HEADER_SIZE + 1 + 28 + 2 + 1
 
 // FID is an opaque file handle returned by the server for an open file or directory.
 type FID uint16
@@ -70,6 +70,8 @@ func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
 // sendReceive marshals msg, sends it on the transport, and returns both the parsed
 // response message and the raw response bytes (the raw bytes are needed by callers
 // that index into the message by an absolute offset, e.g. ReadAndx DataOffset).
+// A message without SMB_FLAGS_REPLY is rejected: it is decoded as a request, not
+// as the response the caller expects.
 func (c *Client) sendReceive(msg *message.Message, label string) (*message.Message, []byte, error) {
 	marshalled, err := msg.Marshal()
 	if err != nil {
@@ -98,6 +100,10 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	response := message.NewMessage()
 	if err = response.Unmarshal(raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal %s response: %v", label, err)
+	}
+
+	if !response.Header.IsResponse() {
+		return nil, nil, fmt.Errorf("%s: server reply lacks SMB_FLAGS_REPLY", label)
 	}
 
 	return response, raw, nil

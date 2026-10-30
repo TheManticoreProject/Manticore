@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -150,5 +151,29 @@ func TestSASLConnActivateNudgesBlockedRead(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("read did not complete after activation")
+	}
+}
+
+// A SASL buffer longer than the receive size the client advertised must be
+// refused before its body is allocated or read.
+func TestSASLConnRejectsOversizedBuffer(t *testing.T) {
+	clientRaw, serverRaw := net.Pipe()
+	defer clientRaw.Close()
+	defer serverRaw.Close()
+
+	client := newSASLConn(clientRaw)
+	client.activate(xorCipher{max: 1024})
+
+	go func() {
+		var hdr [4]byte
+		binary.BigEndian.PutUint32(hdr[:], saslClientMaxRecv+1)
+		_, _ = serverRaw.Write(hdr[:])
+		// No body follows: a reader that trusts the header fails on EOF instead.
+		_ = serverRaw.Close()
+	}()
+
+	buf := make([]byte, 16)
+	if _, err := client.Read(buf); err == nil || !strings.Contains(err.Error(), "exceeds the advertised maximum") {
+		t.Fatalf("Read() error = %v, want the oversized buffer to be refused", err)
 	}
 }

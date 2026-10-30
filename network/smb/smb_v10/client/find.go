@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	mutf16 "github.com/TheManticoreProject/Manticore/encoding/utf16"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // trans2MessageOverhead is a conservative reservation, in bytes, for the SMB header
@@ -154,12 +156,21 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	entries := parseBothDirInfo(respData, c.useUnicode())
 
 	// TRANS2_FIND_NEXT2 until the server reports end-of-search or returns nothing.
+	// STATUS_NO_MORE_FILES, which a server may return instead of setting
+	// EndOfSearch, also ends the search; any other failure is returned with
+	// the entries read so far, so a truncated listing is not mistaken for a full one.
+	var nextErr error
 	for endOfSearch == 0 && searchCount > 0 {
 		respParams, respData, err = c.trans2(uint16(subcommands.TRANS2_FIND_NEXT2), buildFindNext2Params(sid, c.useUnicode()), nil)
 		if err != nil {
+			var statusErr *trans2StatusError
+			if !errors.As(err, &statusErr) || statusErr.Status != uint32(nt_status.NT_STATUS_NO_MORE_FILES) {
+				nextErr = fmt.Errorf("FIND_NEXT2 failed: %w", err)
+			}
 			break
 		}
 		if len(respParams) < 4 {
+			nextErr = fmt.Errorf("FIND_NEXT2 response parameters too short (%d bytes)", len(respParams))
 			break
 		}
 		searchCount = binary.LittleEndian.Uint16(respParams[0:2])
@@ -175,7 +186,18 @@ func (c *Client) ListEntries(pattern string) ([]Entry, error) {
 	// Always release the search handle, even on a partial enumeration.
 	_ = c.findClose2(sid)
 
-	return entries, nil
+	return entries, nextErr
+}
+
+// trans2StatusError reports a Transaction2 response that carried a non-success
+// NT status.
+type trans2StatusError struct {
+	Subcommand uint16
+	Status     uint32
+}
+
+func (e *trans2StatusError) Error() string {
+	return fmt.Sprintf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", e.Subcommand, e.Status)
 }
 
 // trans2 issues an SMB_COM_TRANSACTION2 carrying the given subcommand, with the supplied
@@ -248,7 +270,7 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 			return nil, nil, err
 		}
 		if response.Header.Status != 0x00000000 {
-			return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, response.Header.Status)
+			return nil, nil, &trans2StatusError{Subcommand: subcommand, Status: uint32(response.Header.Status)}
 		}
 		return reassembleTrans2(raw, c.recvTrans2Continuation)
 	}
@@ -283,7 +305,7 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		return nil, nil, fmt.Errorf("failed to unmarshal the Transaction2 interim response: %v", err)
 	}
 	if interim.Header.Status != 0x00000000 {
-		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, interim.Header.Status)
+		return nil, nil, &trans2StatusError{Subcommand: subcommand, Status: uint32(interim.Header.Status)}
 	}
 
 	// Send the remaining chunks as TRANSACTION2_SECONDARY continuation messages.
@@ -311,7 +333,7 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		return nil, nil, fmt.Errorf("failed to unmarshal Transaction2 response: %v", err)
 	}
 	if response.Header.Status != 0x00000000 {
-		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, response.Header.Status)
+		return nil, nil, &trans2StatusError{Subcommand: subcommand, Status: uint32(response.Header.Status)}
 	}
 	return reassembleTrans2(raw, c.recvTrans2Continuation)
 }

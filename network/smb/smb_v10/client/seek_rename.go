@@ -68,10 +68,10 @@ func (c *Client) ntRename(oldPath, newPath string, informationLevel uint16) erro
 	cmd := commands.NewNtRenameRequest()
 	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
 	cmd.InformationLevel = types.USHORT(informationLevel)
-	if err := cmd.OldFileName.SetString(oldPath); err != nil {
+	if err := cmd.OldFileName.SetStringWithEncoding(oldPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set old file name: %v", err)
 	}
-	if err := cmd.NewFileName.SetString(newPath); err != nil {
+	if err := cmd.NewFileName.SetStringWithEncoding(newPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set new file name: %v", err)
 	}
 

@@ -99,20 +99,24 @@ func (c *Client) SessionSetup(creds *credentials.Credentials) error {
 		return nil
 	}
 
-	if c.Session == nil {
-		c.Session = &Session{
-			Client:      c,
-			Credentials: creds,
-		}
-	}
-	c.Session.Client = c
-	if c.Session.Credentials == nil {
-		c.Session.Credentials = creds
+	// Without explicit credentials, fall back to those of the current session.
+	if creds == nil && c.Session != nil {
+		creds = c.Session.Credentials
 	}
 
-	if err := c.Session.SessionSetup(); err != nil {
+	// Each setup authenticates a new session of its own. Reusing the current
+	// Session object would authenticate with its credentials instead of creds and
+	// overwrite the UID of a session already registered in the table. The new
+	// session only becomes current once the setup succeeds, so a failed attempt
+	// leaves the existing session untouched.
+	session := &Session{
+		Client:      c,
+		Credentials: creds,
+	}
+	if err := session.SessionSetup(); err != nil {
 		return err
 	}
+	c.Session = session
 
 	// Register the established session in the connection's session table, keyed by
 	// the server-assigned UID, so it can be reused and is removed on Logoff.

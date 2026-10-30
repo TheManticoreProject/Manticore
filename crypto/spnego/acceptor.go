@@ -289,7 +289,13 @@ func (ctx *AcceptContext) Verify() error {
 	// A client that carries a MIC has committed to the whole exchange, so a
 	// mismatch means the NEGOTIATE or CHALLENGE was altered in flight even though
 	// the response itself is genuine.
-	if ctx.Authenticate.NeedsMIC {
+	//
+	// Whether a MIC is due is decided by MsvAvFlags inside the NTLMv2 blob as well
+	// as by the message layout ([MS-NLMP] 3.2.5.1.2): the layout is not covered by
+	// the NTProofStr, so a relay can drop the MIC field and re-lay the message, but
+	// it cannot clear the MIC-present bit without breaking the response. A client
+	// that announced a MIC and arrives without one is therefore rejected.
+	if ctx.Authenticate.NeedsMIC || ctx.Authenticate.AnnouncesMIC() {
 		if !ctx.Authenticate.VerifyMIC(sessionKey, ctx.NegotiateMessageBytes, ctx.ChallengeMessageBytes, ctx.AuthenticateMessageBytes) {
 			return ErrBadMIC
 		}

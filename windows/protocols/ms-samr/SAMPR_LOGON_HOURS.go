@@ -5,12 +5,10 @@ package mssamr
 //
 // The IDL declares LogonHours as
 // [size_is(1260), length_is((UnitsPerWeek+7)/8)] unsigned char*, i.e. a
-// [unique] pointer to a conformant-varying byte array. It is modeled here as
-// unique,varying because the codec derives both the maximum and actual counts
-// from the slice length, which decodes correctly. The literal maximum of 1260
-// bytes from the IDL is NOT enforced by this model; callers must keep
-// LogonHours within that bound.
+// [unique] pointer to a conformant-varying byte array whose maximum_count is
+// the literal 1260 on the wire, as in NLPR_LOGON_HOURS. The actual_count is
+// the slice length; callers keep it at (UnitsPerWeek+7)/8.
 type SAMPR_LOGON_HOURS struct {
 	UnitsPerWeek uint16
-	LogonHours   []byte `ndr:"unique,varying"`
+	LogonHours   []byte `ndr:"unique,size_is=1260,varying"`
 }

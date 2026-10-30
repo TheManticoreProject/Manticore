@@ -153,3 +153,36 @@ func TestComputeMICChangesTheMessage(t *testing.T) {
 		t.Error("the MIC is unchanged by a different NEGOTIATE message, so it binds nothing")
 	}
 }
+
+// TestAnnouncesMIC checks the MIC-present bit is read back from the NTLMv2 blob,
+// independently of the message layout, and that responses without the bit — no
+// timestamp, or an NTLMv1-sized response — do not announce one.
+func TestAnnouncesMIC(t *testing.T) {
+	withMIC, err := authenticate.CreateAuthenticateMessage(
+		micChallenge(t, true), "Administrator", "pass", "TMP", "WORKSTATION")
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessage: %v", err)
+	}
+	if !withMIC.AnnouncesMIC() {
+		t.Error("an NTLMv2 blob carrying the MIC-present bit is not reported")
+	}
+	// Dropping the MIC field does not change what the blob announces.
+	withMIC.NeedsMIC = false
+	if !withMIC.AnnouncesMIC() {
+		t.Error("AnnouncesMIC follows the layout instead of the blob")
+	}
+
+	withoutMIC, err := authenticate.CreateAuthenticateMessage(
+		micChallenge(t, false), "Administrator", "pass", "TMP", "WORKSTATION")
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessage: %v", err)
+	}
+	if withoutMIC.AnnouncesMIC() {
+		t.Error("a blob without MsvAvFlags announces a MIC")
+	}
+
+	ntlmv1 := &authenticate.AuthenticateMessage{NtChallengeResponse: make([]byte, 24)}
+	if ntlmv1.AnnouncesMIC() {
+		t.Error("an NTLMv1 response announces a MIC")
+	}
+}

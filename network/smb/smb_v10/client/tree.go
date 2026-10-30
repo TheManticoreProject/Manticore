@@ -93,10 +93,13 @@ func (c *Client) TreeConnect(shareName string) error {
 		return fmt.Errorf("unexpected response command: 0x%02x", responseMsg.Header.Command)
 	}
 
-	treeConnectResponse := responseMsg.Command.(*commands.TreeConnectAndxResponse)
-
 	if responseMsg.Header.Status != 0x00 {
 		return fmt.Errorf("tree connect failed: 0x%08x", responseMsg.Header.Status)
+	}
+
+	treeConnectResponse, ok := responseMsg.Command.(*commands.TreeConnectAndxResponse)
+	if !ok {
+		return fmt.Errorf("failed to cast response command to TreeConnectAndxResponse")
 	}
 
 	if c.Connection.TreeConnectTable == nil {
