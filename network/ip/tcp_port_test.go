@@ -35,12 +35,17 @@ func TestNewTCPPortRangeFromString(t *testing.T) {
 		{"1024-2048", &ip.TCPPortRange{Start: 1024, End: 2048}, false},
 		{"invalid", nil, true},
 		{"80-70000", nil, true},
+		{" 10 - 20 ", &ip.TCPPortRange{Start: 10, End: 20}, false},
+		{"\t443-443\n", &ip.TCPPortRange{Start: 443, End: 443}, false},
+		{"100-10", nil, true},
+		{"65535-0", nil, true},
 	}
 
 	for _, tt := range tests {
 		result, err := ip.NewTCPPortRangeFromString(tt.s)
 		if (err != nil) != tt.hasError {
 			t.Errorf("NewTCPPortRangeFromString(%s) error = %v; expected error = %v", tt.s, err, tt.hasError)
+			continue
 		}
 		if err == nil && (result.Start != tt.expected.Start || result.End != tt.expected.End) {
 			t.Errorf("NewTCPPortRangeFromString(%s) = %v; expected %v", tt.s, result, tt.expected)
