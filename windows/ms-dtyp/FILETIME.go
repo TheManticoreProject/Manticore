@@ -27,7 +27,9 @@ type FILETIME struct {
 // Returns:
 // - A pointer to the new FILETIME structure
 func NewFILETIMEFromTime(t time.Time) *FILETIME {
-	value := (t.UnixNano() / 100) + UnixTimestampIn100NsIntervals
+	// Work in 100-nanosecond ticks rather than through UnixNano, which only
+	// fits an int64 between the years 1678 and 2262
+	value := t.Unix()*10000000 + int64(t.Nanosecond())/100 + UnixTimestampIn100NsIntervals
 	return &FILETIME{
 		DwLowDateTime:  uint32(value & 0xFFFFFFFF),
 		DwHighDateTime: uint32((value >> 32) & 0xFFFFFFFF),
@@ -47,8 +49,12 @@ func (ft *FILETIME) ToInt64() int64 {
 // Returns:
 // - The time represented by the FILETIME structure
 func (ft *FILETIME) GetTime() time.Time {
-	delta := int64(ft.ToInt64()-UnixTimestampIn100NsIntervals) * 100
-	return time.Unix(0, delta)
+	// Split the ticks into seconds and nanoseconds rather than converting
+	// to nanoseconds, which overflows an int64 outside the years 1678-2262
+	ticks := ft.Uint64()
+	seconds := int64(ticks/10000000) - UnixTimestampIn100NsIntervals/10000000
+	nanoseconds := int64(ticks%10000000) * 100
+	return time.Unix(seconds, nanoseconds)
 }
 
 // Unmarshal deserializes a byte slice into the FILETIME structure.

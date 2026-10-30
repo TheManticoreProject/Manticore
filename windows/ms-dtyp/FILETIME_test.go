@@ -238,3 +238,49 @@ func TestFILETIME_MarshalUnmarshalInvolution(t *testing.T) {
 			originalTime.GetTime().String(), unmarshalledTime.GetTime().String())
 	}
 }
+
+// FILETIME covers 1601 to year 30828; converting through Unix nanoseconds
+// only works between 1678 and 2262, so check values outside that window.
+func TestFILETIME_GetTimeOutsideUnixNanoRange(t *testing.T) {
+	tests := []struct {
+		name string
+		ft   msdtyp.FILETIME
+		want time.Time
+	}{
+		{"zero is 1601-01-01", msdtyp.FILETIME{}, time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{"one tick after 1601-01-01", msdtyp.FILETIME{DwLowDateTime: 1}, time.Date(1601, 1, 1, 0, 0, 0, 100, time.UTC)},
+		{"0x7FFFFFFFFFFFFFFF", msdtyp.FILETIME{DwLowDateTime: 0xFFFFFFFF, DwHighDateTime: 0x7FFFFFFF}, time.Date(30828, 9, 14, 2, 48, 5, 477580700, time.UTC)},
+		{"Unix epoch", msdtyp.FILETIME{DwLowDateTime: 0xD53E8000, DwHighDateTime: 0x019DB1DE}, time.Unix(0, 0)},
+		{"0xFFFFFFFFFFFFFFFF is read as unsigned", msdtyp.FILETIME{DwLowDateTime: 0xFFFFFFFF, DwHighDateTime: 0xFFFFFFFF}, time.Date(60056, 5, 28, 5, 36, 10, 955161500, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ft.GetTime(); !got.Equal(tt.want) {
+				t.Errorf("GetTime() = %v, want %v", got.UTC(), tt.want)
+			}
+		})
+	}
+}
+
+func TestNewFILETIMEFromTimeOutsideUnixNanoRange(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+		want uint64
+	}{
+		{"1601-01-01", time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC), 0},
+		{"1601-01-01 plus one tick", time.Date(1601, 1, 1, 0, 0, 0, 100, time.UTC), 1},
+		{"year 9999", time.Date(9999, 12, 31, 23, 59, 59, 999999900, time.UTC), 2650467743999999999},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ft := msdtyp.NewFILETIMEFromTime(tt.in)
+			if got := ft.Uint64(); got != tt.want {
+				t.Errorf("NewFILETIMEFromTime(%v) = %d, want %d", tt.in, got, tt.want)
+			}
+			if back := ft.GetTime(); !back.Equal(tt.in) {
+				t.Errorf("round trip: GetTime() = %v, want %v", back.UTC(), tt.in)
+			}
+		})
+	}
+}
