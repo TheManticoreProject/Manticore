@@ -149,6 +149,25 @@ func TestParseEptMapResponseRejectsHugeCount(t *testing.T) {
 	}
 }
 
+// TestParseEptMapResponseRejectsHugeTowerLength checks that a tower_length near
+// MaxInt32 returned by the endpoint mapper is reported as an error. On 32-bit
+// builds it used to overflow the reader's bounds check and panic.
+func TestParseEptMapResponseRejectsHugeTowerLength(t *testing.T) {
+	w := &ndr.Writer{}
+	w.Put(make([]byte, contextHandleSize))
+	w.U32(1)          // num_towers
+	w.U32(1)          // maximum_count
+	w.U32(0)          // offset
+	w.U32(1)          // actual_count
+	w.U32(0x00020000) // referent ID
+	w.U32(0x7fffffff) // hoisted maximum_count
+	w.U32(0x7fffffff) // tower_length -> overflows the read offset
+	w.Put([]byte{0x41})
+	if _, _, err := parseEptMapResponse(w.Bytes()); err == nil {
+		t.Fatal("expected error on oversized tower length")
+	}
+}
+
 func TestParseEptMapResponseTruncated(t *testing.T) {
 	if _, _, err := parseEptMapResponse([]byte{0x00, 0x01, 0x02}); err == nil {
 		t.Fatal("expected error on truncated response")
