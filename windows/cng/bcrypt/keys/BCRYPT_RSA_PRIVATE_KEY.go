@@ -176,7 +176,12 @@ func (key *BCRYPT_RSA_PRIVATE_KEY) ExportDER() ([]byte, error) {
 		return nil, errors.New("invalid RSA private key components")
 	}
 
+	// Primes of 1 would make p-1 or q-1 zero, and the CRT reductions below
+	// would divide by zero
 	one := big.NewInt(1)
+	if p.Cmp(one) <= 0 || q.Cmp(one) <= 0 {
+		return nil, errors.New("invalid RSA private key components: primes must be greater than 1")
+	}
 	pMinus1 := new(big.Int).Sub(p, one)
 	qMinus1 := new(big.Int).Sub(q, one)
 	phi := new(big.Int).Mul(pMinus1, qMinus1)
