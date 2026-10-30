@@ -324,8 +324,12 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	//
 	// Its length spans two words, and reading DataLength alone would report a
 	// 64 KiB read as having returned nothing ([MS-SMB] section 2.2.4.2.2).
-	declared := int(c.DataLengthHigh)<<16 | int(c.DataLength)
-	if declared == 0 {
+	//
+	// The two words are combined as a uint32: DataLengthHigh 0x8000 shifted in an
+	// int is negative on a 32-bit build, which would slip past the bounds checks
+	// below and panic on the slice.
+	declaredLength := uint32(c.DataLengthHigh)<<16 | uint32(c.DataLength)
+	if declaredLength == 0 {
 		c.Data = []types.UCHAR{}
 		return 0, nil
 	}
@@ -345,19 +349,21 @@ func (c *ReadAndxResponse) Unmarshal(rawData []byte) (int, error) {
 	minimumDataStart := bytesRead + 2
 
 	if start >= minimumDataStart {
-		if start+declared > len(rawData) {
+		if uint64(start)+uint64(declaredLength) > uint64(len(rawData)) {
 			return 0, fmt.Errorf(
 				"ReadAndx declares %d bytes of data at offset %d, which runs past the %d bytes of the message that remain",
-				declared, c.DataOffset, len(rawData))
+				declaredLength, c.DataOffset, len(rawData))
 		}
+		declared := int(declaredLength)
 		c.Data = append([]types.UCHAR{}, rawData[start:start+declared]...)
 		return declared, nil
 	}
 
-	if declared > len(rawDataContent) {
+	if uint64(declaredLength) > uint64(len(rawDataContent)) {
 		return 0, fmt.Errorf("ReadAndx declares %d bytes of data but its data block holds %d",
-			declared, len(rawDataContent))
+			declaredLength, len(rawDataContent))
 	}
+	declared := int(declaredLength)
 	c.Data = append([]types.UCHAR{}, rawDataContent[len(rawDataContent)-declared:]...)
 	return declared, nil
 }

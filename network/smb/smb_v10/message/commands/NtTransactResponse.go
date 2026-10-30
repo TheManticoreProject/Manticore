@@ -418,7 +418,9 @@ func (c *NtTransactResponse) Unmarshal(rawData []byte) (int, error) {
 	offset += pad1Len
 
 	// Unmarshalling data Parameters
-	if len(rawDataContent) < offset+int(c.ParameterCount) {
+	// Compared in uint64: int(ParameterCount) of a 32-bit count is negative on a 32-bit
+	// build for values from 0x80000000, which would pass an int comparison.
+	if uint64(c.ParameterCount) > uint64(len(rawDataContent)-offset) {
 		return offset, fmt.Errorf("rawDataContent too short for Parameters")
 	}
 	c.Parameters = rawDataContent[offset : offset+int(c.ParameterCount)]
@@ -437,7 +439,9 @@ func (c *NtTransactResponse) Unmarshal(rawData []byte) (int, error) {
 	offset += pad2Len
 
 	// Unmarshalling data Data
-	if len(rawDataContent) < offset+int(c.DataCount) {
+	// Compared in uint64: int(DataCount) of a 32-bit count is negative on a 32-bit
+	// build for values from 0x80000000, which would pass an int comparison.
+	if uint64(c.DataCount) > uint64(len(rawDataContent)-offset) {
 		return offset, fmt.Errorf("rawDataContent too short for Data")
 	}
 	c.Data = rawDataContent[offset : offset+int(c.DataCount)]

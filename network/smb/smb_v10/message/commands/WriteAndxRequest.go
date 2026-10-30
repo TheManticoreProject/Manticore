@@ -416,8 +416,12 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 	// leaving a field dirty. Reading DataLength alone would silently truncate
 	// every large write to its low word: the server would write 4464 of 70000
 	// bytes and report success.
-	declared := int(c.DataLengthHigh())<<16 | int(c.DataLength)
-	if declared == 0 {
+	//
+	// The two words are combined as a uint32: DataLengthHigh 0x8000 shifted in an
+	// int is negative on a 32-bit build, which would slip past the bounds check
+	// below and panic on the slice.
+	declaredLength := uint32(c.DataLengthHigh())<<16 | uint32(c.DataLength)
+	if declaredLength == 0 {
 		c.Data = []types.UCHAR{}
 		return 0, nil
 	}
@@ -442,11 +446,12 @@ func (c *WriteAndxRequest) Unmarshal(rawData []byte) (int, error) {
 			"WriteAndx DataOffset %d places the data %d bytes into a command whose data block starts at %d",
 			c.DataOffset, start, minimumDataStart)
 	}
-	if start+declared > len(rawData) {
+	if uint64(start)+uint64(declaredLength) > uint64(len(rawData)) {
 		return 0, fmt.Errorf(
 			"WriteAndx declares %d bytes of data at offset %d, which runs past the %d bytes of the message that remain",
-			declared, c.DataOffset, len(rawData))
+			declaredLength, c.DataOffset, len(rawData))
 	}
+	declared := int(declaredLength)
 
 	// The pad, if the sender inserted one, is the byte before the data. Reading it
 	// from the front of the data block instead would pick up a data byte for a
