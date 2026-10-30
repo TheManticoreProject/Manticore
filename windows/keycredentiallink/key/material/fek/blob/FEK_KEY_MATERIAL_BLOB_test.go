@@ -90,3 +90,19 @@ func TestFEK_KEY_MATERIAL_BLOB_Unmarshal_ShortInput_AESKDFKey(t *testing.T) {
 		t.Fatal("Expected error on short buffer for AES-256 KDF key, got nil")
 	}
 }
+
+// Header sizes of 2^31 or more must be rejected. On 32-bit builds int() of them
+// is negative and used to pass the length checks, then panic when slicing.
+func TestFEK_KEY_MATERIAL_BLOB_UnmarshalRejectsHugeSizes(t *testing.T) {
+	value := make([]byte, 64)
+	for _, header := range []headers.FEK_KEY_MATERIAL_HEADER{
+		{CbPublicExp: 0xFFFFFFF0},
+		{CbPublicExp: 3, CbModulus: 0x80000000},
+		{CbPublicExp: 3, CbModulus: 8, CbAESKDFKey: 0xFFFFFFFF},
+	} {
+		var b blob.FEK_KEY_MATERIAL_BLOB
+		if _, err := b.Unmarshal(header, value); err == nil {
+			t.Errorf("Unmarshal accepted header %+v with a %d-byte value", header, len(value))
+		}
+	}
+}

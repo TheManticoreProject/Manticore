@@ -45,19 +45,19 @@ type FEK_KEY_MATERIAL_BLOB struct {
 func (b *FEK_KEY_MATERIAL_BLOB) Unmarshal(keyHeader headers.FEK_KEY_MATERIAL_HEADER, value []byte) (int, error) {
 	bytesRead := 0
 
-	if int(keyHeader.CbPublicExp) > len(value)-bytesRead {
+	if uint64(keyHeader.CbPublicExp) > uint64(len(value)-bytesRead) {
 		return 0, fmt.Errorf("buffer too small for FEK_KEY_MATERIAL_BLOB, not enough bytes for unmarshalling public exponent")
 	}
 	b.PublicExponent = value[bytesRead : bytesRead+int(keyHeader.CbPublicExp)]
 	bytesRead += int(keyHeader.CbPublicExp)
 
-	if int(keyHeader.CbModulus) > len(value)-bytesRead {
+	if uint64(keyHeader.CbModulus) > uint64(len(value)-bytesRead) {
 		return 0, fmt.Errorf("buffer too small for FEK_KEY_MATERIAL_BLOB, not enough bytes for unmarshalling modulus")
 	}
 	b.Modulus = value[bytesRead : bytesRead+int(keyHeader.CbModulus)]
 	bytesRead += int(keyHeader.CbModulus)
 
-	if int(keyHeader.CbAESKDFKey) > len(value)-bytesRead {
+	if uint64(keyHeader.CbAESKDFKey) > uint64(len(value)-bytesRead) {
 		return 0, fmt.Errorf("buffer too small for FEK_KEY_MATERIAL_BLOB, not enough bytes for unmarshalling AES-256 KDF key")
 	}
 	b.AESKDFKey = value[bytesRead : bytesRead+int(keyHeader.CbAESKDFKey)]
