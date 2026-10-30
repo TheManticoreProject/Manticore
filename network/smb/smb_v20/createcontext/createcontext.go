@@ -109,20 +109,22 @@ func Parse(buf []byte) ([]CreateContext, error) {
 			return nil, fmt.Errorf("create context at offset %d shorter than header", offset)
 		}
 		ctx := buf[offset:]
-		next := int(binary.LittleEndian.Uint32(ctx[0:4]))
+		// Next and DataLength are 32-bit wire values; they are bounded against the
+		// buffer before any int arithmetic so the checks cannot wrap on 32-bit builds.
+		next := binary.LittleEndian.Uint32(ctx[0:4])
 		nameOffset := int(binary.LittleEndian.Uint16(ctx[4:6]))
 		nameLength := int(binary.LittleEndian.Uint16(ctx[6:8]))
 		dataOffset := int(binary.LittleEndian.Uint16(ctx[10:12]))
-		dataLength := int(binary.LittleEndian.Uint32(ctx[12:16]))
+		dataLength := binary.LittleEndian.Uint32(ctx[12:16])
 
 		// The fields above index within this context. Bound the context to the
 		// remaining buffer (or to Next when set) before slicing name/data.
 		ctxEnd := len(buf) - offset
 		if next != 0 {
-			if next < headerSize || offset+next > len(buf) {
+			if next < headerSize || uint64(next) > uint64(len(buf)-offset) {
 				return nil, fmt.Errorf("create context Next %d at offset %d out of bounds", next, offset)
 			}
-			ctxEnd = next
+			ctxEnd = int(next)
 		}
 
 		var name, data []byte
@@ -133,17 +135,17 @@ func Parse(buf []byte) ([]CreateContext, error) {
 			name = append([]byte{}, ctx[nameOffset:nameOffset+nameLength]...)
 		}
 		if dataLength > 0 {
-			if dataOffset < headerSize || dataOffset+dataLength > ctxEnd {
-				return nil, fmt.Errorf("create context data [%d:%d] at offset %d out of bounds", dataOffset, dataOffset+dataLength, offset)
+			if dataOffset < headerSize || uint64(dataOffset)+uint64(dataLength) > uint64(ctxEnd) {
+				return nil, fmt.Errorf("create context data [%d:%d] at offset %d out of bounds", dataOffset, uint64(dataOffset)+uint64(dataLength), offset)
 			}
-			data = append([]byte{}, ctx[dataOffset:dataOffset+dataLength]...)
+			data = append([]byte{}, ctx[dataOffset:dataOffset+int(dataLength)]...)
 		}
 		out = append(out, CreateContext{Name: name, Data: data})
 
 		if next == 0 {
 			break
 		}
-		offset += next
+		offset += int(next)
 	}
 	return out, nil
 }
