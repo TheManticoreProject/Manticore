@@ -78,22 +78,22 @@ func dialStrictOrder(host string, ip net.IP, port int, opts Options, prefs []smb
 }
 
 // wantedFamilies reports which engine families a preference list calls for, and
-// whether the "SMB 2.???" wildcard is needed. The wildcard is required when any
-// dialect above 2.0.2 is wanted, because the "SMB 2.002" marker can only
-// negotiate 2.0.2.
-func wantedFamilies(prefs []smb.SMBProtocolVersion) (wantSMB1, wantSMB2, needWildcard bool) {
+// which SMB2 markers the multi-protocol negotiate must carry. want2002 is set when
+// SMB 2.0.2 is wanted, so the "SMB 2.002" marker lets a 2.0.2-only server select
+// it. needWildcard is set when any dialect above 2.0.2 is wanted, because the
+// "SMB 2.002" marker can only negotiate 2.0.2.
+func wantedFamilies(prefs []smb.SMBProtocolVersion) (wantSMB1, want2002, needWildcard bool) {
 	for _, v := range prefs {
 		switch {
 		case v == smb.SMB_VERSION_1_0:
 			wantSMB1 = true
+		case v == smb.SMB_VERSION_2_0 || v == smb.SMB_VERSION_2_0_2:
+			want2002 = true
 		case engineSupportsSMB2(v):
-			wantSMB2 = true
-			if v != smb.SMB_VERSION_2_0 && v != smb.SMB_VERSION_2_0_2 {
-				needWildcard = true
-			}
+			needWildcard = true
 		}
 	}
-	return wantSMB1, wantSMB2, needWildcard
+	return wantSMB1, want2002, needWildcard
 }
 
 // dialHighestInSet performs a single SMB1 multi-protocol negotiate — one request
@@ -102,7 +102,8 @@ func wantedFamilies(prefs []smb.SMBProtocolVersion) (wantSMB1, wantSMB2, needWil
 // dispatched on its protocol marker; an SMB2 wildcard reply triggers a second,
 // native SMB2 negotiate to pin the concrete dialect.
 func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []smb.SMBProtocolVersion) (*Client, error) {
-	wantSMB1, wantSMB2, needWildcard := wantedFamilies(prefs)
+	wantSMB1, want2002, needWildcard := wantedFamilies(prefs)
+	wantSMB2 := want2002 || needWildcard
 	if !wantSMB1 && !wantSMB2 {
 		return nil, fmt.Errorf("no supported protocol version in preference list for %s", host)
 	}
@@ -113,7 +114,7 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 		return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 	}
 
-	raw, offered, err := sendMultiProtocolNegotiate(t, wantSMB1, wantSMB2, needWildcard)
+	raw, offered, err := sendMultiProtocolNegotiate(t, wantSMB1, want2002, needWildcard)
 	if err != nil {
 		t.Close()
 		return nil, err
@@ -145,10 +146,12 @@ func dialHighestInSet(host string, ip net.IP, port int, opts Options, prefs []sm
 // sendMultiProtocolNegotiate builds and sends an SMB1 SMB_COM_NEGOTIATE offering
 // the requested dialect markers, and returns the raw response together with the
 // negotiate request command (its offered dialect list is needed to resolve an SMB1
-// selection). When needWildcard is true the "SMB 2.???" marker is offered instead
-// of "SMB 2.002", which makes the server return the wildcard dialect (0x02FF) and
-// expect a follow-up native SMB2 negotiate that offers specific 2.1+/3.x dialects.
-func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2, needWildcard bool) ([]byte, *smb1commands.NegotiateRequest, error) {
+// selection). Like a Windows client, it offers "SMB 2.002" when want2002 is true
+// and "SMB 2.???" when needWildcard is true. Per [MS-SMB2] 3.3.5.3.1 a server
+// supporting a dialect above 2.0.2 answers the wildcard with 0x02FF and expects a
+// follow-up native SMB2 negotiate, while a 2.0.2-only server ignores the wildcard
+// and selects 2.0.2 through "SMB 2.002".
+func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, want2002, needWildcard bool) ([]byte, *smb1commands.NegotiateRequest, error) {
 	req := smb1msg.NewMessage()
 	req.Header.SetFlags(smb1flags.FLAGS_CANONICALIZED_PATHS | smb1flags.FLAGS_CASE_INSENSITIVE)
 	req.Header.SetFlags2(smb1flags2.FLAGS2_UNICODE | smb1flags2.FLAGS2_NT_STATUS_ERROR_CODES | smb1flags2.FLAGS2_EXTENDED_SECURITY | smb1flags2.FLAGS2_LONG_NAMES_ALLOWED)
@@ -157,12 +160,11 @@ func sendMultiProtocolNegotiate(t transport.Transport, wantSMB1, wantSMB2, needW
 	if wantSMB1 {
 		neg.Dialects.AddDialect(smb1dialects.DIALECT_NT_LM_0_12)
 	}
-	if wantSMB2 {
-		if needWildcard {
-			neg.Dialects.AddDialect(smb2DialectStringWildcard)
-		} else {
-			neg.Dialects.AddDialect(smb2DialectString2002)
-		}
+	if want2002 {
+		neg.Dialects.AddDialect(smb2DialectString2002)
+	}
+	if needWildcard {
+		neg.Dialects.AddDialect(smb2DialectStringWildcard)
 	}
 	req.AddCommand(neg)
 
