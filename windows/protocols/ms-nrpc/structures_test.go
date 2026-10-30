@@ -2,6 +2,7 @@ package msnrpc
 
 import (
 	"bytes"
+	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -155,4 +156,23 @@ func TestControlDataInformationUnion(t *testing.T) {
 	roundTrip(t, "NETLOGON_CONTROL_DATA_INFORMATION/debug", NETLOGON_CONTROL_DATA_INFORMATION{
 		Tag: 65534, DebugFlag: 0x1234,
 	})
+}
+
+// TestUNICODE_STRING_WireCounts pins UNICODE_STRING's [size_is(MaximumLength/2),
+// length_is(Length/2)] bounds: a NUL-padded buffer sends max_count MaximumLength/2
+// and actual_count Length/2, as RPC_UNICODE_STRING does.
+func TestUNICODE_STRING_WireCounts(t *testing.T) {
+	in := struct{ S UNICODE_STRING }{UNICODE_STRING{Length: 4, MaximumLength: 8, Buffer: []uint16{'A', 'B', 0, 0}}}
+	raw, err := ndr.Marshal(&in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if len(raw) < 20 {
+		t.Fatalf("Marshal produced %d bytes", len(raw))
+	}
+	maxCount := binary.LittleEndian.Uint32(raw[8:12])
+	actualCount := binary.LittleEndian.Uint32(raw[16:20])
+	if maxCount != 4 || actualCount != 2 {
+		t.Errorf("array header = max %d, actual %d; want max 4, actual 2", maxCount, actualCount)
+	}
 }

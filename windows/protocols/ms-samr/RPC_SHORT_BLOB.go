@@ -6,5 +6,5 @@ package mssamr
 type RPC_SHORT_BLOB struct {
 	Length        uint16
 	MaximumLength uint16
-	Buffer        []uint16 `ndr:"unique,varying"`
+	Buffer        []uint16 `ndr:"unique,varying,size_is=MaximumLength/2,length_is=Length/2"`
 }
