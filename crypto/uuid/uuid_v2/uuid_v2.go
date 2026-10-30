@@ -64,8 +64,11 @@ func (u *UUIDv2) Marshal() ([]byte, error) {
 	// Copy node ID to the remaining bytes
 	copy(data[9:15], u.NodeID[:])
 
-	// Set the UUID version and variant
+	// Set the UUID version and variant. The variant nibble carries the
+	// RFC 9562 variant (0b10) followed by the top 2 bits of the 6-bit
+	// DCE Security clock sequence.
 	u.UUID.Version = 2
+	u.UUID.Variant = 0x8 | byte((u.Clock>>4)&0x3)
 	u.UUID.Data = data
 
 	// Use the UUID's Marshal method to get the final 16-byte array
@@ -101,8 +104,8 @@ func (u *UUIDv2) Unmarshal(marshalledData []byte) (int, error) {
 	// Extract time high
 	timeHigh := uint16(u.UUID.Data[6])<<4 | uint16(u.UUID.Data[7]>>4)&0xF
 
-	// Extract clock sequence
-	u.Clock = u.UUID.Data[7] & 0x0F
+	// Extract the 6-bit clock sequence; its top 2 bits follow the variant bits
+	u.Clock = (u.UUID.Variant&0x3)<<4 | u.UUID.Data[7]&0x0F
 
 	u.LocalDomain = u.UUID.Data[8]
 
