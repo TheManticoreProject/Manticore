@@ -101,9 +101,10 @@ func (e *LogEntry) Unmarshal(data []byte) (int, error) {
 	e.Hash2 = binary.LittleEndian.Uint64(data[32:40])
 
 	pos := logEntryHeaderSize
-	refsEnd := pos + int(e.DirtyPagesCount)*8
-	if refsEnd > len(data) {
-		return 0, fmt.Errorf("LogEntry dirty-page references run past buffer (%d > %d)", refsEnd, len(data))
+	// Bound the count in uint64 before any int conversion or allocation: a hostile count
+	// would otherwise wrap int(count)*8 on 32-bit builds or force a huge allocation.
+	if refsLen := uint64(e.DirtyPagesCount) * 8; refsLen > uint64(len(data)-pos) {
+		return 0, fmt.Errorf("LogEntry dirty-page references run past buffer (%d > %d)", uint64(pos)+refsLen, len(data))
 	}
 	e.DirtyPages = make([]DirtyPageReference, e.DirtyPagesCount)
 	for i := range e.DirtyPages {
@@ -114,20 +115,24 @@ func (e *LogEntry) Unmarshal(data []byte) (int, error) {
 
 	e.PageData = make([][]byte, e.DirtyPagesCount)
 	for i, ref := range e.DirtyPages {
-		end := pos + int(ref.Size)
-		if end > len(data) {
+		if uint64(ref.Size) > uint64(len(data)-pos) {
 			return 0, fmt.Errorf("LogEntry dirty page %d (size %d) runs past buffer", i, ref.Size)
 		}
+		end := pos + int(ref.Size)
 		e.PageData[i] = append([]byte(nil), data[pos:end]...)
 		pos += int(ref.Size)
 	}
 
-	consumed := int(e.LogSize)
-	if consumed < pos {
+	if uint64(e.LogSize) < uint64(pos) {
 		// LogSize must at least cover the header, references, and page data.
 		return 0, fmt.Errorf("LogEntry LogSize %d smaller than its content %d", e.LogSize, pos)
 	}
-	return consumed, nil
+	if uint64(e.LogSize) > uint64(len(data)) {
+		// The entry claims to run past the buffer: report everything as consumed (it is
+		// necessarily the last entry) rather than a size that does not fit in an int.
+		return len(data), nil
+	}
+	return int(e.LogSize), nil
 }
 
 // Marshal serializes the LogEntry: header, dirty-page references, page data, then zero
@@ -198,7 +203,8 @@ func (t *TransactionLog) Unmarshal(data []byte) error {
 // ReplayTransactionLog applies a transaction log to a primary hive image and returns the
 // recovered image plus the number of entries applied. It applies entries whose sequence
 // numbers run contiguously from the hive's secondary sequence number, stopping at the
-// first gap (the standard recovery rule); each entry's dirty pages are written at
+// first gap or at the first entry whose dirty pages fail validation (see
+// checkLogEntryPages) — the standard recovery rule; each entry's dirty pages are written at
 // 4096+Offset, the image is grown if a page extends it, and the base block's sequence
 // numbers and hive-bins-data size are updated to reflect the applied state.
 func ReplayTransactionLog(hiveData, logData []byte) ([]byte, int, error) {
@@ -225,6 +231,11 @@ func ReplayTransactionLog(hiveData, logData []byte) ([]byte, int, error) {
 		if e.SequenceNumber != expected {
 			break // gap in the sequence: cannot apply further
 		}
+		if checkLogEntryPages(e, len(image)) != nil {
+			// A bogus entry ends recovery: only the entries preceding it are applied, as
+			// with a sequence gap.
+			break
+		}
 		for i, ref := range e.DirtyPages {
 			abs := baseBlockSize + int(ref.Offset)
 			end := abs + len(e.PageData[i])
@@ -244,13 +255,45 @@ func ReplayTransactionLog(hiveData, logData []byte) ([]byte, int, error) {
 	return image, applied, nil
 }
 
+// checkLogEntryPages validates an HvLE entry's dirty pages against the image they are about
+// to be written into (imageLen bytes, base block included), before any of them is applied:
+//
+//   - every page must lie within the entry's HiveBinsDataSize, which is by definition the
+//     size of the hive-bins data once the entry has been applied;
+//   - the image may grow by no more than the entry's page data. When a hive grows, every
+//     new bin is dirty and so is logged in full, which means a well-formed entry never
+//     extends the hive past what its own pages cover.
+//
+// Together these keep a hostile page offset (e.g. 0xFFFFE000) from growing the image to
+// gigabytes or wrapping a 32-bit int into a negative index.
+func checkLogEntryPages(e *LogEntry, imageLen int) error {
+	var pageBytes uint64
+	for i, ref := range e.DirtyPages {
+		size := uint64(len(e.PageData[i]))
+		if uint64(ref.Offset)+size > uint64(e.HiveBinsDataSize) {
+			return fmt.Errorf("dirty page %d (offset 0x%X, size %d) lies beyond the hive-bins data size %d",
+				i, ref.Offset, size, e.HiveBinsDataSize)
+		}
+		pageBytes += size
+	}
+	current := uint64(0)
+	if imageLen > baseBlockSize {
+		current = uint64(imageLen - baseBlockSize)
+	}
+	if uint64(e.HiveBinsDataSize) > current+pageBytes {
+		return fmt.Errorf("hive-bins data size %d grows the hive (currently %d bytes) by more than the %d bytes of logged pages",
+			e.HiveBinsDataSize, current, pageBytes)
+	}
+	return nil
+}
+
 // replayDirtLog applies a legacy "DIRT" transaction log to the primary image. The log
 // carries a dirty-page bitmap (hbinsDataSize/dirtPageSize bits, one per 512-byte block of
 // hive-bins data) at offset 516; each set bit's 512-byte block is packed, in bitmap order,
 // starting at dirtDataOffset and is written to 4096 + bitIndex*512 in the primary. Unlike
 // HvLE, the base block is left untouched (matching the reference implementation).
 func replayDirtLog(image, logData []byte, hbinsDataSize uint32) ([]byte, int, error) {
-	bitmapLen := int(hbinsDataSize) / dirtPageSize / 8
+	bitmapLen := int(hbinsDataSize / dirtPageSize / 8) // uint32 division: never negative
 	if bitmapLen == 0 {
 		return image, 0, nil
 	}
@@ -267,10 +310,18 @@ func replayDirtLog(image, logData []byte, hbinsDataSize uint32) ([]byte, int, er
 			continue
 		}
 		src := dirtDataOffset + setIndex*dirtPageSize
-		dst := baseBlockSize + bit*dirtPageSize
 		if src+dirtPageSize > len(logData) {
 			return nil, 0, fmt.Errorf("regf: DIRT log truncated at dirty block %d", setIndex)
 		}
+		// Blocks are applied in ascending order, so a block may extend the image only
+		// contiguously; one starting past the current end would leave a gap of zeros that no
+		// logged data covers (and, from a hostile bitmap, grow the image to gigabytes or
+		// overflow a 32-bit int). Such a block is bogus: recovery stops there, keeping the
+		// blocks applied before it.
+		if uint64(baseBlockSize)+uint64(bit)*dirtPageSize > uint64(len(image)) {
+			break
+		}
+		dst := baseBlockSize + bit*dirtPageSize
 		if dst+dirtPageSize > len(image) {
 			image = append(image, make([]byte, dst+dirtPageSize-len(image))...)
 		}
