@@ -27,23 +27,23 @@ func TestWantedFamilies(t *testing.T) {
 	cases := []struct {
 		name                             string
 		prefs                            []smb.SMBProtocolVersion
-		wantSMB1, wantSMB2, needWildcard bool
+		wantSMB1, want2002, needWildcard bool
 	}{
 		{"empty", nil, false, false, false},
 		{"smb1 only", []smb.SMBProtocolVersion{smb.SMB_VERSION_1_0}, true, false, false},
 		{"smb2 2.0.2 only", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_0_2}, false, true, false},
 		{"both smb1+2.0.2", []smb.SMBProtocolVersion{smb.SMB_VERSION_1_0, smb.SMB_VERSION_2_0_2}, true, true, false},
-		{"3.1.1 needs wildcard", []smb.SMBProtocolVersion{smb.SMB_VERSION_3_1_1}, false, true, true},
-		{"2.1 needs wildcard", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_1}, false, true, true},
+		{"3.1.1 needs wildcard", []smb.SMBProtocolVersion{smb.SMB_VERSION_3_1_1}, false, false, true},
+		{"2.1 needs wildcard", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_1}, false, false, true},
 		{"2.0.2+3.0 needs wildcard", []smb.SMBProtocolVersion{smb.SMB_VERSION_2_0_2, smb.SMB_VERSION_3_0}, false, true, true},
 		{"default preference -> all true", defaultPreference(), true, true, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s1, s2, wc := wantedFamilies(c.prefs)
-			if s1 != c.wantSMB1 || s2 != c.wantSMB2 || wc != c.needWildcard {
+			if s1 != c.wantSMB1 || s2 != c.want2002 || wc != c.needWildcard {
 				t.Errorf("wantedFamilies(%v) = (%v,%v,%v), want (%v,%v,%v)",
-					c.prefs, s1, s2, wc, c.wantSMB1, c.wantSMB2, c.needWildcard)
+					c.prefs, s1, s2, wc, c.wantSMB1, c.want2002, c.needWildcard)
 			}
 		})
 	}

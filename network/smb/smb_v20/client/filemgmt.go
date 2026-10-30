@@ -48,13 +48,14 @@ func (c *Client) DeleteDirectory(path string) error {
 
 // RenameFile renames (or moves) oldPath to newPath on the current tree. Both are
 // share-relative. When replaceIfExists is false, the rename fails if newPath
-// already exists.
+// already exists. oldPath may name a file or a directory, so it is opened with
+// no FILE_DIRECTORY_FILE / FILE_NON_DIRECTORY_FILE constraint.
 func (c *Client) RenameFile(oldPath, newPath string, replaceIfExists bool) error {
 	fileId, err := c.CreateFile(oldPath,
 		fileflags.DELETE|fileflags.FILE_READ_ATTRIBUTES,
 		fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE|fileflags.FILE_SHARE_DELETE,
 		fileflags.FILE_OPEN,
-		fileflags.FILE_NON_DIRECTORY_FILE)
+		0)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,9 @@
 package ip
 
 import (
+	"encoding/binary"
 	"fmt"
-	"strconv"
-	"strings"
+	"net/netip"
 )
 
 type IPv6 struct {
@@ -27,61 +27,35 @@ func NewIPv6(a, b, c, d, e, f, g, h uint16) *IPv6 {
 
 // NewIPv6FromString creates a new IPv6 instance from a string.
 //
+// Both the full form ("2001:db8:0:0:0:0:0:1") and the compressed "::"
+// form of RFC 4291 section 2.2 ("2001:db8::1", "::1", "::") are accepted,
+// as well as an embedded IPv4 suffix ("::ffff:1.2.3.4"). Plain IPv4
+// addresses and addresses carrying a zone ("fe80::1%eth0") are rejected.
+//
 // Parameters:
 //
 //	s: The string representation of the IPv6 address.
 //
 // Returns:
 //
-//	*IPv6: A new IPv6 instance.
+//	*IPv6: A new IPv6 instance, or nil if s is not a valid IPv6 address.
 func NewIPv6FromString(s string) *IPv6 {
-	parts := strings.Split(s, ":")
-
-	if len(parts) == 8 {
-		a, err := strconv.ParseUint(parts[0], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		b, err := strconv.ParseUint(parts[1], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		c, err := strconv.ParseUint(parts[2], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		d, err := strconv.ParseUint(parts[3], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		e, err := strconv.ParseUint(parts[4], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		f, err := strconv.ParseUint(parts[5], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		g, err := strconv.ParseUint(parts[6], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		h, err := strconv.ParseUint(parts[7], 16, 16)
-		if err != nil {
-			return nil
-		}
-
-		return NewIPv6(uint16(a), uint16(b), uint16(c), uint16(d), uint16(e), uint16(f), uint16(g), uint16(h))
+	addr, err := netip.ParseAddr(s)
+	if err != nil || !addr.Is6() || addr.Zone() != "" {
+		return nil
 	}
 
-	return nil
+	b := addr.As16()
+	return NewIPv6(
+		binary.BigEndian.Uint16(b[0:2]),
+		binary.BigEndian.Uint16(b[2:4]),
+		binary.BigEndian.Uint16(b[4:6]),
+		binary.BigEndian.Uint16(b[6:8]),
+		binary.BigEndian.Uint16(b[8:10]),
+		binary.BigEndian.Uint16(b[10:12]),
+		binary.BigEndian.Uint16(b[12:14]),
+		binary.BigEndian.Uint16(b[14:16]),
+	)
 }
 
 // ToUInt128 converts the IPv6 address to a 128-bit unsigned integer.

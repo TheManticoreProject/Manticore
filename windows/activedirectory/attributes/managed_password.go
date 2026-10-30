@@ -16,11 +16,24 @@ import (
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/a9019740-3d73-46ef-a9ae-3ea8eb86ac2e
 type ManagedPasswordBlob struct {
 	// CurrentPassword is the cleartext current password as a UTF-16LE string.
+	// DCs emit 256 random bytes, so this decoding is lossy (unpaired
+	// surrogates become U+FFFD, a 0x0000 code unit truncates it); use
+	// CurrentPasswordBytes to derive keys or the NT hash.
 	CurrentPassword string
 
 	// PreviousPassword is the cleartext previous password as a UTF-16LE string.
-	// Empty when no previous password is available.
+	// Empty when no previous password is available. Lossy, see CurrentPassword.
 	PreviousPassword string
+
+	// CurrentPasswordBytes is the raw UTF-16LE current password, excluding the
+	// 2-byte NUL terminator. The NT hash is MD4 over these bytes.
+	// When set, MarshalManagedPasswordBlob encodes it instead of CurrentPassword.
+	CurrentPasswordBytes []byte
+
+	// PreviousPasswordBytes is the raw UTF-16LE previous password, excluding the
+	// 2-byte NUL terminator. Nil when no previous password is available.
+	// When set, MarshalManagedPasswordBlob encodes it instead of PreviousPassword.
+	PreviousPasswordBytes []byte
 
 	// QueryPasswordIntervalTicks is the time (100-nanosecond intervals) after which
 	// the client should re-query the password from the directory.
@@ -57,6 +70,7 @@ func ParseManagedPasswordBlob(data []byte) (*ManagedPasswordBlob, error) {
 	unchangedIntervalOff := binary.LittleEndian.Uint16(data[14:16])
 
 	blob := &ManagedPasswordBlob{}
+	offsets := []uint16{currentOff, previousOff, queryIntervalOff, unchangedIntervalOff}
 
 	if currentOff != 0 {
 		s, err := readUTF16NullTerm(data, int(currentOff))
@@ -64,6 +78,11 @@ func ParseManagedPasswordBlob(data []byte) (*ManagedPasswordBlob, error) {
 			return nil, fmt.Errorf("current password: %w", err)
 		}
 		blob.CurrentPassword = s
+		raw, err := readPasswordBytes(data, int(currentOff), int(length), offsets)
+		if err != nil {
+			return nil, fmt.Errorf("current password: %w", err)
+		}
+		blob.CurrentPasswordBytes = raw
 	}
 
 	if previousOff != 0 {
@@ -72,6 +91,11 @@ func ParseManagedPasswordBlob(data []byte) (*ManagedPasswordBlob, error) {
 			return nil, fmt.Errorf("previous password: %w", err)
 		}
 		blob.PreviousPassword = s
+		raw, err := readPasswordBytes(data, int(previousOff), int(length), offsets)
+		if err != nil {
+			return nil, fmt.Errorf("previous password: %w", err)
+		}
+		blob.PreviousPasswordBytes = raw
 	}
 
 	if queryIntervalOff != 0 {
@@ -93,20 +117,24 @@ func ParseManagedPasswordBlob(data []byte) (*ManagedPasswordBlob, error) {
 
 // MarshalManagedPasswordBlob encodes an MSDS-MANAGEDPASSWORD_BLOB.
 func MarshalManagedPasswordBlob(blob *ManagedPasswordBlob) []byte {
-	currentUTF16 := encodeUTF16NullTerm(blob.CurrentPassword)
+	var currentUTF16 []byte
+	if blob.CurrentPasswordBytes != nil {
+		currentUTF16 = append(append([]byte{}, blob.CurrentPasswordBytes...), 0, 0)
+	} else {
+		currentUTF16 = encodeUTF16NullTerm(blob.CurrentPassword)
+	}
 	var previousUTF16 []byte
-	if blob.PreviousPassword != "" {
+	if blob.PreviousPasswordBytes != nil {
+		previousUTF16 = append(append([]byte{}, blob.PreviousPasswordBytes...), 0, 0)
+	} else if blob.PreviousPassword != "" {
 		previousUTF16 = encodeUTF16NullTerm(blob.PreviousPassword)
 	}
 
-	// Layout: header(16) | currentPassword | previousPassword | padding | queryInterval(8) | unchangedInterval(8)
+	// Layout, unpadded as written by DCs:
+	// header(16) | currentPassword | previousPassword | queryInterval(8) | unchangedInterval(8)
 	currentOff := managedPasswordHeaderSize
 	previousOff := currentOff + len(currentUTF16)
-	afterPasswords := previousOff + len(previousUTF16)
-
-	// Align to 8-byte boundary for the LARGE_INTEGER fields.
-	padding := (8 - afterPasswords%8) % 8
-	queryIntervalOff := afterPasswords + padding
+	queryIntervalOff := previousOff + len(previousUTF16)
 	unchangedIntervalOff := queryIntervalOff + 8
 	totalLen := unchangedIntervalOff + 8
 
@@ -145,6 +173,32 @@ func readUTF16NullTerm(data []byte, off int) (string, error) {
 		units = append(units, u)
 	}
 	return string(utf16.Decode(units)), nil
+}
+
+// readPasswordBytes returns the raw bytes of the NUL-terminated WCHAR password
+// starting at off. The password field extends to the next field offset (or the
+// blob length) and only its trailing 2-byte NUL terminator is excluded, as DCs
+// write the fields back to back. Embedded or trailing 0x0000 code units and
+// unpaired surrogates are preserved byte-for-byte.
+func readPasswordBytes(data []byte, off, length int, offsets []uint16) ([]byte, error) {
+	if length <= off || length > len(data) {
+		length = len(data)
+	}
+	if off < 0 || off >= length {
+		return nil, fmt.Errorf("offset %d out of bounds (len %d)", off, length)
+	}
+	end := length
+	for _, o := range offsets {
+		if int(o) > off && int(o) < end {
+			end = int(o)
+		}
+	}
+	field := data[off:end]
+	field = field[:len(field)&^1]
+	if len(field) < 2 {
+		return nil, fmt.Errorf("password field at offset %d too short (%d bytes)", off, len(field))
+	}
+	return append([]byte{}, field[:len(field)-2]...), nil
 }
 
 // encodeUTF16NullTerm encodes s as null-terminated UTF-16LE bytes.
