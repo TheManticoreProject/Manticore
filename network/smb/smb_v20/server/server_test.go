@@ -913,3 +913,33 @@ func TestServerEcho(t *testing.T) {
 		t.Errorf("ECHO without a session: %v", err)
 	}
 }
+
+// TestServerRenameDirectory checks that the client's RenameFile renames a
+// directory as well as a file: the old path must not be opened as a non-directory.
+func TestServerRenameDirectory(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	if err := fs.AddDirectory("dir1"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := dial(t, port, dialects.SMB2_DIALECT_3_0_2, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.RenameFile("dir1", "dir2", false); err != nil {
+		t.Fatalf("RenameFile(dir1, dir2) = %v, want nil", err)
+	}
+	if _, err := fs.Stat("dir1"); err == nil {
+		t.Error("dir1 still exists after the rename")
+	}
+	if attr, err := fs.Stat("dir2"); err != nil || !attr.IsDir {
+		t.Errorf("Stat(dir2) = %+v, %v, want a directory", attr, err)
+	}
+	// Files still rename through the same call.
+	if err := c.RenameFile("hello.txt", "moved.txt", false); err != nil {
+		t.Fatalf("RenameFile(hello.txt, moved.txt) = %v, want nil", err)
+	}
+	if attr, err := fs.Stat("moved.txt"); err != nil || attr.IsDir {
+		t.Errorf("Stat(moved.txt) = %+v, %v, want a file", attr, err)
+	}
+}
