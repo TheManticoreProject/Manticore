@@ -115,12 +115,12 @@ func TestDomainControllerInfoRoundTrip(t *testing.T) {
 }
 
 // TestNetlogonValidationUnion selects the generic-info arm (a [unique] pointer to a
-// conformant byte array) and round-trips the discriminated union, exercising the switch
+// structure holding a [unique] pointer to a conformant byte array) and round-trips the discriminated union, exercising the switch
 // discriminant plus the unique-pointer-to-conformant-array buffer shape together.
 func TestNetlogonValidationUnion(t *testing.T) {
 	roundTrip(t, "NETLOGON_VALIDATION/generic2", NETLOGON_VALIDATION{
 		Tag: NetlogonValidationGenericInfo2,
-		ValidationGeneric2: NETLOGON_VALIDATION_GENERIC_INFO2{
+		ValidationGeneric2: &NETLOGON_VALIDATION_GENERIC_INFO2{
 			DataLength:     4,
 			ValidationData: []uint8{0xde, 0xad, 0xbe, 0xef},
 		},
