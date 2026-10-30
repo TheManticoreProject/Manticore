@@ -45,26 +45,31 @@ func NewIPv4FromString(s string) *IPv4 {
 
 	if len(parts) == 2 {
 		maskBits, err := strconv.ParseUint(parts[1], 10, 8)
+		if err != nil || maskBits > 32 {
+			return nil
+		}
+
+		octets := strings.Split(parts[0], ".")
+		if len(octets) != 4 {
+			return nil
+		}
+
+		a, err := strconv.ParseUint(octets[0], 10, 8)
 		if err != nil {
 			return nil
 		}
 
-		a, err := strconv.ParseUint(parts[0], 10, 8)
+		b, err := strconv.ParseUint(octets[1], 10, 8)
 		if err != nil {
 			return nil
 		}
 
-		b, err := strconv.ParseUint(parts[1], 10, 8)
+		c, err := strconv.ParseUint(octets[2], 10, 8)
 		if err != nil {
 			return nil
 		}
 
-		c, err := strconv.ParseUint(parts[2], 10, 8)
-		if err != nil {
-			return nil
-		}
-
-		d, err := strconv.ParseUint(parts[3], 10, 8)
+		d, err := strconv.ParseUint(octets[3], 10, 8)
 		if err != nil {
 			return nil
 		}
