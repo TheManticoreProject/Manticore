@@ -171,3 +171,54 @@ func TestTCPTransport_CloseIdempotent(t *testing.T) {
 		t.Error("conn not cleared after Close")
 	}
 }
+
+// A receive fragment size of 0 must not leave Recv with a zero-length buffer: a TCP
+// read into it returns (0, nil) immediately, so Recv would spin forever.
+func TestTCPTransport_RecvWithZeroMaxRecvFrag(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("loopback listener unavailable: %v", err)
+	}
+	defer ln.Close()
+
+	payload := []byte{0x05, 0x00, 0x0c, 0x03, 0x10, 0x00, 0x00, 0x00}
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write(payload)
+	}()
+
+	addr := ln.Addr().(*net.TCPAddr)
+	tr := New("127.0.0.1", addr.Port)
+	tr.SetTimeout(2 * time.Second)
+	tr.SetMaxFrag(DefaultMaxXmitFrag, 0)
+	if err := tr.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	defer tr.Close()
+
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := tr.Recv()
+		done <- result{data, err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Recv() error = %v", r.err)
+		}
+		if !bytes.Equal(r.data, payload) {
+			t.Errorf("Recv() = %x, want %x", r.data, payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Recv() with a zero receive fragment size did not return")
+	}
+}

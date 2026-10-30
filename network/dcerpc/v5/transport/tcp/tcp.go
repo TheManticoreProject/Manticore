@@ -136,7 +136,8 @@ func (t *TCPTransport) Send(pdu []byte) error {
 	return nil
 }
 
-// Recv reads up to MaxRecvFrag bytes from the socket and returns them. The result may
+// Recv reads up to MaxRecvFrag bytes (DefaultMaxRecvFrag when it is 0) from the socket
+// and returns them. The result may
 // hold part of a PDU, exactly one PDU, or several PDUs; the caller reassembles by
 // frag_length. A read that returns no data before the peer closes the connection is
 // reported as an error.
@@ -153,7 +154,13 @@ func (t *TCPTransport) Recv() ([]byte, error) {
 		return nil, fmt.Errorf("ncacn_ip_tcp: set read deadline on %s: %w", t.address, err)
 	}
 
-	buf := make([]byte, t.maxRecv)
+	// A zero-length buffer makes Read return (0, nil) at once, which would spin
+	// the loop below without ever reaching the read deadline.
+	size := t.maxRecv
+	if size == 0 {
+		size = DefaultMaxRecvFrag
+	}
+	buf := make([]byte, size)
 	for {
 		n, err := t.conn.Read(buf)
 		if n > 0 {
