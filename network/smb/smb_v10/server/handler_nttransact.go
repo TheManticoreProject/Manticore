@@ -8,6 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/subcommands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
@@ -88,6 +89,13 @@ func handleNtTransactSecondary(conn *Connection, w ResponseWriter, req *message.
 	if !ok {
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
+
+	// Every answer to a secondary carries the primary's command code: the final
+	// response is the primary's response, and [MS-CIFS] section 2.2.4.63.2 defines no
+	// response to the secondary itself. A client correlates the answer with the
+	// NT_TRANSACT it sent; Samba's server does the same because Windows clients
+	// expect it (Samba bug 8989).
+	req.Header.Command = codes.SMB_COM_NT_TRANSACT
 
 	reassembly := conn.transaction
 	if reassembly == nil || reassembly.family != "NT_TRANSACT" {

@@ -1356,12 +1356,16 @@ func TestTransactionSecondaryFromAnotherSessionIsRefused(t *testing.T) {
 		t.Fatalf("the owner's pipe session saw %d transactions from the guest, want 0", got)
 	}
 
-	// The owner's own secondary completes the transaction it began.
-	// The answer is looked for in the raw frame: the response carries the
-	// secondary's command code, which decodes as a different structure.
+	// The owner's own secondary completes the transaction it began, and the
+	// answer is the primary's: it carries SMB_COM_TRANSACTION, not the
+	// secondary's code, for which [MS-CIFS] section 2.2.4.34.2 defines no
+	// response.
 	response, raw := secondary(f.ownerUID, f.ownerTID, "data")
 	if response.Header.Status != 0 {
 		t.Fatalf("the owner's TRANSACTION_SECONDARY answered 0x%08X, want success", response.Header.Status)
+	}
+	if got := codes.CommandCode(raw[4]); got != codes.SMB_COM_TRANSACTION {
+		t.Errorf("the transaction's answer is coded 0x%02X, want SMB_COM_TRANSACTION (0x25)", uint8(got))
 	}
 	if got := f.pipes.sessionAt(0).transactCount(); got != 1 {
 		t.Fatalf("the owner's pipe session saw %d transactions, want 1", got)
