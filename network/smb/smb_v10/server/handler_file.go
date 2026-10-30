@@ -154,6 +154,40 @@ func openFlagsFor(desiredAccess, createDisposition, createOptions uint32) (OpenF
 	return flags, nt_status.NT_STATUS_SUCCESS
 }
 
+// accessMaximumAllowed is the MAXIMUM_ALLOWED access mask bit, [MS-DTYP] section
+// 2.4.3, which grants whatever the caller may have and so includes DELETE.
+const accessMaximumAllowed = 0x02000000
+
+// deleteOnCloseStatus decides whether a create may set FILE_DELETE_ON_CLOSE.
+//
+// Delete-on-close deletes the file when the handle closes, so it is a delete and
+// is held to what a delete needs. It requires DELETE access, as [MS-FSA] section
+// 2.1.5.1 and [MS-SMB2] section 3.3.5.9 do, with the same STATUS_ACCESS_DENIED
+// the SMB2 server returns; and a read-only share refuses it with
+// STATUS_CANNOT_DELETE, the status [MS-FSA] section 2.1.5.1.2.1 names for
+// delete-on-close on a read-only volume. Without either check a client
+// holding only read access deleted files from a read-only share by opening them.
+//
+// Parameters:
+//   - desiredAccess: the access mask the create asked for
+//   - createOptions: the create's CreateOptions
+//   - readOnly: whether the share is read-only
+//
+// Returns:
+//   - NT_STATUS_SUCCESS if the create may proceed, or the status refusing it
+func deleteOnCloseStatus(desiredAccess, createOptions uint32, readOnly bool) nt_status.NT_STATUS {
+	if createOptions&fileflags.FILE_DELETE_ON_CLOSE == 0 {
+		return nt_status.NT_STATUS_SUCCESS
+	}
+	if desiredAccess&(fileflags.DELETE|fileflags.GENERIC_ALL|accessMaximumAllowed) == 0 {
+		return nt_status.NT_STATUS_ACCESS_DENIED
+	}
+	if readOnly {
+		return nt_status.NT_STATUS_CANNOT_DELETE
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
 // handleNtCreateAndx answers SMB_COM_NT_CREATE_ANDX: the open path, which creates
 // or opens a file or directory and returns the handle a client acts through.
 //
@@ -204,6 +238,11 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 		logger.Debugf("SMB1 server: %s asked to open %q for writing on read-only share %q",
 			conn.Remote, path, tree.Share.Name)
 		return nt_status.NT_STATUS_MEDIA_WRITE_PROTECTED
+	}
+	if status := deleteOnCloseStatus(uint32(request.DesiredAccess), uint32(request.CreateOptions), tree.Share.ReadOnly); status != nt_status.NT_STATUS_SUCCESS {
+		logger.Debugf("SMB1 server: %s asked to open %q delete-on-close on %q, which is refused",
+			conn.Remote, path, tree.Share.Name)
+		return status
 	}
 
 	// Whether the target existed decides what the response reports it did.
