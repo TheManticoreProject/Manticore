@@ -152,3 +152,20 @@ func TestCCacheEmptyHeaderNoDelta(t *testing.T) {
 		t.Errorf("principal round-trip failed: %+v", got.DefaultPrincipal)
 	}
 }
+
+// TestCCacheRejectsLengthOverflowingPos checks that a data length just below
+// MaxInt32 is rejected. On 32-bit builds r.pos+n wrapped negative and passed
+// the bounds check, so the subsequent slice expression panicked.
+func TestCCacheRejectsLengthOverflowingPos(t *testing.T) {
+	crafted := []byte{
+		0x05, 0x04, // version 4
+		0x00, 0x00, // header length 0
+		0x00, 0x00, 0x00, 0x01, // principal name-type
+		0x00, 0x00, 0x00, 0x00, // component count 0
+		0x7f, 0xff, 0xff, 0xff, // realm length 0x7FFFFFFF (hostile)
+		'A',
+	}
+	if _, err := Unmarshal(crafted); err == nil {
+		t.Fatal("expected error for length overflowing the read offset, got nil")
+	}
+}
