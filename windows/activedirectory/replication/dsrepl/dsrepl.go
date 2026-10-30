@@ -40,7 +40,9 @@ func readOffsetString(blob []byte, offset uint32) (*string, error) {
 		return nil, nil
 	}
 
-	if int(offset) > len(blob) {
+	// Compared as uint64: on 32-bit platforms int(offset) is negative for
+	// offsets >= 2^31 and would slip past the range check.
+	if uint64(offset) > uint64(len(blob)) {
 		return nil, fmt.Errorf("string offset %d is out of range (blob is %d bytes)", offset, len(blob))
 	}
 

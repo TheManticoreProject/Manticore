@@ -99,7 +99,9 @@ func (b *DS_REPL_VALUE_META_DATA_BLOB) Unmarshal(data []byte) (int, error) {
 	}
 
 	if pbData != 0 && cbData != 0 {
-		if int(pbData)+int(cbData) > len(data) {
+		// Summed in uint64 so neither a 32-bit int conversion nor the uint32
+		// addition below can wrap and slip past the range check.
+		if uint64(pbData)+uint64(cbData) > uint64(len(data)) {
 			return 0, fmt.Errorf("pbData buffer (offset %d, length %d) is out of range (blob is %d bytes)", pbData, cbData, len(data))
 		}
 		b.Data = make([]byte, cbData)
