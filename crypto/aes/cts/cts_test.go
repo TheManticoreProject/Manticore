@@ -113,3 +113,23 @@ func TestEncryptDeterministic(t *testing.T) {
 		t.Error("Encrypt is not deterministic")
 	}
 }
+
+// An IV that is not one AES block long must be reported as an error rather
+// than panicking inside the CBC mode constructor.
+func TestEncryptDecryptRejectWrongIVLength(t *testing.T) {
+	key := make([]byte, 16)
+	// 16, 32 and 40 bytes reach the single-block, block-multiple and
+	// ciphertext-stealing paths respectively.
+	for _, dataLen := range []int{16, 32, 40} {
+		data := make([]byte, dataLen)
+		for _, ivLen := range []int{0, 8, 15, 17, 32} {
+			iv := make([]byte, ivLen)
+			if _, err := Encrypt(key, iv, data); err == nil {
+				t.Errorf("Encrypt of %d bytes with a %d-byte IV returned no error", dataLen, ivLen)
+			}
+			if _, err := Decrypt(key, iv, data); err == nil {
+				t.Errorf("Decrypt of %d bytes with a %d-byte IV returned no error", dataLen, ivLen)
+			}
+		}
+	}
+}

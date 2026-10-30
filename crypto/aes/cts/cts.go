@@ -24,6 +24,9 @@ func Encrypt(key, iv, plaintext []byte) ([]byte, error) {
 	if n < blockSize {
 		return nil, errors.New("aescts: plaintext must be at least 16 bytes")
 	}
+	if len(iv) != blockSize {
+		return nil, errors.New("aescts: iv must be 16 bytes")
+	}
 
 	// Special case: exactly one block — CBC with no swap
 	if n == blockSize {
@@ -89,6 +92,9 @@ func Decrypt(key, iv, ciphertext []byte) ([]byte, error) {
 	n := len(ciphertext)
 	if n < blockSize {
 		return nil, errors.New("aescts: ciphertext must be at least 16 bytes")
+	}
+	if len(iv) != blockSize {
+		return nil, errors.New("aescts: iv must be 16 bytes")
 	}
 
 	// Special case: exactly one block — CBC with no un-swap
