@@ -230,10 +230,12 @@ func (c *Connection) preNTSearch(
 			logger.Debugf("SMB1 server: %s resumed a search with a key this server did not issue", c.Remote)
 			return nil, 0, nt_status.NT_STATUS_INVALID_PARAMETER
 		}
-		start = position
-	}
-	if start > len(found) {
+		// Clamped while still unsigned: a position from 0x80000000 is negative
+		// as an int on a 32-bit build and would index before the listing.
 		start = len(found)
+		if uint64(position) < uint64(len(found)) {
+			start = int(position)
+		}
 	}
 
 	if maxCount <= 0 || maxCount > preNTSearchLimit {
@@ -307,11 +309,11 @@ func preNTResumeKey(position int, from types.SMB_RESUME_KEY) types.SMB_RESUME_KE
 
 // preNTPositionOf reads the position out of a resume key, and reports whether the
 // key is one this server issued.
-func preNTPositionOf(key types.SMB_RESUME_KEY) (int, bool) {
+func preNTPositionOf(key types.SMB_RESUME_KEY) (uint32, bool) {
 	if !equalBytes(key.ServerState[4:8], preNTSearchMagic[:]) {
 		return 0, false
 	}
-	return int(binary.LittleEndian.Uint32(key.ServerState[0:4])), true
+	return binary.LittleEndian.Uint32(key.ServerState[0:4]), true
 }
 
 // preNTResumeKeyFrom decodes the resume key SMB_COM_FIND carries in its data

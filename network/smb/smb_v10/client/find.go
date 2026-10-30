@@ -538,14 +538,14 @@ func parseBothDirInfo(data []byte, unicode bool) []Entry {
 	entries := []Entry{}
 
 	for pos := 0; pos+bothDirInfoFixedSize <= len(data); {
-		next := int(binary.LittleEndian.Uint32(data[pos : pos+4]))
+		next := binary.LittleEndian.Uint32(data[pos : pos+4])
 		createdAt := filetimeToTime(binary.LittleEndian.Uint64(data[pos+8 : pos+16]))
 		accessedAt := filetimeToTime(binary.LittleEndian.Uint64(data[pos+16 : pos+24]))
 		modifiedAt := filetimeToTime(binary.LittleEndian.Uint64(data[pos+24 : pos+32]))
 		changedAt := filetimeToTime(binary.LittleEndian.Uint64(data[pos+32 : pos+40]))
 		size := binary.LittleEndian.Uint64(data[pos+40 : pos+48])
 		attrs := binary.LittleEndian.Uint32(data[pos+56 : pos+60])
-		nameLen := int(binary.LittleEndian.Uint32(data[pos+60 : pos+64]))
+		nameLen := binary.LittleEndian.Uint32(data[pos+60 : pos+64])
 		shortNameLen := int(data[pos+68])
 
 		shortName := ""
@@ -554,14 +554,16 @@ func parseBothDirInfo(data []byte, unicode bool) []Entry {
 		}
 
 		longName := ""
-		if nameLen > 0 && pos+bothDirInfoFixedSize+nameLen <= len(data) {
+		// Compared while still unsigned: as an int, a length from 0x80000000 is
+		// negative on a 32-bit build and pos+fixed+length wraps from 0x7FFFFFFF.
+		if nameLen > 0 && uint64(nameLen) <= uint64(len(data)-pos-bothDirInfoFixedSize) {
 			// FileName is an SMB_STRING, so FileNameLength counts the terminator
 			// ([MS-SMB] 2.2.8.1.2). Windows sends "ADFS\0" with a length of 5, and
 			// keeping the terminator leaves a name that will not compare equal to
 			// the file it names. Trimming is done on the raw bytes rather than the
 			// decoded string so a UTF-16LE name's two-byte terminator is also
 			// removed if the request ever negotiates Unicode.
-			raw := data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+nameLen]
+			raw := data[pos+bothDirInfoFixedSize : pos+bothDirInfoFixedSize+int(nameLen)]
 			if unicode {
 				longName = decodeUTF16LE(raw)
 			} else {
@@ -584,10 +586,12 @@ func parseBothDirInfo(data []byte, unicode bool) []Entry {
 			IsDirectory: attrs&fileAttributeDirectory != 0,
 		})
 
-		if next == 0 {
+		// A link shorter than an entry, or past the end of the buffer, ends the
+		// walk: adding it unchecked wraps pos negative on a 32-bit build.
+		if next == 0 || next < bothDirInfoFixedSize || uint64(next) > uint64(len(data)-pos) {
 			break
 		}
-		pos += next
+		pos += int(next)
 	}
 
 	return entries
