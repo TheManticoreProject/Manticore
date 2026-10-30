@@ -236,3 +236,16 @@ func TestFromFormatXRoundTrip(t *testing.T) {
 		t.Errorf("Expected %s, but got %s", formatX, result)
 	}
 }
+
+// Empty, whitespace-only and one-character inputs must be rejected with an
+// error rather than indexing past the end of the string.
+func TestFromFormatBAndPRejectShortInput(t *testing.T) {
+	for _, input := range []string{"", "   ", "{", "}", "(", ")"} {
+		if _, err := FromFormatB(input); err == nil {
+			t.Errorf("FromFormatB(%q) returned no error", input)
+		}
+		if _, err := FromFormatP(input); err == nil {
+			t.Errorf("FromFormatP(%q) returned no error", input)
+		}
+	}
+}
