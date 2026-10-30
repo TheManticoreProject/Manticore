@@ -301,6 +301,15 @@ func (c *Connection) closeSessionResources(uid uint16) {
 	}
 }
 
+// releaseAll drops every tree on the connection, and with them every handle and
+// search, whichever session they belong to. It is what a connection that ends
+// does with what it still holds.
+func (c *Connection) releaseAll() {
+	for tid := range c.trees {
+		c.removeTree(tid)
+	}
+}
+
 // shareNameFromPath extracts the share name from the UNC path a tree connect
 // carries.
 //
