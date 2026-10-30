@@ -258,7 +258,10 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("unexpected response command: %d", responseMsg.Header.Command)
 	}
 
-	challengeResponse := responseMsg.Command.(*commands.SessionSetupAndxResponse)
+	challengeResponse, ok := responseMsg.Command.(*commands.SessionSetupAndxResponse)
+	if !ok {
+		return fmt.Errorf("failed to cast response command to SessionSetupAndxResponse")
+	}
 
 	// Share-level and plaintext authentication complete in a single round trip.
 	// Only the extended-security (NTLMSSP) path continues to the authenticate

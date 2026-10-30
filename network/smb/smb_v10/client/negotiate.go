@@ -79,7 +79,10 @@ func (c *Client) Negotiate() error {
 		return fmt.Errorf("negotiate failed: 0x%08x", responseMsg.Header.Status)
 	}
 
-	negotiateResponse := responseMsg.Command.(*commands.NegotiateResponse)
+	negotiateResponse, ok := responseMsg.Command.(*commands.NegotiateResponse)
+	if !ok {
+		return fmt.Errorf("failed to cast response command to NegotiateResponse")
+	}
 
 	return c.ApplyNegotiateResponse(negotiateResponse, negotiateCmd.Dialects)
 }
