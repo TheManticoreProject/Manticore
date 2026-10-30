@@ -228,3 +228,14 @@ func TestStringFallback(t *testing.T) {
 		t.Errorf("String = %q; want fallback rendering", got)
 	}
 }
+
+// TestUnmarshalHugeDataLength verifies that a DataLength >= 2^31 is rejected with an error. On
+// 32-bit builds int(DataLength) was negative, so the length check passed and make panicked.
+func TestUnmarshalHugeDataLength(t *testing.T) {
+	raw := buildProperty(msdnsp.DSPROPERTY_ZONE_TYPE, []byte{0x01})
+	raw[0], raw[1], raw[2], raw[3] = 0xF0, 0xFF, 0xFF, 0xFF // DataLength = 0xFFFFFFF0
+	var p msdnsp.DNS_PROPERTY
+	if _, err := p.Unmarshal(raw); err == nil {
+		t.Fatal("expected an error for a DataLength exceeding the buffer, got nil")
+	}
+}
