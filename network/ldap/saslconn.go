@@ -155,6 +155,12 @@ func (c *saslConn) framedRead(p []byte) (int, error) {
 		if n == 0 {
 			return 0, nil
 		}
+		// The client advertised saslClientMaxRecv as its receive limit (RFC 4752
+		// section 3.3); refuse a larger length instead of allocating whatever
+		// the four-byte header claims.
+		if n > saslClientMaxRecv {
+			return 0, fmt.Errorf("ldap sasl: buffer length %d exceeds the advertised maximum %d", n, saslClientMaxRecv)
+		}
 		buf := make([]byte, n)
 		if _, err := io.ReadFull(c.Conn, buf); err != nil {
 			return 0, err
