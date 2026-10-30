@@ -9,6 +9,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
+	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/tcp"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -16,6 +17,14 @@ import (
 // DefaultTCPTimeout bounds the endpoint-mapper and target TCP dials and reads when a
 // TCPBinder is built without an explicit timeout.
 const DefaultTCPTimeout = 10 * time.Second
+
+// newTCPTransport builds the ncacn_ip_tcp transport for host:port bounded by timeout; it is
+// overridable in tests.
+var newTCPTransport = func(host string, port int, timeout time.Duration) dcerpctransport.Transport {
+	tr := tcp.New(host, port)
+	tr.SetTimeout(timeout)
+	return tr
+}
 
 // Binder opens a transport and binds an abstract syntax over it, returning a ready
 // DCE/RPC client plus a close function that tears that transport down. It abstracts the
@@ -54,6 +63,8 @@ func (b *PipeBinder) Bind(s syntax.SyntaxID) (*dcerpcclient.Client, func() error
 	}
 	rpc := dcerpcclient.NewClient(transport)
 	if err := rpc.Bind(s); err != nil {
+		// Bind opens the pipe before negotiating, so release it on any failure.
+		_ = rpc.Close()
 		return nil, nil, fmt.Errorf("msproto: bind %s over %s: %w", s.UUID.ToFormatD(), b.pipe, err)
 	}
 	return rpc, rpc.Close, nil
@@ -102,14 +113,14 @@ func (b *TCPBinder) Bind(s syntax.SyntaxID) (*dcerpcclient.Client, func() error,
 		port = resolved
 	}
 
-	tr := tcp.New(b.Host, port)
-	tr.SetTimeout(b.Timeout)
-	rpc := dcerpcclient.NewClient(tr)
+	rpc := dcerpcclient.NewClient(newTCPTransport(b.Host, port, b.Timeout))
 
 	if err := rpc.SetAuth(b.AuthType, b.AuthLevel, b.Creds); err != nil {
 		return nil, nil, fmt.Errorf("msproto: configure auth: %w", err)
 	}
 	if err := rpc.Bind(s); err != nil {
+		// Bind opens the connection before negotiating, so release it on any failure.
+		_ = rpc.Close()
 		return nil, nil, fmt.Errorf("msproto: bind %s on %s:%d: %w", s.UUID.ToFormatD(), b.Host, port, err)
 	}
 	return rpc, rpc.Close, nil
@@ -118,13 +129,11 @@ func (b *TCPBinder) Bind(s syntax.SyntaxID) (*dcerpcclient.Client, func() error,
 // resolvePort asks the endpoint mapper on TCP/135 for the dynamic port the given syntax is
 // bound to, returning the first endpoint that carries a TCP port.
 func (b *TCPBinder) resolvePort(s syntax.SyntaxID) (int, error) {
-	tr := tcp.New(b.Host, tcp.EndpointMapperPort)
-	tr.SetTimeout(b.Timeout)
-	ept := dcerpcclient.NewClient(tr)
+	ept := dcerpcclient.NewClient(newTCPTransport(b.Host, tcp.EndpointMapperPort, b.Timeout))
+	defer ept.Close()
 	if err := ept.Bind(eptiface.SyntaxID()); err != nil {
 		return 0, fmt.Errorf("bind endpoint mapper: %w", err)
 	}
-	defer ept.Close()
 
 	eps, err := eptfunctions.Map(ept, s.UUID, s.MajorVersion, s.MinorVersion)
 	if err != nil {
