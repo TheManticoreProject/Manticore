@@ -66,12 +66,12 @@ func (c *QueryDirectoryResponse) Unmarshal(data []byte) (int, error) {
 
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	outputOffset := int(binary.LittleEndian.Uint16(data[2:4]))
-	outputLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	outputLength := wireInt(binary.LittleEndian.Uint32(data[4:8]))
 
 	consumed := queryDirectoryResponseFixedSize
 	if outputLength > 0 {
 		start := outputOffset - header.SMB2_HEADER_SIZE
-		if start < queryDirectoryResponseFixedSize || start+outputLength > len(data) {
+		if start < queryDirectoryResponseFixedSize || outputLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 QUERY_DIRECTORY Response output out of bounds: offset %d length %d", outputOffset, outputLength)
 		}
 		c.OutputBuffer = make([]byte, outputLength)

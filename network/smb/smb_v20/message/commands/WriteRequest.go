@@ -101,7 +101,7 @@ func (c *WriteRequest) Unmarshal(data []byte) (int, error) {
 
 	c.StructureSize = binary.LittleEndian.Uint16(data[0:2])
 	dataOffset := int(binary.LittleEndian.Uint16(data[2:4]))
-	dataLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	dataLength := wireInt(binary.LittleEndian.Uint32(data[4:8]))
 	c.Offset = binary.LittleEndian.Uint64(data[8:16])
 	if _, err := c.FileId.Unmarshal(data[16:32]); err != nil {
 		return 0, err
@@ -115,7 +115,7 @@ func (c *WriteRequest) Unmarshal(data []byte) (int, error) {
 	consumed := writeRequestFixedSize
 	if dataLength > 0 {
 		start := dataOffset - header.SMB2_HEADER_SIZE
-		if start < writeRequestFixedSize || start+dataLength > len(data) {
+		if start < writeRequestFixedSize || dataLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 WRITE Request data out of bounds: offset %d length %d", dataOffset, dataLength)
 		}
 		c.Data = make([]byte, dataLength)
@@ -129,7 +129,7 @@ func (c *WriteRequest) Unmarshal(data []byte) (int, error) {
 
 	if channelInfoLength > 0 {
 		start := channelInfoOffset - header.SMB2_HEADER_SIZE
-		if start < writeRequestFixedSize || start+channelInfoLength > len(data) {
+		if start < writeRequestFixedSize || channelInfoLength > len(data)-start {
 			return 0, fmt.Errorf("SMB2 WRITE Request channel info out of bounds: offset %d length %d", channelInfoOffset, channelInfoLength)
 		}
 		c.WriteChannelInfo = make([]byte, channelInfoLength)

@@ -101,8 +101,8 @@ func (c *IoctlRequest) Unmarshal(data []byte) (int, error) {
 	if _, err := c.FileId.Unmarshal(data[8:24]); err != nil {
 		return 0, err
 	}
-	inputOffset := int(binary.LittleEndian.Uint32(data[24:28]))
-	inputCount := int(binary.LittleEndian.Uint32(data[28:32]))
+	inputOffset := wireInt(binary.LittleEndian.Uint32(data[24:28]))
+	inputCount := wireInt(binary.LittleEndian.Uint32(data[28:32]))
 	c.MaxInputResponse = binary.LittleEndian.Uint32(data[32:36])
 	c.MaxOutputResponse = binary.LittleEndian.Uint32(data[44:48])
 	c.Flags = binary.LittleEndian.Uint32(data[48:52])
@@ -111,7 +111,7 @@ func (c *IoctlRequest) Unmarshal(data []byte) (int, error) {
 	consumed := ioctlRequestFixedSize
 	if inputCount > 0 {
 		start := inputOffset - header.SMB2_HEADER_SIZE
-		if start < ioctlRequestFixedSize || start+inputCount > len(data) {
+		if start < ioctlRequestFixedSize || inputCount > len(data)-start {
 			return 0, fmt.Errorf("SMB2 IOCTL Request input out of bounds: offset %d count %d", inputOffset, inputCount)
 		}
 		c.Input = make([]byte, inputCount)
