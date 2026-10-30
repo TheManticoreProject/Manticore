@@ -238,9 +238,11 @@ func (d *Decoder) Align(n int) {
 	}
 }
 
-// ReadBytes returns the next n octets.
+// ReadBytes returns the next n octets. The bound is checked as n > len-pos rather than
+// pos+n > len so that an attacker-controlled n near MaxInt cannot overflow the sum and
+// slip past the check.
 func (d *Decoder) ReadBytes(n int) ([]byte, error) {
-	if n < 0 || d.pos+n > len(d.data) {
+	if n < 0 || n > len(d.data)-d.pos {
 		return nil, fmt.Errorf("ndr: read of %d bytes at offset %d exceeds stream length %d", n, d.pos, len(d.data))
 	}
 	b := d.data[d.pos : d.pos+n]
@@ -318,6 +320,21 @@ func (d *Decoder) readReferent() (uint64, error) {
 	return uint64(v), err
 }
 
+// readCountedBytes reads count elements of size octets each. The wire count is bounded
+// against the remaining input in uint64 before it is converted to int or multiplied, so
+// a hostile count can neither wrap negative, truncate on 32-bit platforms, nor overflow
+// count*size into a small or negative length.
+func (d *Decoder) readCountedBytes(count, size uint64) ([]byte, error) {
+	rem := d.Remaining()
+	if rem < 0 {
+		rem = 0
+	}
+	if count > uint64(rem)/size {
+		return nil, fmt.Errorf("ndr: count %d of %d-octet elements at offset %d exceeds stream length %d", count, size, d.pos, len(d.data))
+	}
+	return d.ReadBytes(int(count * size))
+}
+
 // readWString reads a conformant+varying UTF-16LE string and returns it with the NUL
 // terminator removed.
 func (d *Decoder) readWString() (string, error) {
@@ -331,7 +348,7 @@ func (d *Decoder) readWString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	b, err := d.ReadBytes(int(actual) * 2)
+	b, err := d.readCountedBytes(actual, 2)
 	if err != nil {
 		return "", err
 	}
@@ -351,7 +368,7 @@ func (d *Decoder) readAString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	b, err := d.ReadBytes(int(actual))
+	b, err := d.readCountedBytes(actual, 1)
 	if err != nil {
 		return "", err
 	}
@@ -364,7 +381,7 @@ func (d *Decoder) readConformantBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := d.ReadBytes(int(n))
+	b, err := d.readCountedBytes(n, 1)
 	if err != nil {
 		return nil, err
 	}
