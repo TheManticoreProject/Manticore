@@ -168,16 +168,22 @@ func newDatabase(r io.ReaderAt, closer io.Closer) (*Database, error) {
 		return nil, fmt.Errorf("ese: bad signature 0x%08X (expected 0x%08X)",
 			binary.LittleEndian.Uint32(hdr[4:8]), eseSignature)
 	}
+	// ESE only supports 2, 4, 8, 16 and 32 KiB pages (JET_paramDatabasePageSize). Validate
+	// the raw header field before converting it: an arbitrary value would otherwise wrap
+	// int on 32-bit builds or make every page read allocate gigabytes.
+	pageSize := binary.LittleEndian.Uint32(hdr[236:240])
+	switch pageSize {
+	case 2048, 4096, 8192, 16384, 32768:
+	default:
+		return nil, fmt.Errorf("ese: invalid page size %d (expected 2048, 4096, 8192, 16384 or 32768)", pageSize)
+	}
 	d := &Database{
 		r:        r,
 		closer:   closer,
 		version:  binary.LittleEndian.Uint32(hdr[8:12]),
 		revision: binary.LittleEndian.Uint32(hdr[232:236]),
-		pageSize: int(binary.LittleEndian.Uint32(hdr[236:240])),
+		pageSize: int(pageSize),
 		tables:   make(map[string]*Table),
-	}
-	if d.pageSize == 0 || d.pageSize%2 != 0 {
-		return nil, fmt.Errorf("ese: invalid page size %d", d.pageSize)
 	}
 	if err := d.parseCatalog(catalogPageNumber, 0); err != nil {
 		return nil, err

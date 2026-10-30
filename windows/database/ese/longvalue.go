@@ -107,27 +107,34 @@ func (t *Table) resolveLongValue(lid []byte) ([]byte, error) {
 	}
 
 	type seg struct {
-		offset int
+		offset uint64
 		data   []byte
 	}
 	var segs []seg
-	end := 0
+	var end, total uint64
 	for _, e := range t.lvLeaves {
 		if len(e.key) != len(prefix)+4 || !bytes.Equal(e.key[:len(prefix)], prefix) {
 			continue // header entry (key==prefix) or a different LID
 		}
-		offset := int(binary.BigEndian.Uint32(e.key[len(prefix):]))
+		offset := uint64(binary.BigEndian.Uint32(e.key[len(prefix):]))
 		data := e.data
 		if len(data) > 0 && data[0] == 0x18 {
 			return nil, fmt.Errorf("ese: compressed long value (LZXPRESS) not supported")
 		}
 		segs = append(segs, seg{offset: offset, data: data})
-		if offset+len(data) > end {
-			end = offset + len(data)
+		total += uint64(len(data))
+		if offset+uint64(len(data)) > end {
+			end = offset + uint64(len(data))
 		}
 	}
 	if len(segs) == 0 {
 		return nil, fmt.Errorf("ese: long value % x not found", lid)
+	}
+	// The segments of a long value tile it from offset 0 without gaps, so the value can be
+	// no longer than the data they carry. A segment key claiming a larger offset is corrupt;
+	// honouring it would allocate up to 4 GiB of zeros (or wrap int on 32-bit builds).
+	if end > total {
+		return nil, fmt.Errorf("ese: long value % x: segments end at offset %d but carry only %d bytes", lid, end, total)
 	}
 	out := make([]byte, end)
 	for _, s := range segs {
