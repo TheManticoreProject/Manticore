@@ -273,6 +273,9 @@ func (p *PAC) VerifyServerSignature(serverKey []byte) error {
 	if !ok {
 		return fmt.Errorf("pac: unsupported server signature type 0x%x", sigType)
 	}
+	if len(srv.Data) < 4+sz {
+		return fmt.Errorf("pac: server signature buffer too short")
+	}
 	stored := srv.Data[4 : 4+sz]
 
 	zeroed, err := p.rawZeroedForServerSig()
@@ -295,6 +298,12 @@ func (p *PAC) VerifyKDCSignature(krbtgtKey []byte) error {
 	kdc, ok := p.Buffer(BufferKDCChecksum)
 	if !ok {
 		return fmt.Errorf("pac: no KDC signature buffer")
+	}
+	if len(srv.Data) < 4 {
+		return fmt.Errorf("pac: bad server signature buffer")
+	}
+	if len(kdc.Data) < 4 {
+		return fmt.Errorf("pac: bad KDC signature buffer")
 	}
 	srvType := binary.LittleEndian.Uint32(srv.Data[0:])
 	srvSz, ok := checksumSize(srvType)
