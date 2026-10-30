@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -304,11 +305,28 @@ func sendNtTransactWithParameters(
 	parameters []byte,
 ) ([]byte, []byte, uint32) {
 	t.Helper()
+	return sendNtTransactWithParametersEncoding(t, client, function, parameters, false)
+}
+
+// sendNtTransactWithParametersEncoding is sendNtTransactWithParameters with the
+// request's FLAGS2_UNICODE bit chosen by the caller.
+func sendNtTransactWithParametersEncoding(
+	t *testing.T,
+	client *smb1client.Client,
+	function subcommands.NtTransactSubcommand,
+	parameters []byte,
+	unicode bool,
+) ([]byte, []byte, uint32) {
+	t.Helper()
 
 	request := newRequest(codes.SMB_COM_NT_TRANSACT)
 	request.Header.UID = client.Session.SessionUID
 	request.Header.TID = client.Session.TreeID
-	request.Header.Flags2 &^= flags2.Flags2(flags2.FLAGS2_UNICODE)
+	if unicode {
+		request.Header.Flags2 |= flags2.Flags2(flags2.FLAGS2_UNICODE)
+	} else {
+		request.Header.Flags2 &^= flags2.Flags2(flags2.FLAGS2_UNICODE)
+	}
 
 	transaction := commands.NewNtTransactRequest()
 	transaction.Function = types.USHORT(function)
@@ -376,5 +394,32 @@ func TestNtTransactCreateReadsNameLengthAfterEALength(t *testing.T) {
 	}
 	if size := binary.LittleEndian.Uint64(got[56:64]); size != 10 {
 		t.Errorf("EndOfFile is %d, want the 10 bytes of %s", size, name)
+	}
+}
+
+// TestNtTransactCreateUnicodeNameFollowsPad asserts a Unicode Name is read after
+// the pad byte that aligns it to a 2-byte boundary from the start of the
+// parameters ([MS-CIFS] 2.2.7.1.1): the name starts at offset 54, not 53.
+func TestNtTransactCreateUnicodeNameFollowsPad(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("existing.txt", []byte("0123456789")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	_, client := fileServer(t, fs, false)
+
+	name := utf16.EncodeUTF16LE("existing.txt")
+	parameters := make([]byte, 54)                               // 53 fixed bytes, then the pad byte
+	binary.LittleEndian.PutUint32(parameters[8:12], 0x00120089)  // DesiredAccess: read
+	binary.LittleEndian.PutUint32(parameters[28:32], 0x00000001) // FILE_OPEN
+	binary.LittleEndian.PutUint32(parameters[32:36], 0x00000040) // FILE_NON_DIRECTORY_FILE
+	binary.LittleEndian.PutUint32(parameters[44:48], uint32(len(name)))
+	parameters = append(parameters, name...)
+
+	got, _, status := sendNtTransactWithParametersEncoding(t, client, subcommands.NT_TRANSACT_CREATE, parameters, true)
+	if status != 0 {
+		t.Fatalf("NT_TRANSACT_CREATE reported 0x%08X, want success", status)
+	}
+	if size := binary.LittleEndian.Uint64(got[56:64]); size != 10 {
+		t.Errorf("EndOfFile is %d, want the 10 bytes of existing.txt", size)
 	}
 }

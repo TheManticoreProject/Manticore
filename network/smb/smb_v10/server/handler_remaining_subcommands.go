@@ -202,12 +202,22 @@ func handleNtTransactCreate(
 		return nil, nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
-	// NameLength is bounded while still unsigned: as an int it is negative on a
-	// 32-bit build from 0x80000000, and fixed+NameLength wraps from 0x7FFFFFFF.
-	if uint64(nameLength) > uint64(len(reassembly.parameters)-fixed) {
+	// A Unicode Name is aligned to a 2-byte boundary from the start of the
+	// parameters ([MS-CIFS] 2.2.7.1.1), so it follows a pad byte at offset 53.
+	nameStart := fixed
+	if req.Header.Flags2.IsUnicode() {
+		nameStart++
+	}
+	if nameStart > len(reassembly.parameters) {
 		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
 	}
-	name := decodeWireString([]types.UCHAR(reassembly.parameters[fixed:fixed+int(nameLength)]),
+
+	// NameLength is bounded while still unsigned: as an int it is negative on a
+	// 32-bit build from 0x80000000, and nameStart+NameLength wraps from 0x7FFFFFFF.
+	if uint64(nameLength) > uint64(len(reassembly.parameters)-nameStart) {
+		return nil, nil, nt_status.NT_STATUS_INVALID_PARAMETER
+	}
+	name := decodeWireString([]types.UCHAR(reassembly.parameters[nameStart:nameStart+int(nameLength)]),
 		req.Header.Flags2.IsUnicode())
 
 	flags, status := openFlagsFor(desiredAccess, createDisposition, createOptions)
