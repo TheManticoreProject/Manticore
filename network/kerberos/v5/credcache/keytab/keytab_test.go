@@ -199,3 +199,13 @@ func TestKeytabUnmarshalErrors(t *testing.T) {
 		t.Fatal("expected truncation error")
 	}
 }
+
+// TestKeytabRejectsSizeOverflowingPos checks that an entry size just below
+// MaxInt32 is rejected. On 32-bit builds r.pos+size wrapped negative and passed
+// the bounds check, so the subsequent slice expression panicked.
+func TestKeytabRejectsSizeOverflowingPos(t *testing.T) {
+	crafted := []byte{0x05, 0x02, 0x7f, 0xff, 0xff, 0xff, 0x41}
+	if _, err := Unmarshal(crafted); err == nil {
+		t.Fatal("expected error for size overflowing the read offset, got nil")
+	}
+}

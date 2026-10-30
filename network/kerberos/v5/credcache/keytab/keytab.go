@@ -272,7 +272,10 @@ type reader struct {
 }
 
 func (r *reader) need(n int) error {
-	if n < 0 || r.pos+n > len(r.b) {
+	// Compare against the remaining length rather than computing r.pos+n:
+	// on 32-bit platforms a length near MaxInt32 makes the sum wrap
+	// negative and slip past the bounds check.
+	if n < 0 || n > len(r.b)-r.pos {
 		return fmt.Errorf("keytab: truncated: need %d bytes at offset %d of %d", n, r.pos, len(r.b))
 	}
 	return nil
