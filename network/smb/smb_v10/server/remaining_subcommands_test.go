@@ -423,3 +423,48 @@ func TestNtTransactCreateUnicodeNameFollowsPad(t *testing.T) {
 		t.Errorf("EndOfFile is %d, want the 10 bytes of existing.txt", size)
 	}
 }
+
+// TestNtTransactCreateDeleteOnCloseOnAReadOnlyShareIsRefused asserts the
+// NT_TRANSACT open holds FILE_DELETE_ON_CLOSE to the same rules as
+// SMB_COM_NT_CREATE_ANDX: without DELETE access, or on a read-only share, the
+// create is refused and the file survives.
+func TestNtTransactCreateDeleteOnCloseOnAReadOnlyShareIsRefused(t *testing.T) {
+	cases := []struct {
+		name     string
+		readOnly bool
+		access   uint32
+		want     nt_status.NT_STATUS
+	}{
+		{"read-only share, read access", true, 0x00120089, nt_status.NT_STATUS_ACCESS_DENIED},
+		{"read-only share, delete access", true, 0x00130089, nt_status.NT_STATUS_CANNOT_DELETE},
+		{"writable share, read access", false, 0x00120089, nt_status.NT_STATUS_ACCESS_DENIED},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := NewMemoryFileSystem("FILES")
+			if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+				t.Fatalf("AddFile() error = %v", err)
+			}
+			_, client := fileServer(t, fs, tc.readOnly)
+
+			name := "keep.txt"
+			parameters := make([]byte, 53)
+			binary.LittleEndian.PutUint32(parameters[8:12], tc.access)
+			binary.LittleEndian.PutUint32(parameters[28:32], 0x00000001) // FILE_OPEN
+			binary.LittleEndian.PutUint32(parameters[32:36], 0x00001040) // FILE_NON_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE
+			binary.LittleEndian.PutUint32(parameters[44:48], uint32(len(name)))
+			parameters = append(parameters, []byte(name)...)
+
+			got, _, status := sendNtTransactWithParameters(t, client, subcommands.NT_TRANSACT_CREATE, parameters)
+			if status == 0 && len(got) >= 4 {
+				client.CloseFile(smb1client.FID(binary.LittleEndian.Uint16(got[2:4])))
+			}
+			if status != uint32(tc.want) {
+				t.Errorf("NT_TRANSACT_CREATE reported 0x%08X, want 0x%08X", status, uint32(tc.want))
+			}
+			if _, err := fs.Stat("keep.txt"); err != nil {
+				t.Error("the file was deleted through FILE_DELETE_ON_CLOSE")
+			}
+		})
+	}
+}
