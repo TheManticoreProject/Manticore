@@ -2,6 +2,7 @@ package createcontext
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 )
 
@@ -93,5 +94,31 @@ func TestParseRejectsCyclicNext(t *testing.T) {
 	buf[0] = 0x04
 	if _, err := Parse(buf); err == nil {
 		t.Error("Parse should reject a Next offset smaller than the header")
+	}
+}
+
+// Next and DataLength values of 2 GiB or more must be rejected. On 32-bit builds
+// int(uint32) of DataLength wrapped negative and slipped past the bounds check;
+// the Next cases guard the same conversion for the chain offset.
+func TestParseHugeNextOrDataLength(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		next       uint32
+		dataLength uint32
+	}{
+		{"DataLength 0x7FFFFFF8", 0, 0x7FFFFFF8},
+		{"DataLength 0xFFFFFFFF", 0, 0xFFFFFFFF},
+		{"Next 0x80000000", 0x80000000, 4},
+		{"Next 0xFFFFFFF0", 0xFFFFFFF0, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := make([]byte, 32)
+			binary.LittleEndian.PutUint32(buf[0:4], tc.next)
+			binary.LittleEndian.PutUint16(buf[10:12], 16) // DataOffset
+			binary.LittleEndian.PutUint32(buf[12:16], tc.dataLength)
+			if _, err := Parse(buf); err == nil {
+				t.Fatalf("Parse accepted Next %#x, DataLength %#x in a %d-byte buffer", tc.next, tc.dataLength, len(buf))
+			}
+		})
 	}
 }
