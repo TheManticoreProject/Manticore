@@ -60,8 +60,11 @@ func (u *UUIDv6) Marshal() ([]byte, error) {
 	// Copy node ID to the remaining bytes
 	copy(data[9:15], u.NodeID[:])
 
-	// Set the UUID version (6) and fill base data
+	// Set the UUID version (6) and variant. The variant nibble carries the
+	// RFC 9562 variant (0b10) followed by the top 2 bits of the 14-bit
+	// clock sequence.
 	u.UUID.Version = 6
+	u.UUID.Variant = 0x8 | byte((u.ClockSeq>>12)&0x3)
 	u.UUID.Data = data
 
 	// Use the UUID's Marshal method to get the final 16-byte array
@@ -95,8 +98,8 @@ func (u *UUIDv6) Unmarshal(marshalledData []byte) (int, error) {
 	// Extract 12-bit timeLow
 	timeLow := uint16(u.UUID.Data[6])<<4 | (uint16(u.UUID.Data[7]>>4) & 0x0F)
 
-	// Extract clock sequence
-	u.ClockSeq = uint16(u.UUID.Data[7]&0x0F)<<8 | uint16(u.UUID.Data[8])
+	// Extract the 14-bit clock sequence; its top 2 bits follow the variant bits
+	u.ClockSeq = uint16(u.UUID.Variant&0x3)<<12 | uint16(u.UUID.Data[7]&0x0F)<<8 | uint16(u.UUID.Data[8])
 
 	// Reconstruct the time field
 	u.Time = (uint64(timeHigh) << 28) | (uint64(timeMid) << 12) | uint64(timeLow)
