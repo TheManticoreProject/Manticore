@@ -97,8 +97,8 @@ func (fi *FileRenameInformation) Unmarshal(data []byte) error {
 	}
 	fi.ReplaceIfExists = data[0] != 0
 	fi.RootDirectory = binary.LittleEndian.Uint64(data[8:16])
-	nameLen := int(binary.LittleEndian.Uint32(data[16:20]))
-	if 20+nameLen > len(data) {
+	nameLen := binary.LittleEndian.Uint32(data[16:20])
+	if uint64(nameLen) > uint64(len(data)-20) {
 		return fmt.Errorf("FILE_RENAME_INFORMATION: name length %d exceeds buffer", nameLen)
 	}
 	u16 := make([]uint16, nameLen/2)

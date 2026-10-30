@@ -70,12 +70,12 @@ type FileNotifyInformation struct {
 func ParseFileNotifyInformation(buf []byte) []FileNotifyInformation {
 	var out []FileNotifyInformation
 	for pos := 0; pos+12 <= len(buf); {
-		next := int(binary.LittleEndian.Uint32(buf[pos : pos+4]))
+		next := binary.LittleEndian.Uint32(buf[pos : pos+4])
 		action := FileAction(binary.LittleEndian.Uint32(buf[pos+4 : pos+8]))
 		nameLen := int(binary.LittleEndian.Uint32(buf[pos+8 : pos+12]))
 
 		name := ""
-		if nameLen > 0 && pos+12+nameLen <= len(buf) {
+		if nameLen > 0 && nameLen <= len(buf)-pos-12 {
 			u16 := make([]uint16, nameLen/2)
 			for i := range u16 {
 				u16[i] = binary.LittleEndian.Uint16(buf[pos+12+i*2:])
@@ -84,10 +84,12 @@ func ParseFileNotifyInformation(buf []byte) []FileNotifyInformation {
 		}
 		out = append(out, FileNotifyInformation{Action: action, FileName: name})
 
-		if next == 0 {
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if next == 0 || uint64(next) > uint64(len(buf)-pos) {
 			break
 		}
-		pos += next
+		pos += int(next)
 	}
 	return out
 }

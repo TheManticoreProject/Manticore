@@ -70,7 +70,7 @@ func (fi *FileFullDirectoryInformation) Unmarshal(data []byte) error {
 	fi.FileAttributes = binary.LittleEndian.Uint32(data[56:60])
 	nameLen := int(binary.LittleEndian.Uint32(data[60:64]))
 	fi.EaSize = binary.LittleEndian.Uint32(data[64:68])
-	if nameLen > 0 && fileFullDirInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileFullDirInfoFixedSize {
 		fi.FileName = decodeUTF16LE(data[fileFullDirInfoFixedSize : fileFullDirInfoFixedSize+nameLen])
 	}
 	return nil
@@ -86,7 +86,9 @@ func ParseFileFullDirectoryInformationList(buf []byte) []FileFullDirectoryInform
 			break
 		}
 		out = append(out, e)
-		if e.NextEntryOffset == 0 {
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
 			break
 		}
 		pos += int(e.NextEntryOffset)
@@ -157,7 +159,7 @@ func (fi *FileIdFullDirectoryInformation) Unmarshal(data []byte) error {
 		FileId: binary.LittleEndian.Uint64(data[72:80]),
 	}
 	nameLen := int(binary.LittleEndian.Uint32(data[60:64]))
-	if nameLen > 0 && fileIdFullDirInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileIdFullDirInfoFixedSize {
 		fi.FileName = decodeUTF16LE(data[fileIdFullDirInfoFixedSize : fileIdFullDirInfoFixedSize+nameLen])
 	}
 	return nil
@@ -234,7 +236,7 @@ func (fi *FileBothDirectoryInformation) Unmarshal(data []byte) error {
 		shortLen = 24
 	}
 	fi.ShortName = decodeUTF16LE(data[70 : 70+shortLen])
-	if nameLen > 0 && fileBothDirInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileBothDirInfoFixedSize {
 		fi.FileName = decodeUTF16LE(data[fileBothDirInfoFixedSize : fileBothDirInfoFixedSize+nameLen])
 	}
 	return nil
@@ -250,7 +252,9 @@ func ParseFileBothDirectoryInformationList(buf []byte) []FileBothDirectoryInform
 			break
 		}
 		out = append(out, e)
-		if e.NextEntryOffset == 0 {
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
 			break
 		}
 		pos += int(e.NextEntryOffset)
@@ -334,7 +338,7 @@ func (fi *FileIdBothDirectoryInformation) Unmarshal(data []byte) error {
 	}
 	fi.ShortName = decodeUTF16LE(data[70 : 70+shortLen])
 	fi.FileId = binary.LittleEndian.Uint64(data[96:104])
-	if nameLen > 0 && fileIdBothDirInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileIdBothDirInfoFixedSize {
 		fi.FileName = decodeUTF16LE(data[fileIdBothDirInfoFixedSize : fileIdBothDirInfoFixedSize+nameLen])
 	}
 	return nil
@@ -350,7 +354,9 @@ func ParseFileIdBothDirectoryInformationList(buf []byte) []FileIdBothDirectoryIn
 			break
 		}
 		out = append(out, e)
-		if e.NextEntryOffset == 0 {
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
 			break
 		}
 		pos += int(e.NextEntryOffset)
@@ -391,7 +397,7 @@ func (fi *FileNamesInformation) Unmarshal(data []byte) error {
 	fi.NextEntryOffset = binary.LittleEndian.Uint32(data[0:4])
 	fi.FileIndex = binary.LittleEndian.Uint32(data[4:8])
 	nameLen := int(binary.LittleEndian.Uint32(data[8:12]))
-	if nameLen > 0 && fileNamesInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileNamesInfoFixedSize {
 		fi.FileName = decodeUTF16LE(data[fileNamesInfoFixedSize : fileNamesInfoFixedSize+nameLen])
 	}
 	return nil
@@ -407,7 +413,9 @@ func ParseFileNamesInformationList(buf []byte) []FileNamesInformation {
 			break
 		}
 		out = append(out, e)
-		if e.NextEntryOffset == 0 {
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
 			break
 		}
 		pos += int(e.NextEntryOffset)

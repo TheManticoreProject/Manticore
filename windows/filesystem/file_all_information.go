@@ -102,7 +102,7 @@ func (fi *FileAllInformation) Unmarshal(data []byte) error {
 	nameLen := int(binary.LittleEndian.Uint32(data[off : off+4]))
 	off += 4
 
-	if nameLen > 0 && off+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-off {
 		fi.FileName = decodeUTF16LE(data[off : off+nameLen])
 	} else {
 		fi.FileName = ""
