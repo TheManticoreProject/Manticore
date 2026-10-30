@@ -118,10 +118,13 @@ func (e *FileGetQuotaInformation) Unmarshal(data []byte) (int, error) {
 		return 0, fmt.Errorf("subcommands: FILE_GET_QUOTA_INFORMATION requires at least %d bytes, got %d", fileGetQuotaInformationFixedSize, len(data))
 	}
 	e.NextEntryOffset = binary.LittleEndian.Uint32(data[0:4])
-	sidLength := int(binary.LittleEndian.Uint32(data[4:8]))
-	if len(data) < fileGetQuotaInformationFixedSize+sidLength {
-		return fileGetQuotaInformationFixedSize, fmt.Errorf("subcommands: FILE_GET_QUOTA_INFORMATION SID truncated: need %d, have %d", sidLength, len(data)-fileGetQuotaInformationFixedSize)
+	wireSidLength := binary.LittleEndian.Uint32(data[4:8])
+	// Bounded while still unsigned: int() of a length from 0x80000000 is negative on
+	// a 32-bit build and would pass an int comparison.
+	if uint64(wireSidLength) > uint64(len(data)-fileGetQuotaInformationFixedSize) {
+		return fileGetQuotaInformationFixedSize, fmt.Errorf("subcommands: FILE_GET_QUOTA_INFORMATION SID truncated: need %d, have %d", wireSidLength, len(data)-fileGetQuotaInformationFixedSize)
 	}
+	sidLength := int(wireSidLength)
 	e.Sid = append([]byte{}, data[fileGetQuotaInformationFixedSize:fileGetQuotaInformationFixedSize+sidLength]...)
 	return fileGetQuotaInformationFixedSize + sidLength, nil
 }
@@ -165,14 +168,17 @@ func (q *FileQuotaInformation) Unmarshal(data []byte) (int, error) {
 		return 0, fmt.Errorf("subcommands: FILE_QUOTA_INFORMATION requires at least %d bytes, got %d", fileQuotaInformationFixedSize, len(data))
 	}
 	q.NextEntryOffset = binary.LittleEndian.Uint32(data[0:4])
-	sidLength := int(binary.LittleEndian.Uint32(data[4:8]))
+	wireSidLength := binary.LittleEndian.Uint32(data[4:8])
 	q.ChangeTime = binary.LittleEndian.Uint64(data[8:16])
 	q.QuotaUsed = int64(binary.LittleEndian.Uint64(data[16:24]))
 	q.QuotaThreshold = int64(binary.LittleEndian.Uint64(data[24:32]))
 	q.QuotaLimit = int64(binary.LittleEndian.Uint64(data[32:40]))
-	if len(data) < fileQuotaInformationFixedSize+sidLength {
-		return fileQuotaInformationFixedSize, fmt.Errorf("subcommands: FILE_QUOTA_INFORMATION SID truncated: need %d, have %d", sidLength, len(data)-fileQuotaInformationFixedSize)
+	// Bounded while still unsigned: int() of a length from 0x80000000 is negative on
+	// a 32-bit build and would pass an int comparison.
+	if uint64(wireSidLength) > uint64(len(data)-fileQuotaInformationFixedSize) {
+		return fileQuotaInformationFixedSize, fmt.Errorf("subcommands: FILE_QUOTA_INFORMATION SID truncated: need %d, have %d", wireSidLength, len(data)-fileQuotaInformationFixedSize)
 	}
+	sidLength := int(wireSidLength)
 	q.Sid = append([]byte{}, data[fileQuotaInformationFixedSize:fileQuotaInformationFixedSize+sidLength]...)
 	return fileQuotaInformationFixedSize + sidLength, nil
 }
@@ -191,6 +197,11 @@ func ParseFileQuotaInformationList(data []byte) ([]FileQuotaInformation, error) 
 		items = append(items, rec)
 		if rec.NextEntryOffset == 0 {
 			break
+		}
+		// A link shorter than a record's fixed part, or past the end of the buffer, is
+		// malformed; adding it unchecked wraps offset negative on a 32-bit build.
+		if rec.NextEntryOffset < fileQuotaInformationFixedSize || uint64(rec.NextEntryOffset) > uint64(len(data)-offset) {
+			return items, fmt.Errorf("subcommands: FILE_QUOTA_INFORMATION NextEntryOffset %d is outside the %d bytes that remain", rec.NextEntryOffset, len(data)-offset)
 		}
 		offset += int(rec.NextEntryOffset)
 	}

@@ -197,7 +197,8 @@ func (r *SrvRequestResumeKeyResponse) Unmarshal(data []byte) (int, error) {
 
 	contextLength := binary.LittleEndian.Uint32(data[offset : offset+4])
 	offset += 4
-	if len(data) < offset+int(contextLength) {
+	// Compared in uint64: int() of a length from 0x80000000 is negative on a 32-bit build.
+	if uint64(contextLength) > uint64(len(data)-offset) {
 		return offset, fmt.Errorf("subcommands: FSCTL_SRV_REQUEST_RESUME_KEY response Context truncated: need %d, have %d", contextLength, len(data)-offset)
 	}
 	r.Context = append([]byte{}, data[offset:offset+int(contextLength)]...)

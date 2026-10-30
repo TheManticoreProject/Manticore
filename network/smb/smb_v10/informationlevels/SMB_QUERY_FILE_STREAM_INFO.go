@@ -89,7 +89,7 @@ func (s *SMB_QUERY_FILE_STREAM_INFO) Unmarshal(data []byte) (int, error) {
 	offset := 24
 
 	// StreamName (StreamNameLength bytes).
-	if len(data) < offset+int(s.Streamnamelength) {
+	if uint64(s.Streamnamelength) > uint64(len(data)-offset) {
 		return offset, fmt.Errorf("data too short for StreamName (need %d bytes, have %d)", s.Streamnamelength, len(data)-offset)
 	}
 	s.Streamname = append([]types.UCHAR{}, data[offset:offset+int(s.Streamnamelength)]...)
