@@ -75,13 +75,15 @@ func (a *SrvSnapshotArray) Unmarshal(data []byte) (int, error) {
 	}
 	a.NumberOfSnapShots = binary.LittleEndian.Uint32(data[0:4])
 	a.NumberOfSnapShotsReturned = binary.LittleEndian.Uint32(data[4:8])
-	arraySize := int(binary.LittleEndian.Uint32(data[8:12]))
+	wireArraySize := binary.LittleEndian.Uint32(data[8:12])
 
 	// The list occupies SnapShotArraySize octets, but a buffer-probe response may omit it,
-	// so read only what is actually present.
+	// so read only what is actually present. The clamp is done before the int conversion,
+	// which turns a size from 0x80000000 negative on a 32-bit build.
 	avail := len(data) - srvSnapshotArrayHeaderSize
-	if arraySize > avail {
-		arraySize = avail
+	arraySize := avail
+	if uint64(wireArraySize) < uint64(avail) {
+		arraySize = int(wireArraySize)
 	}
 	multiSZ := data[srvSnapshotArrayHeaderSize : srvSnapshotArrayHeaderSize+arraySize]
 

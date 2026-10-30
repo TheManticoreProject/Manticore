@@ -84,7 +84,7 @@ func (s *SMB_QUERY_FS_VOLUME_INFO) Unmarshal(data []byte) (int, error) {
 	offset := 18
 
 	// VolumeLabel (VolumeLabelSize bytes).
-	if len(data) < offset+int(s.Volumelabelsize) {
+	if uint64(s.Volumelabelsize) > uint64(len(data)-offset) {
 		return offset, fmt.Errorf("data too short for VolumeLabel (need %d bytes, have %d)", s.Volumelabelsize, len(data)-offset)
 	}
 	s.Volumelabel = append([]types.UCHAR{}, data[offset:offset+int(s.Volumelabelsize)]...)

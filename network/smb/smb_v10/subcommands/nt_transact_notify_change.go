@@ -134,10 +134,13 @@ func (f *FileNotifyInformation) Unmarshal(data []byte) (int, error) {
 	}
 	f.NextEntryOffset = binary.LittleEndian.Uint32(data[0:4])
 	f.Action = binary.LittleEndian.Uint32(data[4:8])
-	nameLength := int(binary.LittleEndian.Uint32(data[8:12]))
-	if len(data) < fileNotifyInformationHeaderSize+nameLength {
-		return fileNotifyInformationHeaderSize, fmt.Errorf("subcommands: FILE_NOTIFY_INFORMATION FileName truncated: need %d, have %d", nameLength, len(data)-fileNotifyInformationHeaderSize)
+	// Bounded while still unsigned: int() of a length from 0x80000000 is negative on a
+	// 32-bit build and would pass the check below.
+	wireNameLength := binary.LittleEndian.Uint32(data[8:12])
+	if uint64(wireNameLength) > uint64(len(data)-fileNotifyInformationHeaderSize) {
+		return fileNotifyInformationHeaderSize, fmt.Errorf("subcommands: FILE_NOTIFY_INFORMATION FileName truncated: need %d, have %d", wireNameLength, len(data)-fileNotifyInformationHeaderSize)
 	}
+	nameLength := int(wireNameLength)
 	f.FileName = decodeUTF16LE(data[fileNotifyInformationHeaderSize : fileNotifyInformationHeaderSize+nameLength])
 	return fileNotifyInformationHeaderSize + nameLength, nil
 }
@@ -188,6 +191,11 @@ func ParseFileNotifyInformationList(data []byte) ([]FileNotifyInformation, error
 		items = append(items, rec)
 		if rec.NextEntryOffset == 0 {
 			break
+		}
+		// A link shorter than a record header, or past the end of the buffer, is
+		// malformed; adding it unchecked wraps offset negative on a 32-bit build.
+		if rec.NextEntryOffset < fileNotifyInformationHeaderSize || uint64(rec.NextEntryOffset) > uint64(len(data)-offset) {
+			return items, fmt.Errorf("subcommands: FILE_NOTIFY_INFORMATION NextEntryOffset %d is outside the %d bytes that remain", rec.NextEntryOffset, len(data)-offset)
 		}
 		offset += int(rec.NextEntryOffset)
 	}

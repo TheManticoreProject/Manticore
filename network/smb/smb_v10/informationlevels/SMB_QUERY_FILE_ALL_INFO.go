@@ -167,7 +167,7 @@ func (s *SMB_QUERY_FILE_ALL_INFO) Unmarshal(data []byte) (int, error) {
 	offset += 4
 
 	// FileName (FileNameLength bytes).
-	if len(data) < offset+int(s.Filenamelength) {
+	if uint64(s.Filenamelength) > uint64(len(data)-offset) {
 		return offset, fmt.Errorf("data too short for FileName (need %d bytes, have %d)", s.Filenamelength, len(data)-offset)
 	}
 	s.Filename = append([]types.UCHAR{}, data[offset:offset+int(s.Filenamelength)]...)

@@ -73,7 +73,7 @@ func (s *SMB_QUERY_FS_ATTRIBUTE_INFO) Unmarshal(data []byte) (int, error) {
 	offset := 12
 
 	// FileSystemName (LengthOfFileSystemName bytes).
-	if len(data) < offset+int(s.Lengthoffilesystemname) {
+	if uint64(s.Lengthoffilesystemname) > uint64(len(data)-offset) {
 		return offset, fmt.Errorf("data too short for FileSystemName (need %d bytes, have %d)", s.Lengthoffilesystemname, len(data)-offset)
 	}
 	s.Filesystemname = append([]types.UCHAR{}, data[offset:offset+int(s.Lengthoffilesystemname)]...)
