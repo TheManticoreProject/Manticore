@@ -78,14 +78,14 @@ func TestCompressPatternV1(t *testing.T) {
 	if compressed == nil {
 		t.Fatal("expected compression result, got nil")
 	}
-	if len(compressed) != 4 {
-		t.Fatalf("compressed length = %d, want 4", len(compressed))
+	if len(compressed) != 8 {
+		t.Fatalf("compressed length = %d, want 8", len(compressed))
 	}
 	if compressed[0] != 0xAA {
 		t.Errorf("pattern byte = 0x%02x, want 0xAA", compressed[0])
 	}
 
-	decompressed, err := DecompressPatternV1(compressed)
+	decompressed, err := DecompressPatternV1(compressed, uint32(len(data)))
 	if err != nil {
 		t.Fatalf("DecompressPatternV1: %v", err)
 	}
@@ -110,15 +110,15 @@ func TestCompressPatternV1Empty(t *testing.T) {
 }
 
 func TestDecompressPatternV1TooShort(t *testing.T) {
-	_, err := DecompressPatternV1([]byte{0xAA, 0x00})
+	_, err := DecompressPatternV1([]byte{0xAA, 0x00, 0x00, 0x00}, 16)
 	if err == nil {
 		t.Error("expected error for short data")
 	}
 }
 
 func TestDecompressPatternV1ReservedByteNonZero(t *testing.T) {
-	// Pattern_V1: pattern(1) + reserved(1) + count(2). Reserved MUST be zero.
-	_, err := DecompressPatternV1([]byte{0xAA, 0xFF, 0x03, 0x00})
+	// Pattern_V1: Pattern(1) + Reserved1(1) + Reserved2(2) + Repetitions(4).
+	_, err := DecompressPatternV1([]byte{0xAA, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00}, 16)
 	if err == nil {
 		t.Error("expected error for non-zero reserved byte")
 	}
@@ -164,26 +164,48 @@ func TestSelectedCompressionAlgorithmsEmpty(t *testing.T) {
 
 func TestCompressionChainedPayloadHeaderRoundTrip(t *testing.T) {
 	h := &CompressionChainedPayloadHeader{
-		OriginalCompressedSegmentSize: 512,
-		CompressionAlgorithm:          commands.SMB2_COMPRESSION_PATTERN_V1,
+		CompressionAlgorithm: commands.SMB2_COMPRESSION_PATTERN_V1,
+		Flags:                SMB2_COMPRESSION_FLAG_CHAINED,
+		Length:               8,
 	}
 	wire := MarshalCompressionChainedPayloadHeader(h)
-	if len(wire) != chainedPayloadHeaderSize {
-		t.Fatalf("wire length = %d, want %d", len(wire), chainedPayloadHeaderSize)
-	}
-	if wire[6] != 0 || wire[7] != 0 {
-		t.Errorf("reserved = %02x %02x, want 00 00", wire[6], wire[7])
+	want := []byte{0x04, 0x00, 0x01, 0x00, 0x08, 0x00, 0x00, 0x00}
+	if !bytes.Equal(wire, want) {
+		t.Fatalf("wire = % x, want % x", wire, want)
 	}
 
 	parsed, err := ParseCompressionChainedPayloadHeader(wire)
 	if err != nil {
 		t.Fatalf("ParseCompressionChainedPayloadHeader: %v", err)
 	}
-	if parsed.OriginalCompressedSegmentSize != 512 {
-		t.Errorf("OriginalCompressedSegmentSize = %d, want 512", parsed.OriginalCompressedSegmentSize)
+	if *parsed != *h {
+		t.Errorf("parsed = %+v, want %+v", *parsed, *h)
 	}
-	if parsed.CompressionAlgorithm != commands.SMB2_COMPRESSION_PATTERN_V1 {
-		t.Errorf("CompressionAlgorithm = 0x%04x, want 0x%04x", parsed.CompressionAlgorithm, commands.SMB2_COMPRESSION_PATTERN_V1)
+}
+
+func TestCompressionChainedPayloadHeaderOriginalPayloadSize(t *testing.T) {
+	// MS-SMB2 2.2.42.2.1: OriginalPayloadSize is present for LZNT1, LZ77 and
+	// LZ77+Huffman, and Length includes it.
+	h := &CompressionChainedPayloadHeader{
+		CompressionAlgorithm: commands.SMB2_COMPRESSION_LZ77,
+		Flags:                SMB2_COMPRESSION_FLAG_NONE,
+		Length:               9,
+		OriginalPayloadSize:  256,
+	}
+	wire := MarshalCompressionChainedPayloadHeader(h)
+	want := []byte{0x02, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00}
+	if !bytes.Equal(wire, want) {
+		t.Fatalf("wire = % x, want % x", wire, want)
+	}
+	parsed, err := ParseCompressionChainedPayloadHeader(wire)
+	if err != nil {
+		t.Fatalf("ParseCompressionChainedPayloadHeader: %v", err)
+	}
+	if *parsed != *h {
+		t.Errorf("parsed = %+v, want %+v", *parsed, *h)
+	}
+	if _, err := ParseCompressionChainedPayloadHeader(want[:8]); err == nil {
+		t.Error("expected error for LZ77 header missing OriginalPayloadSize")
 	}
 }
 
@@ -197,8 +219,9 @@ func TestParseCompressionChainedPayloadHeaderTooShort(t *testing.T) {
 func TestWalkCompressionChainSingleNone(t *testing.T) {
 	payload := []byte("hello world")
 	hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
-		OriginalCompressedSegmentSize: uint32(len(payload)),
-		CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+		CompressionAlgorithm: commands.SMB2_COMPRESSION_NONE,
+		Flags:                SMB2_COMPRESSION_FLAG_CHAINED,
+		Length:               uint32(len(payload)),
 	})
 	data := append(hdr, payload...)
 
@@ -214,49 +237,65 @@ func TestWalkCompressionChainSingleNone(t *testing.T) {
 	}
 }
 
-func TestWalkCompressionChainPatternV1ThenLZ77(t *testing.T) {
-	patData := CompressPatternV1(bytes.Repeat([]byte{0xCC}, 128))
-	patHdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
-		OriginalCompressedSegmentSize: 128,
-		CompressionAlgorithm:          commands.SMB2_COMPRESSION_PATTERN_V1,
-	})
-	lzPayload := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
-	lzHdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
-		OriginalCompressedSegmentSize: 256,
-		CompressionAlgorithm:          commands.SMB2_COMPRESSION_LZ77,
-	})
-
-	var data []byte
-	data = append(data, patHdr...)
-	data = append(data, patData...)
-	data = append(data, lzHdr...)
-	data = append(data, lzPayload...)
+// TestWalkCompressionChainSpecLayout walks a chained payload built byte-for-byte
+// from MS-SMB2 2.2.42.2.1 / 2.2.42.2.2: a Pattern_V1 segment, a NONE segment and
+// an LZ77 segment carrying OriginalPayloadSize.
+func TestWalkCompressionChainSpecLayout(t *testing.T) {
+	data := []byte{
+		// CompressionAlgorithm=Pattern_V1, Flags=CHAINED, Length=8
+		0x04, 0x00, 0x01, 0x00, 0x08, 0x00, 0x00, 0x00,
+		// Pattern=0xAA, Reserved1, Reserved2, Repetitions=128
+		0xAA, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
+		// CompressionAlgorithm=NONE, Flags=0, Length=5
+		0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
+		'h', 'e', 'l', 'l', 'o',
+		// CompressionAlgorithm=LZ77, Flags=0, Length=9, OriginalPayloadSize=256
+		0x02, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+		0x01, 0x02, 0x03, 0x04, 0x05,
+	}
 
 	segs, err := WalkCompressionChain(data)
 	if err != nil {
 		t.Fatalf("WalkCompressionChain: %v", err)
 	}
-	if len(segs) != 2 {
-		t.Fatalf("got %d segments, want 2", len(segs))
+	if len(segs) != 3 {
+		t.Fatalf("got %d segments, want 3", len(segs))
 	}
-	if segs[0].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_PATTERN_V1 {
-		t.Errorf("seg[0] algorithm = 0x%04x, want Pattern_V1", segs[0].Header.CompressionAlgorithm)
+
+	if segs[0].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_PATTERN_V1 || segs[0].Header.Flags != SMB2_COMPRESSION_FLAG_CHAINED {
+		t.Errorf("seg[0] header = %+v, want Pattern_V1 / CHAINED", segs[0].Header)
 	}
-	if len(segs[0].CompressedData) != 4 {
-		t.Errorf("seg[0] data len = %d, want 4", len(segs[0].CompressedData))
+	pat, err := DecompressPatternV1(segs[0].CompressedData, 1024)
+	if err != nil {
+		t.Fatalf("DecompressPatternV1: %v", err)
 	}
-	if segs[1].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_LZ77 {
-		t.Errorf("seg[1] algorithm = 0x%04x, want LZ77", segs[1].Header.CompressionAlgorithm)
+	if !bytes.Equal(pat, bytes.Repeat([]byte{0xAA}, 128)) {
+		t.Errorf("seg[0] decompressed %d bytes, want 128 x 0xAA", len(pat))
 	}
-	if !bytes.Equal(segs[1].CompressedData, lzPayload) {
-		t.Errorf("seg[1] data = %v, want %v", segs[1].CompressedData, lzPayload)
+
+	if segs[1].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_NONE || !bytes.Equal(segs[1].CompressedData, []byte("hello")) {
+		t.Errorf("seg[1] = %+v, want NONE \"hello\"", segs[1])
+	}
+
+	if segs[2].Header.CompressionAlgorithm != commands.SMB2_COMPRESSION_LZ77 || segs[2].Header.OriginalPayloadSize != 256 {
+		t.Errorf("seg[2] header = %+v, want LZ77 OriginalPayloadSize=256", segs[2].Header)
+	}
+	if !bytes.Equal(segs[2].CompressedData, []byte{0x01, 0x02, 0x03, 0x04, 0x05}) {
+		t.Errorf("seg[2] data = % x, want 01 02 03 04 05", segs[2].CompressedData)
+	}
+}
+
+func TestDecompressPatternV1RepetitionsExceedMax(t *testing.T) {
+	_, err := DecompressPatternV1([]byte{0xAA, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF}, 4096)
+	if err == nil {
+		t.Error("expected error for Repetitions greater than the original segment size")
 	}
 }
 
 func TestWalkCompressionChainTruncated(t *testing.T) {
 	hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
-		OriginalCompressedSegmentSize: 1000,
-		CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+		CompressionAlgorithm: commands.SMB2_COMPRESSION_NONE,
+		Length:               1000,
 	})
 	data := append(hdr, []byte{0x01, 0x02}...)
 	_, err := WalkCompressionChain(data)
@@ -266,13 +305,12 @@ func TestWalkCompressionChainTruncated(t *testing.T) {
 }
 
 func TestWalkCompressionChainOversizedNoneSegment(t *testing.T) {
-	// OriginalCompressedSegmentSize values that overflow or wrap an int on
-	// 32-bit builds must be rejected, not panic or be taken as "rest of
-	// buffer".
+	// Segment Length values that overflow or wrap an int on 32-bit builds
+	// must be rejected, not panic or be taken as "rest of buffer".
 	for _, size := range []uint32{0x7FFFFFF8, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF} {
 		hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
-			OriginalCompressedSegmentSize: size,
-			CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+			CompressionAlgorithm: commands.SMB2_COMPRESSION_NONE,
+			Length:               size,
 		})
 		data := append(hdr, make([]byte, 24)...)
 		segs, err := WalkCompressionChain(data)
