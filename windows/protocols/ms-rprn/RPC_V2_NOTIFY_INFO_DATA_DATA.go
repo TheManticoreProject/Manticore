@@ -11,7 +11,7 @@ import (
 // labels as integers, so they are numeric here rather than the symbolic names.
 type RPC_V2_NOTIFY_INFO_DATA_DATA struct {
 	Tag                ndr.DWORD            `ndr:"switch"`
-	DwData             ndr.DWORD            `ndr:"case=1"` // TABLE_DWORD
+	DwData             [2]ndr.DWORD         `ndr:"case=1"` // TABLE_DWORD: DWORD dwData[2]
 	String             STRING_CONTAINER     `ndr:"case=2"` // TABLE_STRING
 	DevMode            DEVMODE_CONTAINER    `ndr:"case=3"` // TABLE_DEVMODE
 	SystemTime         SYSTEMTIME_CONTAINER `ndr:"case=4"` // TABLE_TIME
