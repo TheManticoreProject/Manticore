@@ -7,6 +7,7 @@ package client
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
@@ -207,4 +208,34 @@ func buildResponseFrag(t *testing.T, stub []byte, authLevel uint8, token []byte)
 	frag = append(frag, st.Marshal()...)
 	frag = append(frag, token...)
 	return frag
+}
+
+func TestCallRejectsUnauthenticatedResponseOnProtectedConnection(t *testing.T) {
+	for _, level := range []uint8{pdu.AuthLevelPkt, pdu.AuthLevelPktIntegrity, pdu.AuthLevelPktPrivacy} {
+		fake := &fakeSecCtx{tokenLen: 16}
+		ft := &fakeTransport{maxXmit: 4280, maxRecv: 4280}
+		ft.queue(bindAckBytes(t, 4280, 4280))
+
+		c := NewClient(ft)
+		if err := c.SetAuthProvider(pdu.AuthTypeGSSKerberos, level, fake, nil); err != nil {
+			t.Fatalf("SetAuthProvider: %v", err)
+		}
+		if err := c.Bind(testSyntax()); err != nil {
+			t.Fatalf("Bind: %v", err)
+		}
+
+		// A response with no auth verifier (auth_length 0), as an on-path attacker
+		// would inject after stripping the trailer, must not be accepted as plaintext.
+		ft.queue(responseBytes(t, c.callID+1, pdu.PFCFirstFrag|pdu.PFCLastFrag, []byte("injected")))
+		got, err := c.Call(1, []byte("req"))
+		if err == nil {
+			t.Fatalf("level %d: Call accepted an unauthenticated response, stub = %q", level, got)
+		}
+		if !strings.Contains(err.Error(), "no auth verifier") {
+			t.Errorf("level %d: Call failed for another reason: %v", level, err)
+		}
+		if fake.unprotectCalled {
+			t.Errorf("level %d: UnprotectResponse called for a response without a verifier", level)
+		}
+	}
 }
