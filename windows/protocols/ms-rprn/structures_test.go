@@ -1,6 +1,7 @@
 package msrprn
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 
@@ -94,7 +95,7 @@ func TestRPC_PrintPropertyValue_RoundTrip(t *testing.T) {
 // TestRPC_V2_NOTIFY_INFO_DATA_DATA_RoundTrip exercises the union whose case values were the
 // TABLE_* #define constants; a wrong (symbolic) case label would fail to marshal the arm.
 func TestRPC_V2_NOTIFY_INFO_DATA_DATA_RoundTrip(t *testing.T) {
-	roundTrip(t, "notify dword", RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 1, DwData: 0xCAFEF00D})
+	roundTrip(t, "notify dword", RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 1, DwData: [2]ndr.DWORD{0xCAFEF00D, 0x12345678}})
 	roundTrip(t, "notify string", RPC_V2_NOTIFY_INFO_DATA_DATA{
 		Tag:    2,
 		String: STRING_CONTAINER{CbBuf: 6, PszString: []uint16{'h', 'i', 0}},
@@ -113,9 +114,45 @@ func TestRPC_V2_NOTIFY_INFO_RoundTrip(t *testing.T) {
 		Flags:   0,
 		Count:   2,
 		AData: []RPC_V2_NOTIFY_INFO_DATA{
-			{Type: 1, Field: 2, Reserved: 1, Id: 10, Data: RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 1, DwData: 7}},
+			{Type: 1, Field: 2, Reserved: 1, Id: 10, Data: RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 1, DwData: [2]ndr.DWORD{7, 9}}},
 			{Type: 1, Field: 3, Reserved: 2, Id: 11, Data: RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 2, String: STRING_CONTAINER{CbBuf: 2, PszString: []uint16{'x'}}}},
 		},
 	}
 	roundTrip(t, "RPC_V2_NOTIFY_INFO", in)
+}
+
+// TestRPC_V2_NOTIFY_INFO_DATA_DATA_DwordWire pins the TABLE_DWORD arm to the IDL's
+// "DWORD dwData[2]": the discriminant followed by two DWORDs, so a field after the union
+// is read from the right offset.
+func TestRPC_V2_NOTIFY_INFO_DATA_DATA_DwordWire(t *testing.T) {
+	// The union embedded in a struct, followed by the next field on the wire.
+	type unionThenSentinel struct {
+		Data     RPC_V2_NOTIFY_INFO_DATA_DATA
+		Sentinel ndr.DWORD
+	}
+	in := unionThenSentinel{
+		Data:     RPC_V2_NOTIFY_INFO_DATA_DATA{Tag: 1, DwData: [2]ndr.DWORD{0x11111111, 0x22222222}},
+		Sentinel: 0xdeadbeef,
+	}
+	wire := []byte{
+		0x01, 0x00, 0x00, 0x00, // discriminant TABLE_DWORD
+		0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22, // dwData[2]
+		0xef, 0xbe, 0xad, 0xde, // Sentinel
+	}
+
+	raw, err := ndr.Marshal(&in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Equal(raw, wire) {
+		t.Errorf("Marshal = % x, want % x", raw, wire)
+	}
+
+	var out unionThenSentinel
+	if err := ndr.Unmarshal(wire, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if out.Data.Tag != in.Data.Tag || out.Data.DwData != in.Data.DwData || out.Sentinel != in.Sentinel {
+		t.Errorf("Unmarshal = %+v, want %+v", out, in)
+	}
 }
