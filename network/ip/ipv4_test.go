@@ -110,6 +110,14 @@ func TestIPv4IsInSubnet(t *testing.T) {
 		{ip.NewIPv4(10, 0, 0, 1, 8), ip.NewIPv4(10, 0, 0, 0, 8), true},
 		{ip.NewIPv4(172, 16, 0, 1, 12), ip.NewIPv4(172, 16, 0, 0, 12), true},
 		{ip.NewIPv4(192, 168, 2, 1, 24), ip.NewIPv4(192, 168, 1, 0, 24), false},
+		{ip.NewIPv4(11, 1, 2, 3, 32), ip.NewIPv4(10, 0, 0, 0, 8), false},
+		{ip.NewIPv4(255, 255, 255, 255, 32), ip.NewIPv4(192, 168, 0, 0, 16), false},
+		{ip.NewIPv4(192, 168, 1, 255, 32), ip.NewIPv4(192, 168, 1, 0, 24), true},
+		{ip.NewIPv4(192, 168, 1, 17, 32), ip.NewIPv4(192, 168, 1, 17, 24), true},
+		{ip.NewIPv4(8, 8, 8, 8, 32), ip.NewIPv4(0, 0, 0, 0, 0), true},
+		{ip.NewIPv4(10, 0, 0, 1, 32), ip.NewIPv4(10, 0, 0, 1, 32), true},
+		{ip.NewIPv4(10, 0, 0, 2, 32), ip.NewIPv4(10, 0, 0, 1, 32), false},
+		{ip.NewIPv4(10, 0, 0, 1, 32), ip.NewIPv4(10, 0, 0, 0, 33), false},
 	}
 
 	for _, tt := range tests {

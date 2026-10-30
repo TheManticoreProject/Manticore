@@ -150,6 +150,7 @@ func (i *IPv4) CIDRMask() string {
 }
 
 // IsInSubnet checks if the IPv4 address is within the subnet of another IPv4 address.
+// The subnet's MaskBits selects how many leading bits must match.
 //
 // Parameters:
 //
@@ -159,7 +160,11 @@ func (i *IPv4) CIDRMask() string {
 //
 //	bool: True if the IPv4 address is within the subnet, false otherwise.
 func (i *IPv4) IsInSubnet(subnet *IPv4) bool {
-	return i.ToUInt32()&subnet.ToUInt32() == subnet.ToUInt32()
+	if subnet.MaskBits > 32 {
+		return false
+	}
+	mask := uint32(0xFFFFFFFF) << (32 - subnet.MaskBits)
+	return i.ToUInt32()&mask == subnet.ToUInt32()&mask
 }
 
 // IsInRange checks if the IPv4 address is within the range of two other IPv4 addresses.
