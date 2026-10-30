@@ -30,6 +30,12 @@ func (ctx *AuthContext) computeMechListMIC(negFlg flags.NegotiateFlags) ([]byte,
 	if negFlg.HasFlag(flags.NTLMSSP_NEGOTIATE_ANONYMOUS) {
 		return nil, nil
 	}
+	// Without extended session security the server signs with the NTLMv1-style
+	// scheme ([MS-NLMP] 3.4.4.1), which the security package does not implement.
+	// Send no MIC rather than one keyed in a way the server does not use.
+	if !negFlg.HasFlag(flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY) {
+		return nil, nil
+	}
 
 	sec, err := security.NewContext(ctx.SessionKey, negFlg)
 	if err != nil {
