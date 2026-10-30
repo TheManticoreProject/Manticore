@@ -453,7 +453,7 @@ func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred
 			continue // the RPC return value is decoded last, after deferred referents
 		}
 		if i == confIdx {
-			n := int(confCount)
+			n := confCount
 			if tag.varying {
 				if _, err := d.readCount(); err != nil { // offset
 					return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
@@ -462,7 +462,7 @@ func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred
 				if err != nil {
 					return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 				}
-				n = int(actual)
+				n = actual
 			}
 			if err := unmarshalElements(d, rv.Field(i), n, elementTag(tag)); err != nil {
 				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
@@ -1001,7 +1001,7 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag)
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, int(n), elemTag)
+	return unmarshalElements(d, slice, n, elemTag)
 }
 
 // marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
@@ -1036,7 +1036,7 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fi
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, int(actual), elemTag)
+	return unmarshalElements(d, slice, actual, elemTag)
 }
 
 // marshalElements writes the elements of a slice with no count prefix, in two passes:
@@ -1091,7 +1091,7 @@ func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
 			break
 		}
 		chunk := reflect.New(fv.Type()).Elem()
-		if err := unmarshalElements(d, chunk, int(count), elementTag(tag)); err != nil {
+		if err := unmarshalElements(d, chunk, count, elementTag(tag)); err != nil {
 			return err
 		}
 		acc = reflect.AppendSlice(acc, chunk)
@@ -1162,19 +1162,23 @@ func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func
 	return marshalInlineValue(e, ev, tag, nil, true)
 }
 
-// unmarshalElements reads n elements into slice (allocating a fresh backing array), in
-// two passes mirroring marshalElements: every element's fixed part first, then every
+// unmarshalElements reads count elements into slice (allocating a fresh backing array),
+// in two passes mirroring marshalElements: every element's fixed part first, then every
 // element's deferred referents, both in element order ([C706] section 14.3.10).
-func unmarshalElements(d *Decoder, slice reflect.Value, n int, elemTag fieldTag) error {
-	if n < 0 {
-		return fmt.Errorf("ndr: negative element count %d", n)
-	}
+func unmarshalElements(d *Decoder, slice reflect.Value, count uint64, elemTag fieldTag) error {
 	// Every NDR element occupies at least one octet, so a count larger than the
 	// remaining input cannot be valid. Reject it before allocating, otherwise an
-	// attacker-controlled count would size an arbitrary allocation (OOM/panic).
-	if n > d.Remaining() {
-		return fmt.Errorf("ndr: element count %d exceeds %d remaining bytes", n, d.Remaining())
+	// attacker-controlled count would size an arbitrary allocation (OOM/panic). The
+	// check is done on the uint64 wire count, before the int conversion, so an NDR64
+	// count cannot wrap negative or be truncated to its low 32 bits on 32-bit builds.
+	rem := d.Remaining()
+	if rem < 0 {
+		rem = 0
 	}
+	if count > uint64(rem) {
+		return fmt.Errorf("ndr: element count %d exceeds %d remaining bytes", count, rem)
+	}
+	n := int(count)
 	if slice.Type().Elem().Kind() == reflect.Uint8 {
 		b, err := d.ReadBytes(n)
 		if err != nil {
@@ -1185,19 +1189,65 @@ func unmarshalElements(d *Decoder, slice reflect.Value, n int, elemTag fieldTag)
 		slice.SetBytes(out)
 		return nil
 	}
-	out := reflect.MakeSlice(slice.Type(), n, n)
-	var deferred []func() error
-	for i := 0; i < n; i++ {
-		if err := unmarshalElement(d, out.Index(i), elemTag, &deferred); err != nil {
-			return fmt.Errorf("element %d: %w", i, err)
+	// The remaining-bytes bound above caps the element count, not the decoded size: an
+	// element can be far larger in memory than on the wire, so sizing the whole backing
+	// array up front would let a short stub force a large allocation. When the full
+	// array is small, allocate it directly; otherwise decode into chunks that grow
+	// geometrically as elements are actually consumed, so memory tracks the input that
+	// was really decoded. Chunks are never reallocated, so the element addresses
+	// captured by deferred referent reads stay valid until runDeferred completes.
+	elemSize := uint64(slice.Type().Elem().Size())
+	if elemSize == 0 || count <= maxDirectElementBytes/elemSize {
+		out := reflect.MakeSlice(slice.Type(), n, n)
+		var deferred []func() error
+		for i := 0; i < n; i++ {
+			if err := unmarshalElement(d, out.Index(i), elemTag, &deferred); err != nil {
+				return fmt.Errorf("element %d: %w", i, err)
+			}
 		}
+		if err := runDeferred(deferred); err != nil {
+			return err
+		}
+		slice.Set(out)
+		return nil
+	}
+	chunkLen := int(maxDirectElementBytes / elemSize)
+	if chunkLen < 1 {
+		chunkLen = 1
+	}
+	var chunks []reflect.Value
+	var deferred []func() error
+	for i := 0; i < n; {
+		if c := n - i; chunkLen > c {
+			chunkLen = c
+		}
+		chunk := reflect.MakeSlice(slice.Type(), chunkLen, chunkLen)
+		for j := 0; j < chunkLen; j++ {
+			if err := unmarshalElement(d, chunk.Index(j), elemTag, &deferred); err != nil {
+				return fmt.Errorf("element %d: %w", i+j, err)
+			}
+		}
+		chunks = append(chunks, chunk)
+		i += chunkLen
+		chunkLen *= 2
 	}
 	if err := runDeferred(deferred); err != nil {
 		return err
 	}
+	out := reflect.MakeSlice(slice.Type(), n, n)
+	off := 0
+	for _, chunk := range chunks {
+		off += reflect.Copy(out.Slice(off, n), chunk)
+	}
 	slice.Set(out)
 	return nil
 }
+
+// maxDirectElementBytes is the largest in-memory size of a decoded array that
+// unmarshalElements allocates in one piece before reading its elements. Larger arrays
+// are decoded in growing chunks so a hostile element count cannot force an allocation
+// out of proportion to the input actually present.
+const maxDirectElementBytes = 1 << 20
 
 // unmarshalElement reads one array element's inline part, appending its deferred
 // referent reads (if any) to *deferred. It mirrors marshalElement: pointer elements
