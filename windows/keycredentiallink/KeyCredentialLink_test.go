@@ -1,6 +1,7 @@
 package keycredentiallink_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap"
@@ -398,5 +399,46 @@ func TestKeyUsage_ConstructorSetsNGC(t *testing.T) {
 
 	if kc.Usage.Value != usage.KeyUsage_NGC {
 		t.Errorf("Usage.Value = 0x%02x, want 0x%02x (NGC)", kc.Usage.Value, usage.KeyUsage_NGC)
+	}
+}
+
+// A DeviceId entry whose value is not a 16-byte GUID must be rejected with an
+// error instead of panicking while the GUID is decoded.
+func TestKeyCredential_Unmarshal_MalformedDeviceId(t *testing.T) {
+	tests := []struct {
+		name  string
+		value []byte
+	}{
+		{name: "empty", value: []byte{}},
+		{name: "one byte", value: []byte{0xAA}},
+		{name: "fifteen bytes", value: make([]byte, 15)},
+		{name: "seventeen bytes", value: make([]byte, 17)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Version 0x200 followed by a single DeviceId (0x06) entry.
+			data := []byte{0x00, 0x02, 0x00, 0x00, byte(len(tt.value)), 0x00, 0x06}
+			data = append(data, tt.value...)
+
+			kc := &keycredentiallink.KeyCredentialLink{}
+			if _, err := kc.Unmarshal(data); err == nil {
+				t.Fatalf("Unmarshal() with a %d-byte DeviceId returned no error", len(tt.value))
+			}
+		})
+	}
+}
+
+// A well-formed 16-byte DeviceId entry is still decoded.
+func TestKeyCredential_Unmarshal_DeviceId(t *testing.T) {
+	value := []byte{0x67, 0x45, 0x23, 0x01, 0xab, 0x89, 0xef, 0xcd, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+	data := append([]byte{0x00, 0x02, 0x00, 0x00, 0x10, 0x00, 0x06}, value...)
+
+	kc := &keycredentiallink.KeyCredentialLink{}
+	if _, err := kc.Unmarshal(data); err != nil {
+		t.Fatalf("Unmarshal() with a 16-byte DeviceId returned error: %v", err)
+	}
+	if got := kc.DeviceId.ToFormatD(); !strings.EqualFold(got, "01234567-89ab-cdef-0123-456789abcdef") {
+		t.Errorf("DeviceId = %s, want 01234567-89ab-cdef-0123-456789abcdef", got)
 	}
 }

@@ -275,6 +275,11 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 			}
 
 		case KEYCREDENTIALLINK_ENTRY_IDENTIFIER_DeviceId:
+			// The device identifier is a 16-byte GUID; FromRawBytes reads all 16
+			// bytes without checking the length, so a shorter value is rejected here.
+			if len(entry.Value) != 16 {
+				return bytesRead, fmt.Errorf("failed to unmarshal KeyCredentialLink device id: expected 16 bytes, got %d", len(entry.Value))
+			}
 			if kc.DeviceId == nil {
 				kc.DeviceId = &guid.GUID{}
 			}
