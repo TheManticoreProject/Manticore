@@ -235,6 +235,13 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("failed to marshal negotiate message: %v", err)
 	}
 
+	// A connection that is already signing, because an earlier session on it
+	// established the key, signs every request on it, a later session setup
+	// included, with that key at the connection's running sequence ([MS-SMB]
+	// 3.2.5.3, [MS-CIFS] 3.2.4.2.4). The new session's own key never replaces it.
+	signingAlreadyActive := s.Client.Connection.IsSigningActive
+	step1ResponseSequence, step1Signed := s.Client.signOutgoing(marshalledMessage)
+
 	// Send the message
 	_, err = s.Client.Transport.Send(marshalledMessage)
 	if err != nil {
@@ -246,6 +253,11 @@ func (s *Session) SessionSetup() error {
 	rawResponseMessage, err := s.Client.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive response message: %v", err)
+	}
+	if step1Signed {
+		if err := s.Client.verifyIncoming(rawResponseMessage, step1ResponseSequence); err != nil {
+			return fmt.Errorf("session setup challenge response: %v", err)
+		}
 	}
 
 	responseMsg := message.NewMessage()
@@ -373,14 +385,18 @@ func (s *Session) SessionSetup() error {
 	// The MAC key is the session key derived from the NTLM exchange above. The
 	// AUTHENTICATE request is the first signed message (sequence number 0) and
 	// bootstraps signing for the connection.
+	//
+	// Only the first session to activate signing does this. On a connection that
+	// is already signing, this setup is signed like any other request and leaves
+	// the connection's key and sequence alone.
 	signingKey := authCtx.GetSessionKey()
 	signingState := s.Client.Connection.Server.SigningState
-	if signingState == SigningStateRequired && len(signingKey) == 0 {
+	if !signingAlreadyActive && signingState == SigningStateRequired && len(signingKey) == 0 {
 		return fmt.Errorf("server requires SMB signing but no session key was derived (signing requires the NTLMv2/extended-security path)")
 	}
 	// A server that only enables signing leaves it to the client, so an exchange
 	// that derived no key simply does not sign rather than failing.
-	signMessages := signingState != SigningStateDisabled && len(signingKey) != 0
+	signMessages := !signingAlreadyActive && signingState != SigningStateDisabled && len(signingKey) != 0
 
 	marshalledStep2, err := requestStep2Msg.Marshal()
 	if err != nil {
@@ -406,6 +422,10 @@ func (s *Session) SessionSetup() error {
 		s.Client.Connection.IsSigningActive = true
 		signing.Sign(signingKey, marshalledStep2, 0)
 	}
+	step2ResponseSequence, step2Signed := uint32(0), false
+	if signingAlreadyActive {
+		step2ResponseSequence, step2Signed = s.Client.signOutgoing(marshalledStep2)
+	}
 
 	// Send the message
 	_, err = s.Client.Transport.Send(marshalledStep2)
@@ -418,6 +438,11 @@ func (s *Session) SessionSetup() error {
 	rawAuthResponse, err := s.Client.Transport.Receive()
 	if err != nil {
 		return fmt.Errorf("failed to receive response message: %v", err)
+	}
+	if step2Signed {
+		if err := s.Client.verifyIncoming(rawAuthResponse, step2ResponseSequence); err != nil {
+			return fmt.Errorf("session setup response: %v", err)
+		}
 	}
 
 	authResponseMsg := message.NewMessage()
@@ -451,11 +476,12 @@ func (s *Session) SessionSetup() error {
 		s.Client.Connection.Server.OSName = osName
 	}
 
-	// Persist the derived session key and, when signing was activated, verify the
-	// signature on the (successful) AUTHENTICATE response (sequence number 1) before
-	// arming the per-message sequence counter for subsequent requests.
+	// Persist the derived session key and, when this setup activated signing,
+	// verify the signature on the (successful) AUTHENTICATE response (sequence
+	// number 1) before arming the per-message sequence counter for subsequent
+	// requests.
 	s.SessionKey = signingKey
-	if s.Client.Connection.IsSigningActive {
+	if signMessages {
 		if !signing.Verify(signingKey, rawAuthResponse, 1) {
 			return fmt.Errorf("session setup response failed SMB signature verification")
 		}

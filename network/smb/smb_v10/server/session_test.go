@@ -1277,6 +1277,87 @@ func TestSecondSessionKeepsTheConnectionSigning(t *testing.T) {
 	}
 }
 
+// TestClientSecondSessionKeepsTheConnectionSigning drives the repository's own
+// client through a second logon on a connection that is already signing, then
+// uses each session.
+//
+// The connection's signing key is set by the first authenticated session, and
+// every later request, including a later SESSION_SETUP_ANDX, is signed with that
+// key at the connection's running sequence ([MS-SMB] 3.2.5.3, [MS-CIFS] 3.2.4.2.4). The
+// client sent the second setup's first leg unsigned, signed its AUTHENTICATE leg
+// with the new session's key at sequence 0, and then re-keyed the connection and
+// reset its sequence, so the server dropped the connection.
+func TestClientSecondSessionKeepsTheConnectionSigning(t *testing.T) {
+	const secondUsername, secondPassword = "bob", "bobs-password"
+
+	for _, policy := range []SigningPolicy{SigningEnabled, SigningRequired} {
+		policy := policy
+		t.Run(policy.String(), func(t *testing.T) {
+			config := conformanceConfig(policy)
+			config.Authenticator = StaticAccounts(
+				Account{Domain: captureDomain, Username: captureUsername, NTHash: nt.NTHash(capturePassword)},
+				Account{Domain: captureDomain, Username: secondUsername, NTHash: nt.NTHash(secondPassword)},
+			)
+			srv, transportEnd := pipedServer(t, config)
+
+			fs := NewMemoryFileSystem("FILES")
+			if err := fs.AddFile("shared.txt", []byte("0123456789")); err != nil {
+				t.Fatalf("AddFile() error = %v", err)
+			}
+			if err := srv.AddShare(&Share{Name: fileShareName, Type: ShareTypeDisk, FS: fs}); err != nil {
+				t.Fatalf("AddShare() error = %v", err)
+			}
+
+			client := smb1client.NewFromTransport(transportEnd, net.IPv4(127, 0, 0, 1), 445)
+			if err := client.Negotiate(); err != nil {
+				t.Fatalf("Negotiate() error = %v", err)
+			}
+
+			first, err := credentials.NewCredentials(captureDomain, captureUsername, capturePassword, "")
+			if err != nil {
+				t.Fatalf("NewCredentials() error = %v", err)
+			}
+			if err := client.SessionSetup(first); err != nil {
+				t.Fatalf("first SessionSetup() error = %v", err)
+			}
+			if !client.Connection.IsSigningActive {
+				t.Fatal("signing was not armed by the first session")
+			}
+			firstSession := client.Session
+			connectionKey := append([]byte(nil), client.Connection.SigningSessionKey...)
+
+			second, err := credentials.NewCredentials(captureDomain, secondUsername, secondPassword, "")
+			if err != nil {
+				t.Fatalf("NewCredentials() error = %v", err)
+			}
+			if err := client.SessionSetup(second); err != nil {
+				t.Fatalf("second SessionSetup() error = %v", err)
+			}
+			secondSession := client.Session
+			if secondSession == firstSession || secondSession.SessionUID == firstSession.SessionUID {
+				t.Fatal("the second logon did not produce a session of its own")
+			}
+			if !bytes.Equal(client.Connection.SigningSessionKey, connectionKey) {
+				t.Fatal("the second session re-keyed the connection")
+			}
+
+			// Each session works on the connection afterwards. The server drops the
+			// connection on a request that does not verify, and the client checks
+			// every response signature, so each call is also a signing check.
+			for _, session := range []*smb1client.Session{secondSession, firstSession} {
+				client.Session = session
+				if err := client.TreeConnect(fileShareName); err != nil {
+					t.Fatalf("TreeConnect() on UID 0x%04X error = %v", session.SessionUID, err)
+				}
+				if _, err := client.OpenFile("shared.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+					fileflags.FILE_OPEN, fileflags.FILE_NON_DIRECTORY_FILE); err != nil {
+					t.Fatalf("OpenFile() on UID 0x%04X error = %v", session.SessionUID, err)
+				}
+			}
+		})
+	}
+}
+
 // TestClientSignsWhenServerOnlyEnablesSigning is the regression guard for a
 // client that asked for signing and then did not sign. The client sets
 // SMB_FLAGS2_SECURITY_SIGNATURE on its session setup whenever the server offers
