@@ -481,7 +481,6 @@ func (s *Server) Serve(listener transport.Listener) error {
 			return nil
 		}
 
-		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
 			defer s.releaseSlot()
@@ -521,10 +520,8 @@ func (s *Server) ServeConn(conn transport.Transport, remote net.Addr) error {
 		connection.Close()
 		return fmt.Errorf("server is closed")
 	}
-	defer s.untrackConnection(connection)
-
-	s.wg.Add(1)
 	defer s.wg.Done()
+	defer s.untrackConnection(connection)
 
 	connection.serve()
 	return nil
@@ -637,7 +634,15 @@ func (s *Server) untrackListener(listener transport.Listener) {
 }
 
 // trackConnection records a live connection so Close can tear it down,
-// reporting false if the server is already closed.
+// reporting false if the server is already closed. A connection it accepts is
+// also counted on s.wg, and the caller owes a matching s.wg.Done once the
+// connection has been served.
+//
+// The count is taken here, under the same lock Close holds while it marks the
+// server closed, so it is in place before Close can reach s.wg.Wait. Taken after
+// this returned, it left a window in which Close saw the connection, closed
+// it and waited on a count of zero, returning while the connection was still
+// being served; it was also an Add racing a Wait, which sync.WaitGroup forbids.
 func (s *Server) trackConnection(conn *Connection) bool {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -645,6 +650,7 @@ func (s *Server) trackConnection(conn *Connection) bool {
 		return false
 	}
 	s.conns[conn] = struct{}{}
+	s.wg.Add(1)
 	return true
 }
 
