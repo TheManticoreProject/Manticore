@@ -227,8 +227,8 @@ func (h *Hive) GetClass(keyPath string) ([]byte, error) {
 // readCellRaw reads a raw cell at the given offset, returning the cell data after
 // the 4-byte size prefix. The offset is relative to the start of hive bins data.
 func (h *Hive) readCellRaw(offset uint32) ([]byte, error) {
-	absOffset := baseBlockSize + int(offset)
-	if absOffset+4 > len(h.data) {
+	absOffset, ok := h.cellAbs(offset, 4)
+	if !ok {
 		return nil, fmt.Errorf("regf: cell offset 0x%X out of bounds (file size: %d)", offset, len(h.data))
 	}
 
@@ -239,23 +239,35 @@ func (h *Hive) readCellRaw(offset uint32) ([]byte, error) {
 	if cellSize < 4 {
 		return nil, fmt.Errorf("regf: invalid cell size %d at offset 0x%X", cellSize, offset)
 	}
-	end := absOffset + int(cellSize)
-	if end > len(h.data) {
-		end = len(h.data)
+	end := len(h.data)
+	if int64(cellSize) < int64(end-absOffset) {
+		end = absOffset + int(cellSize)
 	}
 
 	return h.data[absOffset+4 : end], nil
 }
 
+// cellAbs converts a hive-bins-relative cell offset to an absolute position in the image,
+// reporting whether n bytes are available there. The arithmetic is done in uint64 so an
+// untrusted 32-bit offset or length cannot wrap a 32-bit int into a negative index.
+func (h *Hive) cellAbs(offset uint32, n uint64) (int, bool) {
+	abs := uint64(baseBlockSize) + uint64(offset)
+	if abs > uint64(len(h.data)) || n > uint64(len(h.data))-abs {
+		return 0, false
+	}
+	return int(abs), true
+}
+
 // readCellData reads raw data from a cell, skipping the 4-byte size prefix and returning
 // exactly 'size' bytes.
-func (h *Hive) readCellData(offset uint32, size int) ([]byte, error) {
-	absOffset := baseBlockSize + int(offset) + 4 // skip cell size prefix
-	if absOffset+size > len(h.data) {
+func (h *Hive) readCellData(offset uint32, size uint32) ([]byte, error) {
+	absOffset, ok := h.cellAbs(offset, 4+uint64(size))
+	if !ok {
 		return nil, fmt.Errorf("regf: data read at offset 0x%X+%d exceeds file bounds", offset, size)
 	}
+	absOffset += 4 // skip cell size prefix
 	result := make([]byte, size)
-	copy(result, h.data[absOffset:absOffset+size])
+	copy(result, h.data[absOffset:absOffset+int(size)])
 	return result, nil
 }
 
@@ -282,7 +294,13 @@ func (h *Hive) readValueList(offset, count uint32) ([]*KeyValue, error) {
 		return nil, fmt.Errorf("regf: reading value list at 0x%X: %w", offset, err)
 	}
 
-	values := make([]*KeyValue, 0, count)
+	// Each list entry is a 4-byte offset, so the cell bounds how many can exist; capping
+	// the preallocation keeps a hostile NumberOfValues from forcing a huge allocation.
+	capacity := uint64(len(cell) / 4)
+	if uint64(count) < capacity {
+		capacity = uint64(count)
+	}
+	values := make([]*KeyValue, 0, capacity)
 	for i := uint32(0); i < count; i++ {
 		off := int(i) * 4
 		if off+4 > len(cell) {
@@ -325,7 +343,7 @@ func (h *Hive) readBigData(offset, totalSize uint32) ([]byte, error) {
 	db := NewBigData()
 	if _, err := db.Unmarshal(cell); err != nil {
 		// Not a big-data record: treat the cell as a single large data cell.
-		return h.readCellData(offset, int(totalSize))
+		return h.readCellData(offset, totalSize)
 	}
 
 	listCell, err := h.readCellRaw(db.SegmentsListOffset)
@@ -333,7 +351,18 @@ func (h *Hive) readBigData(offset, totalSize uint32) ([]byte, error) {
 		return nil, fmt.Errorf("regf: reading big-data segment list at 0x%X: %w", db.SegmentsListOffset, err)
 	}
 
-	result := make([]byte, 0, totalSize)
+	// Bound the result by what the segments can actually supply: each carries at most
+	// bigDataThreshold bytes, and distinct segment cells cannot together exceed the image.
+	// A hostile totalSize (or a segment list repeating one cell) in a small hive therefore
+	// cannot reserve or accumulate gigabytes.
+	capacity := uint64(db.NumberOfSegments) * bigDataThreshold
+	if uint64(len(h.data)) < capacity {
+		capacity = uint64(len(h.data))
+	}
+	if uint64(totalSize) < capacity {
+		capacity = uint64(totalSize)
+	}
+	result := make([]byte, 0, capacity)
 	for i := 0; i < int(db.NumberOfSegments); i++ {
 		off := i * 4
 		if off+4 > len(listCell) {
@@ -344,7 +373,7 @@ func (h *Hive) readBigData(offset, totalSize uint32) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("regf: reading big-data segment %d at 0x%X: %w", i, segOffset, err)
 		}
-		remaining := int(totalSize) - len(result)
+		remaining := int(capacity) - len(result)
 		if remaining <= 0 {
 			break
 		}

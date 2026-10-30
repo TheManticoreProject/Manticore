@@ -57,8 +57,8 @@ func align4096(n int) int {
 
 // cellSizeAt returns the signed size prefix of the cell at the given hive-bins-data offset.
 func (h *Hive) cellSizeAt(offset uint32) (int32, bool) {
-	abs := baseBlockSize + int(offset)
-	if abs+4 > len(h.data) {
+	abs, ok := h.cellAbs(offset, 4)
+	if !ok {
 		return 0, false
 	}
 	return int32(binary.LittleEndian.Uint32(h.data[abs : abs+4])), true
@@ -170,8 +170,18 @@ func (h *Hive) valueListOffsets(listOffset, count uint32) []uint32 {
 	if listOffset == nullCellOffset || count == 0 {
 		return nil
 	}
-	abs := baseBlockSize + int(listOffset) + 4
-	offsets := make([]uint32, 0, count)
+	abs, ok := h.cellAbs(listOffset, 4)
+	if !ok {
+		return nil
+	}
+	abs += 4
+	// Cap the preallocation by the entries the image can actually hold (4 bytes each), so
+	// a hostile NumberOfValues cannot force a multi-gigabyte allocation.
+	capacity := uint64((len(h.data) - abs) / 4)
+	if uint64(count) < capacity {
+		capacity = uint64(count)
+	}
+	offsets := make([]uint32, 0, capacity)
 	for i := uint32(0); i < count; i++ {
 		p := abs + int(i)*4
 		if p+4 > len(h.data) {

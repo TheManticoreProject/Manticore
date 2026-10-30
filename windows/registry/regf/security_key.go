@@ -66,9 +66,9 @@ func (s *SecurityKey) Unmarshal(data []byte) (int, error) {
 	s.ReferenceCount = binary.LittleEndian.Uint32(data[12:16])
 	s.SecurityDescriptorSize = binary.LittleEndian.Uint32(data[16:20])
 
-	sdEnd := skMinSize + int(s.SecurityDescriptorSize)
-	if sdEnd > len(data) {
-		sdEnd = len(data)
+	sdEnd := len(data)
+	if uint64(s.SecurityDescriptorSize) < uint64(sdEnd-skMinSize) {
+		sdEnd = skMinSize + int(s.SecurityDescriptorSize)
 	}
 	s.SecurityDescriptor = make([]byte, sdEnd-skMinSize)
 	copy(s.SecurityDescriptor, data[skMinSize:sdEnd])

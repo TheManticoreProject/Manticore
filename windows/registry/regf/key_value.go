@@ -182,7 +182,7 @@ func (v *KeyValue) Data() ([]byte, error) {
 		return v.hive.readBigData(v.DataOffset, actualSize)
 	}
 
-	return v.hive.readCellData(v.DataOffset, int(actualSize))
+	return v.hive.readCellData(v.DataOffset, actualSize)
 }
 
 // String decodes the value data as a string for REG_SZ / REG_EXPAND_SZ types.

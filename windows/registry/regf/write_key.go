@@ -61,8 +61,12 @@ func (h *Hive) bumpSKRefCount(skOffset uint32, delta int) {
 	if skOffset == nullCellOffset {
 		return
 	}
-	c := baseBlockSize + int(skOffset) + 4
-	if c+16 > len(h.data) || binary.LittleEndian.Uint16(h.data[c:c+2]) != skSignature {
+	c, ok := h.cellAbs(skOffset, 4+16)
+	if !ok {
+		return
+	}
+	c += 4
+	if binary.LittleEndian.Uint16(h.data[c:c+2]) != skSignature {
 		return
 	}
 	rc := int(binary.LittleEndian.Uint32(h.data[c+12:c+16])) + delta

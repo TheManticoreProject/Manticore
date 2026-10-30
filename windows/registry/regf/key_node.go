@@ -245,7 +245,7 @@ func (k *KeyNode) ClassData() ([]byte, error) {
 	if k.ClassNameOffset == nullCellOffset || k.ClassNameLength == 0 {
 		return nil, nil
 	}
-	return k.hive.readCellData(k.ClassNameOffset, int(k.ClassNameLength))
+	return k.hive.readCellData(k.ClassNameOffset, uint32(k.ClassNameLength))
 }
 
 // SecurityDescriptor returns the self-relative SECURITY_DESCRIPTOR bytes for this key
