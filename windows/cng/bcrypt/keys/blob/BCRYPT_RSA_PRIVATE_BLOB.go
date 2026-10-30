@@ -51,27 +51,29 @@ type BCRYPT_RSA_PRIVATE_BLOB struct {
 // The function expects the byte slice to follow the RSA private key BLOB format, starting with the BCRYPT_RSA_KEY_BLOB header.
 // It extracts the public exponent, modulus, prime1, and prime2 from the byte slice and stores them in the BCRYPT_RSA_PRIVATE_BLOB structure.
 func (b *BCRYPT_RSA_PRIVATE_BLOB) Unmarshal(keyHeader headers.BCRYPT_RSA_KEY_BLOB, value []byte) (int, error) {
+	// Sizes are compared as uint64: on 32-bit platforms int() of a size
+	// >= 2^31 is negative and would slip past a signed bounds check.
 	bytesRead := 0
 
-	if int(keyHeader.CbPublicExp) > len(value)-bytesRead {
+	if uint64(keyHeader.CbPublicExp) > uint64(len(value)-bytesRead) {
 		return 0, errors.New("buffer too small for BCRYPT_RSA_PRIVATE_BLOB, not enough bytes for unmarshalling public exponent")
 	}
 	b.PublicExponent = value[bytesRead : bytesRead+int(keyHeader.CbPublicExp)]
 	bytesRead += int(keyHeader.CbPublicExp)
 
-	if int(keyHeader.CbModulus) > len(value)-bytesRead {
+	if uint64(keyHeader.CbModulus) > uint64(len(value)-bytesRead) {
 		return 0, errors.New("buffer too small for BCRYPT_RSA_PRIVATE_BLOB, not enough bytes for unmarshalling modulus")
 	}
 	b.Modulus = value[bytesRead : bytesRead+int(keyHeader.CbModulus)]
 	bytesRead += int(keyHeader.CbModulus)
 
-	if int(keyHeader.CbPrime1) > len(value)-bytesRead {
+	if uint64(keyHeader.CbPrime1) > uint64(len(value)-bytesRead) {
 		return 0, errors.New("buffer too small for BCRYPT_RSA_PRIVATE_BLOB, not enough bytes for unmarshalling prime1")
 	}
 	b.Prime1 = value[bytesRead : bytesRead+int(keyHeader.CbPrime1)]
 	bytesRead += int(keyHeader.CbPrime1)
 
-	if int(keyHeader.CbPrime2) > len(value)-bytesRead {
+	if uint64(keyHeader.CbPrime2) > uint64(len(value)-bytesRead) {
 		return 0, errors.New("buffer too small for BCRYPT_RSA_PRIVATE_BLOB, not enough bytes for unmarshalling prime2")
 	}
 	b.Prime2 = value[bytesRead : bytesRead+int(keyHeader.CbPrime2)]

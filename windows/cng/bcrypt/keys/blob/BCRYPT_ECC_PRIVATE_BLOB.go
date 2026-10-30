@@ -43,21 +43,23 @@ type BCRYPT_ECC_PRIVATE_BLOB struct {
 // - An error if the parsing fails, otherwise nil.
 func (b *BCRYPT_ECC_PRIVATE_BLOB) Unmarshal(keyHeader headers.BCRYPT_ECC_KEY_BLOB, value []byte) (int, error) {
 	bytesRead := 0
+	// On 32-bit platforms int() of a size >= 2^31 is negative, so each
+	// bounds check below also rejects negative values.
 	cbKey := int(keyHeader.KeySize)
 
-	if cbKey > len(value)-bytesRead {
+	if cbKey < 0 || cbKey > len(value)-bytesRead {
 		return 0, fmt.Errorf("buffer too small for BCRYPT_ECC_PRIVATE_BLOB, not enough bytes for unmarshalling X")
 	}
 	b.X = value[bytesRead : bytesRead+cbKey]
 	bytesRead += cbKey
 
-	if cbKey > len(value)-bytesRead {
+	if cbKey < 0 || cbKey > len(value)-bytesRead {
 		return 0, fmt.Errorf("buffer too small for BCRYPT_ECC_PRIVATE_BLOB, not enough bytes for unmarshalling Y")
 	}
 	b.Y = value[bytesRead : bytesRead+cbKey]
 	bytesRead += cbKey
 
-	if cbKey > len(value)-bytesRead {
+	if cbKey < 0 || cbKey > len(value)-bytesRead {
 		return 0, fmt.Errorf("buffer too small for BCRYPT_ECC_PRIVATE_BLOB, not enough bytes for unmarshalling D")
 	}
 	b.D = value[bytesRead : bytesRead+cbKey]

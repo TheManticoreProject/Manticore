@@ -45,21 +45,23 @@ type BCRYPT_DSA_PUBLIC_BLOB struct {
 // - An error if the parsing fails, otherwise nil.
 func (b *BCRYPT_DSA_PUBLIC_BLOB) Unmarshal(keyHeader headers.BCRYPT_DSA_KEY_BLOB, value []byte) (int, error) {
 	bytesRead := 0
+	// On 32-bit platforms int() of a size >= 2^31 is negative, so each
+	// bounds check below also rejects negative values.
 	keyLen := int(keyHeader.CbKey)
 
-	if keyLen > len(value)-bytesRead {
+	if keyLen < 0 || keyLen > len(value)-bytesRead {
 		return 0, errors.New("buffer too small for BCRYPT_DSA_PUBLIC_BLOB, not enough bytes for unmarshalling modulus")
 	}
 	b.Modulus = value[bytesRead : bytesRead+keyLen]
 	bytesRead += keyLen
 
-	if keyLen > len(value)-bytesRead {
+	if keyLen < 0 || keyLen > len(value)-bytesRead {
 		return 0, errors.New("buffer too small for BCRYPT_DSA_PUBLIC_BLOB, not enough bytes for unmarshalling generator")
 	}
 	b.Generator = value[bytesRead : bytesRead+keyLen]
 	bytesRead += keyLen
 
-	if keyLen > len(value)-bytesRead {
+	if keyLen < 0 || keyLen > len(value)-bytesRead {
 		return 0, errors.New("buffer too small for BCRYPT_DSA_PUBLIC_BLOB, not enough bytes for unmarshalling public value")
 	}
 	b.Public = value[bytesRead : bytesRead+keyLen]
