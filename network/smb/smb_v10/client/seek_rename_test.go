@@ -3,6 +3,7 @@ package client_test
 import (
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/capabilities"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
@@ -85,4 +86,38 @@ func sentNtRename(t *testing.T, raw []byte) *commands.NtRenameRequest {
 		t.Fatalf("sent command is %T, want *NtRenameRequest", msg.Command)
 	}
 	return req
+}
+
+// On a Unicode connection the header carries FLAGS2_UNICODE, so NT_RENAME's old and
+// new names must be UTF-16LE; UTF-8 bytes would be decoded by the server as unrelated
+// UTF-16 characters.
+func TestNtRenameUsesUnicodeNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(c *client.Client) error
+	}{
+		{"NtRename", func(c *client.Client) error { return c.NtRename(`\old.txt`, `\new.txt`) }},
+		{"CreateHardLink", func(c *client.Client) error { return c.CreateHardLink(`\old.txt`, `\new.txt`) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &capturingTransport{response: marshalResponse(t, commands.NewNtRenameResponse())}
+			c := newSessionClient(tr)
+			c.Connection.Server.Capabilities = capabilities.CAP_UNICODE
+			if err := tc.call(c); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+
+			m := message.NewMessage()
+			if err := m.Unmarshal(tr.sent); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			req := m.Command.(*commands.NtRenameRequest)
+			if got := req.OldFileName.StringWithEncoding(true); got != `\old.txt` {
+				t.Errorf("OldFileName decodes as %q, want %q", got, `\old.txt`)
+			}
+			if got := req.NewFileName.StringWithEncoding(true); got != `\new.txt` {
+				t.Errorf("NewFileName decodes as %q, want %q", got, `\new.txt`)
+			}
+		})
+	}
 }
