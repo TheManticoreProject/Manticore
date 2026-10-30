@@ -16,9 +16,7 @@ import (
 // Returns:
 // - A slice of strings containing the IP addresses of the DNS server.
 func DNSLookup(hostname string, dnsServer string) []string {
-	if !strings.Contains(dnsServer, ":") {
-		dnsServer = dnsServer + ":53"
-	}
+	dnsServer = dnsServerAddress(dnsServer)
 
 	r := &net.Resolver{
 		PreferGo: true,
@@ -32,4 +30,18 @@ func DNSLookup(hostname string, dnsServer string) []string {
 	ip, _ := r.LookupHost(context.Background(), hostname)
 
 	return ip
+}
+
+// dnsServerAddress returns the dial address for a DNS server, appending the
+// default port 53 when the server has no port. Bare IPv6 addresses such as
+// "::1" or bracketed ones such as "[::1]" are bracketed once, and addresses
+// with a port such as "[::1]:5353" are kept as-is.
+func dnsServerAddress(dnsServer string) string {
+	if _, _, err := net.SplitHostPort(dnsServer); err == nil {
+		return dnsServer
+	}
+	if strings.HasPrefix(dnsServer, "[") && strings.HasSuffix(dnsServer, "]") {
+		dnsServer = dnsServer[1 : len(dnsServer)-1]
+	}
+	return net.JoinHostPort(dnsServer, "53")
 }
