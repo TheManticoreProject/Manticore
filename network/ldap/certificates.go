@@ -2,6 +2,8 @@ package ldap
 
 import (
 	"fmt"
+
+	"github.com/go-ldap/ldap/v3"
 )
 
 // GetAllCertificates retrieves the distinguished names of all certificate templates from the LDAP server.
@@ -76,7 +78,7 @@ func (ldapSession *Session) GetDistinguishedNamesOfAllEnabledCertificates() ([]s
 	for _, name := range certificateTemplateNames {
 		queryPKICertificateTemplate := "(&"
 		queryPKICertificateTemplate += "(objectClass=pKICertificateTemplate)"
-		queryPKICertificateTemplate += fmt.Sprintf("(name=%s)", name)
+		queryPKICertificateTemplate += fmt.Sprintf("(name=%s)", ldap.EscapeFilter(name))
 		queryPKICertificateTemplate += ")"
 
 		attributes := []string{"distinguishedName"}

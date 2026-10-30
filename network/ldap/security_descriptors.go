@@ -87,7 +87,7 @@ func (s *Session) GetNtSecurityDescriptorOf(distinguishedName string) (string, e
 		0,
 		0,
 		false,
-		fmt.Sprintf("(distinguishedName=%s)", distinguishedName),
+		fmt.Sprintf("(distinguishedName=%s)", ldap.EscapeFilter(distinguishedName)),
 		[]string{"nTSecurityDescriptor"},
 		[]ldap.Control{control},
 	)

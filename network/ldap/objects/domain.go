@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap/ldap_attributes"
+	"github.com/go-ldap/ldap/v3"
 )
 
 type Domain struct {
@@ -78,7 +79,7 @@ func (domain *Domain) IsDomainFunctionalityLevelEqualTo(functionalityLevel ldap_
 func (domain *Domain) GetDomainFunctionalityLevel() (ldap_attributes.DomainFunctionalityLevel, error) {
 	var err error
 
-	query := fmt.Sprintf("(distinguishedName=%s)", domain.DistinguishedName)
+	query := fmt.Sprintf("(distinguishedName=%s)", ldap.EscapeFilter(domain.DistinguishedName))
 	attributes := []string{"msDS-Behavior-Version"}
 	results, err := domain.LdapSession.QueryBaseObject(domain.DistinguishedName, query, attributes)
 	if err != nil {
