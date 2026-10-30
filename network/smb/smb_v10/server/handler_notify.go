@@ -202,9 +202,16 @@ func waitForChange(
 			return
 
 		case <-responder.Cancelled():
-			// The client withdrew the request, or the connection went away.
-			// Either way there is nobody to answer.
+			// The client withdrew the request, or the connection went away. A
+			// withdrawn request is still owed its answer: [MS-CIFS] section
+			// 3.3.5.52 has "The canceled commands MUST return an error result",
+			// and a client that sent NT_CANCEL for a watch is waiting for that
+			// result before it treats the watch as gone. On a connection that is
+			// ending the write fails, which is harmless.
 			logger.Debugf("SMB1 server: a directory watch for %s was cancelled", conn.Remote)
+			if err := responder.RespondWithError(nt_status.NT_STATUS_CANCELLED); err != nil {
+				logger.Debugf("SMB1 server: failed to answer a cancelled watch for %s: %v", conn.Remote, err)
+			}
 			return
 
 		case change, open := <-changes:

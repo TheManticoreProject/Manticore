@@ -268,6 +268,24 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		return nil, nil, fmt.Errorf("failed to send Transaction2 primary: %v", err)
 	}
 
+	// The server answers a primary that does not carry the whole transaction with
+	// an interim response, and the secondaries go only once it has said yes.
+	// [MS-CIFS] section 3.2.5.1.4: "If the interim response indicates an error,
+	// then the transaction is canceled. The client MUST NOT send any secondary
+	// transaction request messages."
+	interimRaw, err := c.Transport.Receive()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to receive the Transaction2 interim response: %v", err)
+	}
+	fileIODump("Transaction2 interim response", interimRaw)
+	interim := message.NewMessage()
+	if _, err = interim.Header.Unmarshal(interimRaw); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal the Transaction2 interim response: %v", err)
+	}
+	if interim.Header.Status != 0x00000000 {
+		return nil, nil, fmt.Errorf("Transaction2 (subcommand 0x%04x) failed: 0x%08x", subcommand, interim.Header.Status)
+	}
+
 	// Send the remaining chunks as TRANSACTION2_SECONDARY continuation messages.
 	for i := 1; i < len(chunks); i++ {
 		secMsg := c.buildTransaction2Secondary(len(trans2Params), len(trans2Data), chunks[i])
@@ -281,7 +299,7 @@ func (c *Client) trans2(subcommand uint16, trans2Params, trans2Data []byte) ([]b
 		}
 	}
 
-	// The response is read only after every request message has been sent.
+	// The answer comes once every secondary has been sent.
 	raw, err := c.Transport.Receive()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to receive Transaction2 response: %v", err)

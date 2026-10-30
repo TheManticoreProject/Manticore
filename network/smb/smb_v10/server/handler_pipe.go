@@ -130,7 +130,7 @@ func handleTransaction(conn *Connection, w ResponseWriter, req *message.Message)
 	}
 
 	conn.transaction = reassembly
-	return nt_status.NT_STATUS_SUCCESS
+	return sendInterimResponse(conn, w, req)
 }
 
 // handleTransactionSecondary answers SMB_COM_TRANSACTION_SECONDARY.

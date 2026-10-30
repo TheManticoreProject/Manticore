@@ -75,7 +75,7 @@ func handleNtTransact(conn *Connection, w ResponseWriter, req *message.Message) 
 	conn.transaction = reassembly
 	logger.Debugf("SMB1 server: %s began a fragmented NT_TRANSACT (function 0x%04X, %d+%d bytes)",
 		conn.Remote, reassembly.subcommand, totalParameters, totalData)
-	return nt_status.NT_STATUS_SUCCESS
+	return sendInterimResponse(conn, w, req)
 }
 
 // maxNtTransactPayload bounds a reassembled NT_TRANSACT. Its counts are 32-bit, so

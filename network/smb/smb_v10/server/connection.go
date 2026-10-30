@@ -212,6 +212,15 @@ func (c *Connection) serve() {
 			logger.Errorf("SMB1 server: panic while serving %s: %v", c.Remote, r)
 		}
 	}()
+
+	// What the connection's sessions held goes with it: [MS-CIFS] section
+	// 3.3.7.2 has a server that loses a connection close every session on it,
+	// and closing a session closes its opens. Without this a client that went
+	// away left its byte-range locks in the table the whole share consults, its
+	// oplocks promised, its backend handles open and its delete-on-close files on
+	// disk, for as long as the server ran. It runs after the transport is closed,
+	// so the watches it ends answer nobody.
+	defer c.releaseAll()
 	defer c.Close()
 
 	// A deferred answer still waiting has nowhere to send its reply once the

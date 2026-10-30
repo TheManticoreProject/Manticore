@@ -1063,3 +1063,73 @@ func TestSecondaryFromAnotherSessionLeavesThePendingTransaction(t *testing.T) {
 		}
 	}
 }
+
+// TestSecondaryOfAnotherFamilyLeavesThePendingTransaction asserts each family's
+// secondary is refused when the transaction in progress belongs to another
+// family, and writes nothing into it.
+//
+// [MS-CIFS] section 2.2.4.47: SMB_COM_TRANSACTION2_SECONDARY "is used to complete
+// a data transfer initiated by an SMB_COM_TRANSACTION2 request", and the other
+// two families say the same of their own primaries. The families number their subcommands
+// independently, so a secondary folded into another family's transaction would
+// run that transaction's subcommand as one of its own: a pipe transaction's
+// TRANS_SET_NMPIPE_STATE (0x0001), for one, is TRANS2_FIND_FIRST2.
+func TestSecondaryOfAnotherFamilyLeavesThePendingTransaction(t *testing.T) {
+	const ownerUID, ownerTID = 1, 1
+
+	secondaries := []struct {
+		family    string
+		handle    func(*Connection, ResponseWriter, *message.Message) nt_status.NT_STATUS
+		code      codes.CommandCode
+		secondary func() command_interface.CommandInterface
+	}{
+		{"TRANSACTION", handleTransactionSecondary, codes.SMB_COM_TRANSACTION_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewTransactionSecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.Trans2_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+		{"TRANSACTION2", handleTransaction2Secondary, codes.SMB_COM_TRANSACTION2_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewTransaction2SecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.Trans2_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+		{"NT_TRANSACT", handleNtTransactSecondary, codes.SMB_COM_NT_TRANSACT_SECONDARY, func() command_interface.CommandInterface {
+			request := commands.NewNtTransactSecondaryRequest()
+			request.TotalParameterCount, request.ParameterCount = 8, 2
+			request.NT_Trans_Parameters = []types.UCHAR{0xEE, 0xEE}
+			return request
+		}},
+	}
+
+	for _, secondary := range secondaries {
+		for _, pendingFamily := range []string{"TRANSACTION", "TRANSACTION2", "NT_TRANSACT"} {
+			if pendingFamily == secondary.family {
+				continue
+			}
+			pending := &transactionReassembly{
+				family:     pendingFamily,
+				parameters: make([]byte, 8),
+				uid:        ownerUID,
+				tid:        ownerTID,
+				started:    time.Now(),
+			}
+			conn := &Connection{transaction: pending}
+
+			request := newRequest(secondary.code)
+			request.Header.UID = ownerUID
+			request.Header.TID = ownerTID
+			request.AddCommand(secondary.secondary())
+
+			if status := secondary.handle(conn, nil, request); status == nt_status.NT_STATUS_SUCCESS {
+				t.Errorf("a %s secondary continuing a %s transaction was accepted, want it refused",
+					secondary.family, pendingFamily)
+			}
+			if !bytes.Equal(pending.parameters, make([]byte, 8)) {
+				t.Errorf("a %s secondary wrote % x into a %s transaction",
+					secondary.family, pending.parameters, pendingFamily)
+			}
+		}
+	}
+}

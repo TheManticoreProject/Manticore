@@ -1322,8 +1322,10 @@ func TestTransactionSecondaryFromAnotherSessionIsRefused(t *testing.T) {
 	transaction.DataCount = 4
 	transaction.Trans_Data = []types.UCHAR("ownr")
 	primary.AddCommand(transaction)
-	// An incomplete primary gets no response.
+	// An incomplete primary gets an interim response telling the owner to send
+	// the rest.
 	sendRequest(t, f.transport, primary)
+	expectInterimResponse(t, f.transport, codes.SMB_COM_TRANSACTION)
 
 	secondary := func(uid, tid types.USHORT, data string) (*message.Message, []byte) {
 		t.Helper()

@@ -12,25 +12,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
-// receiveFinalTransactionResponse reads frames until one that is not an interim
-// transaction response, and returns it raw.
-//
-// A primary that does not carry the whole transaction may be answered with an
-// interim response — a success with WordCount and ByteCount of zero — ahead of
-// the final one, and only the final one is under test here.
+// receiveFinalTransactionResponse reads the answer to a completed transaction
+// and returns it raw.
 func receiveFinalTransactionResponse(t *testing.T, client *smb1client.Client) []byte {
 	t.Helper()
 
-	for {
-		raw, err := client.Transport.Receive()
-		if err != nil {
-			t.Fatalf("the completed transaction was never answered: %v", err)
-		}
-		interim := len(raw) == 35 && binary.LittleEndian.Uint32(raw[5:9]) == 0 && raw[32] == 0
-		if !interim {
-			return raw
-		}
+	raw, err := client.Transport.Receive()
+	if err != nil {
+		t.Fatalf("the completed transaction was never answered: %v", err)
 	}
+	return raw
 }
 
 // TestFinalTransactionResponseCarriesThePrimarysCommand asserts the answer to a
@@ -62,6 +53,8 @@ func TestFinalTransactionResponseCarriesThePrimarysCommand(t *testing.T) {
 		primary.ParameterCount = 1
 		primary.Trans2_Parameters = []types.UCHAR{0x03} // SMB_QUERY_FS_SIZE_INFO, low byte
 		sendRaw(t, client, primary)
+		// [MS-CIFS] section 3.2.4.1.5: the secondaries wait for the interim response.
+		expectInterimResponse(t, client.Transport, codes.SMB_COM_TRANSACTION2)
 
 		secondary := commands.NewTransaction2SecondaryRequest()
 		secondary.TotalParameterCount = 2
@@ -103,6 +96,7 @@ func TestFinalTransactionResponseCarriesThePrimarysCommand(t *testing.T) {
 		primary.NT_Trans_Parameters = toUCHARs(parameters[:4])
 		primary.TotalDataCount = 1
 		sendRaw(t, client, primary)
+		expectInterimResponse(t, client.Transport, codes.SMB_COM_NT_TRANSACT)
 
 		secondary := commands.NewNtTransactSecondaryRequest()
 		secondary.TotalParameterCount = 8
