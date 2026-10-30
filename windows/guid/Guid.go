@@ -258,7 +258,7 @@ func FromFormatB(data string) (*GUID, error) {
 	data = strings.TrimSpace(data)
 	data = strings.ToLower(data)
 
-	if data[0] != '{' || data[len(data)-1] != '}' {
+	if len(data) < 2 || data[0] != '{' || data[len(data)-1] != '}' {
 		return nil, fmt.Errorf("GUID Format B should be 32 hexadecimal characters separated in five parts enclosed in braces")
 	}
 
@@ -279,7 +279,7 @@ func FromFormatP(data string) (*GUID, error) {
 	data = strings.TrimSpace(data)
 	data = strings.ToLower(data)
 
-	if data[0] != '(' || data[len(data)-1] != ')' {
+	if len(data) < 2 || data[0] != '(' || data[len(data)-1] != ')' {
 		return nil, fmt.Errorf("GUID Format P should be 32 hexadecimal characters separated in five parts enclosed in parentheses")
 	}
 
