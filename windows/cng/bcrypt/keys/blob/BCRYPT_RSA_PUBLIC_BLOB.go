@@ -45,15 +45,17 @@ type BCRYPT_RSA_PUBLIC_BLOB struct {
 // The function expects the byte slice to follow the RSA public key BLOB format, starting with the BCRYPT_RSA_KEY_BLOB header.
 // It extracts the public exponent and modulus from the byte slice and stores them in the BCRYPT_RSA_PUBLIC_BLOB structure.
 func (b *BCRYPT_RSA_PUBLIC_BLOB) Unmarshal(keyHeader headers.BCRYPT_RSA_KEY_BLOB, value []byte) (int, error) {
+	// Sizes are compared as uint64: on 32-bit platforms int() of a size
+	// >= 2^31 is negative and would slip past a signed bounds check.
 	bytesRead := 0
 
-	if int(keyHeader.CbPublicExp) > len(value)-bytesRead {
+	if uint64(keyHeader.CbPublicExp) > uint64(len(value)-bytesRead) {
 		return 0, fmt.Errorf("buffer too small for BCRYPT_RSA_PUBLIC_BLOB, not enough bytes for unmarshalling public exponent")
 	}
 	b.PublicExponent = value[bytesRead : bytesRead+int(keyHeader.CbPublicExp)]
 	bytesRead += int(keyHeader.CbPublicExp)
 
-	if int(keyHeader.CbModulus) > len(value)-bytesRead {
+	if uint64(keyHeader.CbModulus) > uint64(len(value)-bytesRead) {
 		return 0, fmt.Errorf("buffer too small for BCRYPT_RSA_PUBLIC_BLOB, not enough bytes for unmarshalling modulus")
 	}
 	b.Modulus = value[bytesRead : bytesRead+int(keyHeader.CbModulus)]
