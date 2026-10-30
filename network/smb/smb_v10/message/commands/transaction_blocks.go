@@ -73,7 +73,9 @@ func locateTransactionBlock(
 		return nil, 0, fmt.Errorf("%s offset %d precedes the data block, which starts at %d",
 			name, declaredOffset, blockStart)
 	}
-	if at+count > len(block) {
+	// Compared as a remainder rather than as at+count, which wraps negative on a
+	// 32-bit build when both come from 32-bit wire fields near 0x7FFFFFFF.
+	if count > len(block)-at {
 		return nil, 0, fmt.Errorf("%s of %d bytes at offset %d overruns the %d-byte data block",
 			name, count, declaredOffset, len(block))
 	}
