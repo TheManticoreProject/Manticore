@@ -6,6 +6,7 @@
 package mssamr
 
 import (
+	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -295,4 +296,30 @@ func TestSAM_VALIDATE_OUTPUT_ARG_RoundTrip(t *testing.T) {
 			ValidationStatus: SamValidatePasswordExpired,
 		},
 	})
+}
+
+// TestCountedStrings_WireCounts pins RPC_STRING ([size_is(MaximumLength),
+// length_is(Length)]) and RPC_SHORT_BLOB ([size_is(MaximumLength/2),
+// length_is(Length/2)]) to their IDL bounds rather than the slice length.
+func TestCountedStrings_WireCounts(t *testing.T) {
+	header := func(t *testing.T, v any) (uint32, uint32) {
+		t.Helper()
+		raw, err := ndr.Marshal(v)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if len(raw) < 20 {
+			t.Fatalf("Marshal produced %d bytes", len(raw))
+		}
+		return binary.LittleEndian.Uint32(raw[8:12]), binary.LittleEndian.Uint32(raw[16:20])
+	}
+
+	str := struct{ S RPC_STRING }{RPC_STRING{Length: 2, MaximumLength: 6, Buffer: []byte{'h', 'i', 0, 0, 0, 0}}}
+	if maxCount, actual := header(t, &str); maxCount != 6 || actual != 2 {
+		t.Errorf("RPC_STRING array header = max %d, actual %d; want max 6, actual 2", maxCount, actual)
+	}
+	blob := struct{ B RPC_SHORT_BLOB }{RPC_SHORT_BLOB{Length: 2, MaximumLength: 8, Buffer: []uint16{7, 0, 0, 0}}}
+	if maxCount, actual := header(t, &blob); maxCount != 4 || actual != 1 {
+		t.Errorf("RPC_SHORT_BLOB array header = max %d, actual %d; want max 4, actual 1", maxCount, actual)
+	}
 }

@@ -1,6 +1,7 @@
 package mseven
 
 import (
+	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestRPCClientID_RoundTrip(t *testing.T) {
 func TestRPCString_RoundTrip(t *testing.T) {
 	cases := []RPC_STRING{
 		{Length: 5, MaximumLength: 5, Buffer: []byte("hello")},
-		{Length: 1, MaximumLength: 4, Buffer: []byte{0x41, 0x00, 0x00, 0x00}},
+		{Length: 1, MaximumLength: 4, Buffer: []byte{0x41}},
 		{Length: 0, MaximumLength: 0, Buffer: nil},
 	}
 	for _, in := range cases {
@@ -59,5 +60,26 @@ func TestIELFHandle_RoundTrip(t *testing.T) {
 	roundTrip(t, &in, &out)
 	if !reflect.DeepEqual(in, out) {
 		t.Fatalf("IELF_HANDLE round-trip: got %+v want %+v", out, in)
+	}
+}
+
+// TestRPCString_WireCounts pins RPC_STRING's [size_is(MaximumLength), length_is(Length)]
+// bounds: max_count is MaximumLength and actual_count is Length, so only the first
+// Length bytes of a larger buffer are transmitted.
+func TestRPCString_WireCounts(t *testing.T) {
+	type wrap struct{ S RPC_STRING }
+	in := wrap{S: RPC_STRING{Length: 1, MaximumLength: 4, Buffer: []byte{0x41, 0x00, 0x00, 0x00}}}
+	raw, err := ndr.Marshal(&in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// Length (2) + MaximumLength (2) + referent (4), then max_count, offset, actual_count.
+	if len(raw) < 20 {
+		t.Fatalf("Marshal produced %d bytes", len(raw))
+	}
+	maxCount := binary.LittleEndian.Uint32(raw[8:12])
+	actualCount := binary.LittleEndian.Uint32(raw[16:20])
+	if maxCount != 4 || actualCount != 1 {
+		t.Errorf("array header = max %d, actual %d; want max 4, actual 1", maxCount, actualCount)
 	}
 }
