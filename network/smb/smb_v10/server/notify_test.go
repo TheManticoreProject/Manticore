@@ -295,7 +295,12 @@ type unwatchableFileSystem struct {
 }
 
 // TestNotifyChangeStopsWatchingWhenCancelled asserts a cancelled watch releases
-// the backend watch rather than leaving it running for the life of the share.
+// the backend watch rather than leaving it running for the life of the share, and
+// that the watch is answered with STATUS_CANCELLED.
+//
+// [MS-CIFS] section 3.3.5.52: "The canceled commands MUST return an error result
+// [...]. The SMB_COM_NT_CANCEL (section 2.2.4.65) command MUST NOT send a
+// response". So exactly one reply arrives, and it is the watch's.
 func TestNotifyChangeStopsWatchingWhenCancelled(t *testing.T) {
 	fs, client := notifyServer(t)
 
@@ -322,12 +327,19 @@ func TestNotifyChangeStopsWatchingWhenCancelled(t *testing.T) {
 	waitFor(t, func() bool { return fs.watches.count() == 0 },
 		"the backend watch outlived the cancelled request")
 
-	// And nothing was sent for it, so the reply stream stays in step: an echo
-	// afterwards gets its own answer.
 	select {
 	case reply := <-replies:
-		t.Fatalf("a cancelled watch was answered anyway, with status 0x%08X", reply.status)
-	case <-time.After(300 * time.Millisecond):
+		if nt_status.NT_STATUS(reply.status) != nt_status.NT_STATUS_CANCELLED {
+			t.Fatalf("the cancelled watch answered 0x%08X, want STATUS_CANCELLED", reply.status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancelled watch was never answered")
+	}
+
+	// The cancel itself has no response, so the next reply on the connection is
+	// the answer to the next request.
+	if _, err := client.Echo([]byte("after the cancel")); err != nil {
+		t.Fatalf("the echo after the cancel failed: %v", err)
 	}
 }
 
