@@ -325,6 +325,59 @@ func TestAcceptorVerifiesMIC(t *testing.T) {
 	})
 }
 
+// TestAcceptorRejectsStrippedMIC asserts the acceptor rejects an AUTHENTICATE
+// whose MIC field was removed in flight while the NTLMv2 blob's MsvAvFlags still
+// announces one. The blob is authenticated by the NTProofStr, so the response
+// verifies; only the MIC-present bit reveals that the MIC was stripped, which is
+// the relay pattern of CVE-2019-1040.
+func TestAcceptorRejectsStrippedMIC(t *testing.T) {
+	timestamp := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	ctx := NewAcceptContext("LAB", challenge.TargetTypeDomain, serverTargetInfo(t, timestamp))
+	ctx.CredentialLookup = lookupFor(testDomain, testUsername, testPassword, nil)
+
+	client := NewAuthContext(AuthTypeNTLM, testDomain, testUsername, testPassword, testWorkstation, true)
+	v := version.DefaultVersion()
+	negotiateToken, err := client.CreateNegotiateToken(clientNegotiateFlags, &v)
+	if err != nil {
+		t.Fatalf("CreateNegotiateToken() error = %v", err)
+	}
+	if _, err := ctx.AcceptNegotiateToken(negotiateToken); err != nil {
+		t.Fatalf("AcceptNegotiateToken() error = %v", err)
+	}
+
+	message, err := authenticate.CreateAuthenticateMessage(ctx.Challenge, testUsername, testPassword, testDomain, testWorkstation)
+	if err != nil {
+		t.Fatalf("CreateAuthenticateMessage() error = %v", err)
+	}
+	if !message.NeedsMIC {
+		t.Fatal("a CHALLENGE with a timestamp did not oblige the client to send a MIC")
+	}
+
+	// Drop the MIC field and the signing flags, leaving the NT response intact.
+	message.NeedsMIC = false
+	message.NegotiateFlags &^= flags.NTLMSSP_NEGOTIATE_SIGN | flags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+	raw, err := message.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	if err := ctx.AcceptAuthenticateToken(raw); err != nil {
+		t.Fatalf("AcceptAuthenticateToken() error = %v", err)
+	}
+	if ctx.Authenticate.NeedsMIC {
+		t.Fatal("the stripped AUTHENTICATE still carries a MIC field")
+	}
+	if !ctx.Authenticate.AnnouncesMIC() {
+		t.Fatal("the NTLMv2 blob does not announce a MIC")
+	}
+	if err := ctx.Verify(); !errors.Is(err, ErrBadMIC) {
+		t.Fatalf("Verify() error = %v, want ErrBadMIC", err)
+	}
+	if ctx.Verified || len(ctx.GetSessionKey()) != 0 {
+		t.Fatal("a stripped-MIC AUTHENTICATE was marked verified")
+	}
+}
+
 // TestAcceptorKeyExchange asserts the acceptor unseals a client-chosen session key
 // when NTLMSSP_NEGOTIATE_KEY_EXCH was negotiated. A Windows client requests key
 // exchange, so this is the path that matters in the field even though the

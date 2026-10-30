@@ -12,6 +12,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/crypto/ntlmv1"
 	"github.com/TheManticoreProject/Manticore/crypto/ntlmv2"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/avpair"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/datafields"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/header"
@@ -446,6 +447,41 @@ func (msg *AuthenticateMessage) VerifyMIC(exportedSessionKey, negotiateMessage, 
 	mac.Write(zeroed)
 
 	return hmac.Equal(msg.MIC[:], mac.Sum(nil))
+}
+
+// ntlmv2BlobAvPairsOffset is the offset of the AV_PAIRs inside an NTLMv2
+// NtChallengeResponse: NTProofStr (16) followed by the NTLMv2_CLIENT_CHALLENGE
+// fixed part — RespType, HiRespType, Reserved1 (2), Reserved2 (4), TimeStamp
+// (8), ChallengeFromClient (8) and Reserved3 (4) ([MS-NLMP] 2.2.2.7).
+const ntlmv2BlobAvPairsOffset = 16 + 28
+
+// AnnouncesMIC reports whether the NTLMv2 response carries an MsvAvFlags AV_PAIR
+// with the MIC-present bit set, meaning the client committed to sending a MIC
+// ([MS-NLMP] 3.2.5.1.2).
+//
+// Unlike NeedsMIC, which Unmarshal infers from the message layout, this flag sits
+// inside the blob that the NTProofStr authenticates, so a relay cannot clear it
+// without invalidating the response. An acceptor uses it to detect a MIC that was
+// stripped in flight.
+//
+// Returns:
+//   - true when the NtChallengeResponse is NTLMv2 and its MsvAvFlags has the
+//     MIC-present bit set
+func (msg *AuthenticateMessage) AnnouncesMIC() bool {
+	if len(msg.NtChallengeResponse) <= ntlmv2BlobAvPairsOffset {
+		return false
+	}
+
+	pairs, err := targetinfo.ParseTargetInfo(msg.NtChallengeResponse[ntlmv2BlobAvPairsOffset:])
+	if err != nil {
+		return false
+	}
+	value, ok := pairs[avpair.MsvAvFlags]
+	if !ok || len(value) != 4 {
+		return false
+	}
+
+	return binary.LittleEndian.Uint32(value)&avpair.MsvAvFlagMICPresent != 0
 }
 
 // Marshal serializes the AuthenticateMessage into a byte slice
