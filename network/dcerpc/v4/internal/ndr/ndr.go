@@ -62,7 +62,10 @@ func (r *Reader) Take(n int) []byte {
 	if r.fail != nil {
 		return nil
 	}
-	if n < 0 || r.off+n > len(r.data) {
+	// Compare against the remaining length rather than computing r.off+n: on
+	// 32-bit platforms a length near MaxInt32 makes the sum wrap negative and
+	// slip past the bounds check.
+	if n < 0 || n > len(r.data)-r.off {
 		r.fail = fmt.Errorf("ndr: underrun reading %d bytes at offset %d", n, r.off)
 		return nil
 	}

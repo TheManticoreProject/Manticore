@@ -64,3 +64,18 @@ func TestReaderAlignUnderrun(t *testing.T) {
 		t.Fatal("expected underrun error aligning past the end")
 	}
 }
+
+// TestReaderTakeRejectsLengthOverflowingOffset checks that a length just below
+// MaxInt32 is rejected once the cursor has advanced. On 32-bit builds
+// r.off+n wrapped negative and passed the bounds check, so the slice
+// expression panicked.
+func TestReaderTakeRejectsLengthOverflowingOffset(t *testing.T) {
+	r := NewReader([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
+	_ = r.U32() // off = 4
+	if b := r.Take(0x7fffffff); b != nil {
+		t.Errorf("Take(0x7fffffff) = % x, want nil", b)
+	}
+	if r.Err() == nil {
+		t.Fatal("expected underrun error for a length overflowing the offset")
+	}
+}
