@@ -15,10 +15,10 @@ import (
 )
 
 // writeAndxOverhead is the space a WriteAndx request needs beyond its data: the
-// SMB header, the 24-byte parameter words of the 32-bit-offset form with their
-// WordCount, the ByteCount and the pad byte. Reserving it keeps a chunk inside the
-// negotiated buffer.
-const writeAndxOverhead = header.SMB_HEADER_SIZE + 1 + 24 + 2 + 1
+// SMB header, the 28-byte parameter words of the 64-bit-offset form (OffsetHigh is
+// sent once the offset reaches 4 GiB) with their WordCount, the ByteCount and the
+// pad byte. Reserving it keeps a chunk inside the negotiated buffer at any offset.
+const writeAndxOverhead = header.SMB_HEADER_SIZE + 1 + 28 + 2 + 1
 
 // FID is an opaque file handle returned by the server for an open file or directory.
 type FID uint16
