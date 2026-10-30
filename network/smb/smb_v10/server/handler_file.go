@@ -101,6 +101,8 @@ func statusForFSError(err error) nt_status.NT_STATUS {
 		return nt_status.NT_STATUS_DIRECTORY_NOT_EMPTY
 	case errors.Is(err, ErrReadOnly):
 		return nt_status.NT_STATUS_MEDIA_WRITE_PROTECTED
+	case errors.Is(err, ErrDiskFull):
+		return nt_status.NT_STATUS_DISK_FULL
 	case errors.Is(err, ErrAccessDenied):
 		return nt_status.NT_STATUS_ACCESS_DENIED
 	}

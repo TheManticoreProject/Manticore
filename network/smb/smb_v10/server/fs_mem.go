@@ -26,8 +26,13 @@ type MemoryFileSystem struct {
 	// is the empty path and is always present.
 	entries map[string]*memoryEntry
 
-	// volume describes the storage reported to a client.
+	// volume describes the storage reported to a client. Its TotalBytes is also
+	// the most file data the file system holds, all files together.
 	volume VolumeInfo
+
+	// used is the number of file-data bytes held, counting an entry once however
+	// many names it has. It is kept under the lock above.
+	used int64
 
 	// watches are the change notifications registered on this file system, for
 	// NT_TRANSACT_NOTIFY_CHANGE.
@@ -44,6 +49,10 @@ type memoryEntry struct {
 	name  string
 	isDir bool
 	data  []byte
+
+	// links is the number of names the entry is reachable by. Its data is
+	// released from the volume's usage when the last one goes.
+	links int
 
 	readOnly bool
 	created  time.Time
@@ -102,14 +111,28 @@ func (fs *MemoryFileSystem) AddFile(path string, contents []byte) error {
 		return err
 	}
 
+	// A file added over an existing one replaces it, so the old one's data no
+	// longer counts against the room for the new one.
+	room := fs.volume.TotalBytes - fs.used
+	if held, ok := fs.entries[resolved]; ok && !held.isDir && held.links == 1 {
+		room += int64(len(held.data))
+	}
+	if int64(len(contents)) > room {
+		return ErrDiskFull
+	}
+	if _, ok := fs.entries[resolved]; ok {
+		fs.dropName(resolved)
+	}
+
 	now := time.Now().UTC()
 	_, name := splitPath(resolved)
 	stored := make([]byte, len(contents))
 	copy(stored, contents)
 	fs.entries[resolved] = &memoryEntry{
-		name: name, data: stored,
+		name: name, data: stored, links: 1,
 		created: now, accessed: now, modified: now, changed: now,
 	}
+	fs.used += int64(len(stored))
 	// Published like any other addition. This is a setup helper, but a caller
 	// that adds a file to a share a client is already watching has changed the
 	// share, and a watch that heard about a create through Open but not through
@@ -213,6 +236,7 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 			return nil, ErrReadOnly
 		}
 		if flags.Truncate && !entry.isDir {
+			fs.used -= int64(len(entry.data))
 			entry.data = nil
 			entry.modified = time.Now().UTC()
 		}
@@ -235,7 +259,7 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 
 	now := time.Now().UTC()
 	fs.entries[path] = &memoryEntry{
-		name: name, isDir: flags.Directory,
+		name: name, isDir: flags.Directory, links: 1,
 		created: now, accessed: now, modified: now, changed: now,
 	}
 	fs.watches.publish(path, changeAdded)
@@ -283,6 +307,7 @@ func (fs *MemoryFileSystem) Link(existing, target string) error {
 	}
 
 	fs.entries[target] = entry
+	entry.links++
 	return nil
 }
 
@@ -309,7 +334,9 @@ func (fs *MemoryFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) e
 	}
 
 	if mask.Size && !entry.isDir {
-		fs.resize(entry, attr.Size)
+		if err := fs.resize(entry, attr.Size); err != nil {
+			return err
+		}
 	}
 	if mask.ReadOnly {
 		entry.readOnly = attr.ReadOnly
@@ -330,19 +357,55 @@ func (fs *MemoryFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) e
 	return nil
 }
 
+// maxSize is the largest entry may grow to: its current size plus what the
+// volume has left. File data is held in memory, so without a ceiling a request
+// naming a far end of file or a far offset, or a few files each grown to the
+// volume's size, would have the server try to allocate that much and die. The
+// caller holds the lock.
+func (fs *MemoryFileSystem) maxSize(entry *memoryEntry) int64 {
+	return fs.volume.TotalBytes - fs.used + int64(len(entry.data))
+}
+
+// setData replaces an entry's contents, keeping the volume's usage in step. The
+// caller holds the lock and has checked the new size against maxSize.
+func (fs *MemoryFileSystem) setData(entry *memoryEntry, data []byte) {
+	fs.used += int64(len(data)) - int64(len(entry.data))
+	entry.data = data
+}
+
+// dropName removes one name of an entry, releasing its data from the volume's
+// usage if that was the last name. The caller holds the lock.
+func (fs *MemoryFileSystem) dropName(path string) {
+	entry, ok := fs.entries[path]
+	if !ok {
+		return
+	}
+	delete(fs.entries, path)
+	entry.links--
+	if entry.links <= 0 {
+		fs.used -= int64(len(entry.data))
+	}
+}
+
 // resize grows or shrinks an entry's contents. The caller holds the lock.
-func (fs *MemoryFileSystem) resize(entry *memoryEntry, size int64) {
+//
+// It fails with ErrDiskFull, leaving the entry alone, if the volume has no room
+// for the growth.
+func (fs *MemoryFileSystem) resize(entry *memoryEntry, size int64) error {
 	switch {
 	case size < 0:
-		return
+		return nil
+	case size > fs.maxSize(entry):
+		return ErrDiskFull
 	case size <= int64(len(entry.data)):
-		entry.data = entry.data[:size]
+		fs.setData(entry, entry.data[:size])
 	default:
 		grown := make([]byte, size)
 		copy(grown, entry.data)
-		entry.data = grown
+		fs.setData(entry, grown)
 	}
 	entry.modified = time.Now().UTC()
+	return nil
 }
 
 // Remove deletes a file.
@@ -360,7 +423,7 @@ func (fs *MemoryFileSystem) Remove(path string) error {
 	if entry.readOnly {
 		return ErrReadOnly
 	}
-	delete(fs.entries, path)
+	fs.dropName(path)
 	fs.watches.publish(path, changeRemoved)
 	return nil
 }
@@ -374,11 +437,16 @@ func (fs *MemoryFileSystem) Rename(oldPath, newPath string, replace bool) error 
 	if !ok {
 		return ErrNotFound
 	}
-	if _, taken := fs.entries[newPath]; taken {
+	if target, taken := fs.entries[newPath]; taken {
 		if !replace {
 			return ErrExists
 		}
-		delete(fs.entries, newPath)
+		// Replacing a directory would drop only its own entry and orphan its
+		// children, whose bytes would stay counted against the volume.
+		if target.isDir {
+			return ErrAccessDenied
+		}
+		fs.dropName(newPath)
 	}
 
 	// The destination's parent has to exist, or the entry would be unreachable.
@@ -516,7 +584,9 @@ func (fs *MemoryFileSystem) ReadDir(path, pattern string) ([]DirEntry, error) {
 func (fs *MemoryFileSystem) VolumeInfo() (VolumeInfo, error) {
 	fs.mutex.RLock()
 	defer fs.mutex.RUnlock()
-	return fs.volume, nil
+	volume := fs.volume
+	volume.FreeBytes = volume.TotalBytes - fs.used
+	return volume, nil
 }
 
 // memoryFile is an open handle onto a MemoryFileSystem entry. It holds the path
@@ -578,11 +648,18 @@ func (f *memoryFile) WriteAt(p []byte, off int64) (int, error) {
 		return 0, fmt.Errorf("negative offset %d", off)
 	}
 
+	// A write that would end beyond what the volume has room for is refused
+	// before anything is allocated. Checked as off > max-len(p) so a huge offset
+	// cannot overflow the sum.
+	if limit := f.fs.maxSize(entry); int64(len(p)) > limit || off > limit-int64(len(p)) {
+		return 0, ErrDiskFull
+	}
+
 	// A write past the end extends the file, with the gap reading as zeroes.
 	if end := off + int64(len(p)); end > int64(len(entry.data)) {
 		grown := make([]byte, end)
 		copy(grown, entry.data)
-		entry.data = grown
+		f.fs.setData(entry, grown)
 	}
 	written := copy(entry.data[off:], p)
 	entry.modified = time.Now().UTC()
@@ -598,11 +675,13 @@ func (f *memoryFile) Truncate(size int64) error {
 	if err != nil {
 		return err
 	}
+	if entry.isDir {
+		return ErrIsDirectory
+	}
 	if entry.readOnly {
 		return ErrReadOnly
 	}
-	f.fs.resize(entry, size)
-	return nil
+	return f.fs.resize(entry, size)
 }
 
 // Sync is a no-op: there is nothing behind memory to commit to.
