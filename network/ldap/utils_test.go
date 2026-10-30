@@ -80,3 +80,23 @@ func TestConvertUnixTimeStampToLDAPTimeStamp(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDomainFromDistinguishedName(t *testing.T) {
+	tests := []struct {
+		dn   string
+		want string
+	}{
+		{"CN=John Doe,OU=Users,DC=example,DC=com", "example.com"},
+		{"dc=corp,dc=local", "corp.local"},
+		{"CN=x, DC=corp, DC=local", "corp.local"},
+		{"CN=Smith\\, DC=fake,OU=Users,DC=corp,DC=local", "corp.local"},
+		{`CN=foo\0ADEL:0f5c1a7d-3b4e-4f6a-9c2d-1e2f3a4b5c6d,CN=Deleted Objects,DC=corp,DC=local`, "corp.local"},
+		{"CN=Users", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := ldap.GetDomainFromDistinguishedName(tt.dn); got != tt.want {
+			t.Errorf("GetDomainFromDistinguishedName(%q) = %q, want %q", tt.dn, got, tt.want)
+		}
+	}
+}

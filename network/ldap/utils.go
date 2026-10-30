@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	goldapv3 "github.com/go-ldap/ldap/v3"
 )
 
 // Monday, January 1, 1601 12:00:00 AM in 100-nanosecond intervals
@@ -12,7 +14,7 @@ const UnixTimestampStart int64 = 116444736000000000
 
 // GetDomainFromDistinguishedName extracts the domain name from a distinguished name (DN).
 // A distinguished name is a string that uniquely identifies an entry in the LDAP directory.
-// The function splits the DN into its components and concatenates the domain components (DC) to form the domain name.
+// The function parses the DN per RFC 4514 and concatenates the domain components (DC) to form the domain name.
 //
 // Parameters:
 //
@@ -30,20 +32,26 @@ const UnixTimestampStart int64 = 116444736000000000
 //
 // Note:
 //
-//	The function assumes that the distinguished name is well-formed and contains domain components (DC).
+//	The function assumes that the distinguished name is well-formed and contains domain components (DC);
+//	it returns an empty string if the DN cannot be parsed.
 func GetDomainFromDistinguishedName(distinguishedName string) string {
-	domainParts := strings.Split(distinguishedName, ",")
+	// Parse the DN per RFC 4514 so attribute types match case-insensitively,
+	// spaces around separators are allowed and escaped commas stay in values
+	dn, err := goldapv3.ParseDN(distinguishedName)
+	if err != nil {
+		return ""
+	}
 
-	domain := ""
-	for _, part := range domainParts {
-		if strings.HasPrefix(part, "DC=") {
-			domain += strings.TrimPrefix(part, "DC=") + "."
+	domainParts := []string{}
+	for _, rdn := range dn.RDNs {
+		for _, attribute := range rdn.Attributes {
+			if strings.EqualFold(attribute.Type, "DC") {
+				domainParts = append(domainParts, attribute.Value)
+			}
 		}
 	}
 
-	domain = strings.TrimSuffix(domain, ".")
-
-	return domain
+	return strings.Join(domainParts, ".")
 }
 
 // ConvertLDAPTimeStampToUnixTimeStamp converts an LDAP timestamp to a Unix timestamp.
