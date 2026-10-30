@@ -211,3 +211,38 @@ func TestMemoryFileSystemTruncateRefusesDirectory(t *testing.T) {
 		t.Fatalf("Truncate on a directory returned %v, want ErrIsDirectory", err)
 	}
 }
+
+// TestMemoryFileSystemRenameOntoItself asserts renaming a file onto its own name
+// with replace keeps the file instead of deleting it.
+func TestMemoryFileSystemRenameOntoItself(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("same.txt", []byte("keep me")); err != nil {
+		t.Fatal(err)
+	}
+	before, err := fs.VolumeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, replace := range []bool{true, false} {
+		if err := fs.Rename("same.txt", "same.txt", replace); err != nil {
+			t.Fatalf("Rename onto itself (replace=%v) = %v, want nil", replace, err)
+		}
+	}
+	file, err := fs.Open("same.txt", OpenFlags{Read: true})
+	if err != nil {
+		t.Fatalf("the file is gone after a rename onto itself: %v", err)
+	}
+	defer file.Close()
+	contents := make([]byte, 16)
+	n, _ := file.ReadAt(contents, 0)
+	if got := string(contents[:n]); got != "keep me" {
+		t.Errorf("contents after a rename onto itself = %q, want %q", got, "keep me")
+	}
+	after, err := fs.VolumeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.FreeBytes != before.FreeBytes {
+		t.Errorf("FreeBytes changed from %d to %d", before.FreeBytes, after.FreeBytes)
+	}
+}

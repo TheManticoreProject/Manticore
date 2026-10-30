@@ -437,6 +437,11 @@ func (fs *MemoryFileSystem) Rename(oldPath, newPath string, replace bool) error 
 	if !ok {
 		return ErrNotFound
 	}
+	// Renaming an entry onto its own name changes nothing; going on would drop
+	// the name as the replaced target and then delete it as the source.
+	if oldPath == newPath {
+		return nil
+	}
 	if target, taken := fs.entries[newPath]; taken {
 		if !replace {
 			return ErrExists
