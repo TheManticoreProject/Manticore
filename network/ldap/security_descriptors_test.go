@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"strings"
 	"testing"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -82,5 +83,32 @@ func TestControlMicrosoftSDFlagsEncode(t *testing.T) {
 				t.Errorf("SDFlags value = %d, want %d", got, testCase.controlValue)
 			}
 		})
+	}
+}
+
+// TestSecurityDescriptorSpecialCharacterDN checks that GetNtSecurityDescriptorOf
+// sends a search for distinguished names carrying RFC 4515 filter metacharacters,
+// such as an escaped comma or parentheses in an RDN. Interpolating such a DN into
+// the filter unescaped makes the client reject the filter before anything is sent.
+func TestSecurityDescriptorSpecialCharacterDN(t *testing.T) {
+	distinguishedNames := []string{
+		`CN=Smith\, John,OU=Users,DC=corp,DC=local`,
+		`CN=Svc (prod),CN=Users,DC=corp,DC=local`,
+		`CN=Star*Name,CN=Users,DC=corp,DC=local`,
+	}
+
+	pageSizes, _ := recordPageSizes(t, func(session *Session) {
+		for _, distinguishedName := range distinguishedNames {
+			// The recording server returns no entries, so this reports "no entry
+			// returned"; a filter compilation error means the search never left.
+			_, err := session.GetNtSecurityDescriptorOf(distinguishedName)
+			if err != nil && strings.Contains(err.Error(), "filter") {
+				t.Errorf("GetNtSecurityDescriptorOf(%q) failed to build its filter: %s", distinguishedName, err)
+			}
+		}
+	})
+
+	if len(pageSizes) != len(distinguishedNames) {
+		t.Fatalf("expected %d searches to reach the server, got %d", len(distinguishedNames), len(pageSizes))
 	}
 }
