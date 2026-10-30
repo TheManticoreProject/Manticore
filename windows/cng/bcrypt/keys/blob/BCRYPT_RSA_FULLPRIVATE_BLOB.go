@@ -16,10 +16,10 @@ import (
 //	Modulus[cbModulus]         // Big-endian
 //	Prime1[cbPrime1] // Big-endian
 //	Prime2[cbPrime2] // Big-endian
-//	Exponent1[cbExponent1] // Big-endian
-//	Exponent2[cbExponent2] // Big-endian
-//	Coefficient[cbCoefficient] // Big-endian
-//	PrivateExponent[cbPrivateExp] // Big-endian
+//	Exponent1[cbPrime1] // Big-endian
+//	Exponent2[cbPrime2] // Big-endian
+//	Coefficient[cbPrime1] // Big-endian
+//	PrivateExponent[cbModulus] // Big-endian
 //
 // The fields following this structure (PublicExponent, Modulus, Prime1, Prime2, Exponent1, Exponent2, Coefficient, and PrivateExponent) are stored in big-endian format.
 //
@@ -68,7 +68,7 @@ type BCRYPT_RSA_FULLPRIVATE_BLOB struct {
 //
 // Note:
 // The function expects the byte slice to follow the RSA full private key BLOB format, starting with the BCRYPT_RSA_KEY_BLOB header.
-// It extracts the public exponent, modulus, prime1, prime2, exponent1, exponent2, and coefficient from the byte slice and stores them in the BCRYPT_RSA_FULLPRIVATE_BLOB structure.
+// It extracts the public exponent, modulus, prime1, prime2, exponent1, exponent2, coefficient, and private exponent from the byte slice and stores them in the BCRYPT_RSA_FULLPRIVATE_BLOB structure.
 func (b *BCRYPT_RSA_FULLPRIVATE_BLOB) Unmarshal(keyHeader headers.BCRYPT_RSA_KEY_BLOB, value []byte) (int, error) {
 	if len(value) < 24 {
 		return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, header too short (at least 24 bytes are required)")
@@ -104,33 +104,33 @@ func (b *BCRYPT_RSA_FULLPRIVATE_BLOB) Unmarshal(keyHeader headers.BCRYPT_RSA_KEY
 	b.Prime2 = value[bytesRead : bytesRead+int(keyHeader.CbPrime2)]
 	bytesRead += int(keyHeader.CbPrime2)
 
-	// Unmarshalling exponent1
-	// if int(keyHeader.CbExponent1) > len(value)-bytesRead {
-	// 	return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling exponent1")
-	// }
-	// b.Exponent1 = value[bytesRead : bytesRead+int(keyHeader.CbExponent1)]
-	// bytesRead += int(keyHeader.CbExponent1)
+	// Unmarshalling exponent1 (cbPrime1 bytes)
+	if int(keyHeader.CbPrime1) > len(value)-bytesRead {
+		return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling exponent1")
+	}
+	b.Exponent1 = value[bytesRead : bytesRead+int(keyHeader.CbPrime1)]
+	bytesRead += int(keyHeader.CbPrime1)
 
-	// Unmarshalling exponent2
-	// if int(keyHeader.CbExponent2) > len(value)-bytesRead {
-	// 	return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling exponent2")
-	// }
-	// b.Exponent2 = value[bytesRead : bytesRead+int(keyHeader.CbExponent2)]
-	// bytesRead += int(keyHeader.CbExponent2)
+	// Unmarshalling exponent2 (cbPrime2 bytes)
+	if int(keyHeader.CbPrime2) > len(value)-bytesRead {
+		return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling exponent2")
+	}
+	b.Exponent2 = value[bytesRead : bytesRead+int(keyHeader.CbPrime2)]
+	bytesRead += int(keyHeader.CbPrime2)
 
-	// Unmarshalling coefficient
-	// if int(keyHeader.CbCoefficient) > len(value)-bytesRead {
-	// 	return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling coefficient")
-	// }
-	// b.Coefficient = value[bytesRead : bytesRead+int(keyHeader.CbCoefficient)]
-	// bytesRead += int(keyHeader.CbCoefficient)
+	// Unmarshalling coefficient (cbPrime1 bytes)
+	if int(keyHeader.CbPrime1) > len(value)-bytesRead {
+		return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling coefficient")
+	}
+	b.Coefficient = value[bytesRead : bytesRead+int(keyHeader.CbPrime1)]
+	bytesRead += int(keyHeader.CbPrime1)
 
-	// Unmarshalling private exponent
-	// if int(b.Header.CbPrivateExp) > len(value)-bytesRead {
-	// 	return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling private exponent")
-	// }
-	// b.PrivateExponent = value[bytesRead : bytesRead+int(keyHeader.CbPrivateExp)]
-	// bytesRead += int(keyHeader.CbPrivateExp)
+	// Unmarshalling private exponent (cbModulus bytes)
+	if int(keyHeader.CbModulus) > len(value)-bytesRead {
+		return 0, errors.New("buffer too small for BCRYPT_RSA_FULLPRIVATE_BLOB, not enough bytes for unmarshalling private exponent")
+	}
+	b.PrivateExponent = value[bytesRead : bytesRead+int(keyHeader.CbModulus)]
+	bytesRead += int(keyHeader.CbModulus)
 
 	return bytesRead, nil
 }
