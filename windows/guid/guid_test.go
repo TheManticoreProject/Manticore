@@ -236,3 +236,22 @@ func TestFromFormatXRoundTrip(t *testing.T) {
 		t.Errorf("Expected %s, but got %s", formatX, result)
 	}
 }
+
+// Each group of a format D GUID has a fixed width (8-4-4-4-12). An over-long
+// last group used to be accepted and then truncated to 48 bits by ToBytes.
+func TestFromFormatDRejectsWrongGroupWidths(t *testing.T) {
+	for _, input := range []string{
+		"1-2-3-4-1234567890abcdef",
+		"01234567-89ab-cdef-0123-456789abcdef00",
+		"01234567-89ab-cdef-0123-456789abcd",
+		"0123456-89ab-cdef-0123-456789abcdef",
+		"01234567-89ab-cdef-00123-456789abcdef",
+	} {
+		if g, err := FromFormatD(input); err == nil {
+			t.Errorf("FromFormatD(%q) = %s, want an error", input, g.ToFormatD())
+		}
+	}
+	if _, err := FromFormatD("01234567-89AB-cdef-0123-456789abcdef"); err != nil {
+		t.Errorf("FromFormatD rejected a well-formed GUID: %v", err)
+	}
+}

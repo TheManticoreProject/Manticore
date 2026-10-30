@@ -218,7 +218,7 @@ func FromFormatD(data string) (*GUID, error) {
 	data = strings.ToLower(data)
 
 	parts := strings.Split(data, "-")
-	if len(parts) != 5 {
+	if len(parts) != 5 || len(parts[0]) != 8 || len(parts[1]) != 4 || len(parts[2]) != 4 || len(parts[3]) != 4 || len(parts[4]) != 12 {
 		return nil, fmt.Errorf("GUID Format D should be 32 hexadecimal characters separated in five parts")
 	}
 	a, err := strconv.ParseUint(parts[0], 16, 32)
