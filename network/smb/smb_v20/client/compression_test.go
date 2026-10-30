@@ -265,6 +265,23 @@ func TestWalkCompressionChainTruncated(t *testing.T) {
 	}
 }
 
+func TestWalkCompressionChainOversizedNoneSegment(t *testing.T) {
+	// OriginalCompressedSegmentSize values that overflow or wrap an int on
+	// 32-bit builds must be rejected, not panic or be taken as "rest of
+	// buffer".
+	for _, size := range []uint32{0x7FFFFFF8, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF} {
+		hdr := MarshalCompressionChainedPayloadHeader(&CompressionChainedPayloadHeader{
+			OriginalCompressedSegmentSize: size,
+			CompressionAlgorithm:          commands.SMB2_COMPRESSION_NONE,
+		})
+		data := append(hdr, make([]byte, 24)...)
+		segs, err := WalkCompressionChain(data)
+		if err == nil {
+			t.Errorf("size=0x%08X: expected error, got %d segments", size, len(segs))
+		}
+	}
+}
+
 func TestWalkCompressionChainEmpty(t *testing.T) {
 	segs, err := WalkCompressionChain(nil)
 	if err != nil {

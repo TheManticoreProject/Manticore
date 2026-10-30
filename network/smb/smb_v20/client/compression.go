@@ -154,11 +154,12 @@ type CompressionChainedSegment struct {
 // Pattern_V1, the output is always 4 bytes. For other algorithms (LZ77, LZNT1,
 // LZ77+Huffman) the compressed size is not encoded in the header, so the
 // segment must be the last in the chain and extends to the end of the buffer;
-// -1 signals this "rest of buffer" case.
-func chainedSegmentDataLen(alg uint16, origSize uint32) int {
+// -1 signals this "rest of buffer" case. The result is an int64 so a 32-bit
+// wire size never wraps negative on 32-bit builds.
+func chainedSegmentDataLen(alg uint16, origSize uint32) int64 {
 	switch alg {
 	case 0x0000: // SMB2_COMPRESSION_NONE
-		return int(origSize)
+		return int64(origSize)
 	case 0x0004: // SMB2_COMPRESSION_PATTERN_V1
 		return 4
 	default:
@@ -194,10 +195,10 @@ func WalkCompressionChain(data []byte) ([]CompressionChainedSegment, error) {
 			break
 		}
 
-		end := offset + dataLen
-		if end > len(data) {
+		if dataLen > int64(len(data)-offset) {
 			return nil, fmt.Errorf("chained segment at offset %d: data length %d exceeds buffer", offset-chainedPayloadHeaderSize, dataLen)
 		}
+		end := offset + int(dataLen)
 		segments = append(segments, CompressionChainedSegment{
 			Header:         *hdr,
 			CompressedData: data[offset:end],

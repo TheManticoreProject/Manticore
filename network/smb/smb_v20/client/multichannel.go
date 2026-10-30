@@ -40,7 +40,7 @@ func (ni *NetworkInterface) IsRSS() bool { return ni.Capability&INTERFACE_CAP_RS
 func (ni *NetworkInterface) IsRDMA() bool { return ni.Capability&INTERFACE_CAP_RDMA != 0 }
 
 // parseNetworkInterfaces decodes the chained NETWORK_INTERFACE_INFO response.
-// Each entry is at least 64 bytes: Next(4) IfIndex(4) Capability(4) Reserved(4)
+// Each entry is at least 152 bytes: Next(4) IfIndex(4) Capability(4) Reserved(4)
 // LinkSpeed(8) SockAddrStorage(128).
 func parseNetworkInterfaces(data []byte) ([]NetworkInterface, error) {
 	const entryMinSize = 152 // 4+4+4+4+8+128
@@ -78,6 +78,13 @@ func parseNetworkInterfaces(data []byte) ([]NetworkInterface, error) {
 
 		if next == 0 {
 			break
+		}
+		// MS-SMB2 2.2.32.5: Next is the offset from this entry to the next
+		// one, so it must skip at least this entry and leave room for a full
+		// entry inside the buffer. Bound it in uint64 before converting so a
+		// huge value cannot wrap on 32-bit builds.
+		if next < entryMinSize || uint64(next) > uint64(len(data)-offset-entryMinSize) {
+			return nil, fmt.Errorf("network interface entry at offset %d: Next %d out of range for %d-byte buffer", offset, next, len(data))
 		}
 		offset += int(next)
 	}
