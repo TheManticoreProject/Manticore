@@ -362,7 +362,13 @@ func (c *Client) readResponse() ([]byte, error) {
 				return nil, fmt.Errorf("response call_id %d does not match request call_id %d", resp.Header.CallID, c.callID)
 			}
 			chunk := resp.Stub
-			if c.protectsRequests() && resp.Header.AuthLength > 0 {
+			if c.protectsRequests() {
+				// At PKT and above every response fragment must carry an auth
+				// verifier; one without it cannot be verified and is rejected
+				// rather than accepted as plaintext.
+				if resp.Header.AuthLength == 0 {
+					return nil, fmt.Errorf("response fragment has no auth verifier at auth level %d", c.authLevel)
+				}
 				chunk, err = c.unprotectResponseStub(frag)
 				if err != nil {
 					return nil, fmt.Errorf("unprotect response: %w", err)
