@@ -387,7 +387,21 @@ func (s *Session) SessionSetup() error {
 		return fmt.Errorf("failed to marshal step 2 message: %v", err)
 	}
 
+	// Signing is armed before the AUTHENTICATE is sent, since that request is the
+	// first signed message, but it only stays armed if the setup succeeds. A
+	// rejected or unverifiable exchange restores the connection's previous signing
+	// state rather than leaving it keyed to a session that was never established.
+	authenticated := false
 	if signMessages {
+		previousKey := s.Client.Connection.SigningSessionKey
+		previousActive := s.Client.Connection.IsSigningActive
+		defer func() {
+			if !authenticated {
+				s.Client.Connection.SigningSessionKey = previousKey
+				s.Client.Connection.IsSigningActive = previousActive
+			}
+		}()
+
 		s.Client.Connection.SigningSessionKey = signingKey
 		s.Client.Connection.IsSigningActive = true
 		signing.Sign(signingKey, marshalledStep2, 0)
@@ -450,5 +464,6 @@ func (s *Session) SessionSetup() error {
 		s.Client.Connection.ClientNextSendSequenceNumber = signing.NextRequestSequenceNumber(0)
 	}
 
+	authenticated = true
 	return nil
 }
