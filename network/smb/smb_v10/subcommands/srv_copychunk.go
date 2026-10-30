@@ -114,6 +114,11 @@ func (c *SrvCopychunkCopy) Unmarshal(data []byte) (int, error) {
 	c.Reserved = binary.LittleEndian.Uint32(data[offset : offset+4])
 	offset += 4
 
+	// ChunkCount comes off the wire; bound it by the chunks the data can hold
+	// before sizing the slice from it.
+	if uint64(chunkCount) > uint64(len(data)-offset)/srvCopychunkSize {
+		return offset, fmt.Errorf("subcommands: SRV_COPYCHUNK_COPY declares %d chunks but only %d bytes follow", chunkCount, len(data)-offset)
+	}
 	c.Chunks = make([]SrvCopychunk, 0, chunkCount)
 	for i := uint32(0); i < chunkCount; i++ {
 		var chunk SrvCopychunk

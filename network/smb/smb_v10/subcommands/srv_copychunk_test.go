@@ -2,6 +2,7 @@ package subcommands
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 )
 
@@ -118,5 +119,22 @@ func TestFSCTLCopychunkCodes(t *testing.T) {
 	}
 	if FSCTL_SRV_COPYCHUNK != 0x001440F2 {
 		t.Errorf("FSCTL_SRV_COPYCHUNK: got 0x%08x want 0x001440F2", FSCTL_SRV_COPYCHUNK)
+	}
+}
+
+// A ChunkCount larger than the chunks that follow must be rejected before the
+// chunk slice is sized from it; 0xFFFFFFFF would otherwise ask for ~100 GiB.
+func TestSrvCopychunkCopyRejectsOversizedChunkCount(t *testing.T) {
+	data := make([]byte, CopychunkResumeKeyLength+8+srvCopychunkSize)
+	binary.LittleEndian.PutUint32(data[CopychunkResumeKeyLength:], 0xFFFFFFFF)
+
+	var c SrvCopychunkCopy
+	if _, err := c.Unmarshal(data); err == nil {
+		t.Fatal("Unmarshal accepted a ChunkCount of 0xFFFFFFFF with one chunk of data")
+	}
+
+	binary.LittleEndian.PutUint32(data[CopychunkResumeKeyLength:], 1)
+	if _, err := c.Unmarshal(data); err != nil || len(c.Chunks) != 1 {
+		t.Fatalf("Unmarshal of one declared chunk = %d chunks, %v; want 1, nil", len(c.Chunks), err)
 	}
 }
