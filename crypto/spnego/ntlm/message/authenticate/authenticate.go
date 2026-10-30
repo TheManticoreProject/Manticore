@@ -600,6 +600,11 @@ func (msg *AuthenticateMessage) Marshal() ([]byte, error) {
 // code.
 const MICLength = 16
 
+// authenticateFixedLength is the length in bytes of the part of an
+// AUTHENTICATE_MESSAGE that is always present: Signature (8), MessageType (4),
+// six 8-byte field descriptors and NegotiateFlags (4).
+const authenticateFixedLength = 64
+
 // payloadStart returns the lowest buffer offset among the payload fields, which
 // is where the fixed part of the message ends. A field with a zero length carries
 // no payload and its offset is not meaningful, so it is skipped.
@@ -627,7 +632,13 @@ func (msg *AuthenticateMessage) payloadStart() uint64 {
 func (msg *AuthenticateMessage) Unmarshal(data []byte) (int, error) {
 	totalBytesRead := 0
 
-	if len(data) < 88 {
+	// The only fields every AUTHENTICATE_MESSAGE carries are the signature, the
+	// message type, the six field descriptors and NegotiateFlags: 64 bytes. Version
+	// and MIC are optional ([MS-NLMP] 2.2.1.3), so a message without a MIC is
+	// shorter than 88 bytes -- an anonymous AUTHENTICATE with an empty domain and
+	// workstation is 72 bytes plus a 1-byte LmChallengeResponse. Both optional
+	// fields are bounds-checked where they are read below.
+	if len(data) < authenticateFixedLength {
 		return 0, fmt.Errorf("data too short to be a valid AuthenticateMessage")
 	}
 
