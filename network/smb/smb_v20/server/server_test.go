@@ -943,3 +943,56 @@ func TestServerRenameDirectory(t *testing.T) {
 		t.Errorf("Stat(moved.txt) = %+v, %v, want a file", attr, err)
 	}
 }
+
+// TestServerRefusesSizeBeyondVolume checks that a SET_INFO end of file or a
+// WRITE far beyond what the in-memory volume holds is answered with
+// STATUS_DISK_FULL rather than allocated, and that the connection carries on.
+//
+// Without the cap the server process dies of an out-of-memory fatal error here,
+// taking the test binary with it; fs_mem_test.go is the clean fail-before
+// signal for the backend itself.
+func TestServerRefusesSizeBeyondVolume(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	c, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := c.CreateFile("hello.txt", fileflags.GENERIC_READ|fileflags.GENERIC_WRITE, 0, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		t.Fatalf("open hello.txt: %v", err)
+	}
+
+	eof := filesystem.FileEndOfFileInformation{EndOfFile: 1 << 40}
+	buffer, err := eof.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	setInfo := commands.NewSetInfoRequest()
+	setInfo.InfoType = commands.SMB2_0_INFO_FILE
+	setInfo.FileInfoClass = uint8(infoclass.FileEndOfFileInformation)
+	setInfo.FileId, setInfo.Buffer = id, buffer
+	write := commands.NewWriteRequest()
+	write.FileId, write.Offset, write.Data = id, 1<<40, []byte("x")
+
+	answers, err := c.SendUnrelatedCompound([]*message.Message{c.NewRequest(setInfo), c.NewRequest(write)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, what := range []string{"SET_INFO EndOfFile 1<<40", "WRITE at offset 1<<40"} {
+		if got := answers[i].Header.Status; got != uint32(nt_status.NT_STATUS_DISK_FULL) {
+			t.Errorf("%s: status 0x%08x, want STATUS_DISK_FULL", what, got)
+		}
+	}
+
+	// The file is untouched and the connection still answers.
+	if attr, err := fs.Stat("hello.txt"); err != nil || attr.Size != 11 {
+		t.Errorf("Stat(hello.txt) = %+v, %v; want 11 bytes", attr, err)
+	}
+	if data, err := c.ReadFile(id, 0, 64); err != nil || string(data) != "hello world" {
+		t.Errorf("ReadFile after the refusals = %q, %v", data, err)
+	}
+	if err := c.SetEndOfFile(id, 5); err != nil {
+		t.Errorf("SetEndOfFile(5): %v", err)
+	}
+	c.CloseFile(id)
+}

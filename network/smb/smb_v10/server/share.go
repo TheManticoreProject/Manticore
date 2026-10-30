@@ -299,6 +299,10 @@ var (
 
 	// ErrReadOnly reports that the share or the entry refuses modification.
 	ErrReadOnly = fmt.Errorf("read-only")
+
+	// ErrDiskFull reports that the storage cannot hold the size a write or a
+	// resize asks for.
+	ErrDiskFull = fmt.Errorf("disk full")
 )
 
 // AddShare registers a share on the server. Share names are matched
