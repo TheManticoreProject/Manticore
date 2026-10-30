@@ -953,3 +953,101 @@ func TestLocalFileSystemDirectoryCreateStillWorks(t *testing.T) {
 		})
 	}
 }
+
+// TestLocalFileSystemDanglingSymlinkDoesNotEscape asserts that a create cannot
+// leave the share through a symbolic link whose target does not exist.
+//
+// A dangling link fails to resolve exactly as an absent name does, so hostPath
+// checked only its parent and handed back the link itself; opening that with
+// O_CREATE made the file at the link's target, outside the share. A relative link
+// that stays inside the share where it sits is the same hazard once a client
+// renames it to a shallower directory, since rename moves the link unresolved.
+func TestLocalFileSystemDanglingSymlinkDoesNotEscape(t *testing.T) {
+	newDirs := func(t *testing.T) (share, outside string) {
+		t.Helper()
+		base := t.TempDir()
+		share = filepath.Join(base, "share")
+		outside = filepath.Join(base, "outside")
+		for _, dir := range []string{share, outside} {
+			if err := os.Mkdir(dir, 0o750); err != nil {
+				t.Fatalf("Mkdir() error = %v", err)
+			}
+		}
+		return share, outside
+	}
+
+	t.Run("backend create through a dangling link", func(t *testing.T) {
+		share, outside := newDirs(t)
+		if err := os.Symlink(filepath.Join(outside, "planted.txt"), filepath.Join(share, "link")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		fs, err := NewLocalFileSystem(share, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		for _, flags := range []OpenFlags{{Write: true, Create: true}, {Write: true, CreateNew: true}, {Directory: true, Create: true}} {
+			if file, err := fs.Open("link", flags); err == nil {
+				file.Close()
+				t.Errorf("Open(%+v) succeeded through a dangling link", flags)
+			}
+		}
+		if err := fs.Mkdir("link"); err == nil {
+			t.Error("Mkdir() succeeded through a dangling link")
+		}
+		if _, err := os.Lstat(filepath.Join(outside, "planted.txt")); err == nil {
+			t.Fatal("a create through a dangling link made a file outside the share")
+		}
+		// The link stays an entry of the share that a client can delete.
+		if err := fs.Remove("link"); err != nil {
+			t.Errorf("Remove() of the dangling link error = %v", err)
+		}
+	})
+
+	t.Run("SMB1 create through a dangling link", func(t *testing.T) {
+		share, outside := newDirs(t)
+		if err := os.Symlink(filepath.Join(outside, "planted.txt"), filepath.Join(share, "link")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		fs, err := NewLocalFileSystem(share, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		_, client := fileServer(t, fs, false)
+		if fid, err := client.OpenFile("link", fileflags.GENERIC_READ|fileflags.GENERIC_WRITE, 7, fileflags.FILE_OPEN_IF, 0); err == nil {
+			client.WriteFile(fid, 0, []byte("escaped"))
+			client.CloseFile(fid)
+			t.Error("FILE_OPEN_IF succeeded through a dangling link")
+		}
+		if _, err := os.Lstat(filepath.Join(outside, "planted.txt")); err == nil {
+			t.Fatal("an SMB1 create through a dangling link made a file outside the share")
+		}
+	})
+
+	t.Run("SMB1 create through a renamed relative link", func(t *testing.T) {
+		share, outside := newDirs(t)
+		if err := os.Mkdir(filepath.Join(share, "sub"), 0o750); err != nil {
+			t.Fatalf("Mkdir() error = %v", err)
+		}
+		// From share/sub this resolves to share/outside/x, inside the share. From
+		// the share's root it resolves to the real outside directory.
+		if err := os.Symlink("../outside/x", filepath.Join(share, "sub", "rel")); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		fs, err := NewLocalFileSystem(share, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		_, client := fileServer(t, fs, false)
+		if err := client.RenameFile(`\sub\rel`, `\rel`); err != nil {
+			t.Fatalf("RenameFile() error = %v", err)
+		}
+		if fid, err := client.OpenFile("rel", fileflags.GENERIC_WRITE, 7, fileflags.FILE_OPEN_IF, 0); err == nil {
+			client.WriteFile(fid, 0, []byte("escaped"))
+			client.CloseFile(fid)
+			t.Error("FILE_OPEN_IF succeeded through a renamed relative link")
+		}
+		if _, err := os.Lstat(filepath.Join(outside, "x")); err == nil {
+			t.Fatal("an SMB1 create through a renamed relative link made a file outside the share")
+		}
+	})
+}
