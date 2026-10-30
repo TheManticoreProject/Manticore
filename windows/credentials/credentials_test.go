@@ -98,6 +98,9 @@ func TestParseLMNTHashes(t *testing.T) {
 		{name: "Invalid Hash Format", authHashes: "invalidhash", expectedLM: "", expectedNT: "", expectError: true},
 		{name: "Invalid LM Hash Length", authHashes: "aad3b435b51404eeaad3b435b51404:31d6cfe0d16ae931b73c59d7e0c089c0", expectedLM: "", expectedNT: "", expectError: true},
 		{name: "Invalid NT Hash Length", authHashes: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089", expectedLM: "", expectedNT: "", expectError: true},
+		{name: "Surrounding Whitespace Is Trimmed", authHashes: " aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0\n", expectedLM: "aad3b435b51404eeaad3b435b51404ee", expectedNT: "31d6cfe0d16ae931b73c59d7e0c089c0", expectError: false},
+		{name: "NT Hash Only With Trailing Space", authHashes: "31d6cfe0d16ae931b73c59d7e0c089c0 ", expectedLM: "", expectedNT: "31d6cfe0d16ae931b73c59d7e0c089c0", expectError: false},
+		{name: "Colon-Prefixed NT Hash With Trailing Newline", authHashes: ":31d6cfe0d16ae931b73c59d7e0c089c0\n", expectedLM: "", expectedNT: "31d6cfe0d16ae931b73c59d7e0c089c0", expectError: false},
 	}
 
 	for _, testCase := range testCases {
