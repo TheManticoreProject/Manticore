@@ -378,33 +378,7 @@ func (c *NtTransactSecondaryRequest) Unmarshal(rawData []byte) (int, error) {
 	offset++
 
 	// Then unmarshal the data
-	//
-	// rawDataContent is the SMB_Data.Bytes block, laid out as:
-	//   Pad1[] | NT_Trans_Parameters[ParameterCount] | Pad2[] | NT_Trans_Data[DataCount]
-	// ParameterOffset and DataOffset are absolute offsets measured from the start of
-	// the SMB_Header, not lengths within this block, so they cannot be used directly as
-	// slice lengths. The block shares a single header-relative base with both offsets,
-	// so the inter-block gaps are recovered as differences:
-	//   len(Pad2) = DataOffset - (ParameterOffset + ParameterCount)
-	//   len(Pad1) = len(rawDataContent) - ParameterCount - len(Pad2) - DataCount
 	offset = 0
-
-	parameterCount := int(c.ParameterCount)
-	dataCount := int(c.DataCount)
-
-	// Length of Pad2 is the gap between the end of the parameter block and the start of
-	// the data block, both expressed relative to the same header-relative base.
-	pad2Length := int(c.DataOffset) - (int(c.ParameterOffset) + parameterCount)
-	if pad2Length < 0 {
-		return offset, fmt.Errorf("invalid offsets: DataOffset precedes end of NT_Trans_Parameters")
-	}
-
-	// Length of Pad1 is whatever leading padding remains once the fixed-size parameter
-	// block, Pad2, and data block are accounted for within rawDataContent.
-	pad1Length := len(rawDataContent) - parameterCount - pad2Length - dataCount
-	if pad1Length < 0 {
-		return offset, fmt.Errorf("rawDataContent too short for NT_Trans_Secondary rawData block")
-	}
 
 	// Unmarshalling data Pad1, NT_Trans_Parameters, Pad2, NT_Trans_Data.
 	//
