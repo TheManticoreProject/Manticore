@@ -96,7 +96,7 @@ func (fi *FileFsVolumeInformation) Unmarshal(data []byte) error {
 	fi.VolumeSerialNumber = binary.LittleEndian.Uint32(data[8:12])
 	labelLen := int(binary.LittleEndian.Uint32(data[12:16]))
 	fi.SupportsObjects = data[16] != 0
-	if labelLen > 0 && fileFsVolumeInfoFixedSize+labelLen <= len(data) {
+	if labelLen > 0 && labelLen <= len(data)-fileFsVolumeInfoFixedSize {
 		fi.VolumeLabel = decodeUTF16LE(data[fileFsVolumeInfoFixedSize : fileFsVolumeInfoFixedSize+labelLen])
 	}
 	return nil
@@ -180,7 +180,7 @@ func (fi *FileFsAttributeInformation) Unmarshal(data []byte) error {
 	fi.FileSystemAttributes = binary.LittleEndian.Uint32(data[0:4])
 	fi.MaximumComponentNameLength = int32(binary.LittleEndian.Uint32(data[4:8]))
 	nameLen := int(binary.LittleEndian.Uint32(data[8:12]))
-	if nameLen > 0 && fileFsAttributeInfoFixedSize+nameLen <= len(data) {
+	if nameLen > 0 && nameLen <= len(data)-fileFsAttributeInfoFixedSize {
 		fi.FileSystemName = decodeUTF16LE(data[fileFsAttributeInfoFixedSize : fileFsAttributeInfoFixedSize+nameLen])
 	}
 	return nil
