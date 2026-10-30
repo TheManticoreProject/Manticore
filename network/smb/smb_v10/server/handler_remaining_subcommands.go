@@ -190,7 +190,8 @@ func handleNtTransactCreate(
 	desiredAccess := binary.LittleEndian.Uint32(reassembly.parameters[8:12])
 	createDisposition := binary.LittleEndian.Uint32(reassembly.parameters[28:32])
 	createOptions := binary.LittleEndian.Uint32(reassembly.parameters[32:36])
-	nameLength := binary.LittleEndian.Uint32(reassembly.parameters[40:44])
+	// NameLength follows SecurityDescriptorLength (36) and EALength (40).
+	nameLength := binary.LittleEndian.Uint32(reassembly.parameters[44:48])
 
 	// RootDirectoryFID names a directory handle the name is relative to. Nothing
 	// here can resolve one, and treating the name as share-relative instead would

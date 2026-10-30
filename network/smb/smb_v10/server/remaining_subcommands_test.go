@@ -155,7 +155,7 @@ func TestNtTransactCreateOpensThroughATransaction(t *testing.T) {
 	binary.LittleEndian.PutUint32(parameters[8:12], 0x00120089)  // DesiredAccess: read
 	binary.LittleEndian.PutUint32(parameters[28:32], 0x00000001) // FILE_OPEN
 	binary.LittleEndian.PutUint32(parameters[32:36], 0x00000040) // FILE_NON_DIRECTORY_FILE
-	binary.LittleEndian.PutUint32(parameters[40:44], uint32(len(name)))
+	binary.LittleEndian.PutUint32(parameters[44:48], uint32(len(name)))
 	parameters = append(parameters, []byte(name)...)
 
 	got, _, status := sendNtTransactWithParameters(t, client, subcommands.NT_TRANSACT_CREATE, parameters)
@@ -188,7 +188,7 @@ func TestNtTransactCreateRefusesARelativeRoot(t *testing.T) {
 	name := "somewhere.txt"
 	parameters := make([]byte, 53)
 	binary.LittleEndian.PutUint32(parameters[4:8], 0x1234) // RootDirectoryFID
-	binary.LittleEndian.PutUint32(parameters[40:44], uint32(len(name)))
+	binary.LittleEndian.PutUint32(parameters[44:48], uint32(len(name)))
 	parameters = append(parameters, []byte(name)...)
 
 	_, _, status := sendNtTransactWithParameters(t, client, subcommands.NT_TRANSACT_CREATE, parameters)
@@ -348,4 +348,33 @@ func sendNtTransactWithParameters(
 		t.Fatalf("the reply carries %T", response.Command)
 	}
 	return []byte(decoded.Parameters), []byte(decoded.Data), 0
+}
+
+// TestNtTransactCreateReadsNameLengthAfterEALength asserts NameLength is read from
+// its own field ([MS-CIFS] 2.2.7.1.1: SecurityDescriptorLength at 36, EALength at
+// 40, NameLength at 44). EALength is set to a different non-zero value so a read
+// from offset 40 cannot pass by accident.
+func TestNtTransactCreateReadsNameLengthAfterEALength(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("existing.txt", []byte("0123456789")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+	_, client := fileServer(t, fs, false)
+
+	name := "existing.txt"
+	parameters := make([]byte, 53)
+	binary.LittleEndian.PutUint32(parameters[8:12], 0x00120089)  // DesiredAccess: read
+	binary.LittleEndian.PutUint32(parameters[28:32], 0x00000001) // FILE_OPEN
+	binary.LittleEndian.PutUint32(parameters[32:36], 0x00000040) // FILE_NON_DIRECTORY_FILE
+	binary.LittleEndian.PutUint32(parameters[40:44], 7)          // EALength
+	binary.LittleEndian.PutUint32(parameters[44:48], uint32(len(name)))
+	parameters = append(parameters, []byte(name)...)
+
+	got, _, status := sendNtTransactWithParameters(t, client, subcommands.NT_TRANSACT_CREATE, parameters)
+	if status != 0 {
+		t.Fatalf("NT_TRANSACT_CREATE reported 0x%08X, want success", status)
+	}
+	if size := binary.LittleEndian.Uint64(got[56:64]); size != 10 {
+		t.Errorf("EndOfFile is %d, want the 10 bytes of %s", size, name)
+	}
 }
