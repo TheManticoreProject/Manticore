@@ -257,8 +257,21 @@ func handleTransaction2(conn *Connection, w ResponseWriter, req *message.Message
 	logger.Debugf("SMB1 server: %s began a fragmented TRANSACTION2 (subcommand 0x%04X, %d+%d bytes)",
 		conn.Remote, subcommand, totalParameters, totalData)
 
-	// A primary message that does not complete the transaction gets no response:
-	// the client sends the rest before expecting one.
+	return sendInterimResponse(conn, w, req)
+}
+
+// sendInterimResponse answers a primary transaction request that does not carry
+// the whole transaction, telling the client to send the rest.
+//
+// [MS-CIFS] section 3.3.5.2.5: when the primary's counts fall short of its totals
+// "the server MUST send an Interim Response message, setting the
+// SMB_Parameters.WordCount and SMB_Data.ByteCount fields to 0, and prepare to
+// receive one or more secondary requests". A client waits for it before sending
+// any secondary, so without it a fragmented transaction never completes.
+func sendInterimResponse(conn *Connection, w ResponseWriter, req *message.Message) nt_status.NT_STATUS {
+	if err := w.WriteResponse(newErrorResponse(req.Header.Command)); err != nil {
+		logger.Debugf("SMB1 server: failed to send the interim transaction response to %s: %v", conn.Remote, err)
+	}
 	return nt_status.NT_STATUS_SUCCESS
 }
 
