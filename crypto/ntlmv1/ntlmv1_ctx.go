@@ -158,13 +158,16 @@ func NewNTLMv1CtxWithHashes(domain, username string, lmhash [16]byte, nthash [16
 //   - *NTLMv1Response: The NTLMv1 response
 //   - error: If the response cannot be computed
 func (h *NTLMv1Ctx) ComputeResponse() (*NTLMv1Response, error) {
-	// Start with the NT hash of the password
-	if len(h.NTHash) == 0 && len(h.Password) == 0 {
+	// Start with the NT hash of the password. NTHash and LMHash are arrays,
+	// so an unset hash is the all-zero value, not an empty one.
+	if h.NTHash == [16]byte{} && len(h.Password) == 0 {
 		return nil, fmt.Errorf("NTHash and Password are not set")
 	}
-	if len(h.NTHash) == 0 {
-		ntHash := nt.NTHash(h.Password)
-		h.NTHash = ntHash
+	if h.NTHash == [16]byte{} {
+		h.NTHash = nt.NTHash(h.Password)
+	}
+	if h.LMHash == [16]byte{} && len(h.Password) != 0 {
+		h.LMHash = lm.LMHash(h.Password)
 	}
 
 	ntResponse, err := h.ComputeNtChallengeResponse()
