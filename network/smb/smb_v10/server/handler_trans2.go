@@ -270,9 +270,12 @@ func handleTransaction2Secondary(conn *Connection, w ResponseWriter, req *messag
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 
+	// Only a TRANSACTION2 can be continued here. The families number their
+	// subcommands independently, so folding this into a pending TRANSACTION or
+	// NT_TRANSACT would run that transaction's subcommand as a TRANSACTION2 one.
 	reassembly := conn.transaction
-	if reassembly == nil {
-		logger.Debugf("SMB1 server: %s sent a TRANSACTION2_SECONDARY with no transaction in progress", conn.Remote)
+	if reassembly == nil || reassembly.family != "TRANSACTION2" {
+		logger.Debugf("SMB1 server: %s sent a TRANSACTION2_SECONDARY with no TRANSACTION2 in progress", conn.Remote)
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 	// Refused without disturbing the pending transaction, which belongs to the
