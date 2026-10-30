@@ -69,7 +69,14 @@ func onesComplementAddition(n1, n2 []byte) []byte {
 //     each copy rotated right by 13*i bits relative to the original.
 //  3. XOR (with end-around carry / ones' complement addition) all n-bit
 //     blocks of the buffer together to produce the n-bit output.
+//
+// An empty input or a non-positive n has no blocks to fold; the result is then
+// n/8 zero bytes (an empty slice for n <= 0) rather than a division by zero.
 func NFold(in []byte, n int) []byte {
+	if len(in) == 0 || n <= 0 {
+		return make([]byte, max(n, 0)/8)
+	}
+
 	k := len(in) * 8
 	lcmVal := lcm(n, k)
 	numCopies := lcmVal / k

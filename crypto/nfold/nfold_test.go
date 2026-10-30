@@ -1,6 +1,7 @@
 package nfold
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 )
@@ -56,5 +57,27 @@ func TestNFoldDeterministic(t *testing.T) {
 
 	if hex.EncodeToString(r1) != hex.EncodeToString(r2) {
 		t.Error("NFold is not deterministic")
+	}
+}
+
+// Folding an empty input or to a non-positive width must not divide by zero.
+func TestNFoldDegenerateInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []byte
+		n    int
+		want []byte
+	}{
+		{"empty input to 64 bits", []byte{}, 64, make([]byte, 8)},
+		{"nil input to 128 bits", nil, 128, make([]byte, 16)},
+		{"zero width", []byte("kerberos"), 0, []byte{}},
+		{"negative width", []byte("kerberos"), -8, []byte{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NFold(tt.in, tt.n); !bytes.Equal(got, tt.want) {
+				t.Errorf("NFold(%x, %d) = %x, want %x", tt.in, tt.n, got, tt.want)
+			}
+		})
 	}
 }
