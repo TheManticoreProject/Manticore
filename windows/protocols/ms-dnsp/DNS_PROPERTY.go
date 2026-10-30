@@ -110,8 +110,10 @@ func (p *DNS_PROPERTY) Unmarshal(rawData []byte) (int, error) {
 	offset := dnsPropertyHeaderLength
 
 	// The header, the Data field, and the trailing 1-byte Name field must all be present.
-	if len(rawData) < offset+int(p.DataLength)+1 {
-		return 0, fmt.Errorf("rawData too short for DNS_PROPERTY Data and Name: need %d bytes, have %d", offset+int(p.DataLength)+1, len(rawData))
+	// The sum is computed in uint64: on 32-bit platforms int(p.DataLength) is negative for
+	// values >= 2^31 and would slip past the check.
+	if need := uint64(offset) + uint64(p.DataLength) + 1; uint64(len(rawData)) < need {
+		return 0, fmt.Errorf("rawData too short for DNS_PROPERTY Data and Name: need %d bytes, have %d", need, len(rawData))
 	}
 
 	if p.DataLength == 0 {
