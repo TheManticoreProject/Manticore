@@ -6,6 +6,7 @@
 package mssamr
 
 import (
+	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -295,4 +296,31 @@ func TestSAM_VALIDATE_OUTPUT_ARG_RoundTrip(t *testing.T) {
 			ValidationStatus: SamValidatePasswordExpired,
 		},
 	})
+}
+
+// TestSAMPR_LOGON_HOURS_MaxCount pins the conformant-varying LogonHours array to the
+// IDL's [size_is(1260), length_is((UnitsPerWeek+7)/8)]: maximum_count is the literal
+// 1260 whatever the slice length, offset 0 and actual_count the 21 bytes of a
+// 168-unit week.
+func TestSAMPR_LOGON_HOURS_MaxCount(t *testing.T) {
+	hours := make([]byte, 21)
+	for i := range hours {
+		hours[i] = 0xff
+	}
+	in := SAMPR_USER_LOGON_HOURS_INFORMATION{LogonHours: SAMPR_LOGON_HOURS{UnitsPerWeek: 168, LogonHours: hours}}
+	raw, err := ndr.Marshal(&in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// UnitsPerWeek (2) + pad (2) + referent (4), then the deferred array header.
+	if len(raw) < 20 {
+		t.Fatalf("Marshal produced %d bytes", len(raw))
+	}
+	maxCount := binary.LittleEndian.Uint32(raw[8:12])
+	offset := binary.LittleEndian.Uint32(raw[12:16])
+	actualCount := binary.LittleEndian.Uint32(raw[16:20])
+	if maxCount != 1260 || offset != 0 || actualCount != 21 {
+		t.Errorf("array header = max %d, offset %d, actual %d; want max 1260, offset 0, actual 21", maxCount, offset, actualCount)
+	}
+	roundTripBase(t, "SAMPR_USER_LOGON_HOURS_INFORMATION", in)
 }
