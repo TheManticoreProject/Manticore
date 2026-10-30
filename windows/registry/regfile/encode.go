@@ -101,13 +101,19 @@ func valueToken(v registry.Value) string {
 		// A quoted REG_SZ cannot represent a string with an interior NUL or a
 		// line break, nor data that is not a clean UTF-16LE pair sequence.
 		// regedit falls back to the raw hex(1) form for those, which also
-		// round-trips losslessly.
-		if len(v.Data)%2 != 0 || strings.ContainsAny(s, "\x00\r\n") {
+		// round-trips losslessly. A quoted string is read back as the string
+		// plus a single NUL terminator, so any other data (no terminator,
+		// extra NULs, unpaired surrogates) is also emitted as hex(1); regedit
+		// quotes those, which loses data on re-import.
+		if len(v.Data)%2 != 0 || strings.ContainsAny(s, "\x00\r\n") ||
+			!bytes.Equal(registry.StringValue(s).Data, v.Data) {
 			return formatHexBytes("hex(1):", v.Data)
 		}
 		return `"` + escaper.Replace(s) + `"`
 	case registry.RegDword:
-		if n, ok := v.Uint32(); ok {
+		// dword: holds exactly four bytes; any other length keeps its raw
+		// bytes in the hex(4) form instead of being truncated.
+		if n, ok := v.Uint32(); ok && len(v.Data) == 4 {
 			return fmt.Sprintf("dword:%08x", n)
 		}
 		return formatHexBytes("hex(4):", v.Data)
