@@ -62,6 +62,11 @@ type Share struct {
 	// same reason: the handles a break has to notify are on other connections as
 	// much as this one. AddShare creates it too.
 	oplocks *oplockTable
+
+	// opens holds every handle open on this share, on any connection, so a
+	// rename can move each handle on the renamed file to its new name. AddShare
+	// creates it too.
+	opens *openRegistry
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's
@@ -337,6 +342,9 @@ func (s *Server) AddShare(share *Share) error {
 	}
 	if share.oplocks == nil {
 		share.oplocks = newOplockTable()
+	}
+	if share.opens == nil {
+		share.opens = newOpenRegistry()
 	}
 
 	key := strings.ToUpper(share.Name)
