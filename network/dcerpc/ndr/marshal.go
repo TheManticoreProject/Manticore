@@ -317,6 +317,13 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 		if tag.sizeConstSet {
 			maxCount = tag.sizeConst
 		}
+		// A bound taken from a sibling field (size_is(Field/N)) that is smaller
+		// than the slice means the sibling cannot describe the data, as when an
+		// RPC_UNICODE_STRING is longer than its uint16 byte counts allow. Sending
+		// it would silently cut the data down to the bound.
+		if tag.sizeDiv > 0 && tag.sizeConstSet && uint32(fv.Len()) > maxCount {
+			return fmt.Errorf("ndr: array has %d elements but %s/%d allows only %d", fv.Len(), tag.sizeIs, tag.sizeDiv, maxCount)
+		}
 		if tag.varying {
 			// actual_count is the slice length unless length_is fixes it (e.g.
 			// RPC_UNICODE_STRING's Length/2), in which case only that many leading

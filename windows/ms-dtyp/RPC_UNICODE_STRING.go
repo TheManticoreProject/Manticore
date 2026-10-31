@@ -28,15 +28,27 @@ type RPC_UNICODE_STRING struct {
 	Buffer        []uint16 `ndr:"unique,varying,size_is=MaximumLength/2,length_is=Length/2"`
 }
 
+// MaxUnicodeStringUnits is the largest number of UTF-16 code units an RPC_UNICODE_STRING
+// can describe: Length is a uint16 byte count that must be even, so at most 0xFFFE bytes.
+const MaxUnicodeStringUnits = 0xFFFE / 2
+
 // NewUnicodeString builds an RPC_UNICODE_STRING from a Go string, encoding it to UTF-16
 // and setting Length and MaximumLength to the byte count (2 per code unit). An empty
 // string yields a zero-length value with a NULL Buffer, matching the Windows
 // representation of an empty counted string.
+//
+// The byte counts are uint16, so a string longer than MaxUnicodeStringUnits code units
+// cannot be described. Such a value keeps the whole Buffer with both counts at their
+// maximum, and encoding it fails rather than sending a shortened string that would name
+// a different account, key or secret.
 func NewUnicodeString(s string) RPC_UNICODE_STRING {
 	if s == "" {
 		return RPC_UNICODE_STRING{}
 	}
 	units := utf16.Encode([]rune(s))
+	if len(units) > MaxUnicodeStringUnits {
+		return RPC_UNICODE_STRING{Length: 2 * MaxUnicodeStringUnits, MaximumLength: 2 * MaxUnicodeStringUnits, Buffer: units}
+	}
 	n := uint16(len(units) * 2)
 	return RPC_UNICODE_STRING{Length: n, MaximumLength: n, Buffer: units}
 }
