@@ -10,7 +10,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/types"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/version"
-	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
 
 // NegotiateMessage is the first message in NTLM authentication
@@ -62,11 +61,9 @@ func CreateNegotiateMessage(domain, workstation string, negotiateFlags flags.Neg
 		if !msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED) {
 			msg.NegotiateFlags |= flags.NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED
 		}
-		if msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_UNICODE) {
-			msg.DomainName = utf16.EncodeUTF16LE(strings.ToUpper(domain))
-		} else {
-			msg.DomainName = []byte(strings.ToUpper(domain))
-		}
+		// DomainName is always OEM-encoded, whatever NTLMSSP_NEGOTIATE_UNICODE
+		// says ([MS-NLMP] 2.2.1.1): the character set is not negotiated yet.
+		msg.DomainName = []byte(strings.ToUpper(domain))
 		msg.DomainNameFields.Len = uint16(len(msg.DomainName))
 		msg.DomainNameFields.MaxLen = uint16(len(msg.DomainName))
 	}
@@ -79,11 +76,8 @@ func CreateNegotiateMessage(domain, workstation string, negotiateFlags flags.Neg
 		if !msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED) {
 			msg.NegotiateFlags |= flags.NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED
 		}
-		if msg.NegotiateFlags.HasFlag(flags.NTLMSSP_NEGOTIATE_UNICODE) {
-			msg.Workstation = utf16.EncodeUTF16LE(strings.ToUpper(workstation))
-		} else {
-			msg.Workstation = []byte(strings.ToUpper(workstation))
-		}
+		// WorkstationName is always OEM-encoded as well ([MS-NLMP] 2.2.1.1).
+		msg.Workstation = []byte(strings.ToUpper(workstation))
 		msg.WorkstationFields.Len = uint16(len(msg.Workstation))
 		msg.WorkstationFields.MaxLen = uint16(len(msg.Workstation))
 	}
@@ -283,21 +277,15 @@ func (msg *NegotiateMessage) GetMessageType() uint32 {
 	return uint32(msg.Header.MessageType)
 }
 
-// GetDomainName returns the domain name as a string
+// GetDomainName returns the domain name as a string. The NEGOTIATE carries it in
+// the OEM character set regardless of NTLMSSP_NEGOTIATE_UNICODE ([MS-NLMP] 2.2.1.1).
 func (msg *NegotiateMessage) GetDomainName() string {
-	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_UNICODE != 0 {
-		return utf16.DecodeUTF16LE(msg.DomainName)
-	}
 	return string(msg.DomainName)
 }
 
-// SetDomainName sets the domain name
+// SetDomainName sets the domain name, OEM-encoded ([MS-NLMP] 2.2.1.1)
 func (msg *NegotiateMessage) SetDomainName(domain string) {
-	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_UNICODE != 0 {
-		msg.DomainName = utf16.EncodeUTF16LE(domain)
-	} else {
-		msg.DomainName = []byte(strings.ToUpper(domain))
-	}
+	msg.DomainName = []byte(strings.ToUpper(domain))
 	msg.DomainNameFields.Len = uint16(len(msg.DomainName))
 	msg.DomainNameFields.MaxLen = uint16(len(msg.DomainName))
 	if domain != "" {
@@ -305,21 +293,16 @@ func (msg *NegotiateMessage) SetDomainName(domain string) {
 	}
 }
 
-// GetWorkstationName returns the workstation name as a string
+// GetWorkstationName returns the workstation name as a string. The NEGOTIATE
+// carries it in the OEM character set regardless of NTLMSSP_NEGOTIATE_UNICODE
+// ([MS-NLMP] 2.2.1.1).
 func (msg *NegotiateMessage) GetWorkstationName() string {
-	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_UNICODE != 0 {
-		return utf16.DecodeUTF16LE(msg.Workstation)
-	}
 	return string(msg.Workstation)
 }
 
-// SetWorkstationName sets the workstation name
+// SetWorkstationName sets the workstation name, OEM-encoded ([MS-NLMP] 2.2.1.1)
 func (msg *NegotiateMessage) SetWorkstationName(workstation string) {
-	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_UNICODE != 0 {
-		msg.Workstation = utf16.EncodeUTF16LE(workstation)
-	} else {
-		msg.Workstation = []byte(strings.ToUpper(workstation))
-	}
+	msg.Workstation = []byte(strings.ToUpper(workstation))
 	msg.WorkstationFields.Len = uint16(len(msg.Workstation))
 	msg.WorkstationFields.MaxLen = uint16(len(msg.Workstation))
 	if workstation != "" {
