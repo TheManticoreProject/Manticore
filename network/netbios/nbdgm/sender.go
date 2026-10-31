@@ -112,10 +112,14 @@ func (s *Sender) sendDirect(msgType uint8, dest string, destName Name, userData 
 // requires. The first fragment carries SOURCE_NAME and DESTINATION_NAME and the
 // FIRST flag; every fragment but the last sets the MORE flag; PACKET_OFFSET on
 // each fragment is the byte offset of its USER_DATA within the whole payload.
-// All fragments share one freshly generated DGM_ID.
+// All fragments share one freshly generated DGM_ID. userData longer than
+// MaxUserDataSize is rejected, since PACKET_OFFSET is a 16-bit field.
 func (s *Sender) Fragment(msgType uint8, destName Name, userData []byte) ([][]byte, error) {
 	if !isDirect(msgType) {
 		return nil, fmt.Errorf("Fragment: MSG_TYPE 0x%02x is not a DIRECT/BROADCAST datagram", msgType)
+	}
+	if len(userData) > MaxUserDataSize {
+		return nil, fmt.Errorf("Fragment: USER_DATA too large (%d > %d)", len(userData), MaxUserDataSize)
 	}
 
 	// Compute the USER_DATA capacity of the first packet (which also carries the
