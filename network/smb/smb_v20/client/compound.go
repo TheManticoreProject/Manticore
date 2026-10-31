@@ -262,7 +262,7 @@ func (c *Client) CreateQueryInfoClose(path string, desiredAccess, shareAccess, c
 	query.InfoType = types.UCHAR(infoType)
 	query.FileInfoClass = types.UCHAR(fileInfoClass)
 	query.AdditionalInformation = types.ULONG(additionalInformation)
-	query.OutputBufferLength = types.ULONG(c.Connection.Server.MaxTransactSize)
+	query.OutputBufferLength = types.ULONG(c.compoundQueryOutputLength())
 	query.FileId = relatedFileId
 	queryMsg := c.newRequest(query)
 	queryMsg.Header.AddFlags(flags.SMB2_FLAGS_RELATED_OPERATIONS)
@@ -296,4 +296,21 @@ func (c *Client) CreateQueryInfoClose(path string, desiredAccess, shareAccess, c
 		return nil, fmt.Errorf("unexpected query info response command: %T", responses[1].Command)
 	}
 	return queryResp.OutputBuffer, nil
+}
+
+// compoundQueryOutputLength sizes the QUERY_INFO output buffer of a
+// CREATE+QUERY_INFO+CLOSE chain. The three requests are charged against the same
+// credits ([MS-SMB2] 3.1.5.2): the CREATE has already been charged when this is
+// called, and the CLOSE that follows needs one more credit, so the QUERY_INFO may
+// only ask for what the credits on hand minus that one can pay for. Sizing it from
+// the server's MaxTransactSize alone charges up to 128 credits for the QUERY_INFO,
+// more than the window holds, and the server drops the connection.
+func (c *Client) compoundQueryOutputLength() uint32 {
+	length := c.maxPayloadForRequest(c.Connection.Server.MaxTransactSize)
+	if held := c.Connection.Credits; held > 1 {
+		if budget := uint32(held-1) * creditGranularity; length > budget {
+			length = budget
+		}
+	}
+	return length
 }
