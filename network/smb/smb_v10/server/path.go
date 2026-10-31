@@ -163,6 +163,16 @@ func splitPath(path string) (parent, name string) {
 	return "", path
 }
 
+// isBeneath reports whether path lies inside the directory ancestor, at any
+// depth. A path is not beneath itself, "dir" does not contain "dir2", and the
+// share root ("") contains every other path.
+func isBeneath(path, ancestor string) bool {
+	if ancestor == "" {
+		return path != ""
+	}
+	return strings.HasPrefix(path, ancestor+"/")
+}
+
 // joinPath appends an element to a resolved path.
 func joinPath(parent, name string) string {
 	if parent == "" {

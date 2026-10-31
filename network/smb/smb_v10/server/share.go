@@ -204,7 +204,8 @@ type FileSystem interface {
 	Remove(path string) error
 
 	// Rename moves a file or directory. When replace is false it fails if the
-	// destination exists.
+	// destination exists. Moving a directory beneath itself, the share root
+	// included, fails with ErrAccessDenied.
 	Rename(oldPath, newPath string, replace bool) error
 
 	// Mkdir creates a directory. Its parent must exist.

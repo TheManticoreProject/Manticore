@@ -458,6 +458,12 @@ func (fs *MemoryFileSystem) Rename(oldPath, newPath string, replace bool) error 
 	if oldPath == newPath {
 		return nil
 	}
+	// A directory moved beneath itself would lose its parent chain: the move
+	// cuts it off from the tree, and its data would stay counted against the
+	// volume with no name left to free it through.
+	if entry.isDir && isBeneath(newPath, oldPath) {
+		return ErrAccessDenied
+	}
 	if target, taken := fs.entries[newPath]; taken {
 		if !replace {
 			return ErrExists
