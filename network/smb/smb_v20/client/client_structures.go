@@ -201,6 +201,13 @@ type Session struct {
 	// SessionKey is the session key derived during authentication.
 	SessionKey []byte
 
+	// FullSessionKey is the untruncated key queried from the GSS mechanism (32
+	// bytes for Kerberos AES256). For SMB 3.1.1 with an AES-256 cipher the
+	// encryption and decryption keys derive from it rather than from the 16-byte
+	// SessionKey (MS-SMB2 3.2.5.3.1). It is nil when the GSS key is the
+	// SessionKey itself.
+	FullSessionKey []byte
+
 	// SigningKey is the key used to sign/verify messages on this session. For the
 	// SMB 2.0.2 and 2.1 dialects it is the session key itself; for the SMB 3.x
 	// dialects it is derived from the session key via the SP800-108 KDF.

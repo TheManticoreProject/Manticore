@@ -164,7 +164,9 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 	// SMB2 Session.SessionKey is the first 16 bytes of the GSS-exported key,
 	// right-padded with zeros if shorter — Kerberos AES256 yields a 32-byte key,
 	// so it must be truncated (NTLM keys are already 16 bytes). For the 2.0.2
-	// dialect this 16-byte value is the HMAC-SHA256 signing key directly.
+	// dialect this 16-byte value is the HMAC-SHA256 signing key directly. The
+	// untruncated key is kept as Session.FullSessionKey for the SMB 3.1.1 AES-256
+	// cipher keys.
 	gssKey := authCtx.GetSessionKey()
 	if len(gssKey) == 0 {
 		gssKey = mech.SessionKey()
@@ -174,12 +176,13 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 
 	serverMode := c.Connection.Server.SecurityMode
 	session := &Session{
-		Client:        c,
-		SessionId:     sessionId,
-		Credentials:   creds,
-		SessionKey:    sessionKey,
-		SigningKey:    sessionKey,
-		SigningActive: false,
+		Client:         c,
+		SessionId:      sessionId,
+		Credentials:    creds,
+		SessionKey:     sessionKey,
+		FullSessionKey: append([]byte(nil), gssKey...),
+		SigningKey:     sessionKey,
+		SigningActive:  false,
 	}
 	c.Session = session
 
@@ -229,6 +232,7 @@ func (c *Client) sessionSetupKerberosMechanism(mech *kerberos.SPNEGOMechanism, c
 
 	if session.IsGuest || session.IsNull {
 		session.SessionKey = make([]byte, 16)
+		session.FullSessionKey = nil
 		session.SigningKey = session.SessionKey
 		session.SigningActive = false
 	} else {

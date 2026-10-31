@@ -33,10 +33,11 @@ func (c *Client) decryptMessage(data []byte) ([]byte, error) {
 	return security.Decrypt(c.Connection.Cipher, c.Session.DecryptionKey, data)
 }
 
-// deriveSMB3Keys fills a session's SMB 3.x keys from its SessionKey. The client
-// encrypts with the client-to-server key and decrypts with the other.
+// deriveSMB3Keys fills a session's SMB 3.x keys from its SessionKey (and, for the
+// SMB 3.1.1 AES-256 cipher keys, its FullSessionKey). The client encrypts with
+// the client-to-server key and decrypts with the other.
 func deriveSMB3Keys(session *Session, dialect dialects.Dialect, preauthHash []byte, cipher uint16, _ int) {
-	keys := security.DeriveKeys(session.SessionKey, dialect, preauthHash, cipher)
+	keys := security.DeriveKeysWithFullSessionKey(session.SessionKey, session.FullSessionKey, dialect, preauthHash, cipher)
 	session.SigningKey = keys.Signing
 	session.ApplicationKey = keys.Application
 	session.EncryptionKey = keys.ClientToServer
