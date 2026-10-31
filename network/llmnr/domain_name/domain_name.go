@@ -106,6 +106,10 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 	consumed := 0
 	jumped := false
 	labels := []string{}
+	// wireLength is the length of the expanded name in uncompressed wire
+	// format (length octets, label bytes and the root octet), which RFC 1035
+	// §3.1 limits to 255 octets.
+	wireLength := 0
 
 	// visited records every offset at which we begin reading a label or a
 	// pointer. Revisiting an offset means the message contains a compression
@@ -154,6 +158,17 @@ func DecodeDomainName(data []byte, offset int) (string, int, error) {
 			return "", originalOffset, fmt.Errorf("invalid name: cycle detected: %w", errors.ErrInvalidDomainName)
 		}
 		visited[offset] = struct{}{}
+
+		// The remaining label types 01xxxxxx and 10xxxxxx are reserved
+		// (RFC 1035 §4.1.4). A plain label is therefore at most 63 octets.
+		if length&constants.LabelPointer != 0 {
+			return "", originalOffset, fmt.Errorf("unsupported label type 0x%02X: %w", length&constants.LabelPointer, errors.ErrInvalidDomainName)
+		}
+
+		wireLength += 1 + length
+		if wireLength > constants.MaxDomainLength {
+			return "", originalOffset, fmt.Errorf("name exceeds %d octets: %w: %w", constants.MaxDomainLength, errors.ErrNameTooLong, errors.ErrInvalidDomainName)
+		}
 
 		// End of name
 		if length == 0 {
