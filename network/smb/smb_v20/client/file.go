@@ -110,7 +110,7 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 		if budget := c.maxPayloadForRequest(maxRead); chunk > budget {
 			chunk = budget
 		}
-		data, eof, err := c.readChunk(fileId, pos, chunk)
+		data, eof, overflow, err := c.readChunk(fileId, pos, chunk)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +121,9 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 		out = append(out, data...)
 		// Stop at end-of-file or a short read (the server returned less than was
 		// asked for, which for a pipe is one message and for a file is the tail).
-		if eof || n == 0 || n < chunk {
+		// A pipe message larger than the read also ends it: the data returned is
+		// the start of that message, and the caller reads the rest.
+		if eof || overflow || n == 0 || n < chunk {
 			break
 		}
 		pos += uint64(n)
@@ -131,8 +133,11 @@ func (c *Client) ReadFile(fileId types.SMB2_FILEID, offset uint64, length uint32
 }
 
 // readChunk performs a single SMB2 READ of up to length bytes at offset. eof is
-// true when the server reports end-of-file (STATUS_END_OF_FILE).
-func (c *Client) readChunk(fileId types.SMB2_FILEID, offset uint64, length uint32) (data []byte, eof bool, err error) {
+// true when the server reports end-of-file (STATUS_END_OF_FILE). overflow is true
+// when the server reports STATUS_BUFFER_OVERFLOW: a named-pipe message longer
+// than length, of which data holds the part that fit (MS-SMB2 3.3.5.12); it is a
+// warning that comes with valid data, not a failure.
+func (c *Client) readChunk(fileId types.SMB2_FILEID, offset uint64, length uint32) (data []byte, eof, overflow bool, err error) {
 	req := commands.NewReadRequest()
 	req.FileId = fileId
 	req.Offset = offset
@@ -141,20 +146,21 @@ func (c *Client) readChunk(fileId types.SMB2_FILEID, offset uint64, length uint3
 
 	response, err := c.sendReceive(c.newRequest(req), "Read")
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
-	if status := statusFromResponse(response); status != 0x00000000 {
+	status := statusFromResponse(response)
+	if status != 0x00000000 && status != ntStatusBufferOverflow {
 		if status == ntStatusEndOfFile {
-			return nil, true, nil
+			return nil, true, false, nil
 		}
-		return nil, false, fmt.Errorf("read failed: %s", formatNTStatus(status))
+		return nil, false, false, fmt.Errorf("read failed: %s", formatNTStatus(status))
 	}
 
 	readResponse, ok := response.Command.(*commands.ReadResponse)
 	if !ok {
-		return nil, false, fmt.Errorf("unexpected read response command: %T", response.Command)
+		return nil, false, false, fmt.Errorf("unexpected read response command: %T", response.Command)
 	}
-	return readResponse.Data, false, nil
+	return readResponse.Data, false, status == ntStatusBufferOverflow, nil
 }
 
 // WriteFile writes data to the open at the given offset and returns the number of
