@@ -402,6 +402,12 @@ func (c *Client) readResponse() ([]byte, error) {
 			if _, err := fault.Unmarshal(frag); err != nil {
 				return nil, fmt.Errorf("parse fault: %w", err)
 			}
+			// A fault answers the call named by its call_id. call_id 0 is a
+			// connection-level fault a server sends when it cannot attribute the
+			// error to a call (e.g. before tearing the association down).
+			if fault.Header.CallID != c.callID && fault.Header.CallID != 0 {
+				return nil, fmt.Errorf("fault call_id %d does not match request call_id %d", fault.Header.CallID, c.callID)
+			}
 			return nil, &fault
 		default:
 			return nil, fmt.Errorf("unexpected response PDU type %s", hdr.PacketType)
