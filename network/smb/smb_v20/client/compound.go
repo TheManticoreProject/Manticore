@@ -7,6 +7,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
@@ -133,7 +134,8 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 		}
 
-		if security.IsTransformHeader(raw) {
+		frameEncrypted := security.IsTransformHeader(raw)
+		if frameEncrypted {
 			plaintext, derr := c.decryptMessage(raw)
 			if derr != nil {
 				return nil, fmt.Errorf("%s: %w", label, derr)
@@ -148,6 +150,10 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		}
 		if uint64(probe.MessageId) != unsolicitedMessageId {
 			break
+		}
+		// A break is queued for the next WaitOplockBreak / WaitBreakNotification.
+		if probe.Command == codes.SMB2_OPLOCK_BREAK {
+			c.queueBreak(raw, frameEncrypted)
 		}
 	}
 
