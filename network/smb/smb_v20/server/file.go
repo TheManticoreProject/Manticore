@@ -119,6 +119,13 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 		c.server.shareModes.release(open)
 		return smb1.StatusForFSError(err)
 	}
+	// A file carrying the read-only attribute cannot be opened delete-on-close,
+	// [MS-FSA] section 2.1.5.1.2.1.
+	if deleteOnClose && !attr.IsDir && attr.ReadOnly {
+		file.Close()
+		c.server.shareModes.release(open)
+		return smb1.StatusForFSError(smb1.ErrCannotDelete)
+	}
 
 	c.nextFileID++
 	open.id, open.file, open.isDir = c.nextFileID, file, attr.IsDir

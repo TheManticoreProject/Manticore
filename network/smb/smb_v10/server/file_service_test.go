@@ -1122,3 +1122,78 @@ func TestDeleteOnCloseNeedsDeleteAccessAndAWritableShare(t *testing.T) {
 		}
 	}
 }
+
+// TestReadOnlyFileCannotBeDeleted asserts a file carrying FILE_ATTRIBUTE_READONLY
+// survives SMB_COM_DELETE and a delete-on-close open, refused with
+// STATUS_CANNOT_DELETE as [MS-FSA] section 2.1.5.1.2.1 requires.
+//
+// The memory backend refused the removal, but with STATUS_MEDIA_WRITE_PROTECTED,
+// and the local backend removed the file outright, since unlinking a host file
+// needs write access to its directory, not to the file.
+func TestReadOnlyFileCannotBeDeleted(t *testing.T) {
+	newLocal := func(t *testing.T) (FileSystem, func() bool) {
+		root := t.TempDir()
+		host := filepath.Join(root, "keep.txt")
+		if err := os.WriteFile(host, []byte("precious"), 0o444); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		fs, err := NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		return fs, func() bool {
+			_, err := os.Stat(host)
+			return err == nil
+		}
+	}
+	newMemory := func(t *testing.T) (FileSystem, func() bool) {
+		fs := NewMemoryFileSystem("FILES")
+		if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+			t.Fatalf("AddFile() error = %v", err)
+		}
+		if err := fs.SetAttr("keep.txt", FileAttr{ReadOnly: true}, AttrMask{ReadOnly: true}); err != nil {
+			t.Fatalf("SetAttr() error = %v", err)
+		}
+		return fs, func() bool {
+			_, err := fs.Stat("keep.txt")
+			return err == nil
+		}
+	}
+
+	const shareAll = fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE
+	deletes := map[string]func(client *smb1client.Client) error{
+		"SMB_COM_DELETE": func(client *smb1client.Client) error {
+			return client.DeleteFile("keep.txt")
+		},
+		"SMB_COM_DELETE wildcard": func(client *smb1client.Client) error {
+			return client.DeleteFile("*.txt")
+		},
+		"delete-on-close": func(client *smb1client.Client) error {
+			fid, err := client.OpenFile("keep.txt", fileflags.GENERIC_READ|fileflags.DELETE, shareAll,
+				fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+			if err != nil {
+				return err
+			}
+			client.CloseFile(fid)
+			return nil
+		},
+	}
+	backends := map[string]func(t *testing.T) (FileSystem, func() bool){"local": newLocal, "memory": newMemory}
+	for backendName, newBackend := range backends {
+		for deleteName, remove := range deletes {
+			t.Run(backendName+"/"+deleteName, func(t *testing.T) {
+				fs, present := newBackend(t)
+				_, client := fileServer(t, fs, false)
+				err := remove(client)
+				if err == nil {
+					t.Error("deleting a read-only file succeeded")
+				} else if !strings.Contains(err.Error(), "0xc0000121") {
+					t.Errorf("deleting a read-only file failed with %v, want STATUS_CANNOT_DELETE", err)
+				}
+				if !present() {
+					t.Error("the read-only file was deleted")
+				}
+			})
+		}
+	}
+}

@@ -99,6 +99,8 @@ func statusForFSError(err error) nt_status.NT_STATUS {
 		return nt_status.NT_STATUS_FILE_IS_A_DIRECTORY
 	case errors.Is(err, ErrNotEmpty):
 		return nt_status.NT_STATUS_DIRECTORY_NOT_EMPTY
+	case errors.Is(err, ErrCannotDelete):
+		return nt_status.NT_STATUS_CANNOT_DELETE
 	case errors.Is(err, ErrReadOnly):
 		return nt_status.NT_STATUS_MEDIA_WRITE_PROTECTED
 	case errors.Is(err, ErrDiskFull):
@@ -246,8 +248,12 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 	}
 
 	// Whether the target existed decides what the response reports it did.
-	_, statErr := tree.Share.FS.Stat(path)
+	existing, statErr := tree.Share.FS.Stat(path)
 	existed := statErr == nil
+	if existed && uint32(request.CreateOptions)&fileflags.FILE_DELETE_ON_CLOSE != 0 && !existing.IsDir && existing.ReadOnly {
+		logger.Debugf("SMB1 server: %s asked to open read-only %q delete-on-close, which is refused", conn.Remote, path)
+		return statusForFSError(ErrCannotDelete)
+	}
 
 	file, err := tree.Share.FS.Open(path, flags)
 	if err != nil {

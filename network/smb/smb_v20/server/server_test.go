@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -999,6 +1001,99 @@ func TestServerRefusesSizeBeyondVolume(t *testing.T) {
 		t.Errorf("SetEndOfFile(5): %v", err)
 	}
 	c.CloseFile(id)
+}
+
+// TestServerReadOnlyFileCannotBeDeleted asserts a file carrying
+// FILE_ATTRIBUTE_READONLY survives a delete-on-close open and a
+// FileDispositionInformation set, each refused with STATUS_CANNOT_DELETE as
+// [MS-FSA] sections 2.1.5.1.2.1 and 2.1.5.15.3 require. The local backend
+// removed such a file when the handle closed, since unlinking a host file needs
+// write access to its directory, not to the file.
+func TestServerReadOnlyFileCannotBeDeleted(t *testing.T) {
+	newLocal := func(t *testing.T) (smb1.FileSystem, func() bool) {
+		root := t.TempDir()
+		host := filepath.Join(root, "keep.txt")
+		if err := os.WriteFile(host, []byte("precious"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		fs, err := smb1.NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fs, func() bool {
+			_, err := os.Stat(host)
+			return err == nil
+		}
+	}
+	newMemory := func(t *testing.T) (smb1.FileSystem, func() bool) {
+		fs := smb1.NewMemoryFileSystem("FILES")
+		if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+			t.Fatal(err)
+		}
+		if err := fs.SetAttr("keep.txt", smb1.FileAttr{ReadOnly: true}, smb1.AttrMask{ReadOnly: true}); err != nil {
+			t.Fatal(err)
+		}
+		return fs, func() bool {
+			_, err := fs.Stat("keep.txt")
+			return err == nil
+		}
+	}
+
+	const shareAll = fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE
+	deletes := map[string]func(c *client.Client) error{
+		"delete-on-close": func(c *client.Client) error {
+			id, err := c.CreateFile("keep.txt", fileflags.GENERIC_READ|fileflags.DELETE, shareAll,
+				fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+			if err != nil {
+				return err
+			}
+			return c.CloseFile(id)
+		},
+		"disposition": func(c *client.Client) error {
+			id, err := c.CreateFile("keep.txt", fileflags.GENERIC_READ|fileflags.DELETE, shareAll, fileflags.FILE_OPEN, 0)
+			if err != nil {
+				return err
+			}
+			defer c.CloseFile(id)
+			return c.SetDeleteOnClose(id, true)
+		},
+	}
+	backends := map[string]func(t *testing.T) (smb1.FileSystem, func() bool){"local": newLocal, "memory": newMemory}
+	for backendName, newBackend := range backends {
+		for deleteName, remove := range deletes {
+			t.Run(backendName+"/"+deleteName, func(t *testing.T) {
+				fs, present := newBackend(t)
+				config := server.Config{}
+				srv, err := server.NewServer(withTestIdentity(&config))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := srv.AddShare(&server.Share{Name: "files", FS: fs}); err != nil {
+					t.Fatal(err)
+				}
+				listener, err := transport.ListenTCP("127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				go srv.Serve(listener)
+				t.Cleanup(func() { srv.Close() })
+				c, err := dial(t, listener.Addr().(*net.TCPAddr).Port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				err = remove(c)
+				if err == nil {
+					t.Error("deleting a read-only file succeeded")
+				} else if !strings.Contains(err.Error(), "0xc0000121") {
+					t.Errorf("deleting a read-only file failed with %v, want STATUS_CANNOT_DELETE", err)
+				}
+				if !present() {
+					t.Error("the read-only file was deleted")
+				}
+			})
+		}
+	}
 }
 
 // TestServerRenameMovesEveryOpen checks that a rename through one open moves

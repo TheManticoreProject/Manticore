@@ -421,7 +421,7 @@ func (fs *MemoryFileSystem) Remove(path string) error {
 		return ErrIsDirectory
 	}
 	if entry.readOnly {
-		return ErrReadOnly
+		return ErrCannotDelete
 	}
 	fs.dropName(path)
 	fs.watches.publish(path, changeRemoved)
