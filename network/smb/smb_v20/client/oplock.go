@@ -57,7 +57,9 @@ func (c *Client) WaitOplockBreak() (*OplockBreak, error) {
 	if !msg.Header.HasValidProtocolId() {
 		return nil, fmt.Errorf("oplock break is not an SMB2 message (ProtocolId % x)", msg.Header.ProtocolId)
 	}
-	if !wasEncrypted && c.Session != nil && c.Session.SigningActive {
+	// The notification carries the reserved MessageId and is sent unsigned
+	// (MS-SMB2 3.3.4.6), so it is exempt from verification (MS-SMB2 3.2.5.1.3).
+	if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(msg) {
 		if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, raw) {
 			return nil, fmt.Errorf("oplock break failed SMB2 signature verification")
 		}
