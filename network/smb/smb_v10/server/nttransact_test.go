@@ -1527,3 +1527,56 @@ func TestTransactionSecondaryFromAnotherSessionIsRefused(t *testing.T) {
 		t.Fatalf("the owner's transaction answer % x does not carry %q", raw, "echo:ownrdata")
 	}
 }
+
+// TestNamedPipeTinyPeekSeesTheRestOfAnAnswer asserts that a TRANS_PEEK_NMPIPE
+// too small to return any data, sent when the handle has delivered exactly what
+// it buffered while the session still holds the rest of the answer, reports
+// that rest as available rather than an answer that has ended.
+func TestNamedPipeTinyPeekSeesTheRestOfAnAnswer(t *testing.T) {
+	const budget = 4096
+	answer := countingAnswer(2*maxPipeAnswerSize + 500)
+
+	_, client := pipeServer(t, &partedAnswerPipe{name: "srvsvc", answer: answer})
+
+	fid, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the pipe failed: %v", err)
+	}
+
+	setup := []types.USHORT{types.USHORT(subcommands.TRANS_TRANSACT_NMPIPE), types.USHORT(fid)}
+	response, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, []byte("call"), budget)
+	if status != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+		t.Fatalf("the transaction reported 0x%08X, want STATUS_BUFFER_OVERFLOW", status)
+	}
+	collected := append([]byte(nil), response.Trans_Data...)
+
+	readSetup := []types.USHORT{types.USHORT(subcommands.TRANS_READ_NMPIPE), types.USHORT(fid)}
+	for len(collected) < maxPipeAnswerSize {
+		read, readStatus := sendTransactionWithLimit(t, client, readSetup, `\PIPE\`, nil, nil, budget)
+		if readStatus != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+			t.Fatalf("a read at %d bytes reported 0x%08X, want STATUS_BUFFER_OVERFLOW", len(collected), readStatus)
+		}
+		collected = append(collected, read.Trans_Data...)
+	}
+
+	peekSetup := []types.USHORT{types.USHORT(subcommands.TRANS_PEEK_NMPIPE), types.USHORT(fid)}
+	// A MaxDataCount of 6 holds the 6 parameter bytes and no data, so the peek
+	// can only describe what is there.
+	peek, _ := sendTransactionWithLimit(t, client, peekSetup, `\PIPE\`, nil, nil, 6)
+	if len(peek.Trans_Parameters) != 6 {
+		t.Fatalf("the peek returned %d parameter bytes, want 6", len(peek.Trans_Parameters))
+	}
+	if available := binary.LittleEndian.Uint16([]byte(peek.Trans_Parameters)[0:2]); available == 0 {
+		t.Fatalf("the peek reports nothing available while %d bytes of the answer remain",
+			len(answer)-len(collected))
+	}
+
+	rest, err := client.ReadFile(fid, 0, uint32(len(answer)))
+	if err != nil {
+		t.Fatalf("reading the rest of the answer failed: %v", err)
+	}
+	collected = append(collected, rest...)
+	if !bytes.Equal(collected, answer) {
+		t.Fatalf("the answer reassembled to %d bytes, want %d", len(collected), len(answer))
+	}
+}

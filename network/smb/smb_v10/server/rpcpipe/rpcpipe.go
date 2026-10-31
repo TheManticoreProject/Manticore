@@ -292,8 +292,9 @@ func (s *Session) nextPart(maxOutput int) ([]byte, bool) {
 func (s *Session) Close() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	// pending is left alone: only Transact touches it, and Transact refuses a
+	// closed session before reading it.
 	s.closed = true
-	s.pending = nil
 	return nil
 }
 

@@ -197,7 +197,9 @@ func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
 // Returns:
 //   - The bytes at the front of the buffer, and the total buffered length
 func (o *Open) peekPipeOutput(limit int) ([]byte, int) {
-	o.refillPipeOutput(limit)
+	// At least one byte is fetched, so a peek too small to return data still
+	// sees an answer the session holds rather than reporting it finished.
+	o.refillPipeOutput(max(limit, 1))
 	if limit < 0 {
 		limit = 0
 	}
