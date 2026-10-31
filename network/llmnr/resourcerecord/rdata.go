@@ -26,15 +26,22 @@ import (
 // message (via UnmarshalFromMessage) the name is resolved against the message
 // origin so that compression pointers work; otherwise it falls back to decoding
 // from the RData bytes alone, which only succeeds for uncompressed names.
+//
+// The bytes the name occupies in place (its labels up to the terminating zero
+// or the first compression pointer) must lie inside RDATA; only a compression
+// pointer may reference bytes elsewhere in the message.
 func (rr *ResourceRecord) decodeName(rdataInternalOffset int) (string, error) {
-	if rdataInternalOffset > len(rr.RData) {
+	if rdataInternalOffset >= len(rr.RData) {
 		return "", fmt.Errorf("rdata too short for name at offset %d", rdataInternalOffset)
 	}
 
 	if rr.message != nil {
-		name, _, err := domain_name.DecodeDomainName(rr.message, rr.rdataOffset+rdataInternalOffset)
+		name, end, err := domain_name.DecodeDomainName(rr.message, rr.rdataOffset+rdataInternalOffset)
 		if err != nil {
 			return "", err
+		}
+		if end > rr.rdataOffset+len(rr.RData) {
+			return "", fmt.Errorf("name at rdata offset %d extends past the end of rdata", rdataInternalOffset)
 		}
 		return name, nil
 	}
