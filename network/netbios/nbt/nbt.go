@@ -471,13 +471,14 @@ func (n *NBTTransport) Send(data []byte) (int, error) {
 }
 
 // Receive reads a SESSION MESSAGE from the NetBIOS over TCP connection, handling
-// the NetBIOS header, and rejects any other session-service message type.
+// the NetBIOS header. SESSION KEEP ALIVE frames, which RFC 1002 4.3.7 allows at
+// any time, are skipped; any other session-service message type is rejected.
 func (n *NBTTransport) Receive() ([]byte, error) {
 	if !n.IsConnected() {
 		return nil, fmt.Errorf("not connected")
 	}
 
-	messageType, body, err := n.readFrame()
+	messageType, body, err := n.readSessionResponse()
 	if err != nil {
 		return nil, err
 	}
