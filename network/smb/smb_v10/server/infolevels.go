@@ -406,10 +406,11 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 
 // applyFileInformation applies a set level to a path, reporting whether the level
 // is served and what the backend made of it.
-func applyFileInformation(fs FileSystem, path string, level uint16, data []byte, open *Open) (bool, error) {
+func applyFileInformation(share *Share, path string, level uint16, data []byte, open *Open) (bool, error) {
 	if level >= smbInfoPassthrough {
-		return applyNativeFileInformation(fs, path, level-smbInfoPassthrough, data, open)
+		return applyNativeFileInformation(share, path, level-smbInfoPassthrough, data, open)
 	}
+	fs := share.FS
 
 	switch level {
 	case smbSetFileBasicInfo:

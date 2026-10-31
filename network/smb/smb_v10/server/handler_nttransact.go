@@ -280,7 +280,7 @@ func handleQuerySecurityDescriptor(conn *Connection, req *message.Message, reass
 		return nil, nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
-	descriptor, err := provider.SecurityDescriptor(open.Path, information)
+	descriptor, err := provider.SecurityDescriptor(open.currentPath(), information)
 	if err != nil {
 		return nil, nil, statusForFSError(err)
 	}
@@ -324,7 +324,7 @@ func handleSetSecurityDescriptor(conn *Connection, req *message.Message, reassem
 		return nil, nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
-	if err := provider.SetSecurityDescriptor(open.Path, information, reassembly.data); err != nil {
+	if err := provider.SetSecurityDescriptor(open.currentPath(), information, reassembly.data); err != nil {
 		return nil, nil, statusForFSError(err)
 	}
 

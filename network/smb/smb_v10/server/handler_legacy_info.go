@@ -194,7 +194,7 @@ func handleQueryInformation2(conn *Connection, w ResponseWriter, req *message.Me
 		return nt_status.NT_STATUS_INVALID_DEVICE_REQUEST
 	}
 
-	attr, err := open.Tree.Share.FS.Stat(open.Path)
+	attr, err := open.Tree.Share.FS.Stat(open.currentPath())
 	if err != nil {
 		return statusForFSError(err)
 	}
@@ -250,8 +250,8 @@ func handleSetInformation2(conn *Connection, w ResponseWriter, req *message.Mess
 		Modified: !written.IsZero(),
 	}
 
-	if err := open.Tree.Share.FS.SetAttr(open.Path, attr, mask); err != nil {
-		logger.Debugf("SMB1 server: %s set times on %q, which failed: %v", conn.Remote, open.Path, err)
+	if err := open.Tree.Share.FS.SetAttr(open.currentPath(), attr, mask); err != nil {
+		logger.Debugf("SMB1 server: %s set times on %q, which failed: %v", conn.Remote, open.currentPath(), err)
 		return statusForFSError(err)
 	}
 

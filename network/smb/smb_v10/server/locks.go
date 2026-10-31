@@ -105,7 +105,7 @@ func (t *lockTable) Apply(open *Open, unlocks, locks []lockRange, shared bool) l
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	path := open.Path
+	path := open.currentPath()
 
 	// A copy, so a failure half-way leaves the table as it was.
 	working := make([]byteRangeLock, len(t.granted[path]))
@@ -239,7 +239,8 @@ func (t *lockTable) ReleaseAll(open *Open) int {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	held, present := t.granted[open.Path]
+	path := open.currentPath()
+	held, present := t.granted[path]
 	if !present {
 		return 0
 	}
@@ -252,10 +253,10 @@ func (t *lockTable) ReleaseAll(open *Open) int {
 	}
 	released := len(held) - len(kept)
 	if len(kept) == 0 {
-		delete(t.granted, open.Path)
+		delete(t.granted, path)
 		return released
 	}
-	t.granted[open.Path] = kept
+	t.granted[path] = kept
 	return released
 }
 

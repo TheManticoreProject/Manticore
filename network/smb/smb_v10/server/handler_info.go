@@ -84,11 +84,11 @@ func handleQueryFileInformation(conn *Connection, req *message.Message, reassemb
 	case open.IsPipe:
 		// There is no file system entry to describe, so the handle describes
 		// itself: a pipe has no size and no timestamps to report.
-		attr = FileAttr{Name: open.Path}
+		attr = FileAttr{Name: open.currentPath()}
 	case open.File != nil:
 		attr, err = open.File.Stat()
 	case open.Tree != nil && open.Tree.Share.FS != nil:
-		attr, err = open.Tree.Share.FS.Stat(open.Path)
+		attr, err = open.Tree.Share.FS.Stat(open.currentPath())
 	default:
 		return nil, nil, nt_status.NT_STATUS_INVALID_HANDLE
 	}
@@ -96,7 +96,7 @@ func handleQueryFileInformation(conn *Connection, req *message.Message, reassemb
 		return nil, nil, statusForFSError(err)
 	}
 
-	data, served := encodeFileInformation(level, attr, open.Path, req.Header.Flags2.IsUnicode())
+	data, served := encodeFileInformation(level, attr, open.currentPath(), req.Header.Flags2.IsUnicode())
 	if !served {
 		return nil, nil, nt_status.NT_STATUS_INVALID_INFO_CLASS
 	}
@@ -137,7 +137,7 @@ func handleSetPathInformation(conn *Connection, req *message.Message, reassembly
 
 	// A path-based set has no handle, so the levels that are properties of a
 	// handle rather than of a file cannot be applied through it.
-	served, err := applyFileInformation(tree.Share.FS, path, level, reassembly.data, nil)
+	served, err := applyFileInformation(tree.Share, path, level, reassembly.data, nil)
 	if !served {
 		return nil, nil, nt_status.NT_STATUS_INVALID_INFO_CLASS
 	}
@@ -171,9 +171,10 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 		return nil, nil, nt_status.NT_STATUS_ACCESS_DENIED
 	}
 
-	conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+	path := open.currentPath()
+	conn.breakOplocksOn(open.Tree.Share, path, open)
 
-	served, err := applyFileInformation(open.Tree.Share.FS, open.Path, level, reassembly.data, open)
+	served, err := applyFileInformation(open.Tree.Share, path, level, reassembly.data, open)
 	if !served {
 		return nil, nil, nt_status.NT_STATUS_INVALID_INFO_CLASS
 	}
