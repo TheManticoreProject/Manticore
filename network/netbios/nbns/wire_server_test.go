@@ -246,7 +246,8 @@ func TestMarkNameConflictNoSender(t *testing.T) {
 
 // TestRedirectWiredPath confirms that with a redirect manager installed, a name
 // query for a configured scope is turned into a REDIRECT NAME QUERY RESPONSE
-// (OpRedirect) rather than an authoritative name-table answer.
+// (RFC 1002 4.2.15: query OPCODE, NS authority and A additional records) rather
+// than an authoritative name-table answer.
 func TestRedirectWiredPath(t *testing.T) {
 	nbns := NewNetBIOSNameServer(false)
 	h := NewPacketHandler(nbns)
@@ -262,8 +263,11 @@ func TestRedirectWiredPath(t *testing.T) {
 	resp := &NBNSPacket{}
 	h.handleNameQueryWithRedirect(req, resp)
 
-	if resp.Header.Flags&OpcodeMask != OpRedirect {
-		t.Errorf("query flags = 0x%04x, want OpRedirect", resp.Header.Flags&OpcodeMask)
+	if resp.Header.Flags&OpcodeMask != OpNameQuery {
+		t.Errorf("query flags = 0x%04x, want OpNameQuery", resp.Header.Flags&OpcodeMask)
+	}
+	if resp.Header.Authority != 1 || len(resp.Authority) != 1 {
+		t.Errorf("redirect authority count = %d/%d, want 1/1", resp.Header.Authority, len(resp.Authority))
 	}
 	if resp.Header.Additional != 1 || len(resp.Additional) != 1 {
 		t.Errorf("redirect additional count = %d/%d, want 1/1", resp.Header.Additional, len(resp.Additional))
@@ -284,7 +288,7 @@ func TestRedirectDisabledByDefault(t *testing.T) {
 	resp := &NBNSPacket{}
 	h.handleNameQueryWithRedirect(req, resp)
 
-	if resp.Header.Flags&OpcodeMask == OpRedirect {
+	if len(resp.Authority) != 0 || len(resp.Additional) != 0 {
 		t.Error("query was redirected with no redirect manager installed")
 	}
 	if len(resp.Answers) != 1 {
