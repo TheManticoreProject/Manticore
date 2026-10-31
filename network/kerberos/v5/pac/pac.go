@@ -11,7 +11,7 @@
 // The security-relevant operations — the Server and KDC signatures ([MS-PAC]
 // 2.8, "Generation of PAC Signatures") — are implemented: both are keyed
 // checksums with key usage KERB_NON_KERB_CKSUM_SALT (17); the server signature
-// covers the entire PAC with all signature buffers' Signature fields zeroed, and
+// covers the entire PAC with the server and KDC Signature fields zeroed, and
 // the KDC signature counter-signs the server signature.
 package pac
 
@@ -161,12 +161,12 @@ func (p *PAC) Marshal() ([]byte, error) {
 }
 
 // signatureBufferTypes lists the buffer types whose Signature fields are zeroed
-// before the server signature is computed ([MS-PAC] "Generation of PAC
-// Signatures": server, KDC, and extended-KDC signatures are all zeroed).
+// before the server signature is computed ([MS-PAC] 2.8.4: only the server and
+// KDC PAC_SIGNATURE_DATA are zeroed; the extended KDC signature is generated
+// first and is covered by the server signature as-is).
 var signatureBufferTypes = map[uint32]bool{
-	BufferServerChecksum:      true,
-	BufferKDCChecksum:         true,
-	BufferExtendedKDCChecksum: true,
+	BufferServerChecksum: true,
+	BufferKDCChecksum:    true,
 }
 
 // zeroedForServerSig returns a copy of the marshaled PAC with the Signature
