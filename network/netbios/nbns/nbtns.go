@@ -76,8 +76,14 @@ func (n *NetBIOSNameServer) cleanupLoop() {
 	}
 }
 
-// normalizeName strips trailing null bytes for consistent lookups
+// normalizeName strips trailing null bytes for consistent lookups. A full
+// 16-byte NetBIOS name is returned unchanged: its final byte is the service
+// suffix (RFC 1001 14), so a 0x00 suffix such as the workstation <00> name is
+// part of the name rather than padding.
 func normalizeName(name string) string {
+	if len(name) == NetBIOSNameLength {
+		return name
+	}
 	return strings.TrimRight(name, "\x00")
 }
 
