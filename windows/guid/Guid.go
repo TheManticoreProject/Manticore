@@ -82,9 +82,15 @@ func (guid *GUID) Equal(other *GUID) bool {
 // Parameters:
 // - data: A byte array containing the raw bytes of the GUID.
 //
-// Returns:
-// - A pointer to the parsed GUID.
+// Only the first 16 bytes are read. If data holds fewer than 16 bytes, the GUID is
+// set to the zero (nil) GUID instead of reading past the end of the slice; callers
+// that must distinguish a short input check len(data) themselves.
 func (guid *GUID) FromRawBytes(data []byte) {
+	if len(data) < 16 {
+		*guid = GUID{}
+		return
+	}
+
 	guid.A = uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
 
 	guid.B = uint16(data[4]) | uint16(data[5])<<8
