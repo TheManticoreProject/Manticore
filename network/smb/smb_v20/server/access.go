@@ -92,7 +92,7 @@ func (t *shareModes) acquire(open *Open) bool {
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, open.path)
+	key := fileKey(open.tree.Share, open.currentPath())
 	for other := range t.opens[key] {
 		if conflicts(open, other) || conflicts(other, open) {
 			return false
@@ -109,24 +109,9 @@ func (t *shareModes) acquire(open *Open) bool {
 func (t *shareModes) release(open *Open) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, open.path)
+	key := fileKey(open.tree.Share, open.currentPath())
 	delete(t.opens[key], open)
 	if len(t.opens[key]) == 0 {
 		delete(t.opens, key)
 	}
-}
-
-// rename moves an open to the file's new name.
-func (t *shareModes) rename(open *Open, target string) {
-	if open.access&dataRights == 0 {
-		return
-	}
-	t.release(open)
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, target)
-	if t.opens[key] == nil {
-		t.opens[key] = make(map[*Open]struct{})
-	}
-	t.opens[key][open] = struct{}{}
 }
