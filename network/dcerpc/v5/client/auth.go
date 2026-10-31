@@ -125,7 +125,7 @@ func (c *Client) authVerifierOverhead() int {
 
 // negotiateToken builds the auth_value carried in the bind's auth verifier. For a single-leg
 // provider (SetAuthProvider) it is the caller-supplied bind token; for NTLM it is a freshly
-// built NEGOTIATE message.
+// built NEGOTIATE message, retained so completeAuth can compute the AUTHENTICATE MIC.
 func (c *Client) negotiateToken() ([]byte, error) {
 	if c.authType != pdu.AuthTypeNTLMSSP {
 		return c.bindToken, nil
@@ -134,7 +134,12 @@ func (c *Client) negotiateToken() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return neg.Marshal()
+	negBytes, err := neg.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	c.ntlmNegotiate = negBytes
+	return negBytes, nil
 }
 
 // buildAuthenticate constructs the NTLM AUTHENTICATE message for the configured
@@ -197,6 +202,17 @@ func (c *Client) completeAuth(bindAckFrag []byte) ([]byte, error) {
 	auth, err := c.buildAuthenticate(&chal)
 	if err != nil {
 		return nil, fmt.Errorf("build authenticate: %w", err)
+	}
+	// When the CHALLENGE carried an MsvAvTimestamp, the AUTHENTICATE announces a MIC
+	// in its MsvAvFlags and MUST carry one over NEGOTIATE||CHALLENGE||AUTHENTICATE
+	// (MS-NLMP 3.1.5.1.2); a zeroed MIC is rejected by the server.
+	if auth.NeedsMIC {
+		if len(c.ntlmNegotiate) == 0 {
+			return nil, fmt.Errorf("cannot compute NTLM MIC: NEGOTIATE message not retained")
+		}
+		if err := auth.ComputeMIC(c.ntlmNegotiate, challengeBytes); err != nil {
+			return nil, fmt.Errorf("compute MIC: %w", err)
+		}
 	}
 	authBytes, err := auth.Marshal()
 	if err != nil {
