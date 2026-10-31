@@ -86,8 +86,11 @@ func (fs *LocalFileSystem) Root() string {
 // root before it is used.
 //
 // A path that does not exist yet cannot be resolved through links, so its parent
-// is checked instead — which is what a create needs, and is sufficient, because a
-// link can only be traversed through a component that exists.
+// is checked instead — which is what a create needs. That is only sufficient when
+// the final element is truly absent: a dangling symbolic link also fails to
+// resolve, yet a create through it makes the file at the link's target, wherever
+// that is. Such a link is refused, since its target cannot be checked against the
+// root until it exists, and by then the create has already escaped.
 func (fs *LocalFileSystem) hostPath(path string) (string, error) {
 	// filepath.Join cleans the result, but the input is already known to hold no
 	// ".." element, so cleaning cannot move it upwards.
@@ -99,8 +102,7 @@ func (fs *LocalFileSystem) hostPath(path string) (string, error) {
 			return "", err
 		}
 		// The target does not exist. Its parent must, and must be inside the
-		// root; the final element cannot itself be a traversed link, because it
-		// is not there to be one.
+		// root.
 		parent := filepath.Dir(candidate)
 		resolvedParent, parentErr := filepath.EvalSymlinks(parent)
 		if parentErr != nil {
@@ -110,7 +112,15 @@ func (fs *LocalFileSystem) hostPath(path string) (string, error) {
 		if !fs.contains(resolvedParent) {
 			return "", ErrAccessDenied
 		}
-		return filepath.Join(resolvedParent, filepath.Base(candidate)), nil
+		host := filepath.Join(resolvedParent, filepath.Base(candidate))
+		// The final element must be absent rather than a dangling link: opening
+		// one with O_CREATE creates its target, and a link planted in the share,
+		// or a relative one a client has renamed to a shallower directory, points
+		// out of it.
+		if _, lstatErr := os.Lstat(host); !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", ErrAccessDenied
+		}
+		return host, nil
 	}
 
 	if !fs.contains(resolved) {
@@ -184,6 +194,9 @@ func translate(err error) error {
 		return ErrNotDirectory
 	case strings.Contains(text, "is a directory"):
 		return ErrIsDirectory
+	case strings.Contains(text, "too many levels of symbolic links"):
+		// O_NOFOLLOW refused a symbolic link in the final element.
+		return ErrAccessDenied
 	}
 	return err
 }
@@ -269,7 +282,11 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		return &localFile{path: host, directory: true}, nil
 	}
 
-	file, err := os.OpenFile(host, mode, 0o640)
+	// hostPath has resolved every link in the path, so the final element is not
+	// one. Refusing to follow it anyway closes the window between that check and
+	// this open in which another request can rename a link onto the name; it does
+	// not cover a directory earlier in the path being swapped in that window.
+	file, err := os.OpenFile(host, mode|openNoFollow, 0o640)
 	if err != nil {
 		return nil, translate(err)
 	}

@@ -68,7 +68,7 @@ func (c *Connection) changeNotify(r *request, resp *response) nt_status.NT_STATU
 	if c.pendingNotifies() >= c.server.config.MaxNotifiesPerConnection {
 		return nt_status.NT_STATUS_INSUFFICIENT_RESOURCES
 	}
-	changes, stopWatch, err := watcher.Watch(open.path, req.Flags&commands.SMB2_WATCH_TREE != 0)
+	changes, stopWatch, err := watcher.Watch(open.currentPath(), req.Flags&commands.SMB2_WATCH_TREE != 0)
 	if err != nil {
 		return smb1.StatusForFSError(err)
 	}
@@ -113,7 +113,7 @@ func (c *Connection) changeNotify(r *request, resp *response) nt_status.NT_STATU
 		}
 	}()
 
-	logger.Debugf("SMB2 server: %s watching %q (filter 0x%x) as CHANGE_NOTIFY %d", c.remote, open.path, req.CompletionFilter, p.asyncID)
+	logger.Debugf("SMB2 server: %s watching %q (filter 0x%x) as CHANGE_NOTIFY %d", c.remote, open.currentPath(), req.CompletionFilter, p.asyncID)
 	resp.asyncID = p.asyncID
 	return nt_status.NT_STATUS_PENDING
 }

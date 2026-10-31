@@ -250,7 +250,7 @@ func handleNtTransactCreate(
 	// An open that can change the file withdraws everyone else's promise that
 	// nothing will, before this one is granted anything.
 	if open.Writable || flags.Truncate {
-		conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+		conn.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 	}
 	open.Deletable = accessIncludesDelete(desiredAccess) && !open.Tree.Share.ReadOnly
 

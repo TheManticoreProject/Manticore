@@ -113,7 +113,7 @@ func (t *oplockTable) Grant(open *Open, conn *Connection, uid uint16) bool {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	key := oplockKey(open.Path)
+	key := oplockKey(open.currentPath())
 	t.granted[key] = append(t.granted[key], &oplockHolder{
 		conn:  conn,
 		fid:   open.FID,
@@ -178,7 +178,7 @@ func (t *oplockTable) Release(open *Open) bool {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	key := oplockKey(open.Path)
+	key := oplockKey(open.currentPath())
 	held := t.granted[key]
 	kept := held[:0]
 	released := false
@@ -213,7 +213,7 @@ func (t *oplockTable) Holds(open *Open) bool {
 
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	for _, holder := range t.granted[oplockKey(open.Path)] {
+	for _, holder := range t.granted[oplockKey(open.currentPath())] {
 		if holder.owner == open {
 			return true
 		}
@@ -270,7 +270,7 @@ func (c *Connection) grantOplock(open *Open, uid uint16, createFlags uint32) uin
 	}
 
 	logger.Debugf("SMB1 server: %s granted a level II oplock on %q (FID 0x%04X)",
-		c.Remote, open.Path, open.FID)
+		c.Remote, open.currentPath(), open.FID)
 	return OplockLevelLevelII
 }
 
@@ -371,5 +371,5 @@ func (c *Connection) releaseOplock(open *Open) {
 	released := open.Tree.Share.oplocks.Release(open)
 
 	logger.Debugf("SMB1 server: %s released the oplock on FID 0x%04X (%q), which it held=%t",
-		c.Remote, open.FID, open.Path, released)
+		c.Remote, open.FID, open.currentPath(), released)
 }
