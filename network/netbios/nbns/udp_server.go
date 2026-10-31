@@ -132,8 +132,10 @@ func (s *UDPServer) serve() {
 				continue
 			}
 
-			// Handle the packet in a separate goroutine
-			go s.handlePacket(buf[:n], remoteAddr)
+			// Handle the packet in a separate goroutine. The goroutine gets its
+			// own copy of the datagram: buf is reused by the next ReadFromUDP,
+			// which would otherwise overwrite the packet while it is being parsed.
+			go s.handlePacket(append([]byte(nil), buf[:n]...), remoteAddr)
 		}
 	}
 }
