@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -400,6 +401,7 @@ func (c *Connection) peekNamedPipe(w ResponseWriter, tree *Tree, reassembly *tra
 
 	if err := c.sendTransactionResponse(w, reassembly, parameters, chunk, answer); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe peek for %s: %v", c.Remote, err)
+		return statusForUnsentTransaction(err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }
@@ -544,6 +546,27 @@ func statusForPipeError(err error) nt_status.NT_STATUS {
 func (c *Connection) answerTransaction(w ResponseWriter, reassembly *transactionReassembly, parameters, data []byte) nt_status.NT_STATUS {
 	if err := c.sendTransactionResponse(w, reassembly, parameters, data, nt_status.NT_STATUS_SUCCESS); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe transaction for %s: %v", c.Remote, err)
+		return statusForUnsentTransaction(err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
+// errTransactionParametersOverLimit reports response parameters larger than the
+// client's MaxParameterCount. Nothing has been sent when it is returned.
+var errTransactionParametersOverLimit = errors.New("the response parameters exceed the client's MaxParameterCount")
+
+// statusForUnsentTransaction maps a failure of sendTransactionResponse onto the
+// status the dispatcher answers with.
+//
+// Parameters over the client's MaxParameterCount are refused before anything is
+// written, so the client is still waiting for an answer and gets
+// STATUS_INVALID_PARAMETER: [MS-CIFS] section 2.2.4.33.1 forbids returning more
+// parameter bytes than MaxParameterCount, and section 3.3.5.2.5 has an error
+// response terminate the transaction. Any other failure is the connection going
+// away, where there is no one left to answer.
+func statusForUnsentTransaction(err error) nt_status.NT_STATUS {
+	if errors.Is(err, errTransactionParametersOverLimit) {
+		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }
@@ -564,11 +587,18 @@ func (c *Connection) sendTransactionResponse(
 	if budget <= 0 {
 		return fmt.Errorf("the negotiated buffer leaves no room for a transaction response")
 	}
-	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
-		budget = reassembly.maxDataCount
+	// The parameters are bounded by MaxParameterCount and the message size, never
+	// by MaxDataCount: a peek's 6 parameter bytes go out whatever data budget the
+	// client gave ([MS-CIFS] section 2.2.4.33.1).
+	if len(parameters) > reassembly.maxParameterCount {
+		return fmt.Errorf("%w: %d bytes against %d", errTransactionParametersOverLimit,
+			len(parameters), reassembly.maxParameterCount)
 	}
 	if len(parameters) > budget {
-		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte budget", len(parameters), budget)
+		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte message budget", len(parameters), budget)
+	}
+	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
+		budget = reassembly.maxDataCount
 	}
 
 	sentData := 0
