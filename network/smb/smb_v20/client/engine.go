@@ -5,6 +5,7 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
@@ -132,8 +133,13 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// may send at any time once an oplock is granted and which carries the
 		// reserved MessageId 0xFFFFFFFFFFFFFFFF. Such a message is not the
 		// response to this request; consuming it as one would desynchronize the
-		// request/response stream. Keep reading for the real response.
+		// request/response stream. A break is queued for the next
+		// WaitOplockBreak / WaitBreakNotification; keep reading for the real
+		// response.
 		if uint64(response.Header.MessageId) == unsolicitedMessageId {
+			if response.Header.Command == codes.SMB2_OPLOCK_BREAK {
+				c.queueBreak(raw, wasEncrypted)
+			}
 			continue
 		}
 

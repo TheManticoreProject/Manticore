@@ -151,21 +151,9 @@ func (c *Client) WaitBreakNotification() (*BreakNotification, error) {
 		return nil, fmt.Errorf("transport is not connected")
 	}
 
-	raw, err := c.Transport.Receive()
+	raw, wasEncrypted, err := c.receiveBreak()
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive break notification: %w", err)
-	}
-
-	// When per-session encryption is active, the server wraps unsolicited
-	// notifications in an SMB2 TRANSFORM_HEADER (MS-SMB2 3.2.5.19).
-	wasEncrypted := false
-	if security.IsTransformHeader(raw) {
-		plaintext, derr := c.decryptMessage(raw)
-		if derr != nil {
-			return nil, fmt.Errorf("break notification: %w", derr)
-		}
-		raw = plaintext
-		wasEncrypted = true
 	}
 
 	if c.Session != nil && c.Session.EncryptData && !wasEncrypted {

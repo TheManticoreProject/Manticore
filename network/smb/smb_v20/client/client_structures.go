@@ -51,6 +51,13 @@ type Client struct {
 	// NEGOTIATE and SESSION_SETUP messages exchanged (MS-SMB2 3.1.4.2).
 	lastSentBytes []byte
 	lastRecvBytes []byte
+
+	// breakMu guards pendingBreaks, the unsolicited OPLOCK_BREAK notifications
+	// (oplock or lease breaks) that arrived while a request was waiting for its
+	// response. WaitOplockBreak and WaitBreakNotification return them before
+	// reading the connection, so a break is not lost to an interleaved request.
+	breakMu       sync.Mutex
+	pendingBreaks []queuedBreak
 }
 
 // setPendingAsync records the in-flight async operation so a concurrent Cancel

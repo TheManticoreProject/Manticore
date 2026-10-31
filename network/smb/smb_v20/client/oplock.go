@@ -29,21 +29,9 @@ func (c *Client) WaitOplockBreak() (*OplockBreak, error) {
 		return nil, fmt.Errorf("transport is not connected")
 	}
 
-	raw, err := c.Transport.Receive()
+	raw, wasEncrypted, err := c.receiveBreak()
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive oplock break: %w", err)
-	}
-
-	// When per-session encryption is active, the server wraps unsolicited
-	// notifications in an SMB2 TRANSFORM_HEADER (MS-SMB2 3.2.5.19).
-	wasEncrypted := false
-	if security.IsTransformHeader(raw) {
-		plaintext, derr := c.decryptMessage(raw)
-		if derr != nil {
-			return nil, fmt.Errorf("oplock break: %w", derr)
-		}
-		raw = plaintext
-		wasEncrypted = true
 	}
 
 	if c.Session != nil && c.Session.EncryptData && !wasEncrypted {
@@ -95,4 +83,58 @@ func (c *Client) AcknowledgeOplockBreak(fileId types.SMB2_FILEID, oplockLevel ui
 		return fmt.Errorf("oplock break acknowledgment failed: %s", formatNTStatus(status))
 	}
 	return nil
+}
+
+// maxQueuedBreaks bounds the break notifications held for a later
+// WaitOplockBreak / WaitBreakNotification. When it is reached the oldest is
+// dropped, so a server that floods breaks cannot grow the queue without bound.
+const maxQueuedBreaks = 64
+
+// queuedBreak is an OPLOCK_BREAK notification set aside by a request that
+// received it while waiting for its own response: the plaintext frame and
+// whether it arrived wrapped in a TRANSFORM_HEADER.
+type queuedBreak struct {
+	raw       []byte
+	encrypted bool
+}
+
+// queueBreak sets aside a break notification received while waiting for a
+// response. raw is the plaintext frame (already decrypted when it arrived in a
+// TRANSFORM_HEADER); it is copied, since callers reuse their buffers.
+func (c *Client) queueBreak(raw []byte, encrypted bool) {
+	c.breakMu.Lock()
+	defer c.breakMu.Unlock()
+	if len(c.pendingBreaks) >= maxQueuedBreaks {
+		c.pendingBreaks = c.pendingBreaks[1:]
+	}
+	c.pendingBreaks = append(c.pendingBreaks, queuedBreak{raw: append([]byte(nil), raw...), encrypted: encrypted})
+}
+
+// receiveBreak returns the next break notification frame in plaintext and
+// whether it was encrypted on the wire. A break queued by an earlier request is
+// returned first; otherwise the next frame is read from the connection and, when
+// per-session encryption is active and the server wrapped it in an SMB2
+// TRANSFORM_HEADER (MS-SMB2 3.2.5.19), decrypted.
+func (c *Client) receiveBreak() ([]byte, bool, error) {
+	c.breakMu.Lock()
+	if len(c.pendingBreaks) > 0 {
+		next := c.pendingBreaks[0]
+		c.pendingBreaks = c.pendingBreaks[1:]
+		c.breakMu.Unlock()
+		return next.raw, next.encrypted, nil
+	}
+	c.breakMu.Unlock()
+
+	raw, err := c.Transport.Receive()
+	if err != nil {
+		return nil, false, err
+	}
+	if security.IsTransformHeader(raw) {
+		plaintext, err := c.decryptMessage(raw)
+		if err != nil {
+			return nil, false, err
+		}
+		return plaintext, true, nil
+	}
+	return raw, false, nil
 }
