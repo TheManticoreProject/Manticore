@@ -3,11 +3,12 @@ package client
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
-	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
@@ -320,6 +321,63 @@ func TestCall_CallIDMismatch(t *testing.T) {
 	ft.queue(responseBytes(t, 3, pdu.PFCFirstFrag|pdu.PFCLastFrag, []byte{0x01}))
 	if _, err := c.Call(1, nil); err == nil {
 		t.Fatal("Call() with mismatched response call_id: error = nil, want non-nil")
+	}
+}
+
+// endlessTransport serves the queued PDUs, then the same response fragment forever
+// (up to limit times), modelling a server that never sets PFC_LAST_FRAG.
+type endlessTransport struct {
+	fakeTransport
+	frag  []byte
+	sent  int
+	limit int
+}
+
+func (e *endlessTransport) Recv() ([]byte, error) {
+	if len(e.recvQueue) > 0 {
+		return e.fakeTransport.Recv()
+	}
+	if e.sent >= e.limit {
+		return nil, errors.New("server stream exhausted")
+	}
+	e.sent++
+	return e.frag, nil
+}
+
+func TestCall_ResponseReassemblyIsBounded(t *testing.T) {
+	ft := &endlessTransport{fakeTransport: fakeTransport{maxXmit: 0xffff, maxRecv: 0xffff}}
+	ft.queue(bindAckBytes(t, 0xffff, 0xffff))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	// Largest fragment frag_length allows, never flagged PFC_LAST_FRAG.
+	chunk := make([]byte, 0xffff-requestHeaderOverhead)
+	ft.frag = responseBytes(t, 2, 0, chunk)
+	perCap := maxResponseStubSize/len(chunk) + 1
+	ft.limit = 2 * perCap
+
+	_, err := c.Call(1, nil)
+	if err == nil || !strings.Contains(err.Error(), "reassembled response exceeds") {
+		t.Fatalf("Call() error = %v, want reassembly limit error", err)
+	}
+	if ft.sent > perCap {
+		t.Errorf("client accepted %d fragments, want at most %d", ft.sent, perCap)
+	}
+}
+
+func TestCall_ResponseFragmentExceedsMaxRecvFrag(t *testing.T) {
+	ft := &fakeTransport{maxXmit: 4280, maxRecv: 4280}
+	ft.queue(bindAckBytes(t, 4280, 4280))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	// A single fragment larger than the max_recv_frag proposed at bind.
+	ft.queue(responseBytes(t, 2, pdu.PFCFirstFrag|pdu.PFCLastFrag, make([]byte, 4280)))
+	if _, err := c.Call(1, nil); err == nil {
+		t.Fatal("Call() with oversized response fragment: error = nil, want non-nil")
 	}
 }
 
