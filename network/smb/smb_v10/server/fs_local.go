@@ -444,6 +444,14 @@ func (fs *LocalFileSystem) Rename(oldPath, newPath string, replace bool) error {
 	if err != nil {
 		return err
 	}
+	// The host refuses a directory moved beneath itself with an error of its
+	// own, which says nothing a client can act on. Refused here, it reads the
+	// same as from any other backend.
+	if isBeneath(newPath, oldPath) {
+		if info, err := os.Lstat(oldHost); err == nil && info.IsDir() {
+			return ErrInvalidParameter
+		}
+	}
 	if !replace {
 		if _, err := os.Lstat(newHost); err == nil {
 			return ErrExists

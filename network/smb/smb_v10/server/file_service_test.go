@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
@@ -1195,5 +1197,28 @@ func TestReadOnlyFileCannotBeDeleted(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestLocalFileSystemRenameIntoOwnSubtree asserts the local backend refuses a
+// directory moved beneath itself with the same error as the in-memory one, so
+// a client sees the same status whichever backend serves the share.
+func TestLocalFileSystemRenameIntoOwnSubtree(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := NewLocalFileSystem(root, "LOCAL")
+	if err != nil {
+		t.Fatalf("NewLocalFileSystem() error = %v", err)
+	}
+	if err := fs.Rename("a", "a/b/c", false); !errors.Is(err, ErrInvalidParameter) {
+		t.Fatalf("Rename(a, a/b/c) = %v, want ErrInvalidParameter", err)
+	}
+	if status := statusForFSError(ErrInvalidParameter); status != nt_status.NT_STATUS_INVALID_PARAMETER {
+		t.Errorf("statusForFSError(ErrInvalidParameter) = %s, want STATUS_INVALID_PARAMETER", status.Name())
+	}
+	if _, err := fs.Stat("a/b"); err != nil {
+		t.Errorf("Stat(a/b) after the refused rename = %v", err)
 	}
 }

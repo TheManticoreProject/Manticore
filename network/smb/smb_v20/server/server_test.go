@@ -950,6 +950,39 @@ func TestServerRenameDirectory(t *testing.T) {
 	}
 }
 
+// TestServerRefusesRenameIntoOwnSubtree checks that SET_INFO FileRenameInformation
+// moving a directory beneath itself is answered with STATUS_INVALID_PARAMETER and
+// leaves the tree as it was, rather than cutting the directory off from the share
+// with its file's bytes still counted against the volume.
+func TestServerRefusesRenameIntoOwnSubtree(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	for _, dir := range []string{"a", "a/b"} {
+		if err := fs.AddDirectory(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := fs.AddFile("a/f", []byte("12345")); err != nil {
+		t.Fatal(err)
+	}
+	c, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.RenameFile("a", `a\b\c`, false)
+	if err == nil || !strings.Contains(err.Error(), nt_status.NT_STATUS_INVALID_PARAMETER.Name()) {
+		t.Fatalf("RenameFile(a, a\\b\\c) = %v, want STATUS_INVALID_PARAMETER", err)
+	}
+	for _, path := range []string{"a", "a/b", "a/f"} {
+		if _, err := fs.Stat(path); err != nil {
+			t.Errorf("Stat(%s) after the refused rename = %v", path, err)
+		}
+	}
+	if _, err := fs.Stat("a/b/c"); err == nil {
+		t.Error("a/b/c exists after the refused rename")
+	}
+}
+
 // TestServerRefusesSizeBeyondVolume checks that a SET_INFO end of file or a
 // WRITE far beyond what the in-memory volume holds is answered with
 // STATUS_DISK_FULL rather than allocated, and that the connection carries on.
