@@ -158,13 +158,11 @@ func (dt *DateTime) SetTime(t time.Time) {
 
 	truncated := t.UTC().Truncate(100 * time.Nanosecond)
 	dt.time = truncated
-	nanos := truncated.UnixNano()
-	if nanos >= 0 {
-		dt.ticks = ticksBetween1601AndUnix + uint64(nanos/100)
-	} else {
-		// Truncated ensures nanos is divisible by 100
-		dt.ticks = ticksBetween1601AndUnix - uint64((-nanos)/100)
-	}
+	// The tick count is built from whole seconds plus the sub-second remainder rather
+	// than from UnixNano(), whose result is undefined for times outside roughly
+	// 1678-2262 and would silently encode such dates as a different year.
+	ticks := truncated.Unix()*int64(ticksPerSecond) + int64(truncated.Nanosecond())/100
+	dt.ticks = ticksBetween1601AndUnix + uint64(ticks)
 }
 
 // GetTime returns the time.Time value stored in the DateTime instance.
