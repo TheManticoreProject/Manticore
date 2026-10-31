@@ -372,8 +372,8 @@ func handleClose(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 	if request.LastTimeModified != 0 && request.LastTimeModified != 0xFFFFFFFF && open.Writable &&
 		open.Tree != nil && open.Tree.Share.FS != nil {
 		modified := time.Unix(int64(request.LastTimeModified), 0).UTC()
-		if err := open.Tree.Share.FS.SetAttr(open.Path, FileAttr{Modified: modified}, AttrMask{Modified: true}); err != nil {
-			logger.Debugf("SMB1 server: could not set the modification time of %q: %v", open.Path, err)
+		if err := open.Tree.Share.FS.SetAttr(open.currentPath(), FileAttr{Modified: modified}, AttrMask{Modified: true}); err != nil {
+			logger.Debugf("SMB1 server: could not set the modification time of %q: %v", open.currentPath(), err)
 		}
 	}
 
@@ -441,7 +441,7 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 
 	if status := lockedAgainst(open, uint64(offset), uint64(length), false); status != nt_status.NT_STATUS_SUCCESS {
 		logger.Debugf("SMB1 server: %s read %d bytes of %q at %d, which another handle has locked",
-			conn.Remote, length, open.Path, offset)
+			conn.Remote, length, open.currentPath(), offset)
 		return status
 	}
 
@@ -453,7 +453,7 @@ func handleReadAndx(conn *Connection, w ResponseWriter, req *message.Message) nt
 	buffer := make([]byte, length)
 	read, err := file.ReadAt(buffer, offset)
 	if err != nil && !errors.Is(err, io.EOF) {
-		logger.Debugf("SMB1 server: reading %q for %s failed: %v", open.Path, conn.Remote, err)
+		logger.Debugf("SMB1 server: reading %q for %s failed: %v", open.currentPath(), conn.Remote, err)
 		return statusForFSError(err)
 	}
 
@@ -566,7 +566,7 @@ func (c *Connection) readPipeHandle(w ResponseWriter, open *Open, length int) nt
 	chunk, moreRemains := open.drainPipeOutput(length)
 
 	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, more remains=%t",
-		len(chunk), open.Path, c.Remote, moreRemains)
+		len(chunk), open.currentPath(), c.Remote, moreRemains)
 
 	response := commands.NewReadAndxResponse()
 	response.Data = chunk
@@ -597,7 +597,7 @@ func lockedAgainst(open *Open, offset, length uint64, writing bool) nt_status.NT
 	if open == nil || open.Tree == nil || open.Tree.Share == nil || open.Tree.Share.locks == nil {
 		return nt_status.NT_STATUS_SUCCESS
 	}
-	if open.Tree.Share.locks.Blocks(open.Path, open, offset, length, writing) {
+	if open.Tree.Share.locks.Blocks(open.currentPath(), open, offset, length, writing) {
 		return nt_status.NT_STATUS_FILE_LOCK_CONFLICT
 	}
 	return nt_status.NT_STATUS_SUCCESS
@@ -635,7 +635,7 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 
 	if status := lockedAgainst(open, uint64(offset), uint64(len(data)), true); status != nt_status.NT_STATUS_SUCCESS {
 		logger.Debugf("SMB1 server: %s wrote %d bytes of %q at %d, which another handle has locked",
-			conn.Remote, len(data), open.Path, offset)
+			conn.Remote, len(data), open.currentPath(), offset)
 		return status
 	}
 
@@ -648,18 +648,18 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	// oplock is caching reads on the promise that nothing is writing, and telling
 	// it afterwards would leave a window in which it could serve data this write
 	// has already replaced.
-	conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+	conn.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 
 	written, err := file.WriteAt(data, offset)
 	if err != nil {
-		logger.Debugf("SMB1 server: writing %q for %s failed: %v", open.Path, conn.Remote, err)
+		logger.Debugf("SMB1 server: writing %q for %s failed: %v", open.currentPath(), conn.Remote, err)
 		return statusForFSError(err)
 	}
 
 	// WritethroughMode asks for the write to be committed before the response.
 	if uint16(request.WriteMode)&writeThroughMode != 0 {
 		if err := file.Sync(); err != nil {
-			logger.Debugf("SMB1 server: syncing %q for %s failed: %v", open.Path, conn.Remote, err)
+			logger.Debugf("SMB1 server: syncing %q for %s failed: %v", open.currentPath(), conn.Remote, err)
 			return statusForFSError(err)
 		}
 	}
@@ -698,7 +698,7 @@ func handleFlush(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 		for _, open := range conn.opens {
 			if open.Tree == tree && open.File != nil {
 				if err := open.File.Sync(); err != nil {
-					logger.Debugf("SMB1 server: syncing %q failed: %v", open.Path, err)
+					logger.Debugf("SMB1 server: syncing %q failed: %v", open.currentPath(), err)
 				}
 			}
 		}

@@ -171,7 +171,8 @@ func nativePath(path string) string {
 // for a set in the pass-through range.
 //
 // Parameters:
-//   - fs: the backend to apply it through
+//   - share: the share whose backend it is applied through, and whose handles a
+//     rename moves
 //   - path: the share-relative path being changed
 //   - class: the native information class, with the pass-through base removed
 //   - data: the structure the client sent
@@ -180,12 +181,13 @@ func nativePath(path string) string {
 // Returns:
 //   - Whether the class is served, and what the backend made of it
 func applyNativeFileInformation(
-	fs FileSystem,
+	share *Share,
 	path string,
 	class uint16,
 	data []byte,
 	open *Open,
 ) (bool, error) {
+	fs := share.FS
 	switch infoclass.FileInformationClass(class) {
 	case infoclass.FileBasicInformation:
 		basic := filesystem.FileBasicInformation{}
@@ -259,7 +261,10 @@ func applyNativeFileInformation(
 		if err != nil {
 			return true, ErrAccessDenied
 		}
-		return true, fs.Rename(path, target, rename.ReplaceIfExists)
+		// Every handle on the file moves with it, this one included, so a
+		// delete-on-close or a later set through any of them acts on the file
+		// rather than on whatever is created under the old name.
+		return true, share.rename(path, target, rename.ReplaceIfExists)
 	}
 
 	return false, nil

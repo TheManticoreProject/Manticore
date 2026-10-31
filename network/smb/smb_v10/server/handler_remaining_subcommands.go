@@ -257,7 +257,7 @@ func handleNtTransactCreate(
 	// An open that can change the file withdraws everyone else's promise that
 	// nothing will, before this one is granted anything.
 	if open.Writable || flags.Truncate {
-		conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+		conn.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 	}
 
 	// Response parameters are 69 bytes, per [MS-CIFS] section 2.2.7.1.2.

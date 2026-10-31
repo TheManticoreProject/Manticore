@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
@@ -25,6 +28,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/server"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
@@ -1002,7 +1006,7 @@ func TestServerRefusesSizeBeyondVolume(t *testing.T) {
 // TestServerReadOnlyFileCannotBeDeleted asserts a file carrying
 // FILE_ATTRIBUTE_READONLY survives a delete-on-close open and a
 // FileDispositionInformation set, each refused with STATUS_CANNOT_DELETE as
-// [MS-FSA] sections 2.1.5.1.2.1 and 2.1.5.14.3 require. The local backend
+// [MS-FSA] sections 2.1.5.1.2.1 and 2.1.5.15.3 require. The local backend
 // removed such a file when the handle closed, since unlinking a host file needs
 // write access to its directory, not to the file.
 func TestServerReadOnlyFileCannotBeDeleted(t *testing.T) {
@@ -1090,4 +1094,223 @@ func TestServerReadOnlyFileCannotBeDeleted(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestServerRenameMovesEveryOpen checks that a rename through one open moves
+// every other open of the file, on any connection, to the new name: a pending
+// delete-on-close on another open must remove the renamed file, not an
+// unrelated file created afterwards under the old name.
+func TestServerRenameMovesEveryOpen(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	a, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := uint32(fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE)
+
+	doomed, err := a.CreateFile("hello.txt", fileflags.GENERIC_READ|fileflags.DELETE, all, fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+	if err != nil {
+		t.Fatalf("delete-on-close open: %v", err)
+	}
+	renamer, err := b.CreateFile("hello.txt", fileflags.GENERIC_READ|fileflags.DELETE, all, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	if err := b.RenameByHandle(renamer, "moved.txt", false); err != nil {
+		t.Fatalf("RenameByHandle: %v", err)
+	}
+	b.CloseFile(renamer)
+
+	// The other connection's open reports the new name.
+	if name, err := queryFileName(a, doomed); err != nil || name != `\moved.txt` {
+		t.Errorf("FileNameInformation on the other open = %q, %v, want %q", name, err, `\moved.txt`)
+	}
+
+	// An unrelated file now takes the old name.
+	fresh, err := b.CreateFile("hello.txt", fileflags.GENERIC_WRITE, all, fileflags.FILE_CREATE, 0)
+	if err != nil {
+		t.Fatalf("create under the old name: %v", err)
+	}
+	if _, err := b.WriteFile(fresh, 0, []byte("unrelated")); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	b.CloseFile(fresh)
+
+	if err := a.CloseFile(doomed); err != nil {
+		t.Fatalf("CloseFile: %v", err)
+	}
+	if _, err := fs.Stat("hello.txt"); err != nil {
+		t.Errorf("the unrelated hello.txt was deleted by the other open's delete-on-close: %v", err)
+	}
+	if _, err := fs.Stat("moved.txt"); err == nil {
+		t.Error("moved.txt survived the delete-on-close of an open of it")
+	}
+}
+
+// TestServerRenameMovesShareModes checks that the share modes of the other
+// opens follow a rename: an open that does not share writing still refuses a
+// writer at the new name, and no longer refuses one at the old name.
+func TestServerRenameMovesShareModes(t *testing.T) {
+	_, port := startServer(t, server.Config{})
+	a, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.CreateFile("hello.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_DELETE, fileflags.FILE_OPEN, 0); err != nil {
+		t.Fatalf("reader open: %v", err)
+	}
+	renamer, err := b.CreateFile("hello.txt", fileflags.DELETE, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_DELETE, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		t.Fatalf("renamer open: %v", err)
+	}
+	if err := b.RenameByHandle(renamer, "moved.txt", false); err != nil {
+		t.Fatalf("RenameByHandle: %v", err)
+	}
+	b.CloseFile(renamer)
+
+	if _, err := b.CreateFile("moved.txt", fileflags.GENERIC_WRITE, fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE|fileflags.FILE_SHARE_DELETE, fileflags.FILE_OPEN, 0); err == nil {
+		t.Error("a writer was admitted at the new name although another open does not share writing")
+	}
+	if _, err := b.CreateFile("hello.txt", fileflags.GENERIC_WRITE, fileflags.FILE_SHARE_READ, fileflags.FILE_CREATE, 0); err != nil {
+		t.Errorf("a new file at the old name was refused: %v", err)
+	}
+}
+
+// TestServerRenameDirectoryMovesOpenChildren checks that renaming a directory
+// moves the opens of the files beneath it, on another connection, with it.
+func TestServerRenameDirectoryMovesOpenChildren(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	if err := fs.AddDirectory("dir1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.AddFile("dir1/child.txt", []byte("child")); err != nil {
+		t.Fatal(err)
+	}
+	a, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := uint32(fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE)
+
+	child, err := a.CreateFile("dir1/child.txt", fileflags.GENERIC_READ|fileflags.DELETE, all, fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+	if err != nil {
+		t.Fatalf("child open: %v", err)
+	}
+	if err := b.RenameFile("dir1", "dir2", false); err != nil {
+		t.Fatalf("RenameFile(dir1, dir2): %v", err)
+	}
+	if name, err := queryFileName(a, child); err != nil || name != `\dir2\child.txt` {
+		t.Errorf("FileNameInformation on the child open = %q, %v, want %q", name, err, `\dir2\child.txt`)
+	}
+
+	// The old names are reused by unrelated entries.
+	if err := b.CreateDirectory("dir1"); err != nil {
+		t.Fatalf("CreateDirectory(dir1): %v", err)
+	}
+	fresh, err := b.CreateFile("dir1/child.txt", fileflags.GENERIC_WRITE, all, fileflags.FILE_CREATE, 0)
+	if err != nil {
+		t.Fatalf("create under the old name: %v", err)
+	}
+	b.CloseFile(fresh)
+
+	if err := a.CloseFile(child); err != nil {
+		t.Fatalf("CloseFile: %v", err)
+	}
+	if _, err := fs.Stat("dir1/child.txt"); err != nil {
+		t.Errorf("the unrelated dir1/child.txt was deleted by the moved open's delete-on-close: %v", err)
+	}
+	if _, err := fs.Stat("dir2/child.txt"); err == nil {
+		t.Error("dir2/child.txt survived the delete-on-close of an open of it")
+	}
+}
+
+// TestServerRenameReplaceRefusedWhileTargetIsOpen checks that a rename with
+// ReplaceIfExists onto a file another open holds is refused with
+// STATUS_ACCESS_DENIED ([MS-FSA] 2.1.5.15.11), and goes through once the
+// target is no longer open.
+func TestServerRenameReplaceRefusedWhileTargetIsOpen(t *testing.T) {
+	fs, port := startServer(t, server.Config{})
+	if err := fs.AddFile("dst.txt", []byte("target")); err != nil {
+		t.Fatal(err)
+	}
+	a, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := dial(t, port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := uint32(fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE)
+
+	held, err := a.CreateFile("dst.txt", fileflags.GENERIC_READ|fileflags.DELETE, all, fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+	if err != nil {
+		t.Fatalf("open dst.txt: %v", err)
+	}
+	source, err := b.CreateFile("hello.txt", fileflags.GENERIC_READ|fileflags.DELETE, all, fileflags.FILE_OPEN, 0)
+	if err != nil {
+		t.Fatalf("open hello.txt: %v", err)
+	}
+	if err := b.RenameByHandle(source, "dst.txt", true); err == nil || !strings.Contains(err.Error(), "ACCESS_DENIED") {
+		t.Errorf("replacing an open target = %v, want STATUS_ACCESS_DENIED", err)
+	}
+	if attr, err := fs.Stat("hello.txt"); err != nil || attr.Size != int64(len("hello world")) {
+		t.Errorf("Stat(hello.txt) = size %d, %v after the refused rename, want it untouched", attr.Size, err)
+	}
+
+	// The holder's delete-on-close takes its own file, and only that.
+	if err := a.CloseFile(held); err != nil {
+		t.Fatalf("CloseFile: %v", err)
+	}
+	if _, err := fs.Stat("dst.txt"); err == nil {
+		t.Error("dst.txt survived the delete-on-close of the open that held it")
+	}
+	if _, err := fs.Stat("hello.txt"); err != nil {
+		t.Errorf("hello.txt was deleted by another file's delete-on-close: %v", err)
+	}
+
+	// With nothing open on the target any more, the replace goes through.
+	if err := fs.AddFile("dst.txt", []byte("target again")); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.RenameByHandle(source, "dst.txt", true); err != nil {
+		t.Fatalf("replacing a target nobody holds: %v", err)
+	}
+	if attr, err := fs.Stat("dst.txt"); err != nil || attr.Size != int64(len("hello world")) {
+		t.Errorf("Stat(dst.txt) = size %d, %v after the replace, want the renamed file", attr.Size, err)
+	}
+	b.CloseFile(source)
+}
+
+// queryFileName returns the name FileNameInformation reports for an open.
+func queryFileName(c *client.Client, id types.SMB2_FILEID) (string, error) {
+	data, err := c.QueryInfo(id, 1, uint8(infoclass.FileNameInformation), 0)
+	if err != nil {
+		return "", err
+	}
+	if len(data) < 4 {
+		return "", fmt.Errorf("FileNameInformation is %d bytes", len(data))
+	}
+	length := int(binary.LittleEndian.Uint32(data[0:4]))
+	if length > len(data)-4 || length%2 != 0 {
+		return "", fmt.Errorf("FileNameInformation length %d does not fit %d bytes", length, len(data))
+	}
+	units := make([]uint16, length/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(data[4+2*i:])
+	}
+	return string(utf16.Decode(units)), nil
 }

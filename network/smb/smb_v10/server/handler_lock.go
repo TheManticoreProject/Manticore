@@ -121,20 +121,20 @@ func handleLockingAndx(conn *Connection, w ResponseWriter, req *message.Message)
 		case lockOutcomeGranted:
 			conn.locksHeld += growth
 			logger.Debugf("SMB1 server: %s locked %d and unlocked %d ranges of %q",
-				conn.Remote, len(locks), len(unlocks), open.Path)
+				conn.Remote, len(locks), len(unlocks), open.currentPath())
 			return answerLocking(conn, w)
 
 		case lockOutcomeNotLocked:
 			// Waiting cannot make a range that is not held become held, so this
 			// fails immediately however long the client offered to wait.
 			logger.Debugf("SMB1 server: %s asked to unlock a range of %q it does not hold",
-				conn.Remote, open.Path)
+				conn.Remote, open.currentPath())
 			return nt_status.NT_STATUS_RANGE_NOT_LOCKED
 
 		default:
 			if !waits || !time.Now().Before(deadline) {
 				logger.Debugf("SMB1 server: %s could not lock a range of %q, which is already locked",
-					conn.Remote, open.Path)
+					conn.Remote, open.currentPath())
 				return nt_status.NT_STATUS_LOCK_NOT_GRANTED
 			}
 		}

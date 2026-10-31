@@ -120,7 +120,7 @@ func handleRename(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 
 	// SMB_COM_RENAME does not replace: a destination that exists is a collision.
 	// The NT_RENAME variant is what a client uses when it means to overwrite.
-	if err := tree.Share.FS.Rename(oldPath, newPath, false); err != nil {
+	if err := tree.Share.rename(oldPath, newPath, false); err != nil {
 		logger.Debugf("SMB1 server: renaming %q to %q for %s failed: %v", oldPath, newPath, conn.Remote, err)
 		return statusForFSError(err)
 	}

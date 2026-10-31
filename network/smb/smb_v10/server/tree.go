@@ -2,6 +2,7 @@ package server
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,9 +29,15 @@ type Open struct {
 	FID uint16
 
 	// Tree is the tree the handle was opened on, and Path the share-relative path
-	// it names.
+	// it was opened by. Path is never updated: a rename moves the file away from
+	// that name, and what the handle names now is currentPath.
 	Tree *Tree
 	Path string
+
+	// renamed is where a rename moved the file after it was opened. It is written
+	// by whichever connection renamed the file, which is not necessarily this
+	// handle's, so it is atomic.
+	renamed atomic.Pointer[string]
 
 	// File is the backend handle. It is nil for a handle onto a directory that
 	// the backend declined to open, which is legitimate: a directory handle is
@@ -96,6 +103,16 @@ type Open struct {
 	// which closing it completes. They belong to the receive loop like the rest
 	// of the handle.
 	notifies []*pendingNotify
+}
+
+// currentPath returns the share-relative path the handle's file has now. A
+// rename through any handle on the file, or on a directory above it, changes it,
+// whichever connection that handle belongs to.
+func (o *Open) currentPath() string {
+	if renamed := o.renamed.Load(); renamed != nil {
+		return *renamed
+	}
+	return o.Path
 }
 
 // Tree returns the tree a TID names on this connection, or nil when it names
@@ -222,6 +239,9 @@ func (c *Connection) removeTree(tid uint16) *Tree {
 // addOpen records an open handle.
 func (c *Connection) addOpen(open *Open) {
 	c.opens[open.FID] = open
+	if open.Tree != nil && open.Tree.Share != nil {
+		open.Tree.Share.opens.add(open)
+	}
 }
 
 // closeOpen closes a handle, applies a pending delete-on-close, and releases the
@@ -237,6 +257,9 @@ func (c *Connection) closeOpen(fid uint16) error {
 	}
 	delete(c.opens, fid)
 	c.fids.Release(fid)
+	if open.Tree != nil && open.Tree.Share != nil {
+		open.Tree.Share.opens.remove(open)
+	}
 
 	// A directory watch pending on the handle ends with it. Every path that
 	// closes a handle — a close, a process exit, a tree disconnect and a logoff —
@@ -278,9 +301,9 @@ func (c *Connection) closeOpen(fid uint16) error {
 	if open.DeleteOnClose && open.Tree != nil && open.Tree.Share.FS != nil {
 		var err error
 		if open.IsDirectory {
-			err = open.Tree.Share.FS.Rmdir(open.Path)
+			err = open.Tree.Share.FS.Rmdir(open.currentPath())
 		} else {
-			err = open.Tree.Share.FS.Remove(open.Path)
+			err = open.Tree.Share.FS.Remove(open.currentPath())
 		}
 		if err != nil && firstErr == nil {
 			firstErr = err

@@ -59,7 +59,7 @@ func handleNotifyChange(
 		// notifying would leave the client waiting for a change it would never
 		// hear about, which is worse than a refusal it can act on.
 		logger.Debugf("SMB1 server: %s watched %q on share %q, which cannot be watched",
-			conn.Remote, open.Path, open.Tree.Share.Name)
+			conn.Remote, open.currentPath(), open.Tree.Share.Name)
 		return nt_status.NT_STATUS_NOT_SUPPORTED
 	}
 
@@ -72,7 +72,7 @@ func handleNotifyChange(
 		return nt_status.NT_STATUS_INSUFFICIENT_RESOURCES
 	}
 
-	changes, stop, err := watcher.Watch(open.Path, watchTree)
+	changes, stop, err := watcher.Watch(open.currentPath(), watchTree)
 	if err != nil {
 		return statusForFSError(err)
 	}

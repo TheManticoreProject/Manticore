@@ -376,7 +376,7 @@ func handleCreateTemporary(conn *Connection, w ResponseWriter, req *message.Mess
 
 	response := commands.NewCreateTemporaryResponse()
 	response.FID = types.USHORT(open.FID)
-	if err := response.TemporaryFileName.SetString(open.Path); err != nil {
+	if err := response.TemporaryFileName.SetString(open.currentPath()); err != nil {
 		return nt_status.NT_STATUS_UNSUCCESSFUL
 	}
 	return conn.answer(w, response)
@@ -530,7 +530,7 @@ func (c *Connection) coreWrite(open *Open, offset int64, data []byte, declared i
 	// The break goes out before the file changes, for both of the changes this
 	// path makes: a client caching reads on the promise that nothing is writing
 	// has to be told before the data under its cache moves.
-	c.breakOplocksOn(open.Tree.Share, open.Path, open)
+	c.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 
 	// A count of zero sets the length rather than writing nothing.
 	if declared == 0 {
