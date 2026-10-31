@@ -8,6 +8,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem/infoclass"
 )
 
 // handleQueryPathInformation answers TRANS2_QUERY_PATH_INFORMATION: it describes a
@@ -167,7 +168,11 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 	if open.Tree.Share.ReadOnly {
 		return nil, nil, nt_status.NT_STATUS_MEDIA_WRITE_PROTECTED
 	}
-	if !open.Writable {
+	if level == smbSetFileDispositionInfo || level == smbInfoPassthrough+uint16(infoclass.FileDispositionInformation) {
+		if status := dispositionStatus(open, reassembly.data); status != nt_status.NT_STATUS_SUCCESS {
+			return nil, nil, status
+		}
+	} else if !open.Writable {
 		return nil, nil, nt_status.NT_STATUS_ACCESS_DENIED
 	}
 
@@ -182,6 +187,33 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 	}
 
 	return make([]byte, 2), nil, nt_status.NT_STATUS_SUCCESS
+}
+
+// dispositionStatus decides whether a handle may have its delete disposition set.
+//
+// Marking a file for deletion is a delete, not a write, so [MS-FSA] section
+// 2.1.5.14.3 holds it to what a delete needs: "If Open.GrantedAccess.DELETE is
+// FALSE, the operation MUST be failed with STATUS_ACCESS_DENIED", and a file
+// carrying FILE_ATTRIBUTE_READONLY "MUST be failed with STATUS_CANNOT_DELETE".
+// Gating it on write access let a handle opened for writing alone delete the
+// file, and refused one opened for DELETE alone.
+//
+// Parameters:
+//   - open: the handle the set arrived on
+//   - data: the disposition structure, whose first byte is DeletePending
+//
+// Returns:
+//   - NT_STATUS_SUCCESS if the set may proceed, or the status refusing it
+func dispositionStatus(open *Open, data []byte) nt_status.NT_STATUS {
+	if !open.Deletable {
+		return nt_status.NT_STATUS_ACCESS_DENIED
+	}
+	if len(data) > 0 && data[0] != 0 && !open.IsDirectory {
+		if attr, err := open.Tree.Share.FS.Stat(open.Path); err == nil && attr.ReadOnly {
+			return nt_status.NT_STATUS_CANNOT_DELETE
+		}
+	}
+	return nt_status.NT_STATUS_SUCCESS
 }
 
 // handleQueryFsInformation answers TRANS2_QUERY_FS_INFORMATION: it describes the
