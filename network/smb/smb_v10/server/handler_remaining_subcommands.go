@@ -240,18 +240,26 @@ func handleNtTransactCreate(
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return nil, nil, status
 	}
-	open.DeleteOnClose = createOptions&fileDeleteOnClose != 0
 
 	attr, err := open.File.Stat()
 	if err != nil {
 		return nil, nil, statusForFSError(err)
 	}
+	// A file carrying the read-only attribute cannot be opened delete-on-close,
+	// [MS-FSA] section 2.1.5.1.2.1. Checked before the option reaches the handle,
+	// so closing the refused open deletes nothing.
+	if createOptions&fileDeleteOnClose != 0 && !attr.IsDir && attr.ReadOnly {
+		conn.closeOpen(open.FID)
+		return nil, nil, statusForFSError(ErrCannotDelete)
+	}
+	open.DeleteOnClose = createOptions&fileDeleteOnClose != 0
 
 	// An open that can change the file withdraws everyone else's promise that
 	// nothing will, before this one is granted anything.
 	if open.Writable || flags.Truncate {
-		conn.breakOplocksOn(open.Tree.Share, open.Path, open)
+		conn.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 	}
+	open.Deletable = accessIncludesDelete(desiredAccess) && !open.Tree.Share.ReadOnly
 
 	// Response parameters are 69 bytes, per [MS-CIFS] section 2.2.7.1.2.
 	parameters := make([]byte, 69)

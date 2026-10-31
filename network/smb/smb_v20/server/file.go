@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"io"
+	"sync/atomic"
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
@@ -37,10 +38,23 @@ type Open struct {
 	deleteOnClose bool
 	search        *search
 	notifies      []*pendingNotify
+
+	// renamed is where a rename moved the file after path was resolved. It is
+	// written by whichever connection renamed the file, so it is atomic.
+	renamed atomic.Pointer[string]
 }
 
 // fs returns the backend the open lives on.
 func (o *Open) fs() smb1.FileSystem { return o.tree.Share.FS }
+
+// currentPath returns the share-relative path the open's file has now, which
+// a rename through any open of it, or of a directory above it, changes.
+func (o *Open) currentPath() string {
+	if renamed := o.renamed.Load(); renamed != nil {
+		return *renamed
+	}
+	return o.path
+}
 
 // openFor resolves the FileId of a request to one of the tree's handles. A
 // related compounded request names the previous request's handle.
@@ -105,10 +119,18 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 		c.server.shareModes.release(open)
 		return smb1.StatusForFSError(err)
 	}
+	// A file carrying the read-only attribute cannot be opened delete-on-close,
+	// [MS-FSA] section 2.1.5.1.2.1.
+	if deleteOnClose && !attr.IsDir && attr.ReadOnly {
+		file.Close()
+		c.server.shareModes.release(open)
+		return smb1.StatusForFSError(smb1.ErrCannotDelete)
+	}
 
 	c.nextFileID++
 	open.id, open.file, open.isDir = c.nextFileID, file, attr.IsDir
 	c.opens[open.id] = open
+	c.server.openFiles.add(open)
 	r.fileID = open.fileID()
 
 	if flags.Write || flags.Truncate || deleteOnClose {
@@ -148,7 +170,7 @@ func (c *Connection) close(r *request, resp *response) nt_status.NT_STATUS {
 
 	answer := commands.NewCloseResponse()
 	if req.Flags&commands.SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB != 0 {
-		if attr, err := open.fs().Stat(open.path); err == nil {
+		if attr, err := open.fs().Stat(open.currentPath()); err == nil {
 			answer.Flags = commands.SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB
 			answer.CreationTime, answer.LastAccessTime = filetime(attr.Created), filetime(attr.Accessed)
 			answer.LastWriteTime, answer.ChangeTime = filetime(attr.Modified), filetime(attr.Changed)
@@ -166,6 +188,7 @@ func (c *Connection) close(r *request, resp *response) nt_status.NT_STATUS {
 // closeOpen releases a handle, applying a pending delete.
 func (c *Connection) closeOpen(open *Open) error {
 	delete(c.opens, open.id)
+	c.server.openFiles.remove(open)
 	c.cleanupNotifies(open)
 	c.server.oplocks.release(open)
 	c.server.shareModes.release(open)
@@ -174,9 +197,9 @@ func (c *Connection) closeOpen(open *Open) error {
 		return nil
 	}
 	if open.isDir {
-		return open.fs().Rmdir(open.path)
+		return open.fs().Rmdir(open.currentPath())
 	}
-	return open.fs().Remove(open.path)
+	return open.fs().Remove(open.currentPath())
 }
 
 // read answers READ.

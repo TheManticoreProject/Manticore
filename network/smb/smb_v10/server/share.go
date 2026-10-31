@@ -62,6 +62,11 @@ type Share struct {
 	// same reason: the handles a break has to notify are on other connections as
 	// much as this one. AddShare creates it too.
 	oplocks *oplockTable
+
+	// opens holds every handle open on this share, on any connection, so a
+	// rename can move each handle on the renamed file to its new name. AddShare
+	// creates it too.
+	opens *openRegistry
 }
 
 // OpenFlags describe what an open is for. They are the subset of the client's
@@ -300,6 +305,12 @@ var (
 	// ErrReadOnly reports that the share or the entry refuses modification.
 	ErrReadOnly = fmt.Errorf("read-only")
 
+	// ErrCannotDelete reports that a file carrying the read-only attribute was
+	// asked to be deleted. It is an ErrReadOnly, so a caller testing for that
+	// still sees it, but answers STATUS_CANNOT_DELETE, the status [MS-FSA]
+	// sections 2.1.5.1.2.1 and 2.1.5.15.3 name for it.
+	ErrCannotDelete = fmt.Errorf("%w: cannot delete a read-only file", ErrReadOnly)
+
 	// ErrDiskFull reports that the storage cannot hold the size a write or a
 	// resize asks for.
 	ErrDiskFull = fmt.Errorf("disk full")
@@ -337,6 +348,9 @@ func (s *Server) AddShare(share *Share) error {
 	}
 	if share.oplocks == nil {
 		share.oplocks = newOplockTable()
+	}
+	if share.opens == nil {
+		share.opens = newOpenRegistry()
 	}
 
 	key := strings.ToUpper(share.Name)

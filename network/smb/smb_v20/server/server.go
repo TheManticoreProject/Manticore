@@ -114,6 +114,7 @@ type Server struct {
 	config     Config
 	oplocks    *oplockTable
 	shareModes *shareModes
+	openFiles  *openRegistry
 
 	mutex     sync.RWMutex
 	handlers  []Handler
@@ -192,6 +193,7 @@ func NewServer(config Config) (*Server, error) {
 		config:     config,
 		oplocks:    newOplockTable(),
 		shareModes: newShareModes(),
+		openFiles:  newOpenRegistry(),
 		shares:     make(map[string]*Share),
 		conns:      make(map[*Connection]struct{}),
 	}

@@ -46,7 +46,7 @@ func (c *Connection) queryInfo(r *request, resp *response) nt_status.NT_STATUS {
 	variable := false
 	switch req.InfoType {
 	case infoFile:
-		attr, err := open.fs().Stat(open.path)
+		attr, err := open.fs().Stat(open.currentPath())
 		if err != nil {
 			return smb1.StatusForFSError(err)
 		}
@@ -91,7 +91,7 @@ func encodeFileInfo(class uint8, open *Open, attr smb1.FileAttr) ([]byte, bool, 
 		standard := standardInfo(attr, open.deleteOnClose)
 		encoded, err = standard.Marshal()
 	case infoclass.FileInternalInformation:
-		encoded = binary.LittleEndian.AppendUint64(nil, fileIndex(open.path))
+		encoded = binary.LittleEndian.AppendUint64(nil, fileIndex(open.currentPath()))
 	case infoclass.FileEaInformation:
 		encoded = make([]byte, 4)
 	case infoclass.FileAccessInformation:
@@ -114,16 +114,18 @@ func encodeFileInfo(class uint8, open *Open, attr smb1.FileAttr) ([]byte, bool, 
 	case infoclass.FileAllInformation:
 		all := filesystem.FileAllInformation{
 			Basic: basicInfo(attr), Standard: standardInfo(attr, open.deleteOnClose),
-			IndexNumber: int64(fileIndex(open.path)), AccessFlags: open.access,
-			FileName: `\` + toWindowsPath(open.path),
+			IndexNumber: int64(fileIndex(open.currentPath())), AccessFlags: open.access,
+			FileName: `\` + toWindowsPath(open.currentPath()),
 		}
 		encoded, err = all.Marshal()
 		variable = true
 	case infoclass.FileNameInformation, infoclass.FileAlternateNameInformation:
 		// There are no 8.3 names, so the alternate name is the long one.
-		name := `\` + toWindowsPath(open.path)
+		// Read once: a rename on another connection can move the open between reads.
+		path := open.currentPath()
+		name := `\` + toWindowsPath(path)
 		if infoclass.FileInformationClass(class) == infoclass.FileAlternateNameInformation {
-			name = open.path[strings.LastIndexByte(open.path, '/')+1:]
+			name = path[strings.LastIndexByte(path, '/')+1:]
 		}
 		encodedName := utf16.EncodeUTF16LE(name)
 		encoded = append(binary.LittleEndian.AppendUint32(nil, uint32(len(encodedName))), encodedName...)
@@ -220,7 +222,7 @@ func (c *Connection) setInfo(r *request, resp *response) nt_status.NT_STATUS {
 			Modified: timeOf(basic.LastWriteTime), Changed: timeOf(basic.ChangeTime),
 			ReadOnly: basic.FileAttributes&fileflags.FILE_ATTRIBUTE_READONLY != 0,
 		}
-		err = fs.SetAttr(open.path, attr, smb1.AttrMask{
+		err = fs.SetAttr(open.currentPath(), attr, smb1.AttrMask{
 			ReadOnly: basic.FileAttributes != 0,
 			Created:  !attr.Created.IsZero(), Accessed: !attr.Accessed.IsZero(),
 			Modified: !attr.Modified.IsZero(), Changed: !attr.Changed.IsZero(),
@@ -240,8 +242,15 @@ func (c *Connection) setInfo(r *request, resp *response) nt_status.NT_STATUS {
 			return nt_status.NT_STATUS_INVALID_PARAMETER
 		}
 		if disposition.DeletePending && open.isDir {
-			if entries, err := fs.ReadDir(open.path, ""); err == nil && len(entries) > 0 {
+			if entries, err := fs.ReadDir(open.currentPath(), ""); err == nil && len(entries) > 0 {
 				return nt_status.NT_STATUS_DIRECTORY_NOT_EMPTY
+			}
+		}
+		// A file carrying the read-only attribute cannot be marked for deletion,
+		// [MS-FSA] section 2.1.5.15.3.
+		if disposition.DeletePending && !open.isDir {
+			if attr, err := fs.Stat(open.path); err == nil && attr.ReadOnly {
+				return smb1.StatusForFSError(smb1.ErrCannotDelete)
 			}
 		}
 		c.server.oplocks.breakOthers(open)
@@ -256,10 +265,18 @@ func (c *Connection) setInfo(r *request, resp *response) nt_status.NT_STATUS {
 			return nt_status.NT_STATUS_OBJECT_NAME_INVALID
 		}
 		c.server.oplocks.breakOthers(open)
-		if err = fs.Rename(open.path, target, rename.ReplaceIfExists); err == nil {
-			c.server.oplocks.rename(open, target)
-			c.server.shareModes.rename(open, target)
-			open.path = target
+		source := open.currentPath()
+		// Replacing a file another open still holds is refused ([MS-FSA]
+		// 2.1.5.15.11; [MS-FSCC] 2.4.42: "the target file was open and
+		// ReplaceIfExists is nonzero"). Replacing it anyway would leave those
+		// opens naming the renamed file, and their delete-on-close would delete it.
+		if rename.ReplaceIfExists && source != target && c.server.openFiles.holdsAt(open.tree.Share, target) {
+			return nt_status.NT_STATUS_ACCESS_DENIED
+		}
+		if err = fs.Rename(source, target, rename.ReplaceIfExists); err == nil {
+			// Every open of the file, or of anything beneath a renamed directory,
+			// moves with it, on whichever connection it was opened.
+			c.server.renameOpens(open.tree.Share, source, target)
 		}
 	default:
 		return nt_status.NT_STATUS_INVALID_INFO_CLASS
@@ -307,7 +324,7 @@ func (c *Connection) queryDirectory(r *request, resp *response) nt_status.NT_STA
 
 	restart := req.Flags&(commands.SMB2_RESTART_SCANS|commands.SMB2_REOPEN) != 0
 	if open.search == nil || restart {
-		entries, err := open.fs().ReadDir(open.path, req.FileName)
+		entries, err := open.fs().ReadDir(open.currentPath(), req.FileName)
 		if err != nil {
 			return smb1.StatusForFSError(err)
 		}
@@ -325,7 +342,7 @@ func (c *Connection) queryDirectory(r *request, resp *response) nt_status.NT_STA
 	var output []byte
 	last := 0
 	for s.next < len(s.entries) {
-		entry := encodeDirectoryEntry(req.FileInformationClass, open.path, s.entries[s.next].Attr)
+		entry := encodeDirectoryEntry(req.FileInformationClass, open.currentPath(), s.entries[s.next].Attr)
 		start := (len(output) + 7) &^ 7
 		if start+len(entry) > int(req.OutputBufferLength) {
 			break
@@ -346,7 +363,7 @@ func (c *Connection) queryDirectory(r *request, resp *response) nt_status.NT_STA
 	}
 
 	logger.Debugf("SMB2 server: %s listed %q (pattern %q, flags 0x%02x): %d of %d entries sent",
-		c.remote, open.path, req.FileName, req.Flags, s.next, len(s.entries))
+		c.remote, open.currentPath(), req.FileName, req.Flags, s.next, len(s.entries))
 	answer := commands.NewQueryDirectoryResponse()
 	answer.OutputBuffer = output
 	resp.command = answer

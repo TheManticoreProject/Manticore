@@ -2,7 +2,10 @@ package server
 
 import (
 	"errors"
+	"io"
 	"math"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
@@ -286,5 +289,149 @@ func TestMemoryFileSystemSeedOverExistingEntry(t *testing.T) {
 	}
 	if volume.FreeBytes != volume.TotalBytes {
 		t.Errorf("FreeBytes = %d after every file was removed, want %d", volume.FreeBytes, volume.TotalBytes)
+	}
+}
+
+// TestMemoryFileSystemHandleFollowsRename asserts an open handle keeps working on
+// its file after the file is renamed, by itself or with the directory above it,
+// and never touches a new file created at the old name.
+func TestMemoryFileSystemHandleFollowsRename(t *testing.T) {
+	for _, tc := range []struct {
+		name, opened, from, to, renamed string
+	}{
+		{"file", "a.txt", "a.txt", "b.txt", "b.txt"},
+		{"directory", "dir/a.txt", "dir", "moved", "moved/a.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := NewMemoryFileSystem("FILES")
+			fs.volume.TotalBytes = 1000
+			if err := fs.AddFile(tc.opened, []byte("original")); err != nil {
+				t.Fatal(err)
+			}
+			file, err := fs.Open(tc.opened, OpenFlags{Read: true, Write: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+
+			changes, stop, err := fs.Watch("", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stop()
+			if err := fs.Rename(tc.from, tc.to, false); err != nil {
+				t.Fatal(err)
+			}
+			if err := fs.AddFile(tc.opened, []byte("newcomer")); err != nil {
+				t.Fatal(err)
+			}
+			for len(changes) > 0 {
+				<-changes
+			}
+
+			if _, err := file.WriteAt([]byte("ORIG"), 0); err != nil {
+				t.Fatalf("WriteAt through the handle after the rename = %v", err)
+			}
+			select {
+			case change := <-changes:
+				if want := strings.ReplaceAll(tc.renamed, "/", `\`); change.Name != want {
+					t.Errorf("the write was published as a change to %q, want %q", change.Name, want)
+				}
+			default:
+				t.Error("the write published no change")
+			}
+			if err := file.Truncate(6); err != nil {
+				t.Fatalf("Truncate through the handle after the rename = %v", err)
+			}
+			contents := make([]byte, 16)
+			n, err := file.ReadAt(contents, 0)
+			if err != nil && !errors.Is(err, io.EOF) {
+				t.Fatalf("ReadAt through the handle after the rename = %v", err)
+			}
+			if got := string(contents[:n]); got != "ORIGin" {
+				t.Errorf("ReadAt through the handle = %q, want %q", got, "ORIGin")
+			}
+			if attr, err := file.Stat(); err != nil || attr.Size != 6 || attr.Name != path.Base(tc.renamed) {
+				t.Errorf("Stat through the handle = %+v, %v; want %s of 6 bytes", attr, err, path.Base(tc.renamed))
+			}
+			if attr, err := fs.Stat(tc.renamed); err != nil || attr.Size != 6 {
+				t.Errorf("Stat(%s) = %+v, %v; want the 6 bytes written through the handle", tc.renamed, attr, err)
+			}
+			if attr, err := fs.Stat(tc.opened); err != nil || attr.Size != int64(len("newcomer")) {
+				t.Errorf("Stat(%s) = %+v, %v; the new file at the old name was changed", tc.opened, attr, err)
+			}
+
+			for _, name := range []string{tc.renamed, tc.opened} {
+				if err := fs.Remove(name); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if volume, _ := fs.VolumeInfo(); volume.FreeBytes != volume.TotalBytes {
+				t.Errorf("FreeBytes = %d after every file was removed, want %d", volume.FreeBytes, volume.TotalBytes)
+			}
+		})
+	}
+}
+
+// TestMemoryFileSystemHandleOnRemovedEntry asserts a handle whose file lost its
+// last name, by a delete or by a rename replacing it, fails rather than reaching
+// the file now at its name, and cannot give data to the volume it no longer
+// counts against.
+func TestMemoryFileSystemHandleOnRemovedEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remove func(fs *MemoryFileSystem) error
+	}{
+		{"removed", func(fs *MemoryFileSystem) error {
+			if err := fs.Remove("a.txt"); err != nil {
+				return err
+			}
+			return fs.AddFile("a.txt", []byte("newcomer"))
+		}},
+		{"replaced", func(fs *MemoryFileSystem) error {
+			if err := fs.AddFile("other.txt", []byte("newcomer")); err != nil {
+				return err
+			}
+			return fs.Rename("other.txt", "a.txt", true)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := NewMemoryFileSystem("FILES")
+			fs.volume.TotalBytes = 1000
+			if err := fs.AddFile("a.txt", []byte("original")); err != nil {
+				t.Fatal(err)
+			}
+			file, err := fs.Open("a.txt", OpenFlags{Read: true, Write: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if err := tc.remove(fs); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := file.WriteAt(make([]byte, 100), 0); !errors.Is(err, ErrNotFound) {
+				t.Errorf("WriteAt on a removed file = %v, want ErrNotFound", err)
+			}
+			if err := file.Truncate(200); !errors.Is(err, ErrNotFound) {
+				t.Errorf("Truncate on a removed file = %v, want ErrNotFound", err)
+			}
+			if _, err := file.ReadAt(make([]byte, 8), 0); !errors.Is(err, ErrNotFound) {
+				t.Errorf("ReadAt on a removed file = %v, want ErrNotFound", err)
+			}
+			if _, err := file.Stat(); !errors.Is(err, ErrNotFound) {
+				t.Errorf("Stat on a removed file = %v, want ErrNotFound", err)
+			}
+			if attr, err := fs.Stat("a.txt"); err != nil || attr.Size != int64(len("newcomer")) {
+				t.Errorf("Stat(a.txt) = %+v, %v; the file now at the name was changed", attr, err)
+			}
+
+			if err := fs.Remove("a.txt"); err != nil {
+				t.Fatal(err)
+			}
+			if volume, _ := fs.VolumeInfo(); volume.FreeBytes != volume.TotalBytes {
+				t.Errorf("FreeBytes = %d after every file was removed, want %d", volume.FreeBytes, volume.TotalBytes)
+			}
+		})
 	}
 }

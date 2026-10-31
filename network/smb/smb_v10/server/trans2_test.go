@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
+	"github.com/TheManticoreProject/Manticore/windows/filesystem/infoclass"
 )
 
 // namesOf renders a listing's names, so a test asserts on names rather than on
@@ -408,7 +410,7 @@ func TestSetFileInformation(t *testing.T) {
 	// Delete-on-close is a property of the handle, and takes effect when it
 	// closes rather than when it is set.
 	doomed, err := client.OpenFile("doomed.txt",
-		fileflags.GENERIC_READ|fileflags.GENERIC_WRITE, fileflags.FILE_SHARE_READ,
+		fileflags.GENERIC_READ|fileflags.DELETE, fileflags.FILE_SHARE_READ,
 		fileflags.FILE_OPEN, fileflags.FILE_NON_DIRECTORY_FILE)
 	if err != nil {
 		t.Fatalf("OpenFile() error = %v", err)
@@ -1131,5 +1133,80 @@ func TestSecondaryOfAnotherFamilyLeavesThePendingTransaction(t *testing.T) {
 					secondary.family, pending.parameters, pendingFamily)
 			}
 		}
+	}
+}
+
+// TestSetFileDispositionNeedsDeleteAccess asserts a handle is marked for deletion
+// only when it was opened with DELETE access, whatever else it was granted.
+//
+// [MS-FSA] section 2.1.5.15.3: "If Open.GrantedAccess.DELETE is FALSE, the
+// operation MUST be failed with STATUS_ACCESS_DENIED", and "If
+// Open.File.FileAttributes.FILE_ATTRIBUTE_READONLY is TRUE, the operation MUST be
+// failed with STATUS_CANNOT_DELETE". The set was gated on write access instead,
+// so a handle opened for writing alone deleted the file, and one opened for
+// DELETE alone could not.
+func TestSetFileDispositionNeedsDeleteAccess(t *testing.T) {
+	native := make([]byte, 1)
+	cases := []struct {
+		name     string
+		access   uint32
+		readOnly bool
+		level    uint16
+		want     nt_status.NT_STATUS
+	}{
+		{"write access", fileflags.GENERIC_READ | fileflags.GENERIC_WRITE, false,
+			smb1client.InfoLevelSetFileDisposition, nt_status.NT_STATUS_ACCESS_DENIED},
+		{"write access, pass-through level", fileflags.GENERIC_READ | fileflags.GENERIC_WRITE, false,
+			smbInfoPassthrough + uint16(infoclass.FileDispositionInformation), nt_status.NT_STATUS_ACCESS_DENIED},
+		{"delete access", fileflags.GENERIC_READ | fileflags.DELETE, false,
+			smb1client.InfoLevelSetFileDisposition, nt_status.NT_STATUS_SUCCESS},
+		{"delete access, pass-through level", fileflags.DELETE, false,
+			smbInfoPassthrough + uint16(infoclass.FileDispositionInformation), nt_status.NT_STATUS_SUCCESS},
+		{"delete access, read-only file", fileflags.GENERIC_READ | fileflags.DELETE, true,
+			smb1client.InfoLevelSetFileDisposition, nt_status.NT_STATUS_CANNOT_DELETE},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := NewMemoryFileSystem("FILES")
+			if err := fs.AddFile("victim.txt", []byte("precious")); err != nil {
+				t.Fatalf("AddFile() error = %v", err)
+			}
+			if tc.readOnly {
+				if err := fs.SetAttr("victim.txt", FileAttr{ReadOnly: true}, AttrMask{ReadOnly: true}); err != nil {
+					t.Fatalf("SetAttr() error = %v", err)
+				}
+			}
+			_, client := fileServer(t, fs, false)
+
+			fid, err := client.OpenFile("victim.txt", tc.access,
+				fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE|fileflags.FILE_SHARE_DELETE,
+				fileflags.FILE_OPEN, fileflags.FILE_NON_DIRECTORY_FILE)
+			if err != nil {
+				t.Fatalf("OpenFile() error = %v", err)
+			}
+			native[0] = 1
+			err = client.SetFileInformation(fid, tc.level, native)
+			if err := client.CloseFile(fid); err != nil {
+				t.Fatalf("CloseFile() error = %v", err)
+			}
+
+			if tc.want == nt_status.NT_STATUS_SUCCESS {
+				if err != nil {
+					t.Fatalf("setting the disposition failed: %v", err)
+				}
+				if _, err := fs.Stat("victim.txt"); err == nil {
+					t.Error("the file survived a close with delete-on-close set")
+				}
+				return
+			}
+			if err == nil {
+				t.Errorf("setting the disposition succeeded, want 0x%08X", uint32(tc.want))
+			} else if !strings.Contains(err.Error(), fmt.Sprintf("0x%08x", uint32(tc.want))) {
+				t.Errorf("setting the disposition failed with %v, want 0x%08X", err, uint32(tc.want))
+			}
+			if _, err := fs.Stat("victim.txt"); err != nil {
+				t.Error("the file was deleted")
+			}
+		})
 	}
 }

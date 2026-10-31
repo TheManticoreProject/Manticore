@@ -348,7 +348,7 @@ func (c *Connection) readNamedPipe(w ResponseWriter, tree *Tree, reassembly *tra
 	}
 
 	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, more remains=%t",
-		len(chunk), open.Path, c.Remote, moreRemains)
+		len(chunk), open.currentPath(), c.Remote, moreRemains)
 
 	if err := c.sendTransactionResponse(w, reassembly, nil, chunk, answer); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe read for %s: %v", c.Remote, err)
@@ -396,7 +396,7 @@ func (c *Connection) peekNamedPipe(w ResponseWriter, tree *Tree, reassembly *tra
 	}
 
 	logger.Debugf("SMB1 server: peeked %d of %d buffered bytes of pipe %q for %s",
-		len(chunk), available, open.Path, c.Remote)
+		len(chunk), available, open.currentPath(), c.Remote)
 
 	if err := c.sendTransactionResponse(w, reassembly, parameters, chunk, answer); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe peek for %s: %v", c.Remote, err)
@@ -445,7 +445,7 @@ func (c *Connection) transactNamedPipe(
 		if status != nt_status.NT_STATUS_SUCCESS {
 			return status
 		}
-		open, name = resolved, resolved.Path
+		open, name = resolved, resolved.currentPath()
 	}
 	// A client that sent no FID may still have named the pipe outright. That is
 	// not what the subcommand specifies, but answering it costs nothing and a

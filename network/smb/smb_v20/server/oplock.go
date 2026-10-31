@@ -67,7 +67,7 @@ func (t *oplockTable) grant(c *Connection, open *Open, req *commands.CreateReque
 
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, open.path)
+	key := fileKey(open.tree.Share, open.currentPath())
 	if t.grants[key] == nil {
 		t.grants[key] = make(map[*Open]*oplockGrant)
 	}
@@ -112,7 +112,7 @@ func requestedLease(dialect dialects.Dialect, raw []byte) (leaseRequest, bool) {
 // open and of the lease it belongs to, notifying their holders.
 func (t *oplockTable) breakOthers(actor *Open) {
 	t.mutex.Lock()
-	key := fileKey(actor.tree.Share, actor.path)
+	key := fileKey(actor.tree.Share, actor.currentPath())
 	own := t.grants[key][actor]
 	var broken []*oplockGrant
 	for open, g := range t.grants[key] {
@@ -122,6 +122,9 @@ func (t *oplockTable) breakOthers(actor *Open) {
 		}
 		delete(t.grants[key], open)
 		broken = append(broken, g)
+	}
+	if len(t.grants[key]) == 0 {
+		delete(t.grants, key)
 	}
 	t.mutex.Unlock()
 
@@ -145,30 +148,11 @@ func (t *oplockTable) release(open *Open) {
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, open.path)
+	key := fileKey(open.tree.Share, open.currentPath())
 	delete(t.grants[key], open)
 	if len(t.grants[key]) == 0 {
 		delete(t.grants, key)
 	}
-}
-
-// rename moves an open's grant to the file's new name.
-func (t *oplockTable) rename(open *Open, target string) {
-	t.mutex.Lock()
-	g := t.grants[fileKey(open.tree.Share, open.path)][open]
-	t.mutex.Unlock()
-	t.release(open)
-	if g == nil {
-		return
-	}
-
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	key := fileKey(open.tree.Share, target)
-	if t.grants[key] == nil {
-		t.grants[key] = make(map[*Open]*oplockGrant)
-	}
-	t.grants[key][open] = g
 }
 
 // notify sends the server-initiated break: an oplock or lease falls to none.

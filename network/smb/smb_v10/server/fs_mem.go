@@ -51,7 +51,8 @@ type memoryEntry struct {
 	data  []byte
 
 	// links is the number of names the entry is reachable by. Its data is
-	// released from the volume's usage when the last one goes.
+	// released from the volume's usage when the last one goes, and a handle
+	// still open on it fails from then on.
 	links int
 
 	readOnly bool
@@ -72,7 +73,7 @@ func NewMemoryFileSystem(label string) *MemoryFileSystem {
 	now := time.Now().UTC()
 	return &MemoryFileSystem{
 		entries: map[string]*memoryEntry{
-			"": {name: "", isDir: true, created: now, accessed: now, modified: now, changed: now},
+			"": {name: "", isDir: true, links: 1, created: now, accessed: now, modified: now, changed: now},
 		},
 		volume: VolumeInfo{
 			Label:                    label,
@@ -203,7 +204,7 @@ func (fs *MemoryFileSystem) makeDirectory(path string) error {
 	now := time.Now().UTC()
 	_, name := splitPath(path)
 	fs.entries[path] = &memoryEntry{
-		name: name, isDir: true,
+		name: name, isDir: true, links: 1,
 		created: now, accessed: now, modified: now, changed: now,
 	}
 	fs.watches.publish(path, changeAdded)
@@ -254,7 +255,7 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 			entry.data = nil
 			entry.modified = time.Now().UTC()
 		}
-		return &memoryFile{fs: fs, path: path}, nil
+		return &memoryFile{fs: fs, path: path, held: entry}, nil
 	}
 
 	// Creating: published below, once the entry is in place.
@@ -272,12 +273,13 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 	}
 
 	now := time.Now().UTC()
-	fs.entries[path] = &memoryEntry{
+	created := &memoryEntry{
 		name: name, isDir: flags.Directory, links: 1,
 		created: now, accessed: now, modified: now, changed: now,
 	}
+	fs.entries[path] = created
 	fs.watches.publish(path, changeAdded)
-	return &memoryFile{fs: fs, path: path}, nil
+	return &memoryFile{fs: fs, path: path, held: created}, nil
 }
 
 // Link gives an existing entry a second name.
@@ -435,7 +437,7 @@ func (fs *MemoryFileSystem) Remove(path string) error {
 		return ErrIsDirectory
 	}
 	if entry.readOnly {
-		return ErrReadOnly
+		return ErrCannotDelete
 	}
 	fs.dropName(path)
 	fs.watches.publish(path, changeRemoved)
@@ -556,6 +558,7 @@ func (fs *MemoryFileSystem) Rmdir(path string) error {
 		}
 	}
 	delete(fs.entries, path)
+	entry.links--
 	fs.watches.publish(path, changeRemoved)
 	return nil
 }
@@ -608,25 +611,48 @@ func (fs *MemoryFileSystem) VolumeInfo() (VolumeInfo, error) {
 	return volume, nil
 }
 
-// memoryFile is an open handle onto a MemoryFileSystem entry. It holds the path
-// rather than the entry, so a rename or a delete underneath it is observed rather
-// than written into a detached copy.
+// memoryFile is an open handle onto a MemoryFileSystem entry. It holds the entry
+// rather than the path, so it follows the file through a rename, as a handle on a
+// real file system does, and never reaches a different file later created at the
+// name it was opened with. Once the entry has lost its last name it fails, so
+// nothing is written to data the volume no longer counts.
 type memoryFile struct {
-	fs     *MemoryFileSystem
-	path   string
+	fs   *MemoryFileSystem
+	held *memoryEntry
+
+	// path is a name of the entry, last seen when the handle published a
+	// change. It is only read and updated under the file system's write lock.
+	path string
+
 	closed bool
 }
 
-// entry resolves the handle's path, reporting the failure a vanished file gives.
+// entry returns the handle's entry, reporting the failure a vanished file gives
+// once it has no name left.
 func (f *memoryFile) entry() (*memoryEntry, error) {
 	if f.closed {
 		return nil, ErrAccessDenied
 	}
-	entry, ok := f.fs.entries[f.path]
-	if !ok {
+	if f.held.links <= 0 {
 		return nil, ErrNotFound
 	}
-	return entry, nil
+	return f.held, nil
+}
+
+// currentPath returns a name the entry is reachable by now, which a rename of it
+// or of a directory above it may have changed since the handle last looked. The
+// caller holds the write lock.
+func (f *memoryFile) currentPath() string {
+	if f.fs.entries[f.path] == f.held {
+		return f.path
+	}
+	for path, entry := range f.fs.entries {
+		if entry == f.held {
+			f.path = path
+			break
+		}
+	}
+	return f.path
 }
 
 func (f *memoryFile) ReadAt(p []byte, off int64) (int, error) {
@@ -682,7 +708,7 @@ func (f *memoryFile) WriteAt(p []byte, off int64) (int, error) {
 	}
 	written := copy(entry.data[off:], p)
 	entry.modified = time.Now().UTC()
-	f.fs.watches.publish(f.path, changeModified)
+	f.fs.watches.publish(f.currentPath(), changeModified)
 	return written, nil
 }
 
