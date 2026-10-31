@@ -49,7 +49,16 @@ func (r *RedirectManager) GetRedirect(scope string) (RedirectInfo, bool) {
 	return info, exists
 }
 
-// HandleRedirect modifies a response packet for redirection if needed
+// HandleRedirect turns response into a REDIRECT NAME QUERY RESPONSE (RFC 1002
+// 4.2.15) when the first question's scope has a redirect configured. The packet
+// is a query-opcode response with RD set and no answers: the authority section
+// holds an NS record naming the NBNS to ask (NSD_NAME) and the additional
+// section holds an A record for that same name whose 4-byte RDATA is the NBNS
+// address (NSD_IP_ADDR) the requestor must reiterate its query to. The queried
+// name stands in for both the redirected domain and NSD_NAME, so the additional
+// RR_NAME matches NSD_NAME as the RFC requires. The packet has no port field, so
+// RedirectInfo.ServerPort is not carried; a redirect to a server without an IPv4
+// address is not applied.
 func (r *RedirectManager) HandleRedirect(request *NBNSPacket, response *NBNSPacket) bool {
 	// Only redirect name queries
 	if request.Header.Flags&OpcodeMask != OpNameQuery {
@@ -70,16 +79,42 @@ func (r *RedirectManager) HandleRedirect(request *NBNSPacket, response *NBNSPack
 		return false
 	}
 
-	// Modify response for redirection
-	response.Header.Flags = FlagResponse | OpRedirect
+	// NSD_IP_ADDR is a 4-byte IPv4 address.
+	serverIP := info.ServerIP.To4()
+	if serverIP == nil {
+		return false
+	}
+
+	// NSD_NAME is carried as an encoded label sequence in the NS RDATA.
+	name := request.Questions[0].Name
+	nsdName, err := marshalName(name)
+	if err != nil {
+		return false
+	}
+
+	// Modify response for redirection: R=1, OPCODE=query, RD=1, RCODE=0.
+	response.Header.Flags = FlagResponse | OpNameQuery | FlagRecursion
+	response.Answers = nil
+	response.Header.Answers = 0
+	response.Authority = []NBNSResourceRecord{
+		{
+			Name:     name,
+			Type:     0x0002, // NS record
+			Class:    QuestionClassIn,
+			TTL:      600, // 10 minutes
+			RDLength: uint16(len(nsdName)),
+			RData:    nsdName,
+		},
+	}
+	response.Header.Authority = 1
 	response.Additional = []NBNSResourceRecord{
 		{
-			Name:     request.Questions[0].Name,
-			Type:     0x20,                           // NB record
-			Class:    1,                              // IN class
-			TTL:      600,                            // 10 minutes
-			RDLength: uint16(len(info.ServerIP) + 2), // IP + port
-			RData:    append(info.ServerIP, byte(info.ServerPort>>8), byte(info.ServerPort)),
+			Name:     name,
+			Type:     0x0001, // A record
+			Class:    QuestionClassIn,
+			TTL:      600, // 10 minutes
+			RDLength: uint16(len(serverIP)),
+			RData:    append([]byte(nil), serverIP...),
 		},
 	}
 	response.Header.Additional = 1
