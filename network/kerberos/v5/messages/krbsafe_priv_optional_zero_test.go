@@ -2,6 +2,7 @@ package messages
 
 import (
 	"encoding/asn1"
+	"math"
 	"testing"
 	"time"
 )
@@ -123,5 +124,37 @@ func TestKRBApplicationBodyRejectsOutOfRangeValues(t *testing.T) {
 	}
 	if *b.Usec != 999999 || uint32(*b.SequenceNumber) != 1<<32-1 {
 		t.Errorf("decoded usec=%d seq=%d", *b.Usec, *b.SequenceNumber)
+	}
+}
+
+// TestKRBApplicationBodySeqNumberHighBitRoundTrips checks that a sequence number
+// with the top bit set round-trips. On a 32-bit build such a value is held as a
+// negative int, and must still go on the wire as the UInt32 it stands for.
+func TestKRBApplicationBodySeqNumberHighBitRoundTrips(t *testing.T) {
+	high := uint32(math.MaxInt32) + 2
+	seq := int(int32(high)) // negative on every build; what a 32-bit caller holds
+	body := KRBApplicationBody{
+		UserData:       []byte("data"),
+		Timestamp:      time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+		SequenceNumber: &seq,
+		SenderAddress:  HostAddress{AddrType: 2, Address: []byte{192, 0, 2, 1}},
+	}
+	data, err := body.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var w krbApplicationBodyWire
+	if _, err := asn1.Unmarshal(data, &w); err != nil {
+		t.Fatal(err)
+	}
+	if w.SequenceNumber != int64(high) {
+		t.Fatalf("seq-number on the wire = %d, want %d", w.SequenceNumber, high)
+	}
+	var out KRBApplicationBody
+	if _, err := out.Unmarshal(data); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if uint32(*out.SequenceNumber) != high {
+		t.Errorf("decoded seq-number = %d, want %d as a uint32", *out.SequenceNumber, high)
 	}
 }

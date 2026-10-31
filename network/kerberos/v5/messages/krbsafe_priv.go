@@ -47,7 +47,13 @@ func (b KRBApplicationBody) Marshal() ([]byte, error) {
 		w.Usec = int64(*b.Usec)
 	}
 	if b.SequenceNumber != nil {
-		w.SequenceNumber = int64(*b.SequenceNumber)
+		// seq-number is a UInt32. On a 32-bit build a value above MaxInt32 is
+		// held as a negative int, so it is put back into UInt32 form here.
+		seq := int64(*b.SequenceNumber)
+		if seq < math.MinInt32 || seq > math.MaxUint32 {
+			return nil, fmt.Errorf("seq-number %d is outside the UInt32 range", seq)
+		}
+		w.SequenceNumber = int64(uint32(seq))
 	}
 	return asn1.Marshal(w)
 }
@@ -63,8 +69,9 @@ func (b *KRBApplicationBody) Unmarshal(data []byte) (int, error) {
 		SenderAddress: w.SenderAddress, RecipientAddress: w.RecipientAddress,
 	}
 	// usec is Microseconds (0..999999) and seq-number is UInt32 (RFC 4120
-	// section 5.2.4). Out-of-range values are refused rather than converted,
-	// which on a 32-bit int would silently wrap a sequence number.
+	// section 5.2.4); values outside those ranges are refused. On a 32-bit build
+	// a sequence number above MaxInt32 is stored as a negative int, which
+	// Marshal and callers comparing as uint32 read back as the same value.
 	if w.Usec != krbApplicationBodyAbsent {
 		if w.Usec < 0 || w.Usec > 999999 {
 			return 0, fmt.Errorf("usec %d is outside 0..999999", w.Usec)
