@@ -670,6 +670,82 @@ func TestSecurityDescriptorQuery(t *testing.T) {
 	}
 }
 
+// TestSecurityDescriptorQueryTooSmallReportsLengthNeeded asserts a client whose
+// MaxDataCount cannot hold the descriptor is answered with STATUS_BUFFER_TOO_SMALL
+// and an NT_TRANSACT_QUERY_SECURITY_DESC response whose LengthNeeded carries the
+// descriptor's size and no data, which [MS-CIFS] section 3.3.5.59.5 requires. The
+// size is what the client resends with, so an error response without it leaves
+// the client unable to retry.
+func TestSecurityDescriptorQueryTooSmallReportsLengthNeeded(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	if err := fs.AddFile("described.txt", []byte("x")); err != nil {
+		t.Fatalf("AddFile() error = %v", err)
+	}
+
+	srv, transportEnd := pipedServer(t, conformanceConfig(SigningDisabled))
+	if err := srv.AddShare(&Share{
+		Name: fileShareName, Type: ShareTypeDisk, FS: fs,
+		Security: NewReflectiveSecurityProvider(false),
+	}); err != nil {
+		t.Fatalf("AddShare() error = %v", err)
+	}
+
+	client := smb1client.NewFromTransport(transportEnd, net.IPv4(127, 0, 0, 1), 445)
+	if err := client.Negotiate(); err != nil {
+		t.Fatalf("Negotiate() error = %v", err)
+	}
+	creds, _ := credentials.NewCredentials(captureDomain, captureUsername, capturePassword, "")
+	if err := client.SessionSetup(creds); err != nil {
+		t.Fatalf("SessionSetup() error = %v", err)
+	}
+	if err := client.TreeConnect(fileShareName); err != nil {
+		t.Fatalf("TreeConnect() error = %v", err)
+	}
+
+	fid, err := client.OpenFile("described.txt", fileflags.GENERIC_READ, fileflags.FILE_SHARE_READ,
+		fileflags.FILE_OPEN, fileflags.FILE_NON_DIRECTORY_FILE)
+	if err != nil {
+		t.Fatalf("OpenFile() error = %v", err)
+	}
+	// The handle is left open: on failure the server may still be writing the
+	// rest of a split reply, and a close would wait behind it on the pipe.
+
+	information := OwnerSecurityInformation | GroupSecurityInformation | DaclSecurityInformation
+	expected, err := NewReflectiveSecurityProvider(false).SecurityDescriptor("described.txt", information)
+	if err != nil {
+		t.Fatalf("SecurityDescriptor() error = %v", err)
+	}
+	const maxDataCount = 16
+	if len(expected) <= maxDataCount {
+		t.Fatalf("the descriptor is %d bytes, which does not exceed the %d-byte limit", len(expected), maxDataCount)
+	}
+
+	parameters, data, status := querySecurityDescriptorWithLimit(t, client, uint16(fid), information, maxDataCount)
+	if status != uint32(nt_status.NT_STATUS_BUFFER_TOO_SMALL) {
+		t.Fatalf("the undersized query answered 0x%08X, want STATUS_BUFFER_TOO_SMALL", status)
+	}
+	if len(parameters) != 4 {
+		t.Fatalf("the response carries %d parameter bytes, want the 4-byte LengthNeeded", len(parameters))
+	}
+	if needed := binary.LittleEndian.Uint32(parameters); needed != uint32(len(expected)) {
+		t.Errorf("LengthNeeded is %d, want %d", needed, len(expected))
+	}
+	if len(data) != 0 {
+		t.Errorf("the response carries %d data bytes, want none", len(data))
+	}
+
+	// Asking again with the LengthNeeded it was told gets the whole descriptor
+	// in one response: MaxDataCount bounds the data, not the parameters too.
+	_, data, status = querySecurityDescriptorWithLimit(t, client, uint16(fid), information,
+		binary.LittleEndian.Uint32(parameters))
+	if status != uint32(nt_status.NT_STATUS_SUCCESS) {
+		t.Fatalf("the retry with LengthNeeded answered 0x%08X, want success", status)
+	}
+	if !bytes.Equal(data, expected) {
+		t.Fatalf("the retry returned %d of the %d descriptor bytes in its response", len(data), len(expected))
+	}
+}
+
 // TestSecurityDescriptorReflectsReadOnly asserts the descriptor describes what the
 // server actually enforces: a read-only share does not advertise write access.
 //
@@ -845,6 +921,26 @@ func TestNtCancelIsAcceptedSilently(t *testing.T) {
 func querySecurityDescriptor(t *testing.T, client *smb1client.Client, fid uint16, information SecurityInformation) ([]byte, uint32) {
 	t.Helper()
 
+	_, descriptor, status := querySecurityDescriptorWithLimit(t, client, fid, information, 8192)
+	if status != 0 {
+		return nil, status
+	}
+	return descriptor, 0
+}
+
+// querySecurityDescriptorWithLimit sends an NT_TRANSACT_QUERY_SECURITY_DESC with
+// the given MaxDataCount and returns the response parameters, the descriptor and
+// the status. A response carrying a failure status with no transaction block
+// returns nil parameters.
+func querySecurityDescriptorWithLimit(
+	t *testing.T,
+	client *smb1client.Client,
+	fid uint16,
+	information SecurityInformation,
+	maxDataCount uint32,
+) ([]byte, []byte, uint32) {
+	t.Helper()
+
 	parameters := make([]byte, 8)
 	binary.LittleEndian.PutUint16(parameters[0:2], fid)
 	binary.LittleEndian.PutUint32(parameters[4:8], uint32(information))
@@ -858,7 +954,7 @@ func querySecurityDescriptor(t *testing.T, client *smb1client.Client, fid uint16
 	transaction.SetupCount = types.UCHAR(0)
 	transaction.Setup = []types.USHORT{}
 	transaction.MaxParameterCount = 1024
-	transaction.MaxDataCount = 8192
+	transaction.MaxDataCount = types.ULONG(maxDataCount)
 	transaction.TotalParameterCount = types.ULONG(len(parameters))
 	transaction.ParameterCount = types.ULONG(len(parameters))
 	transaction.NT_Trans_Parameters = parameters
@@ -879,14 +975,14 @@ func querySecurityDescriptor(t *testing.T, client *smb1client.Client, fid uint16
 	if err := response.Unmarshal(raw); err != nil {
 		t.Fatalf("failed to decode: %v", err)
 	}
-	if response.Header.Status != 0 {
-		return nil, response.Header.Status
-	}
 	ntResponse, ok := response.Command.(*commands.NtTransactResponse)
-	if !ok {
-		t.Fatalf("response command is %T", response.Command)
+	if !ok || (len(ntResponse.Parameters) == 0 && len(ntResponse.Data) == 0) {
+		if response.Header.Status == 0 {
+			t.Fatalf("response command is %T", response.Command)
+		}
+		return nil, nil, response.Header.Status
 	}
-	return []byte(ntResponse.Data), 0
+	return []byte(ntResponse.Parameters), []byte(ntResponse.Data), response.Header.Status
 }
 
 // sendNtTransact sends an NT_TRANSACT and returns the status it was answered with.
