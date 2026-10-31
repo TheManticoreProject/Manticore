@@ -1031,6 +1031,63 @@ func TestNamedPipeOversizedAnswerIsDrainedByReadAndx(t *testing.T) {
 	}
 }
 
+// TestNamedPipeTransactWithUnreadAnswerIsRefused asserts that a handle still
+// holding part of an answer takes no new transaction: it is refused with
+// STATUS_PIPE_BUSY ([MS-FSCC] section 2.3.48, "the named pipe contains unread
+// data") and the buffered answer is left as it was, so the client can still
+// collect it and transact again afterwards.
+//
+// Without the refusal each transaction appended its overflow behind the unread
+// one, so a client transacting with a tiny MaxDataCount and never reading grew
+// the handle's buffer without limit.
+func TestNamedPipeTransactWithUnreadAnswerIsRefused(t *testing.T) {
+	srv, client := pipeServer(t, newEchoPipe("srvsvc"))
+
+	fid, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the pipe failed: %v", err)
+	}
+	setup := []types.USHORT{types.USHORT(subcommands.TRANS_TRANSACT_NMPIPE), types.USHORT(fid)}
+
+	payload := countingAnswer(4000)
+	response, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, payload, 1)
+	if status != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+		t.Fatalf("the first transaction reported 0x%08X, want STATUS_BUFFER_OVERFLOW", status)
+	}
+	answer := append([]byte("echo:"), payload...)
+
+	for round := 0; round < 100; round++ {
+		_, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, payload, 1)
+		if status != uint32(nt_status.NT_STATUS_PIPE_BUSY) {
+			t.Fatalf("transaction %d with an answer unread reported 0x%08X, want STATUS_PIPE_BUSY (0x%08X)",
+				round, status, uint32(nt_status.NT_STATUS_PIPE_BUSY))
+		}
+	}
+
+	held := 0
+	for _, conn := range srv.liveConnections() {
+		for _, open := range conn.opens {
+			held += len(open.pipeOutput)
+		}
+	}
+	if want := len(answer) - len(response.Trans_Data); held != want {
+		t.Fatalf("the handle holds %d undelivered bytes after the refused transactions, want the %d of the first answer",
+			held, want)
+	}
+
+	// The first answer is still whole, and once read the handle transacts again.
+	rest, err := client.ReadFile(fid, 0, 4096)
+	if err != nil {
+		t.Fatalf("reading the rest of the answer failed: %v", err)
+	}
+	if collected := append([]byte(response.Trans_Data), rest...); !bytes.Equal(collected, answer) {
+		t.Fatalf("the answer reassembled to %d bytes, want %d", len(collected), len(answer))
+	}
+	if data, status := transactPipe(t, client, fid, []byte("again")); status != 0 || string(data) != "echo:again" {
+		t.Fatalf("transacting a drained handle returned %q, status 0x%08X", data, status)
+	}
+}
+
 // TestNamedPipeOversizedAnswerIsDrainedByTransReadNmpipe asserts the same
 // completion through TRANS_READ_NMPIPE, which is the other way a client collects
 // the rest of an answer.
