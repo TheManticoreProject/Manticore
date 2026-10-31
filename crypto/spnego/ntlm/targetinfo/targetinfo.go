@@ -82,6 +82,12 @@ const channelBindingsLength = 16
 // what the Windows client sends; modern Windows servers require the SPN in the
 // AUTHENTICATE's NTLMv2 AVPairs and reject the authentication (STATUS_INVALID_PARAMETER)
 // when it is absent.
+//
+// When the AUTHENTICATE will carry a MIC and the challenge TargetInfo already holds an
+// MsvAvFlags AVPair, the MIC-present bit is set in that pair rather than a second one
+// being added (MS-NLMP 3.1.5.1.2). The MsvAvChannelBindings and MsvAvTargetName pairs
+// are the client's own assertions, so any copy of them in the challenge TargetInfo is
+// replaced rather than duplicated.
 func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 	// Build the SMB SPN "cifs/<DnsComputerName>" from the DNS computer name AVPair,
 	// in UTF-16LE (DnsComputerName is already UTF-16LE on the wire).
@@ -93,6 +99,7 @@ func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 	}
 
 	result := make([]byte, 0, len(targetInfo)+4+len(targetName))
+	flagsWritten := false
 	i := 0
 	for i+4 <= len(targetInfo) {
 		currentID := avpair.AvId(binary.LittleEndian.Uint16(targetInfo[i : i+2]))
@@ -103,7 +110,7 @@ func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 			// that bit is how a server detects one (MS-NLMP 3.2.5.1.2). It is added
 			// before the NT response is computed, so it is covered by the NTProofStr
 			// as well as by the MIC itself.
-			if micPresent {
+			if micPresent && !flagsWritten {
 				hdr := make([]byte, 4)
 				binary.LittleEndian.PutUint16(hdr[0:2], uint16(avpair.MsvAvFlags))
 				binary.LittleEndian.PutUint16(hdr[2:4], 4)
@@ -142,7 +149,25 @@ func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 		if i+4+int(avLen) > len(targetInfo) {
 			break
 		}
-		result = append(result, targetInfo[i:i+4+int(avLen)]...)
+		switch currentID {
+		case avpair.MsvAvFlags:
+			// Keep a single MsvAvFlags, the first well-formed one, with the
+			// MIC-present bit set in it when a MIC will be sent.
+			if avLen == 4 && !flagsWritten {
+				value := binary.LittleEndian.Uint32(targetInfo[i+4 : i+8])
+				if micPresent {
+					value |= avpair.MsvAvFlagMICPresent
+				}
+				pair := append([]byte(nil), targetInfo[i:i+4]...)
+				pair = binary.LittleEndian.AppendUint32(pair, value)
+				result = append(result, pair...)
+				flagsWritten = true
+			}
+		case avpair.MsvAvChannelBindings, avpair.MsvAvTargetName:
+			// Written by the client before EOL; drop the challenge's copy.
+		default:
+			result = append(result, targetInfo[i:i+4+int(avLen)]...)
+		}
 		i += 4 + int(avLen)
 	}
 
