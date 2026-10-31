@@ -435,3 +435,59 @@ func TestMemoryFileSystemHandleOnRemovedEntry(t *testing.T) {
 		})
 	}
 }
+
+// TestMemoryFileSystemRenameIntoOwnSubtree asserts a directory cannot be moved
+// beneath itself. The move would cut the directory and everything under it off
+// from the tree, leaving no name to reach it by and its bytes counted against
+// the volume for good.
+func TestMemoryFileSystemRenameIntoOwnSubtree(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	fs.volume.TotalBytes = 10000
+
+	for _, dir := range []string{"a", "a/b"} {
+		if err := fs.Mkdir(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := fs.AddFile("a/f", []byte("12345")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{"a/b/c", "a/c", "a/b/c/d"} {
+		if err := fs.Rename("a", target, false); !errors.Is(err, ErrAccessDenied) {
+			t.Fatalf("Rename(a, %s) = %v, want ErrAccessDenied", target, err)
+		}
+		if err := fs.Rename("a", target, true); !errors.Is(err, ErrAccessDenied) {
+			t.Fatalf("Rename(a, %s, replace) = %v, want ErrAccessDenied", target, err)
+		}
+	}
+	// The share root holds every other path, so it cannot be moved either.
+	if err := fs.Rename("", "a/x", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(root, a/x) = %v, want ErrAccessDenied", err)
+	}
+	for _, path := range []string{"", "a", "a/b", "a/f"} {
+		if _, err := fs.Stat(path); err != nil {
+			t.Errorf("Stat(%q) after the refused rename = %v", path, err)
+		}
+	}
+
+	// A sibling sharing the name as a prefix is not beneath it.
+	if err := fs.Rename("a", "ab", false); err != nil {
+		t.Fatalf("Rename(a, ab) = %v, want nil", err)
+	}
+	if err := fs.Remove("ab/f"); err != nil {
+		t.Fatalf("Remove(ab/f) = %v", err)
+	}
+	for _, dir := range []string{"ab/b", "ab"} {
+		if err := fs.Rmdir(dir); err != nil {
+			t.Fatalf("Rmdir(%s) = %v", dir, err)
+		}
+	}
+	volume, err := fs.VolumeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if volume.FreeBytes != volume.TotalBytes {
+		t.Errorf("FreeBytes = %d after every file was removed, want %d", volume.FreeBytes, volume.TotalBytes)
+	}
+}

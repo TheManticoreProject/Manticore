@@ -1338,3 +1338,26 @@ func TestReadOnlyFileRefusesWriteOpen(t *testing.T) {
 		})
 	}
 }
+
+// TestLocalFileSystemRenameIntoOwnSubtree asserts the local backend refuses a
+// directory moved beneath itself with the same error as the in-memory one, so
+// a client sees the same status whichever backend serves the share.
+func TestLocalFileSystemRenameIntoOwnSubtree(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := NewLocalFileSystem(root, "LOCAL")
+	if err != nil {
+		t.Fatalf("NewLocalFileSystem() error = %v", err)
+	}
+	if err := fs.Rename("a", "a/b/c", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(a, a/b/c) = %v, want ErrAccessDenied", err)
+	}
+	if err := fs.Rename("", "a/x", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(root, a/x) = %v, want ErrAccessDenied", err)
+	}
+	if _, err := fs.Stat("a/b"); err != nil {
+		t.Errorf("Stat(a/b) after the refused rename = %v", err)
+	}
+}
