@@ -951,9 +951,10 @@ func TestServerRenameDirectory(t *testing.T) {
 }
 
 // TestServerRefusesRenameIntoOwnSubtree checks that SET_INFO FileRenameInformation
-// moving a directory beneath itself is answered with STATUS_INVALID_PARAMETER and
-// leaves the tree as it was, rather than cutting the directory off from the share
-// with its file's bytes still counted against the volume.
+// moving a directory, or the share root, beneath itself is answered with
+// STATUS_ACCESS_DENIED and leaves the tree as it was, rather than cutting the
+// directory off from the share with its file's bytes still counted against the
+// volume.
 func TestServerRefusesRenameIntoOwnSubtree(t *testing.T) {
 	fs, port := startServer(t, server.Config{})
 	for _, dir := range []string{"a", "a/b"} {
