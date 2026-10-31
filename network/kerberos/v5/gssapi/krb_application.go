@@ -38,12 +38,14 @@ func applicationBody(data []byte, opts KRBApplicationOptions) (messages.KRBAppli
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	usec := now.Nanosecond() / 1000
 	body := messages.KRBApplicationBody{
 		UserData: append([]byte(nil), data...), Timestamp: now,
-		Usec: now.Nanosecond() / 1000, SenderAddress: opts.SenderAddress,
+		Usec: &usec, SenderAddress: opts.SenderAddress,
 	}
 	if opts.SequenceNumber != nil {
-		body.SequenceNumber = *opts.SequenceNumber
+		seq := *opts.SequenceNumber
+		body.SequenceNumber = &seq
 	}
 	if opts.RecipientAddress != nil {
 		body.RecipientAddress = *opts.RecipientAddress
@@ -79,12 +81,9 @@ func (ctx *SecContext) ReadKRBSafe(wire []byte, opts KRBApplicationReceiveOption
 	if _, err := msg.Unmarshal(wire); err != nil {
 		return nil, err
 	}
-	bodyDER, err := msg.SafeBody.Marshal()
-	if err != nil {
-		return nil, err
-	}
+	// The checksum covers safe-body as received, not a re-encoding of it.
 	key, _ := ctx.baseKey()
-	if !kerbcrypto.VerifyChecksum(msg.Checksum.CKSumType, key, iana.KeyUsageKRBSafeCksum, bodyDER, msg.Checksum.Checksum) {
+	if !kerbcrypto.VerifyChecksum(msg.Checksum.CKSumType, key, iana.KeyUsageKRBSafeCksum, msg.SafeBodyRaw, msg.Checksum.Checksum) {
 		return nil, fmt.Errorf("gssapi: invalid KRB-SAFE checksum")
 	}
 	if err := validateApplicationBody(msg.SafeBody, opts); err != nil {
@@ -157,8 +156,13 @@ func validateApplicationBody(body messages.KRBApplicationBody, opts KRBApplicati
 			return fmt.Errorf("gssapi: KRB application message clock skew too large")
 		}
 	}
-	if opts.SequenceNumber != nil && body.SequenceNumber != *opts.SequenceNumber {
-		return fmt.Errorf("gssapi: KRB application sequence mismatch: got %d, want %d", body.SequenceNumber, *opts.SequenceNumber)
+	if opts.SequenceNumber != nil {
+		if body.SequenceNumber == nil {
+			return fmt.Errorf("gssapi: KRB application message has no sequence number, want %d", *opts.SequenceNumber)
+		}
+		if *body.SequenceNumber != *opts.SequenceNumber {
+			return fmt.Errorf("gssapi: KRB application sequence mismatch: got %d, want %d", *body.SequenceNumber, *opts.SequenceNumber)
+		}
 	}
 	if opts.SenderAddress != nil && !sameHostAddress(body.SenderAddress, *opts.SenderAddress) {
 		return fmt.Errorf("gssapi: KRB application sender address mismatch")
