@@ -3,6 +3,7 @@ package domain_name_test
 import (
 	"bytes"
 	stderrors "errors"
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/llmnr/domain_name"
@@ -62,5 +63,32 @@ func TestDecodeDomainNameTooLongRejected(t *testing.T) {
 	}
 	if _, _, err := domain_name.DecodeDomainName(exact, 0); err != nil {
 		t.Errorf("255-octet name: unexpected error %v", err)
+	}
+}
+
+// TestEncodeDomainNameRespectsWireLimit asserts the encoder applies the same
+// 255-octet wire limit as the decoder, so every name it encodes decodes again.
+func TestEncodeDomainNameRespectsWireLimit(t *testing.T) {
+	label := strings.Repeat("a", 63)
+	// Five 63-octet labels joined by dots: long enough to cut 253, 254 and 255
+	// characters from, each of which takes two octets more on the wire.
+	tooLong := strings.Join([]string{label, label, label, label, label}, ".")
+	for _, name := range []string{tooLong[:254], tooLong[:255]} {
+		if _, err := domain_name.EncodeDomainName(name); err == nil {
+			t.Errorf("domain_name.EncodeDomainName(%d characters) succeeded, want an error: the wire form is %d octets", len(name), len(name)+2)
+		}
+		d := domain_name.DomainName(name)
+		if err := d.Validate(); err == nil {
+			t.Errorf("Validate(%d characters) succeeded, want an error", len(name))
+		}
+	}
+	longest := tooLong[:253]
+	encoded, err := domain_name.EncodeDomainName(longest)
+	if err != nil {
+		t.Fatalf("domain_name.EncodeDomainName(253 characters) = %v, want success", err)
+	}
+	decoded, _, err := domain_name.DecodeDomainName(encoded, 0)
+	if err != nil || decoded != longest {
+		t.Errorf("domain_name.DecodeDomainName(domain_name.EncodeDomainName(253 characters)) = %q, %v", decoded, err)
 	}
 }

@@ -12,7 +12,7 @@ import (
 type DomainName string
 
 func (d *DomainName) Validate() error {
-	if len(*d) > constants.MaxDomainLength {
+	if wireLength(string(*d)) > constants.MaxDomainLength {
 		return errors.ErrNameTooLong
 	}
 
@@ -72,7 +72,7 @@ func EncodeDomainName(name string) ([]byte, error) {
 	}
 
 	trimmed := strings.TrimSuffix(name, ".")
-	if len(trimmed) > constants.MaxDomainLength {
+	if wireLength(trimmed) > constants.MaxDomainLength {
 		return nil, errors.ErrNameTooLong
 	}
 
@@ -86,6 +86,18 @@ func EncodeDomainName(name string) ([]byte, error) {
 	}
 	buf = append(buf, 0) // terminating root label
 	return buf, nil
+}
+
+// wireLength returns the number of octets a dotted name takes on the wire: a
+// length byte for the first label, the label bytes with each dot standing in
+// for the next label's length byte, and the terminating zero. RFC 1035 section
+// 3.1 limits that, not the dotted text, to 255 octets.
+func wireLength(name string) int {
+	trimmed := strings.TrimSuffix(name, ".")
+	if trimmed == "" {
+		return 1
+	}
+	return len(trimmed) + 2
 }
 
 // DecodeDomainName parses a domain name from LLMNR/DNS wire format located at
