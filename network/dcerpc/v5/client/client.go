@@ -75,6 +75,9 @@ type Client struct {
 	// bindToken is the auth_value carried in the bind PDU for a single-leg provider
 	// (e.g. Netlogon) configured via SetAuthProvider; nil for the NTLM multi-leg flow.
 	bindToken []byte
+	// ntlmNegotiate is the NTLM NEGOTIATE message sent in the bind, kept as sent
+	// because the AUTHENTICATE MIC is computed over it (MS-NLMP 3.1.5.1.2).
+	ntlmNegotiate []byte
 }
 
 // SessionKey returns the NTLM exported session key established during an authenticated
