@@ -129,6 +129,9 @@ func ConvertLDAPTimeStampToUnixTimeStamp(value string) (int64, error) {
 // Note:
 //
 //	If the LDAP duration is invalid or cannot be converted, the function returns 0 and an error.
+//	Active Directory stores durations as negative values; the sign is dropped. The
+//	"never" value (-9223372036854775808, e.g. in maxPwdAge or lockoutDuration)
+//	converts to 922337203685 seconds.
 func ConvertLDAPDurationToSeconds(value string) (int64, error) {
 	convertedValue := int64(0)
 
@@ -138,12 +141,12 @@ func ConvertLDAPDurationToSeconds(value string) (int64, error) {
 			return convertedValue, fmt.Errorf("error converting LDAP duration to seconds: %w", err)
 		}
 
-		if valueInt < 0 {
-			valueInt = valueInt * int64(-1)
-		}
-
-		// Convert intervals of 100-nanoseconds to Seconds
+		// Convert intervals of 100-nanoseconds to Seconds before dropping the sign:
+		// negating math.MinInt64 (the "never" value) overflows back to itself.
 		convertedValue = valueInt / int64(1e7)
+		if convertedValue < 0 {
+			convertedValue = -convertedValue
+		}
 	}
 
 	return convertedValue, nil
