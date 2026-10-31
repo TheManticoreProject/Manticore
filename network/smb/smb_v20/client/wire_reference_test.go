@@ -69,7 +69,16 @@ func TestNegotiateRequestMatchesTheRecording(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading corpus: %v", err)
 	}
-	want := recorded[0]
+	want := append([]byte(nil), recorded[0]...)
+
+	// The corpus was recorded while the client still offered an
+	// SMB2_COMPRESSION_CAPABILITIES context. It is no longer sent, because the
+	// client cannot decode compressed responses (see
+	// TestNegotiateOffersNoCompressionByDefault). The context list itself is
+	// masked below, so only NegotiateContextCount differs: account for the
+	// dropped context there.
+	count := binary.LittleEndian.Uint16(want[64+32 : 64+34])
+	binary.LittleEndian.PutUint16(want[64+32:64+34], count-1)
 
 	ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponse(t)}}
 	c := newTestClient(ft)

@@ -76,10 +76,12 @@ var defaultProfile = Profile{
 	// the server pick GMAC when it can, falling back to CMAC otherwise.
 	SigningAlgorithms: []uint16{0x0002, 0x0001}, // AES-GMAC, AES-CMAC
 
-	// LZ77+Huffman (0x0003), LZ77 (0x0002), LZNT1 (0x0001), Pattern_V1
-	// (0x0004). LZ77+Huffman is the most commonly negotiated; Pattern_V1 is
-	// always offered as it compresses repeated-byte runs cheaply.
-	CompressionAlgorithms: []uint16{0x0003, 0x0002, 0x0001, 0x0004},
+	// No compression algorithms are offered, so the SMB2_COMPRESSION_CAPABILITIES
+	// context is omitted. The client has no LZ77, LZ77+Huffman or LZNT1 decoder
+	// and does not decode a COMPRESSION_TRANSFORM_HEADER response; a server that
+	// agreed to an offered algorithm would compress replies the client then
+	// rejects.
+	CompressionAlgorithms: nil,
 
 	// [MS-SMB2] 2.2.3.1.1; 32 bytes is what Windows sends.
 	PreauthSaltLength: 32,
