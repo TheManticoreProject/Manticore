@@ -146,7 +146,7 @@ const (
 	OpWACK         uint16 = 0x3800
 	OpRefresh      uint16 = 0x4000
 	OpRedirect     uint16 = 0x4800
-	OpConflict     uint16 = 0x5000
+	OpConflict     uint16 = OpRegistration // RFC 1002 4.2.8: NAME CONFLICT DEMAND uses the registration opcode (0x5)
 	OpNodeStatus   uint16 = 0x2100
 
 	// Response codes

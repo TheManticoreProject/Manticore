@@ -349,24 +349,22 @@ func buildWACK(request *NBNSPacket, wait time.Duration) *NBNSPacket {
 	}
 }
 
-// buildNameConflictDemand constructs a NAME CONFLICT DEMAND (RFC 1002 4.2.15): a
+// buildNameConflictDemand constructs a NAME CONFLICT DEMAND (RFC 1002 4.2.8): a
 // registration-opcode response carrying RCODE CFT_ERR that tells owner the unique
-// name is claimed by more than one node. It is byte-identical to a NEGATIVE NAME
-// REGISTRATION RESPONSE with RCODE = CFT_ERR, so the single NB answer record
-// carries the owner's ADDR_ENTRY. It returns nil when owner has no IPv4 address
-// to place in the ADDR_ENTRY.
+// name is claimed by more than one node. Per the 4.2.8 packet diagram the single
+// NB answer record has TTL 0 and a zero ADDR_ENTRY (NB_FLAGS and NB_ADDRESS 0).
+// It returns nil when owner has no IPv4 address to send the demand to.
 func buildNameConflictDemand(name *NetBIOSName, owner net.IP) *NBNSPacket {
-	v4 := owner.To4()
-	if v4 == nil {
+	if owner.To4() == nil {
 		return nil
 	}
-	entry := ADDR_ENTRY{Address: binary.BigEndian.Uint32(v4)}
+	entry := ADDR_ENTRY{}
 
 	return &NBNSPacket{
 		Header: NBNSHeader{
 			TransactionID: generateTransactionID(),
 			// R=1, OPCODE=registration, AA|RD|RA set, RCODE=CFT_ERR
-			// (RFC 1002 4.2.15 packet diagram).
+			// (RFC 1002 4.2.8 packet diagram).
 			Flags:   FlagResponse | OpConflict | FlagAuthoritative | FlagRecursion | FlagRecursionAvailable | RcodeConflict,
 			Answers: 1,
 		},
