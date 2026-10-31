@@ -123,6 +123,9 @@ func (t *oplockTable) breakOthers(actor *Open) {
 		delete(t.grants[key], open)
 		broken = append(broken, g)
 	}
+	if len(t.grants[key]) == 0 {
+		delete(t.grants, key)
+	}
 	t.mutex.Unlock()
 
 	notified := make(map[[16]byte]bool)
