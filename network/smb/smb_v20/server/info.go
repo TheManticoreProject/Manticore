@@ -247,7 +247,7 @@ func (c *Connection) setInfo(r *request, resp *response) nt_status.NT_STATUS {
 			}
 		}
 		// A file carrying the read-only attribute cannot be marked for deletion,
-		// [MS-FSA] section 2.1.5.14.3.
+		// [MS-FSA] section 2.1.5.15.3.
 		if disposition.DeletePending && !open.isDir {
 			if attr, err := fs.Stat(open.path); err == nil && attr.ReadOnly {
 				return smb1.StatusForFSError(smb1.ErrCannotDelete)
