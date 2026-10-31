@@ -38,6 +38,12 @@ import (
 // 16-byte common header plus the 8-byte request body (alloc_hint, p_cont_id, opnum).
 const requestHeaderOverhead = pdu.HeaderSize + 8
 
+// maxResponseStubSize caps the stub data readResponse reassembles for one call. A
+// server that keeps sending response fragments without PFC_LAST_FRAG is otherwise
+// buffered without limit; 64 MiB is well above legitimate responses (DRSUAPI
+// GetNCChanges batches are a few MiB).
+const maxResponseStubSize = 64 << 20
+
 // Client is a connection-oriented DCE/RPC client bound to a single presentation
 // context on a transport.
 type Client struct {
@@ -339,7 +345,9 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 }
 
 // readResponse reassembles response fragments until PFC_LAST_FRAG, returning the
-// concatenated stub data. A fault PDU is returned as a *pdu.Fault error.
+// concatenated stub data. A fault PDU is returned as a *pdu.Fault error. A fragment
+// larger than the max_recv_frag proposed at Bind, or a reassembled stub exceeding
+// maxResponseStubSize, is rejected.
 func (c *Client) readResponse() ([]byte, error) {
 	fr := &fragmentReader{t: c.transport}
 	var stub []byte
@@ -353,6 +361,11 @@ func (c *Client) readResponse() ([]byte, error) {
 		hdr, err := pdu.PeekHeader(frag)
 		if err != nil {
 			return nil, err
+		}
+		// [C706] 12.6.3.1: the server must not send fragments larger than the
+		// max_recv_frag the client proposed in its bind.
+		if maxRecv := c.transport.MaxRecvFrag(); maxRecv != 0 && hdr.FragLength > maxRecv {
+			return nil, fmt.Errorf("response frag_length %d exceeds the max_recv_frag %d proposed at bind", hdr.FragLength, maxRecv)
 		}
 
 		switch hdr.PacketType {
@@ -376,6 +389,9 @@ func (c *Client) readResponse() ([]byte, error) {
 				if err != nil {
 					return nil, fmt.Errorf("unprotect response: %w", err)
 				}
+			}
+			if len(stub)+len(chunk) > maxResponseStubSize {
+				return nil, fmt.Errorf("reassembled response exceeds %d bytes", maxResponseStubSize)
 			}
 			stub = append(stub, chunk...)
 			if hdr.PacketFlags.Has(pdu.PFCLastFrag) {
