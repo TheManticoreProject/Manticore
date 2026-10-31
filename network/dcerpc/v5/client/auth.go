@@ -290,6 +290,21 @@ func (c *Client) sendAuthContinuation(contexts []pdu.ContextElement, authValue [
 	}
 	switch hdr.PacketType {
 	case pdu.PacketTypeAlterContextResp:
+		// An alter_context_resp is wire-identical to a bind_ack but for the packet
+		// type. A server refusing the alter_context answers with per-context
+		// rejections rather than a nak, so the result for the context the bind
+		// selected must still be an acceptance.
+		relabelled := append([]byte(nil), respFrag...)
+		relabelled[2] = byte(pdu.PacketTypeBindAck)
+		var resp pdu.BindAck
+		if _, err := resp.Unmarshal(relabelled); err != nil {
+			return fmt.Errorf("parse alter_context_response: %w", err)
+		}
+		for i, r := range resp.Results {
+			if i < len(contexts) && contexts[i].ContextID == c.contextID && r.Result != pdu.ResultAcceptance {
+				return fmt.Errorf("alter_context rejected presentation context %d: result=%d reason=%d", c.contextID, r.Result, r.Reason)
+			}
+		}
 		return nil
 	case pdu.PacketTypeBindNak:
 		var nak pdu.BindNak
