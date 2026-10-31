@@ -707,7 +707,8 @@ func TestSecurityDescriptorQueryTooSmallReportsLengthNeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile() error = %v", err)
 	}
-	defer client.CloseFile(fid)
+	// The handle is left open: on failure the server may still be writing the
+	// rest of a split reply, and a close would wait behind it on the pipe.
 
 	information := OwnerSecurityInformation | GroupSecurityInformation | DaclSecurityInformation
 	expected, err := NewReflectiveSecurityProvider(false).SecurityDescriptor("described.txt", information)
@@ -731,6 +732,17 @@ func TestSecurityDescriptorQueryTooSmallReportsLengthNeeded(t *testing.T) {
 	}
 	if len(data) != 0 {
 		t.Errorf("the response carries %d data bytes, want none", len(data))
+	}
+
+	// Asking again with the LengthNeeded it was told gets the whole descriptor
+	// in one response: MaxDataCount bounds the data, not the parameters too.
+	_, data, status = querySecurityDescriptorWithLimit(t, client, uint16(fid), information,
+		binary.LittleEndian.Uint32(parameters))
+	if status != uint32(nt_status.NT_STATUS_SUCCESS) {
+		t.Fatalf("the retry with LengthNeeded answered 0x%08X, want success", status)
+	}
+	if !bytes.Equal(data, expected) {
+		t.Fatalf("the retry returned %d of the %d descriptor bytes in its response", len(data), len(expected))
 	}
 }
 

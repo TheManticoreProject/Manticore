@@ -210,10 +210,6 @@ func (c *Connection) sendNtTransactResponse(
 	if len(parameters) > budget {
 		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte message budget", len(parameters), budget)
 	}
-	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
-		budget = reassembly.maxDataCount
-	}
-
 	sentData := 0
 	for first := true; first || sentData < len(data); first = false {
 		chunkBudget := budget
@@ -221,6 +217,12 @@ func (c *Connection) sendNtTransactResponse(
 		if first {
 			parameterChunk = parameters
 			chunkBudget -= len(parameters)
+		}
+		// MaxDataCount bounds the data alone. Taking the parameters out of it as
+		// well would split a reply the client sized exactly, such as a security
+		// descriptor requested again with the LengthNeeded it was told.
+		if reassembly.maxDataCount > 0 && reassembly.maxDataCount < chunkBudget {
+			chunkBudget = reassembly.maxDataCount
 		}
 
 		chunk := len(data) - sentData
