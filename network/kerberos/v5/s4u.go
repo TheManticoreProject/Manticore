@@ -10,6 +10,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/sfu"
 )
 
+// s4uSelfExpectedClient returns the client an S4U2Self reply must name: the
+// impersonated user, not the requesting service ([MS-SFU] 3.2.5.1.2). An empty
+// impersonateRealm defaults to the client's realm, as in the request.
+func (c *KerberosClient) s4uSelfExpectedClient(impersonateUser, impersonateRealm string) (string, messages.PrincipalName) {
+	if impersonateRealm == "" {
+		impersonateRealm = c.realm
+	}
+	return impersonateRealm, messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{impersonateUser}}
+}
+
 func s4uResult(tgsRep *messages.TGSRep, encTGSRep *messages.EncTGSRepPart) (messages.Ticket, []byte, []byte, int) {
 	return tgsRep.Ticket, tgsRep.TicketRaw, encTGSRep.Key.KeyValue, encTGSRep.Key.KeyType
 }
@@ -127,7 +137,11 @@ func (c *KerberosClient) S4U2Self(impersonateUser, impersonateRealm string) (mes
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Self nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
-	if err := c.validateKDCReplyIdentity("S4U2Self TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+	expectedRealm, expectedName := c.s4uSelfExpectedClient(impersonateUser, impersonateRealm)
+	if err := validateKDCReplyClient("S4U2Self TGS-REP", expectedRealm, expectedName, tgsRep.CRealm, tgsRep.CName); err != nil {
+		return messages.Ticket{}, nil, nil, 0, err
+	}
+	if err := validateKDCReplyTicketService("S4U2Self TGS-REP", tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
 		return messages.Ticket{}, nil, nil, 0, err
 	}
 	if err := validateKDCReplyServer("S4U2Self TGS-REP", tgsRep.Ticket, c.realm, tgsReq.ReqBody.SName, false); err != nil {
@@ -247,7 +261,11 @@ func (c *KerberosClient) S4U2Proxy(targetSPN string, s4u2selfTicketRaw []byte) (
 	if encTGSRep.Nonce != nonce {
 		return messages.Ticket{}, nil, nil, 0, fmt.Errorf("kerberos: S4U2Proxy nonce mismatch: got %d, want %d", encTGSRep.Nonce, nonce)
 	}
-	if err := c.validateKDCReplyIdentity("S4U2Proxy TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
+	// The reply names the client of the evidence ticket ([MS-SFU] 3.2.5.2.4),
+	// which is sealed under the service's key and so unknown here. The reply is
+	// still bound to this request by its nonce, the TGS session key that
+	// decrypted it, and the service checks below.
+	if err := validateKDCReplyTicketService("S4U2Proxy TGS-REP", tgsRep.Ticket, encTGSRep.SRealm, encTGSRep.SName); err != nil {
 		return messages.Ticket{}, nil, nil, 0, err
 	}
 	if err := validateKDCReplyServer("S4U2Proxy TGS-REP", tgsRep.Ticket, c.realm, sname, false); err != nil {

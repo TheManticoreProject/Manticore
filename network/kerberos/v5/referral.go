@@ -351,10 +351,26 @@ func principalNameEqualFold(a, b messages.PrincipalName) bool {
 // and verifies that its encrypted server identity matches the outer ticket.
 func (c *KerberosClient) validateKDCReplyIdentity(replyType, clientRealm string, clientName messages.PrincipalName, ticket messages.Ticket, serverRealm string, serverName messages.PrincipalName) error {
 	expectedClient := messages.PrincipalName{NameType: messages.NameTypePrincipal, NameString: []string{c.username}}
-	if clientRealm != c.realm || !principalNameEqualFold(clientName, expectedClient) {
-		return fmt.Errorf("kerberos: %s client identity %s@%s does not match %s@%s",
-			replyType, strings.Join(clientName.NameString, "/"), clientRealm, c.username, c.realm)
+	if err := validateKDCReplyClient(replyType, c.realm, expectedClient, clientRealm, clientName); err != nil {
+		return err
 	}
+	return validateKDCReplyTicketService(replyType, ticket, serverRealm, serverName)
+}
+
+// validateKDCReplyClient verifies that a KDC reply names the expected client.
+// The expected client is normally this client's own principal, but S4U replies
+// name the impersonated user instead ([MS-SFU] 3.2.5.1.2, 3.2.5.2.4).
+func validateKDCReplyClient(replyType, expectedRealm string, expectedName messages.PrincipalName, clientRealm string, clientName messages.PrincipalName) error {
+	if clientRealm != expectedRealm || !principalNameEqualFold(clientName, expectedName) {
+		return fmt.Errorf("kerberos: %s client identity %s@%s does not match %s@%s",
+			replyType, strings.Join(clientName.NameString, "/"), clientRealm, strings.Join(expectedName.NameString, "/"), expectedRealm)
+	}
+	return nil
+}
+
+// validateKDCReplyTicketService verifies that the encrypted server identity of
+// a KDC reply matches the outer ticket.
+func validateKDCReplyTicketService(replyType string, ticket messages.Ticket, serverRealm string, serverName messages.PrincipalName) error {
 	if ticket.Realm != serverRealm || !principalNameEqualFold(ticket.SName, serverName) {
 		return fmt.Errorf("kerberos: %s ticket service %s@%s does not match encrypted reply service %s@%s",
 			replyType, strings.Join(ticket.SName.NameString, "/"), ticket.Realm, strings.Join(serverName.NameString, "/"), serverRealm)
