@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // Server represents an LLMNR server.
@@ -60,6 +61,19 @@ type Server struct {
 	// tcpListener is the accepting socket of the optional TCP responder. It is
 	// nil until ListenAndServeTCP binds it, and is closed by Close.
 	tcpListener net.Listener
+
+	// TCPReadTimeout bounds how long the TCP responder waits for a client to
+	// send its length-prefixed query after the connection is accepted. Zero
+	// selects DefaultTCPReadTimeout; a negative value disables the deadline.
+	TCPReadTimeout time.Duration
+
+	// tcpConnsMu guards tcpConns and tcpClosed. tcpConns tracks the accepted TCP
+	// connections that are still being served so Close can tear them down, and
+	// tcpClosed (set by Close) makes the accept loop drop any connection accepted
+	// after shutdown began instead of tracking it.
+	tcpConnsMu sync.Mutex
+	tcpConns   map[net.Conn]struct{}
+	tcpClosed  bool
 
 	// Interface is the network interface on which the multicast group is joined.
 	// When nil the group is joined on the system-default multicast interface
@@ -439,6 +453,7 @@ func (s *Server) Close() error {
 			if s.tcpListener != nil {
 				s.tcpListener.Close()
 			}
+			s.closeTCPConns()
 		},
 	)
 	return nil

@@ -3,11 +3,18 @@ package server
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/constants"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
 )
+
+// DefaultTCPReadTimeout is the time the TCP responder waits for a client to send
+// its query when Server.TCPReadTimeout is zero. A connection that stays silent
+// longer is closed so idle clients cannot hold handler goroutines and sockets
+// indefinitely.
+const DefaultTCPReadTimeout = 5 * time.Second
 
 // ListenAndServeTCP starts the optional LLMNR TCP responder and blocks serving
 // it until the server is closed. RFC 4795 §2.4 requires a responder to listen on
@@ -88,17 +95,73 @@ func (s *Server) serveTCP() error {
 			}
 			continue
 		}
+		if !s.trackTCPConn(conn) {
+			conn.Close()
+			return nil
+		}
 		go s.handleTCPConn(conn)
+	}
+}
+
+// trackTCPConn registers conn as a live TCP connection so Close can tear it
+// down. It reports false, without registering conn, once Close has begun.
+func (s *Server) trackTCPConn(conn net.Conn) bool {
+	s.tcpConnsMu.Lock()
+	defer s.tcpConnsMu.Unlock()
+	if s.tcpClosed {
+		return false
+	}
+	if s.tcpConns == nil {
+		s.tcpConns = make(map[net.Conn]struct{})
+	}
+	s.tcpConns[conn] = struct{}{}
+	return true
+}
+
+// untrackTCPConn removes conn from the set of live TCP connections.
+func (s *Server) untrackTCPConn(conn net.Conn) {
+	s.tcpConnsMu.Lock()
+	delete(s.tcpConns, conn)
+	s.tcpConnsMu.Unlock()
+}
+
+// closeTCPConns marks the TCP responder closed and closes every live TCP
+// connection, unblocking handlers still waiting on a client.
+func (s *Server) closeTCPConns() {
+	s.tcpConnsMu.Lock()
+	defer s.tcpConnsMu.Unlock()
+	s.tcpClosed = true
+	for conn := range s.tcpConns {
+		conn.Close()
+	}
+}
+
+// tcpReadTimeout returns the effective read deadline duration for a TCP query,
+// or zero when the deadline is disabled.
+func (s *Server) tcpReadTimeout() time.Duration {
+	switch {
+	case s.TCPReadTimeout == 0:
+		return DefaultTCPReadTimeout
+	case s.TCPReadTimeout < 0:
+		return 0
+	default:
+		return s.TCPReadTimeout
 	}
 }
 
 // handleTCPConn serves a single LLMNR-over-TCP connection: it reads one
 // length-prefixed query (RFC 1035 §4.2.2 framing), runs the handler chain if the
 // message is a query, and lets the handlers write a length-prefixed response
-// through the TCP ResponseWriter. The connection is closed when handling
-// completes.
+// through the TCP ResponseWriter. The query must arrive within the TCP read
+// timeout. The connection is closed when handling completes or when the server
+// is closed.
 func (s *Server) handleTCPConn(conn net.Conn) {
+	defer s.untrackTCPConn(conn)
 	defer conn.Close()
+
+	if timeout := s.tcpReadTimeout(); timeout > 0 {
+		_ = conn.SetReadDeadline(time.Now().Add(timeout))
+	}
 
 	payload, err := message.ReadTCPMessage(conn)
 	if err != nil {
