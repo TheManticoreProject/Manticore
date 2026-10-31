@@ -1051,3 +1051,74 @@ func TestLocalFileSystemDanglingSymlinkDoesNotEscape(t *testing.T) {
 		}
 	})
 }
+
+// TestDeleteOnCloseNeedsDeleteAccessAndAWritableShare asserts that
+// FILE_DELETE_ON_CLOSE on SMB_COM_NT_CREATE_ANDX is held to what a delete needs.
+//
+// The option was copied onto the handle unchecked, so a client with read access
+// alone deleted files from a read-only share by opening them with it and closing
+// the handle. It now requires DELETE access, as [MS-FSA] section 2.1.5.1 and the
+// SMB2 server do, and a read-only share refuses it outright.
+func TestDeleteOnCloseNeedsDeleteAccessAndAWritableShare(t *testing.T) {
+	newLocal := func(t *testing.T) (FileSystem, func() bool) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("precious"), 0o644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		fs, err := NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		return fs, func() bool {
+			_, err := os.Stat(filepath.Join(root, "keep.txt"))
+			return err == nil
+		}
+	}
+	newMemory := func(t *testing.T) (FileSystem, func() bool) {
+		fs := NewMemoryFileSystem("FILES")
+		if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+			t.Fatalf("AddFile() error = %v", err)
+		}
+		return fs, func() bool {
+			_, err := fs.Stat("keep.txt")
+			return err == nil
+		}
+	}
+
+	cases := []struct {
+		name     string
+		readOnly bool
+		access   uint32
+		survives bool
+	}{
+		{"read-only share, read access", true, fileflags.GENERIC_READ, true},
+		{"read-only share, delete access", true, fileflags.GENERIC_READ | fileflags.DELETE, true},
+		{"writable share, read access", false, fileflags.GENERIC_READ, true},
+		{"writable share, delete access", false, fileflags.GENERIC_READ | fileflags.DELETE, false},
+	}
+	backends := map[string]func(t *testing.T) (FileSystem, func() bool){"local": newLocal, "memory": newMemory}
+	for backendName, newBackend := range backends {
+		for _, tc := range cases {
+			t.Run(backendName+"/"+tc.name, func(t *testing.T) {
+				fs, present := newBackend(t)
+				_, client := fileServer(t, fs, tc.readOnly)
+				fid, err := client.OpenFile("keep.txt", tc.access,
+					fileflags.FILE_SHARE_READ|fileflags.FILE_SHARE_WRITE|fileflags.FILE_SHARE_DELETE,
+					fileflags.FILE_OPEN, fileflags.FILE_DELETE_ON_CLOSE)
+				if err == nil {
+					if tc.survives {
+						t.Error("the delete-on-close open was granted")
+					}
+					if err := client.CloseFile(fid); err != nil {
+						t.Fatalf("CloseFile() error = %v", err)
+					}
+				} else if !tc.survives {
+					t.Fatalf("OpenFile() error = %v", err)
+				}
+				if present() != tc.survives {
+					t.Errorf("file present after close = %v, want %v", present(), tc.survives)
+				}
+			})
+		}
+	}
+}

@@ -225,6 +225,17 @@ func handleNtTransactCreate(
 		return nil, nil, status
 	}
 
+	// Delete-on-close is refused before anything is opened, so a refused create
+	// leaves no handle behind. The tree is resolved again by coreOpen; looking it
+	// up here only reads whether the share is read-only.
+	tree, status := conn.treeFor(req)
+	if status != nt_status.NT_STATUS_SUCCESS {
+		return nil, nil, status
+	}
+	if status := deleteOnCloseStatus(desiredAccess, createOptions, tree.Share.ReadOnly); status != nt_status.NT_STATUS_SUCCESS {
+		return nil, nil, status
+	}
+
 	open, existed, status := conn.coreOpen(req, name, flags)
 	if status != nt_status.NT_STATUS_SUCCESS {
 		return nil, nil, status

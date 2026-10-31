@@ -157,7 +157,15 @@ func marshalStructFields(e *Encoder, rv reflect.Value, embedded bool, deferred *
 				e.writeCount(0)                         // offset
 				e.writeCount(uint64(rv.Field(i).Len())) // actual_count
 			}
-			if err := marshalElements(e, rv.Field(i), elementTag(tag)); err != nil {
+			// The array is part of this structure's construction, so its elements'
+			// referents join the structure's queue, after the referents of earlier fields
+			// ([C706] 14.3.12.3). A top-level parameter struct keeps the array as its own
+			// construction, flushed at the end of the array.
+			var elemDeferred *[]func() error
+			if embedded {
+				elemDeferred = deferred
+			}
+			if err := marshalElements(e, rv.Field(i), elementTag(tag), elemDeferred); err != nil {
 				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
@@ -328,9 +336,14 @@ func marshalInlineValue(e *Encoder, fv reflect.Value, tag fieldTag, deferred *[]
 			return nil
 		}
 		// A fixed (non-conformant) array of non-byte elements ([C706] 14.3.4): the
-		// Len() elements are marshalled in place with no count prefix. Element pointer
-		// bodies defer to the array's own flush point, exactly as for conformant arrays.
-		return marshalElements(e, fv, elementTag(tag))
+		// Len() elements are marshalled in place with no count prefix. Same deferral scope
+		// rule as the struct case above: embedded in another construction, the element
+		// referents join that construction's queue (landing after its later fields);
+		// otherwise they follow the array.
+		if embedded && deferred != nil {
+			return marshalElements(e, fv, elementTag(tag), deferred)
+		}
+		return marshalElements(e, fv, elementTag(tag), nil)
 	default:
 		return marshalScalar(e, fv)
 	}
@@ -468,7 +481,13 @@ func unmarshalStructFields(d *Decoder, rv reflect.Value, embedded bool, deferred
 				}
 				n = actual
 			}
-			if err := unmarshalElements(d, rv.Field(i), n, elementTag(tag)); err != nil {
+			// Symmetric with marshalStructFields: an embedded struct's array threads the
+			// structure's queue; a top-level parameter struct's array is flushed in place.
+			var elemDeferred *[]func() error
+			if embedded {
+				elemDeferred = deferred
+			}
+			if err := unmarshalElements(d, rv.Field(i), n, elementTag(tag), elemDeferred); err != nil {
 				return -1, fmt.Errorf("ndr: field %s: %w", f.Name, err)
 			}
 			continue
@@ -611,14 +630,19 @@ func unmarshalInlineValue(d *Decoder, fv reflect.Value, tag fieldTag, deferred *
 			return nil
 		}
 		// Fixed (non-conformant) array of non-byte elements: read exactly Len() elements
-		// in place, no count prefix, mirroring marshalInlineValue's fixed-array case.
-		var deferred []func() error
+		// in place, no count prefix, mirroring marshalInlineValue's fixed-array case,
+		// including its deferral scope (the enclosing queue when embedded).
+		var local []func() error
+		queue := &local
+		if embedded && deferred != nil {
+			queue = deferred
+		}
 		for i := 0; i < fv.Len(); i++ {
-			if err := unmarshalElement(d, fv.Index(i), elementTag(tag), &deferred); err != nil {
+			if err := unmarshalElement(d, fv.Index(i), elementTag(tag), queue); err != nil {
 				return fmt.Errorf("element %d: %w", i, err)
 			}
 		}
-		return runDeferred(deferred)
+		return runDeferred(local)
 	default:
 		return unmarshalScalar(d, fv)
 	}
@@ -999,7 +1023,7 @@ func countAlignment(syntax Syntax) int {
 func marshalConformantArray(e *Encoder, slice reflect.Value, maxCount uint32, elemTag fieldTag) error {
 	e.Align(countAlignment(e.syntax))
 	e.writeCount(uint64(maxCount))
-	return marshalElements(e, slice, elemTag)
+	return marshalElements(e, slice, elemTag, nil)
 }
 
 // unmarshalConformantArray reads a maximum_count-prefixed array into slice.
@@ -1009,7 +1033,7 @@ func unmarshalConformantArray(d *Decoder, slice reflect.Value, elemTag fieldTag)
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, n, elemTag)
+	return unmarshalElements(d, slice, n, elemTag, nil)
 }
 
 // marshalConformantVaryingArray writes a conformant-varying array: maximum_count,
@@ -1027,7 +1051,7 @@ func marshalConformantVaryingArray(e *Encoder, slice reflect.Value, maxCount, ac
 	e.writeCount(uint64(maxCount))    // maximum_count
 	e.writeCount(0)                   // offset
 	e.writeCount(uint64(actualCount)) // actual_count
-	return marshalElements(e, slice.Slice(0, int(actualCount)), elemTag)
+	return marshalElements(e, slice.Slice(0, int(actualCount)), elemTag, nil)
 }
 
 // unmarshalConformantVaryingArray reads a conformant-varying array, using the
@@ -1044,7 +1068,7 @@ func unmarshalConformantVaryingArray(d *Decoder, slice reflect.Value, elemTag fi
 	if err != nil {
 		return err
 	}
-	return unmarshalElements(d, slice, actual, elemTag)
+	return unmarshalElements(d, slice, actual, elemTag, nil)
 }
 
 // marshalElements writes the elements of a slice with no count prefix, in two passes:
@@ -1070,7 +1094,7 @@ func marshalPipe(e *Encoder, fv reflect.Value, tag fieldTag) error {
 	}
 	if n := fv.Len(); n > 0 {
 		e.writeCount(uint64(n))
-		if err := marshalElements(e, fv, elementTag(tag)); err != nil {
+		if err := marshalElements(e, fv, elementTag(tag), nil); err != nil {
 			return err
 		}
 		if e.syntax == NDR64 {
@@ -1099,7 +1123,7 @@ func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
 			break
 		}
 		chunk := reflect.New(fv.Type()).Elem()
-		if err := unmarshalElements(d, chunk, count, elementTag(tag)); err != nil {
+		if err := unmarshalElements(d, chunk, count, elementTag(tag), nil); err != nil {
 			return err
 		}
 		acc = reflect.AppendSlice(acc, chunk)
@@ -1113,18 +1137,27 @@ func unmarshalPipe(d *Decoder, fv reflect.Value, tag fieldTag) error {
 	return nil
 }
 
-func marshalElements(e *Encoder, slice reflect.Value, elemTag fieldTag) error {
+// marshalElements writes the elements in the two passes described above. deferred is
+// the enclosing construction's queue when the array is embedded in a structure; the
+// element referents are then appended to it and land after the structure's later
+// fields ([C706] 14.3.12.3). When deferred is nil the array is its own construction and
+// its referents are flushed right after the elements.
+func marshalElements(e *Encoder, slice reflect.Value, elemTag fieldTag, deferred *[]func() error) error {
 	if slice.Type().Elem().Kind() == reflect.Uint8 {
 		e.WriteBytes(slice.Bytes()) // fast path for byte arrays
 		return nil
 	}
-	var deferred []func() error
+	var local []func() error
+	queue := &local
+	if deferred != nil {
+		queue = deferred
+	}
 	for i := 0; i < slice.Len(); i++ {
-		if err := marshalElement(e, slice.Index(i), elemTag, &deferred); err != nil {
+		if err := marshalElement(e, slice.Index(i), elemTag, queue); err != nil {
 			return fmt.Errorf("element %d: %w", i, err)
 		}
 	}
-	return runDeferred(deferred)
+	return runDeferred(local)
 }
 
 // marshalElement writes one array element's inline part, appending its deferred
@@ -1167,13 +1200,16 @@ func marshalElement(e *Encoder, ev reflect.Value, tag fieldTag, deferred *[]func
 			return err
 		}
 	}
-	return marshalInlineValue(e, ev, tag, nil, true)
+	// A nested fixed array element ([N][M]T) threads the same queue.
+	return marshalInlineValue(e, ev, tag, deferred, true)
 }
 
 // unmarshalElements reads count elements into slice (allocating a fresh backing array),
 // in two passes mirroring marshalElements: every element's fixed part first, then every
-// element's deferred referents, both in element order ([C706] section 14.3.10).
-func unmarshalElements(d *Decoder, slice reflect.Value, count uint64, elemTag fieldTag) error {
+// element's deferred referents, both in element order ([C706] section 14.3.10). deferred
+// has the same meaning as for marshalElements: non-nil threads the enclosing
+// construction's queue, nil reads the referents right after the elements.
+func unmarshalElements(d *Decoder, slice reflect.Value, count uint64, elemTag fieldTag, deferred *[]func() error) error {
 	// Every NDR element occupies at least one octet, so a count larger than the
 	// remaining input cannot be valid. Reject it before allocating, otherwise an
 	// attacker-controlled count would size an arbitrary allocation (OOM/panic). The
@@ -1204,34 +1240,36 @@ func unmarshalElements(d *Decoder, slice reflect.Value, count uint64, elemTag fi
 	// geometrically as elements are actually consumed, so memory tracks the input that
 	// was really decoded. Chunks are never reallocated, so the element addresses
 	// captured by deferred referent reads stay valid until runDeferred completes.
+	var local []func() error
+	queue := &local
+	if deferred != nil {
+		queue = deferred
+	}
 	elemSize := uint64(slice.Type().Elem().Size())
 	if elemSize == 0 || count <= maxDirectElementBytes/elemSize {
 		out := reflect.MakeSlice(slice.Type(), n, n)
-		var deferred []func() error
 		for i := 0; i < n; i++ {
-			if err := unmarshalElement(d, out.Index(i), elemTag, &deferred); err != nil {
+			if err := unmarshalElement(d, out.Index(i), elemTag, queue); err != nil {
 				return fmt.Errorf("element %d: %w", i, err)
 			}
 		}
-		if err := runDeferred(deferred); err != nil {
-			return err
-		}
+		// out shares its backing array with slice, so referents read later through an
+		// enclosing queue still land in the decoded elements.
 		slice.Set(out)
-		return nil
+		return runDeferred(local)
 	}
 	chunkLen := int(maxDirectElementBytes / elemSize)
 	if chunkLen < 1 {
 		chunkLen = 1
 	}
 	var chunks []reflect.Value
-	var deferred []func() error
 	for i := 0; i < n; {
 		if c := n - i; chunkLen > c {
 			chunkLen = c
 		}
 		chunk := reflect.MakeSlice(slice.Type(), chunkLen, chunkLen)
 		for j := 0; j < chunkLen; j++ {
-			if err := unmarshalElement(d, chunk.Index(j), elemTag, &deferred); err != nil {
+			if err := unmarshalElement(d, chunk.Index(j), elemTag, queue); err != nil {
 				return fmt.Errorf("element %d: %w", i+j, err)
 			}
 		}
@@ -1239,16 +1277,20 @@ func unmarshalElements(d *Decoder, slice reflect.Value, count uint64, elemTag fi
 		i += chunkLen
 		chunkLen *= 2
 	}
-	if err := runDeferred(deferred); err != nil {
-		return err
-	}
 	out := reflect.MakeSlice(slice.Type(), n, n)
-	off := 0
-	for _, chunk := range chunks {
-		off += reflect.Copy(out.Slice(off, n), chunk)
+	gather := func() error {
+		off := 0
+		for _, chunk := range chunks {
+			off += reflect.Copy(out.Slice(off, n), chunk)
+		}
+		return nil
 	}
 	slice.Set(out)
-	return nil
+	// The deferred referent reads target the chunk elements, so the chunks are gathered
+	// into out only once those reads have run: queued behind them on the enclosing queue,
+	// or after the local flush.
+	*queue = append(*queue, gather)
+	return runDeferred(local)
 }
 
 // maxDirectElementBytes is the largest in-memory size of a decoded array that
@@ -1289,7 +1331,7 @@ func unmarshalElement(d *Decoder, ev reflect.Value, tag fieldTag, deferred *[]fu
 			return err
 		}
 	}
-	return unmarshalInlineValue(d, ev, tag, nil, true)
+	return unmarshalInlineValue(d, ev, tag, deferred, true)
 }
 
 // elementTag derives the tag applied to each element of an array from the array
