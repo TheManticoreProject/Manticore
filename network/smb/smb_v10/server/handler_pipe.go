@@ -380,17 +380,10 @@ func (c *Connection) peekNamedPipe(w ResponseWriter, tree *Tree, reassembly *tra
 		return status
 	}
 
-	// The client's budget covers the parameters as well as the data, and the
-	// parameters go out in the first message, so the peeked chunk has to leave
-	// room for them. Peeking the full budget instead would push the tail of the
-	// chunk into a second message and leave ReadDataAvailable and
-	// MessageBytesLength describing bytes this response did not carry — the two
-	// counts a client sizes its next read from.
-	budget := pipeReadBudget(reassembly.maxDataCount) - peekParametersSize
-	if budget < 0 {
-		budget = 0
-	}
-	chunk, available := open.peekPipeOutput(budget)
+	// The client's MaxDataCount bounds the data alone: the 6 parameter bytes
+	// are bounded by MaxParameterCount ([MS-CIFS] section 2.2.4.33.1), so a peek
+	// returns as much data as the client said it can receive.
+	chunk, available := open.peekPipeOutput(pipeReadBudget(reassembly.maxDataCount))
 
 	// MessageBytesLength is what is left of the peeked message after what is
 	// being returned.
@@ -624,10 +617,6 @@ func (c *Connection) sendTransactionResponse(
 	if len(parameters) > budget {
 		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte message budget", len(parameters), budget)
 	}
-	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
-		budget = reassembly.maxDataCount
-	}
-
 	sentData := 0
 	for first := true; first || sentData < len(data); first = false {
 		chunkBudget := budget
@@ -635,6 +624,11 @@ func (c *Connection) sendTransactionResponse(
 		if first {
 			parameterChunk = parameters
 			chunkBudget -= len(parameters)
+		}
+		// MaxDataCount bounds the data alone. Taking the parameters out of it as
+		// well would split a reply whose data the client sized exactly.
+		if reassembly.maxDataCount > 0 && reassembly.maxDataCount < chunkBudget {
+			chunkBudget = reassembly.maxDataCount
 		}
 
 		chunk := len(data) - sentData
