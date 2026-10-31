@@ -103,20 +103,22 @@ func PACOptionsPAData(bits ...int) (messages.PAData, error) {
 // The padata-value is a DER-encoded INTEGER (NOT a raw little-endian word) whose
 // bits are the msDS-SupportedEncryptionTypes flags of MS-KILE 2.2.7.
 
-// Supported Encryption Types bit flags (MS-KILE 2.2.7).
+// Supported Encryption Types bit flags (MS-KILE 2.2.7). The spec's bit diagram
+// numbers bits MSB-first, so A (diagram bit 31) is 0x1 and I (diagram bit 12)
+// is 0x80000.
 const (
 	EncTypeDESCBCCRC               = 0x00000001 // A
 	EncTypeDESCBCMD5               = 0x00000002 // B
 	EncTypeRC4HMAC                 = 0x00000004 // C
 	EncTypeAES128CTSHMACSHA196     = 0x00000008 // D
 	EncTypeAES256CTSHMACSHA196     = 0x00000010 // E
-	EncTypeFASTSupported           = 0x00000020 // F
-	EncTypeCompoundIdentity        = 0x00000040 // G
-	EncTypeClaimsSupported         = 0x00000080 // H
-	EncTypeResourceSIDCompDisabled = 0x00000100 // I
-	EncTypeAES256SK                = 0x00000200 // J: enforce AES session keys
-	EncTypeAES128CTSHMACSHA256     = 0x00000400 // K (RFC 8009)
-	EncTypeAES256CTSHMACSHA384     = 0x00000800 // L (RFC 8009)
+	EncTypeAES256SK                = 0x00000020 // J: enforce AES session keys
+	EncTypeAES128CTSHMACSHA256     = 0x00000040 // K (RFC 8009)
+	EncTypeAES256CTSHMACSHA384     = 0x00000080 // L (RFC 8009)
+	EncTypeFASTSupported           = 0x00010000 // F
+	EncTypeCompoundIdentity        = 0x00020000 // G
+	EncTypeClaimsSupported         = 0x00040000 // H
+	EncTypeResourceSIDCompDisabled = 0x00080000 // I
 )
 
 // SupportedEnctypes returns the DER-encoded PA-SUPPORTED-ENCTYPES padata-value.
