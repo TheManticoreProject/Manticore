@@ -1088,6 +1088,100 @@ func TestNamedPipeTransactWithUnreadAnswerIsRefused(t *testing.T) {
 	}
 }
 
+// partedAnswerPipe is a PipeHandler whose answer is larger than the ceiling the
+// server passes to Transact, so its session hands the answer over in parts and
+// returns each further part when transacted with no input, as rpcpipe does.
+type partedAnswerPipe struct {
+	name   string
+	answer []byte
+}
+
+func (p *partedAnswerPipe) OpenPipe(name string) (PipeSession, error) {
+	if !strings.EqualFold(name, p.name) {
+		return nil, fmt.Errorf("pipe %q not found", name)
+	}
+	return &partedAnswerSession{answer: p.answer}, nil
+}
+
+// partedAnswerSession is one open of a partedAnswerPipe.
+type partedAnswerSession struct {
+	answer  []byte
+	pending []byte
+}
+
+func (s *partedAnswerSession) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
+	if len(input) == 0 && len(s.pending) == 0 {
+		return nil, false, fmt.Errorf("no answer is pending")
+	}
+	if len(input) > 0 {
+		s.pending = s.answer
+	}
+	part := s.pending
+	if len(part) > maxOutput {
+		part = part[:maxOutput]
+	}
+	s.pending = s.pending[len(part):]
+	return part, len(s.pending) > 0, nil
+}
+
+func (s *partedAnswerSession) Close() error { return nil }
+
+// TestNamedPipeAnswerPastTheCeilingIsDeliveredWhole asserts that an answer the
+// session hands over in parts, because it is larger than maxPipeAnswerSize,
+// reaches the client whole: once the client has read what the handle buffered,
+// the server collects the next part from the session rather than ending the
+// answer. A new transaction is refused with STATUS_PIPE_BUSY while the session
+// still holds part of the answer, even when the handle's own buffer is empty.
+func TestNamedPipeAnswerPastTheCeilingIsDeliveredWhole(t *testing.T) {
+	const budget = 4096
+	answer := countingAnswer(2*maxPipeAnswerSize + 500)
+
+	_, client := pipeServer(t, &partedAnswerPipe{name: "srvsvc", answer: answer})
+
+	fid, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the pipe failed: %v", err)
+	}
+
+	setup := []types.USHORT{types.USHORT(subcommands.TRANS_TRANSACT_NMPIPE), types.USHORT(fid)}
+	response, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, []byte("call"), budget)
+	if status != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+		t.Fatalf("the transaction reported 0x%08X, want STATUS_BUFFER_OVERFLOW", status)
+	}
+	collected := append([]byte(nil), response.Trans_Data...)
+
+	// Drain exactly what the handle buffered from the first part, leaving the
+	// rest of the answer with the session.
+	readSetup := []types.USHORT{types.USHORT(subcommands.TRANS_READ_NMPIPE), types.USHORT(fid)}
+	for len(collected) < maxPipeAnswerSize {
+		read, readStatus := sendTransactionWithLimit(t, client, readSetup, `\PIPE\`, nil, nil, budget)
+		if readStatus != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+			t.Fatalf("a read at %d bytes reported 0x%08X, want STATUS_BUFFER_OVERFLOW while the answer continues",
+				len(collected), readStatus)
+		}
+		collected = append(collected, read.Trans_Data...)
+	}
+
+	if _, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, []byte("call"), budget); status != uint32(nt_status.NT_STATUS_PIPE_BUSY) {
+		t.Fatalf("a transaction while the session holds the rest of the answer reported 0x%08X, want STATUS_PIPE_BUSY",
+			status)
+	}
+
+	rest, err := client.ReadFile(fid, 0, uint32(len(answer)))
+	if err != nil {
+		t.Fatalf("reading the rest of the answer failed: %v", err)
+	}
+	collected = append(collected, rest...)
+	if !bytes.Equal(collected, answer) {
+		t.Fatalf("the answer reassembled to %d bytes, want the %d the handler produced", len(collected), len(answer))
+	}
+
+	// The answer is finished, so the handle transacts again.
+	if _, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, []byte("call"), budget); status != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+		t.Fatalf("transacting after the answer was read reported 0x%08X, want STATUS_BUFFER_OVERFLOW", status)
+	}
+}
+
 // TestNamedPipeOversizedAnswerIsDrainedByTransReadNmpipe asserts the same
 // completion through TRANS_READ_NMPIPE, which is the other way a client collects
 // the rest of an answer.
@@ -1431,5 +1525,58 @@ func TestTransactionSecondaryFromAnotherSessionIsRefused(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("echo:ownrdata")) {
 		t.Fatalf("the owner's transaction answer % x does not carry %q", raw, "echo:ownrdata")
+	}
+}
+
+// TestNamedPipeTinyPeekSeesTheRestOfAnAnswer asserts that a TRANS_PEEK_NMPIPE
+// too small to return any data, sent when the handle has delivered exactly what
+// it buffered while the session still holds the rest of the answer, reports
+// that rest as available rather than an answer that has ended.
+func TestNamedPipeTinyPeekSeesTheRestOfAnAnswer(t *testing.T) {
+	const budget = 4096
+	answer := countingAnswer(2*maxPipeAnswerSize + 500)
+
+	_, client := pipeServer(t, &partedAnswerPipe{name: "srvsvc", answer: answer})
+
+	fid, err := openPipeHandle(t, client, `\PIPE\srvsvc`)
+	if err != nil {
+		t.Fatalf("opening the pipe failed: %v", err)
+	}
+
+	setup := []types.USHORT{types.USHORT(subcommands.TRANS_TRANSACT_NMPIPE), types.USHORT(fid)}
+	response, status := sendTransactionWithLimit(t, client, setup, `\PIPE\`, nil, []byte("call"), budget)
+	if status != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+		t.Fatalf("the transaction reported 0x%08X, want STATUS_BUFFER_OVERFLOW", status)
+	}
+	collected := append([]byte(nil), response.Trans_Data...)
+
+	readSetup := []types.USHORT{types.USHORT(subcommands.TRANS_READ_NMPIPE), types.USHORT(fid)}
+	for len(collected) < maxPipeAnswerSize {
+		read, readStatus := sendTransactionWithLimit(t, client, readSetup, `\PIPE\`, nil, nil, budget)
+		if readStatus != uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW) {
+			t.Fatalf("a read at %d bytes reported 0x%08X, want STATUS_BUFFER_OVERFLOW", len(collected), readStatus)
+		}
+		collected = append(collected, read.Trans_Data...)
+	}
+
+	peekSetup := []types.USHORT{types.USHORT(subcommands.TRANS_PEEK_NMPIPE), types.USHORT(fid)}
+	// A MaxDataCount of 6 holds the 6 parameter bytes and no data, so the peek
+	// can only describe what is there.
+	peek, _ := sendTransactionWithLimit(t, client, peekSetup, `\PIPE\`, nil, nil, 6)
+	if len(peek.Trans_Parameters) != 6 {
+		t.Fatalf("the peek returned %d parameter bytes, want 6", len(peek.Trans_Parameters))
+	}
+	if available := binary.LittleEndian.Uint16([]byte(peek.Trans_Parameters)[0:2]); available == 0 {
+		t.Fatalf("the peek reports nothing available while %d bytes of the answer remain",
+			len(answer)-len(collected))
+	}
+
+	rest, err := client.ReadFile(fid, 0, uint32(len(answer)))
+	if err != nil {
+		t.Fatalf("reading the rest of the answer failed: %v", err)
+	}
+	collected = append(collected, rest...)
+	if !bytes.Equal(collected, answer) {
+		t.Fatalf("the answer reassembled to %d bytes, want %d", len(collected), len(answer))
 	}
 }

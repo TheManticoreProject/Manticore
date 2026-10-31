@@ -56,6 +56,11 @@ type PipeSession interface {
 	// the client is the server's job, because only the server knows how the client
 	// will read the rest. A session whose answer would exceed maxOutput should
 	// return what fits and report that more remains.
+	//
+	// The server collects the rest by calling Transact again with no input, once
+	// the client has read what it holds, and keeps doing so until a call reports
+	// that nothing more remains. It sends the session no new message while any of
+	// an answer is outstanding, so a session holds at most one answer.
 	Transact(input []byte, maxOutput int) (output []byte, moreRemains bool, err error)
 
 	// Close releases whatever the open prepared. The server calls it once, when
@@ -245,7 +250,8 @@ func (c *Connection) runTransaction(w ResponseWriter, req *message.Message, reas
 // maxPipeAnswerSize bounds the answer the server will take from a handler in one
 // exchange, and so bounds what one handle may hold undelivered: a handle with
 // part of an answer unread takes no new transaction, so it never holds more than
-// one answer.
+// one answer. A larger answer stays with the handler's session and is collected
+// a part at a time as the client reads.
 //
 // It is not the client's buffer: the client's buffer bounds one response, and an
 // answer larger than that is delivered across several reads. It is a ceiling on
@@ -456,9 +462,9 @@ func (c *Connection) transactNamedPipe(
 		// unread answer is what the client is owed first anyway. [MS-FSCC] section
 		// 2.3.48 gives the status a pipe transceive fails with when "the named
 		// pipe contains unread data".
-		if len(open.pipeOutput) > 0 {
-			logger.Debugf("SMB1 server: %s transacted pipe %q with %d bytes of the previous answer unread",
-				c.Remote, name, len(open.pipeOutput))
+		if len(open.pipeOutput) > 0 || open.pipeMore {
+			logger.Debugf("SMB1 server: %s transacted pipe %q with %d bytes of the previous answer unread, more held by the session=%t",
+				c.Remote, name, len(open.pipeOutput), open.pipeMore)
 			return nt_status.NT_STATUS_PIPE_BUSY
 		}
 	}
@@ -522,6 +528,11 @@ func (c *Connection) transactNamedPipe(
 		} else {
 			open.pipeOutput = append(open.pipeOutput, remainder...)
 		}
+	}
+	// What the session still holds past this answer is collected by the reads
+	// that drain the handle, so the handle has to remember that there is some.
+	if open != nil {
+		open.pipeMore = moreRemains
 	}
 
 	// What the client is told about a truncated answer is the whole difference
