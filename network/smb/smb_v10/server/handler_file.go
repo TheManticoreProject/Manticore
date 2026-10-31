@@ -160,6 +160,12 @@ func openFlagsFor(desiredAccess, createDisposition, createOptions uint32) (OpenF
 // 2.4.3, which grants whatever the caller may have and so includes DELETE.
 const accessMaximumAllowed = 0x02000000
 
+// accessIncludesDelete reports whether an NT access mask asks for DELETE, directly
+// or through GENERIC_ALL or MAXIMUM_ALLOWED.
+func accessIncludesDelete(desiredAccess uint32) bool {
+	return desiredAccess&(fileflags.DELETE|fileflags.GENERIC_ALL|accessMaximumAllowed) != 0
+}
+
 // deleteOnCloseStatus decides whether a create may set FILE_DELETE_ON_CLOSE.
 //
 // Delete-on-close deletes the file when the handle closes, so it is a delete and
@@ -181,7 +187,7 @@ func deleteOnCloseStatus(desiredAccess, createOptions uint32, readOnly bool) nt_
 	if createOptions&fileflags.FILE_DELETE_ON_CLOSE == 0 {
 		return nt_status.NT_STATUS_SUCCESS
 	}
-	if desiredAccess&(fileflags.DELETE|fileflags.GENERIC_ALL|accessMaximumAllowed) == 0 {
+	if !accessIncludesDelete(desiredAccess) {
 		return nt_status.NT_STATUS_ACCESS_DENIED
 	}
 	if readOnly {
@@ -282,6 +288,7 @@ func handleNtCreateAndx(conn *Connection, w ResponseWriter, req *message.Message
 		IsDirectory:   attr.IsDir,
 		Readable:      flags.Read,
 		Writable:      flags.Write && !tree.Share.ReadOnly,
+		Deletable:     accessIncludesDelete(uint32(request.DesiredAccess)) && !tree.Share.ReadOnly,
 		DeleteOnClose: uint32(request.CreateOptions)&fileflags.FILE_DELETE_ON_CLOSE != 0,
 		Created:       time.Now().UTC(),
 	}

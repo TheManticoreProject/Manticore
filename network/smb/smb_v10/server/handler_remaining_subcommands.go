@@ -259,6 +259,7 @@ func handleNtTransactCreate(
 	if open.Writable || flags.Truncate {
 		conn.breakOplocksOn(open.Tree.Share, open.currentPath(), open)
 	}
+	open.Deletable = accessIncludesDelete(desiredAccess) && !open.Tree.Share.ReadOnly
 
 	// Response parameters are 69 bytes, per [MS-CIFS] section 2.2.7.1.2.
 	parameters := make([]byte, 69)

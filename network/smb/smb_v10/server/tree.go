@@ -67,6 +67,12 @@ type Open struct {
 	Readable bool
 	Writable bool
 
+	// Deletable is whether the open was granted DELETE access, which marking it
+	// for deletion through FileDispositionInformation needs ([MS-FSA] section
+	// 2.1.5.15.3) whatever else it was granted. Only the NT opens ask for it: the
+	// legacy access modes of [MS-CIFS] name reading and writing, not deleting.
+	Deletable bool
+
 	// pipeOutput is the part of a pipe answer that has not been delivered yet.
 	//
 	// A transaction returns only as much as the client's buffer takes, and the
