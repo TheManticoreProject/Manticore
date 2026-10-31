@@ -126,6 +126,14 @@ func (r *Reassembler) Add(source string, d *Datagram) (assembled *Datagram, done
 		p.dst = d.DestinationName
 	}
 
+	// The last fragment (MORE clear) ends the datagram, so no fragment may
+	// cover bytes past it; otherwise bytes beyond the end would be counted
+	// towards completion while a hole inside [0, total) stays unfilled.
+	if (p.total >= 0 && end > p.total) || (!d.HasMore() && len(p.buf) > end) {
+		delete(r.pending, key)
+		return nil, false, fmt.Errorf("fragment at PACKET_OFFSET %d extends past the end of the datagram", d.PacketOffset)
+	}
+
 	if err := p.write(int(d.PacketOffset), d.UserData); err != nil {
 		delete(r.pending, key)
 		return nil, false, err
