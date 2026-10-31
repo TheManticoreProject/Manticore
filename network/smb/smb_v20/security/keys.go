@@ -92,6 +92,16 @@ type Keys struct {
 // KDF context is the session's pre-authentication integrity hash; 3.0 and 3.0.2
 // use constant contexts. Other dialects yield empty keys.
 func DeriveKeys(sessionKey []byte, dialect dialects.Dialect, preauthHash []byte, cipher uint16) Keys {
+	return DeriveKeysWithFullSessionKey(sessionKey, nil, dialect, preauthHash, cipher)
+}
+
+// DeriveKeysWithFullSessionKey is DeriveKeys for a session whose GSS key is
+// longer than the 16-byte SessionKey, such as a Kerberos AES256 key. For 3.1.1
+// with an AES-256 cipher the encryption and decryption keys are derived from
+// that full key (Session.FullSessionKey, MS-SMB2 3.2.5.3.1 and 3.3.5.5.3); every
+// other key is derived from the 16-byte sessionKey. An empty fullSessionKey
+// falls back to sessionKey.
+func DeriveKeysWithFullSessionKey(sessionKey, fullSessionKey []byte, dialect dialects.Dialect, preauthHash []byte, cipher uint16) Keys {
 	switch dialect {
 	case dialects.SMB2_DIALECT_3_0_0, dialects.SMB2_DIALECT_3_0_2:
 		return Keys{
@@ -102,14 +112,18 @@ func DeriveKeys(sessionKey []byte, dialect dialects.Dialect, preauthHash []byte,
 		}
 	case dialects.SMB2_DIALECT_3_1_1:
 		cipherBits := 128
+		cipherKey := sessionKey
 		if cipher == commands.SMB2_ENCRYPTION_AES256_CCM || cipher == commands.SMB2_ENCRYPTION_AES256_GCM {
 			cipherBits = 256
+			if len(fullSessionKey) > 0 {
+				cipherKey = fullSessionKey
+			}
 		}
 		return Keys{
 			Signing:        sp800108CounterKDF(sessionKey, kdfLabelSigning311, preauthHash, 128),
 			Application:    sp800108CounterKDF(sessionKey, kdfLabelApp311, preauthHash, 128),
-			ClientToServer: sp800108CounterKDF(sessionKey, kdfLabelC2SCipher, preauthHash, cipherBits),
-			ServerToClient: sp800108CounterKDF(sessionKey, kdfLabelS2CCipher, preauthHash, cipherBits),
+			ClientToServer: sp800108CounterKDF(cipherKey, kdfLabelC2SCipher, preauthHash, cipherBits),
+			ServerToClient: sp800108CounterKDF(cipherKey, kdfLabelS2CCipher, preauthHash, cipherBits),
 		}
 	}
 	return Keys{}

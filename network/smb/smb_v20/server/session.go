@@ -215,11 +215,13 @@ func (c *Connection) establish(session *Session, req *commands.SessionSetupReque
 		setup.SessionFlags = commands.SMB2_SESSION_FLAG_IS_GUEST
 	default:
 		// The SMB2 session key is the first 16 bytes of the GSS key, zero-padded.
+		// The full GSS key (Session.FullSessionKey) derives the SMB 3.1.1 AES-256
+		// cipher keys (MS-SMB2 3.3.5.5.3).
 		key := make([]byte, 16)
 		copy(key, who.sessionKey)
 		session.signingKey = key
 		if security.IsSMB3(c.dialect) {
-			keys := security.DeriveKeys(key, c.dialect, session.preauthHash, c.cipher)
+			keys := security.DeriveKeysWithFullSessionKey(key, who.sessionKey, c.dialect, session.preauthHash, c.cipher)
 			session.signingKey = keys.Signing
 			if c.cipher != 0 {
 				session.encryptionKey, session.decryptionKey = keys.ServerToClient, keys.ClientToServer
