@@ -176,9 +176,9 @@ func TestSetAuthProviderNetlogonRequiresBindToken(t *testing.T) {
 
 func TestAuthVerifierOverheadUsesProviderTokenLen(t *testing.T) {
 	c := &Client{authLevel: pdu.AuthLevelPktPrivacy, sec: &fakeSecCtx{tokenLen: 56}}
-	// 3 worst-case pad + 8-byte sec_trailer + 56-byte token.
-	if got := c.authVerifierOverhead(); got != 3+pdu.SecTrailerSize+56 {
-		t.Errorf("authVerifierOverhead = %d, want %d", got, 3+pdu.SecTrailerSize+56)
+	// 15 worst-case pad (16-byte sec_trailer alignment) + 8-byte sec_trailer + 56-byte token.
+	if got := c.authVerifierOverhead(); got != 15+pdu.SecTrailerSize+56 {
+		t.Errorf("authVerifierOverhead = %d, want %d", got, 15+pdu.SecTrailerSize+56)
 	}
 }
 

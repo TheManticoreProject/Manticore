@@ -114,13 +114,13 @@ func (c *Client) protectsRequests() bool {
 }
 
 // authVerifierOverhead is the worst-case number of bytes an authenticated request PDU
-// adds after the stub: up to 3 padding bytes to 4-byte-align the trailer, the 8-byte
+// adds after the stub: up to 15 padding bytes to 16-byte-align the trailer, the 8-byte
 // sec_trailer, and the auth_value token. The token size is provider-specific (NTLM: 16;
 // Netlogon: larger), so it is taken from the active security context at its sealing level.
 func (c *Client) authVerifierOverhead() int {
 	// A negative stub length requests the largest token the provider can emit, so
 	// the reservation is safe for any fragment stub size.
-	return 3 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy, -1)
+	return secTrailerAlign - 1 + pdu.SecTrailerSize + c.sec.AuthValueLen(c.authLevel == pdu.AuthLevelPktPrivacy, -1)
 }
 
 // negotiateToken builds the auth_value carried in the bind's auth verifier. For a single-leg
@@ -302,8 +302,15 @@ func (c *Client) sendAuthContinuation(contexts []pdu.ContextElement, authValue [
 	}
 }
 
+// secTrailerAlign is the boundary, measured from the start of the stub (the PDU body),
+// the sec_trailer of a request is aligned to ([MS-RPCE] 2.2.2.11). A padded stub that is
+// a multiple of 16 bytes is also a whole number of cipher blocks, so the Kerberos RC4
+// Wrap pad (8-byte blocks) and the AES CFX EC filler (16-byte blocks) are both zero and
+// sealing never grows the stub past the size reserved for the fragment.
+const secTrailerAlign = 16
+
 // marshalProtectedRequest serializes a request PDU with a per-PDU auth verifier. The stub
-// is padded so the sec_trailer starts on a 4-byte boundary; the security context signs the
+// is padded so the sec_trailer starts on a 16-byte boundary from the start of the stub; the security context signs the
 // PDU (for PKT_INTEGRITY) or signs and seals the stub (for PKT_PRIVACY). The auth_value
 // token format and which bytes are signed are provider-specific — the client supplies both
 // the whole signed region (header, body, padded stub, sec_trailer, over plaintext) and the
@@ -324,9 +331,9 @@ func (c *Client) marshalProtectedRequest(req *pdu.Request) ([]byte, error) {
 	binary.LittleEndian.PutUint16(bodyHdr[4:6], req.ContextID)
 	binary.LittleEndian.PutUint16(bodyHdr[6:8], req.Opnum)
 
-	// The 16-byte header plus the 8-byte body keep the stub on a 4-byte boundary, so the
-	// pad needed before the sec_trailer depends only on the stub length.
-	pad := (4 - (len(req.Stub) % 4)) % 4
+	// The sec_trailer is aligned relative to the start of the stub, so the pad needed
+	// before it depends only on the stub length.
+	pad := (secTrailerAlign - len(req.Stub)%secTrailerAlign) % secTrailerAlign
 	stubPad := make([]byte, len(req.Stub)+pad)
 	copy(stubPad, req.Stub)
 
