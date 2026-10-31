@@ -152,6 +152,8 @@ func (b *tcpBinder) Bind(s syntax.SyntaxID) (*dcerpcclient.Client, func() error,
 	tr.SetTimeout(b.timeout)
 	rpc := dcerpcclient.NewClient(tr)
 	if err := rpc.Bind(s); err != nil {
+		// Bind opens the connection before negotiating, so release it on any failure.
+		_ = rpc.Close()
 		return nil, nil, fmt.Errorf("epm: bind %s on %s:%d: %w", s.UUID.ToFormatD(), b.host, b.port, err)
 	}
 	return rpc, rpc.Close, nil
