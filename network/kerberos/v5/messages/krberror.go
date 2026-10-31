@@ -36,6 +36,24 @@ type krbErrorInner struct {
 	EData []byte `asn1:"explicit,tag:12,optional"`
 }
 
+// krbErrorMarshal is the wire representation of KRBError for marshaling.
+// CRealm and Realm have no struct tag: Go ignores explicit,tag:N for
+// asn1.RawValue, so realmExplicit() pre-builds the [7] / [9] EXPLICIT
+// { GeneralString } wrappers. SName uses PrincipalNameMarshal so its
+// components are GeneralString too.
+type krbErrorMarshal struct {
+	PVNO      int                  `asn1:"explicit,tag:0"`
+	MsgType   int                  `asn1:"explicit,tag:1"`
+	STime     time.Time            `asn1:"explicit,tag:4,generalized"`
+	SUSec     int                  `asn1:"explicit,tag:5"`
+	ErrorCode int                  `asn1:"explicit,tag:6"`
+	CRealm    asn1.RawValue        `asn1:"optional"` // pre-encoded [7] by realmExplicit; omitted when empty
+	Realm     asn1.RawValue        // pre-encoded [9] by realmExplicit
+	SName     PrincipalNameMarshal `asn1:"explicit,tag:10"`
+	EText     string               `asn1:"explicit,tag:11,optional,utf8"`
+	EData     []byte               `asn1:"explicit,tag:12,optional"`
+}
+
 // KRBError is a Kerberos KRB-ERROR message (APPLICATION[30]),
 // as defined in RFC 4120 Section 5.9.1.
 // It is sent by the KDC when an error occurs processing a request.
@@ -71,17 +89,19 @@ func (e *KRBError) Error() string {
 
 // Marshal encodes the KRBError as an ASN.1 APPLICATION[30] wrapped SEQUENCE.
 func (e *KRBError) Marshal() ([]byte, error) {
-	inner := krbErrorInner{
+	inner := krbErrorMarshal{
 		PVNO:      KerberosV5,
 		MsgType:   MsgTypeError,
-		STime:     e.STime,
+		STime:     normalizeTime(e.STime),
 		SUSec:     e.SUSec,
 		ErrorCode: e.ErrorCode,
-		CRealm:    e.CRealm,
-		Realm:     e.Realm,
-		SName:     e.SName,
+		Realm:     realmExplicit(9, e.Realm),
+		SName:     MarshalPrincipalName(e.SName),
 		EText:     e.EText,
 		EData:     e.EData,
+	}
+	if e.CRealm != "" {
+		inner.CRealm = realmExplicit(7, e.CRealm)
 	}
 	seq_bytes, err := asn1.Marshal(inner)
 	if err != nil {
