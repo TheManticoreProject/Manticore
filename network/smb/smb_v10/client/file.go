@@ -12,6 +12,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // writeAndxOverhead is the space a WriteAndx request needs beyond its data: the
@@ -191,8 +192,9 @@ func (c *Client) CloseFile(fid FID) error {
 }
 
 // ReadFile reads up to maxLen bytes starting at offset from the file referenced by
-// fid. It issues as many ReadAndx requests as required, stopping at maxLen or at the
-// first short read (end of file).
+// fid. It issues as many ReadAndx requests as required, stopping at maxLen, at the
+// first short read (end of file), or at a named-pipe message longer than the read
+// (STATUS_BUFFER_OVERFLOW), whose first part it returns without an error.
 //
 // Wire: ReadAndxRequest / ReadAndxResponse.
 func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error) {
@@ -243,7 +245,11 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 			return result, err
 		}
 
-		if response.Header.Status != 0x00000000 {
+		// STATUS_BUFFER_OVERFLOW on a message-mode named pipe is a warning that
+		// comes with data: the message is longer than the read, the response holds
+		// its first part, and the rest stays in the pipe for the next read.
+		overflow := uint32(response.Header.Status) == uint32(nt_status.NT_STATUS_BUFFER_OVERFLOW)
+		if response.Header.Status != 0x00000000 && !overflow {
 			return result, fmt.Errorf("ReadAndx failed: 0x%08x", response.Header.Status)
 		}
 
@@ -273,8 +279,9 @@ func (c *Client) ReadFile(fid FID, offset uint64, maxLen uint32) ([]byte, error)
 
 		result = append(result, raw[dataOff:dataOff+dataLen]...)
 
-		// A short read means we have reached the end of the file.
-		if uint32(dataLen) < want {
+		// A short read means we have reached the end of the file. A pipe message
+		// longer than the read also ends it; the caller reads the rest.
+		if uint32(dataLen) < want || overflow {
 			break
 		}
 	}

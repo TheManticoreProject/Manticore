@@ -12,6 +12,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
+	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 )
 
 // capturingTransport records the last Send payload and replays a canned response.
@@ -130,5 +131,57 @@ func TestReadFileLargeOffsetCarriesOffsetHigh(t *testing.T) {
 	}
 	if uint32(req.OffsetHigh) != uint32(offset>>32) {
 		t.Errorf("OffsetHigh = 0x%08x, want 0x%08x (offset was truncated to 32 bits)", uint32(req.OffsetHigh), uint32(offset>>32))
+	}
+}
+
+// countingTransport replays a canned response and counts the requests sent.
+type countingTransport struct {
+	capturingTransport
+	sends int
+}
+
+func (m *countingTransport) Send(data []byte) (int, error) {
+	m.sends++
+	return m.capturingTransport.Send(data)
+}
+
+// TestReadFilePipeBufferOverflowReturnsData verifies that STATUS_BUFFER_OVERFLOW
+// on a ReadAndx, which a message-mode named pipe returns when the message is
+// longer than the read, yields the bytes that came with it instead of an error,
+// and ends the read there so the caller collects the rest of the message.
+func TestReadFilePipeBufferOverflowReturnsData(t *testing.T) {
+	// The payload fills the 512-byte chunk exactly, so only the overflow status,
+	// not a short read, can end the loop after one request.
+	payload := bytes.Repeat([]byte{0xA5}, 512)
+
+	resp := commands.NewReadAndxResponse()
+	resp.Data = payload
+	msg := message.NewMessage()
+	msg.AddCommand(resp)
+	msg.Header.SetFlags(flags.FLAGS_REPLY)
+	msg.Header.Status = types.ULONG(nt_status.NT_STATUS_BUFFER_OVERFLOW)
+	raw, err := msg.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal canned response: %v", err)
+	}
+
+	tr := &countingTransport{capturingTransport: capturingTransport{response: raw}}
+	// MaxBufferSize 1024 bounds each ReadAndx to 512 bytes, so a 4280-byte read
+	// would take several requests if the overflow did not end it.
+	c := &client.Client{
+		Transport:  tr,
+		Connection: &client.Connection{Server: &client.Server{MaxBufferSize: 1024}},
+	}
+	c.Session = &client.Session{SessionUID: 1, TreeID: 1}
+
+	got, err := c.ReadFile(client.FID(0x4242), 0, 4280)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("ReadFile returned %d bytes, want the %d bytes of the overflow response", len(got), len(payload))
+	}
+	if tr.sends != 1 {
+		t.Errorf("ReadFile sent %d ReadAndx requests, want 1", tr.sends)
 	}
 }
