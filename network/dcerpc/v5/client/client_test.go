@@ -381,6 +381,32 @@ func TestCall_ResponseFragmentExceedsMaxRecvFrag(t *testing.T) {
 	}
 }
 
+// Windows answers a max_recv_frag proposal below 2048 with a bind_ack
+// max_xmit_frag of 2048 and then sends fragments of that size.
+func TestCall_ResponseFragmentUpToBindAckMaxXmitFrag(t *testing.T) {
+	ft := &fakeTransport{maxXmit: 1432, maxRecv: 1432}
+	ft.queue(bindAckBytes(t, 2048, 2048))
+	c := NewClient(ft)
+	if err := c.Bind(testSyntax()); err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	stub := make([]byte, 2048-requestHeaderOverhead)
+	ft.queue(responseBytes(t, 2, pdu.PFCFirstFrag|pdu.PFCLastFrag, stub))
+	got, err := c.Call(1, nil)
+	if err != nil {
+		t.Fatalf("Call() with a 2048-byte fragment announced in bind_ack: %v", err)
+	}
+	if len(got) != len(stub) {
+		t.Errorf("Call() stub length = %d, want %d", len(got), len(stub))
+	}
+
+	// One byte over the announced size is still rejected.
+	ft.queue(responseBytes(t, 3, pdu.PFCFirstFrag|pdu.PFCLastFrag, make([]byte, len(stub)+1)))
+	if _, err := c.Call(1, nil); err == nil || !strings.Contains(err.Error(), "exceeds the max_recv_frag 2048") {
+		t.Fatalf("Call() with a 2049-byte fragment: error = %v, want max_recv_frag error", err)
+	}
+}
+
 // invokeReq/invokeResp are minimal NDR structures for exercising Client.Invoke.
 type invokeReq struct {
 	A ndr.DWORD

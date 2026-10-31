@@ -59,6 +59,12 @@ type Client struct {
 	// derived from the bind_ack.
 	sendFragMax uint16
 
+	// recvFragMax is the largest response fragment, in bytes, the client accepts:
+	// the larger of the max_recv_frag proposed at Bind and the max_xmit_frag the
+	// server announced in its bind_ack. Windows announces and sends 2048-byte
+	// fragments even when the client proposed less.
+	recvFragMax uint16
+
 	// preferNDR64 makes Bind additionally propose the NDR64 transfer syntax and prefer
 	// it when the server accepts it. Default false: NDR20 only, identical to before.
 	preferNDR64 bool
@@ -190,6 +196,7 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		c.contextID = ctxID
 		c.negotiatedSyntax = negotiated
 		c.sendFragMax = negotiateSendMax(c.transport.MaxXmitFrag(), ack.MaxXmitFrag, ack.MaxRecvFrag)
+		c.recvFragMax = max(c.transport.MaxRecvFrag(), ack.MaxXmitFrag)
 		if c.authConfigured() {
 			continuation, err := c.completeAuth(respFrag)
 			if err != nil {
@@ -346,7 +353,8 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 
 // readResponse reassembles response fragments until PFC_LAST_FRAG, returning the
 // concatenated stub data. A fault PDU is returned as a *pdu.Fault error. A fragment
-// larger than the max_recv_frag proposed at Bind, or a reassembled stub exceeding
+// larger than both the max_recv_frag proposed at Bind and the max_xmit_frag the
+// server announced in its bind_ack, or a reassembled stub exceeding
 // maxResponseStubSize, is rejected.
 func (c *Client) readResponse() ([]byte, error) {
 	fr := &fragmentReader{t: c.transport}
@@ -362,10 +370,15 @@ func (c *Client) readResponse() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		// [C706] 12.6.3.1: the server must not send fragments larger than the
-		// max_recv_frag the client proposed in its bind.
-		if maxRecv := c.transport.MaxRecvFrag(); maxRecv != 0 && hdr.FragLength > maxRecv {
-			return nil, fmt.Errorf("response frag_length %d exceeds the max_recv_frag %d proposed at bind", hdr.FragLength, maxRecv)
+		// [C706] 12.6.3.1 bounds response fragments by the client's max_recv_frag,
+		// but Windows raises a proposal below 2048 to 2048 in its bind_ack and sends
+		// fragments of that size, so the announced max_xmit_frag is accepted too.
+		maxRecv := c.recvFragMax
+		if maxRecv == 0 {
+			maxRecv = c.transport.MaxRecvFrag()
+		}
+		if maxRecv != 0 && hdr.FragLength > maxRecv {
+			return nil, fmt.Errorf("response frag_length %d exceeds the max_recv_frag %d negotiated at bind", hdr.FragLength, maxRecv)
 		}
 
 		switch hdr.PacketType {
