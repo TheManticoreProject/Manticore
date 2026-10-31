@@ -181,6 +181,11 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 	bind := &pdu.Bind{}
 	if _, err := bind.Unmarshal(body); err != nil {
 		logger.Debugf("rpcserver: a bind PDU would not decode: %v", err)
+		// [C706] defines no alter_context_nak PDU, so a malformed
+		// alter_context is a protocol error on a live association.
+		if altering {
+			return a.fault(header.CallID, 0, pdu.NCASProtoError)
+		}
 		return a.bindNak(header.CallID, bindNakProtocolVersionNotSupported)
 	}
 
@@ -190,10 +195,16 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 	// unverifiable.
 	if header.AuthLength > 0 || len(bind.AuthValue) > 0 {
 		logger.Debugf("rpcserver: refusing an authenticated bind (%d bytes of verifier)", header.AuthLength)
+		if altering {
+			return a.fault(header.CallID, 0, pdu.NCASFaultAccessDenied)
+		}
 		return a.bindNak(header.CallID, bindNakAuthenticationTypeNotRecognized)
 	}
 
 	if len(bind.ContextList) == 0 {
+		if altering {
+			return a.fault(header.CallID, 0, pdu.NCASProtoError)
+		}
 		return a.bindNak(header.CallID, bindNakReasonNotSpecified)
 	}
 
@@ -231,12 +242,21 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 		bound[context.ContextID] = service
 	}
 
-	if len(bound) == 0 {
+	// An alter_context has no nak of its own: one whose contexts are all rejected
+	// is still answered with an alter_context_resp carrying the per-context
+	// rejections, and the association and the contexts it already bound carry on
+	// unchanged.
+	var negotiated uint16
+	switch {
+	case len(bound) > 0:
+		negotiated = a.negotiate(bound, bind.MaxRecvFrag, altering)
+	case altering:
+		logger.Debugf("rpcserver: no presentation context in the alter_context could be accepted")
+		negotiated = a.fragment()
+	default:
 		logger.Debugf("rpcserver: no presentation context in the bind could be accepted")
 		return a.bindNak(header.CallID, bindNakReasonNotSpecified)
 	}
-
-	negotiated := a.negotiate(bound, bind.MaxRecvFrag, altering)
 
 	ack := &pdu.BindAck{
 		Header:      pdu.NewHeader(pdu.PacketTypeBindAck, pdu.PFCFirstFrag|pdu.PFCLastFrag, header.CallID),

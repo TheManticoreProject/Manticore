@@ -33,7 +33,8 @@
 // # What this does not do
 //
 // RPC-level authentication is refused rather than half-implemented. A bind
-// carrying an authentication verifier is answered with a bind_nak, because
+// carrying an authentication verifier is answered with a bind_nak (an
+// alter_context, which has no nak PDU, with a fault), because
 // completing one means an NTLM or Kerberos exchange over auth3 PDUs and a
 // per-context security context to verify and seal every later request against.
 // Over an SMB named pipe the pipe is already authenticated by the SMB session, so
