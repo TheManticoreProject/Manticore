@@ -346,6 +346,7 @@ func (c *Connection) runTransaction2(w ResponseWriter, req *message.Message, rea
 
 	if err := c.sendTransaction2Response(w, reassembly, parameters, data); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the transaction for %s: %v", c.Remote, err)
+		return statusForUnsentTransaction(err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }
@@ -393,15 +394,22 @@ func (c *Connection) sendTransaction2Response(
 		return fmt.Errorf("the negotiated buffer of %d bytes leaves no room for a transaction response",
 			c.Server.config.MaxBufferSize)
 	}
-	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
-		budget = reassembly.maxDataCount
+	// The parameters are bounded by MaxParameterCount and the message size, never
+	// by MaxDataCount: the client states the two limits separately ([MS-CIFS]
+	// section 2.2.4.46.1).
+	if len(parameters) > reassembly.maxParameterCount {
+		return fmt.Errorf("%w: %d bytes against %d", errTransactionParametersOverLimit,
+			len(parameters), reassembly.maxParameterCount)
 	}
 
 	// Parameters go first and are not split away from their transaction: every
 	// subcommand here returns a handful of bytes, so a parameter block that did
 	// not fit would mean the buffer is too small to talk at all.
 	if len(parameters) > budget {
-		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte budget", len(parameters), budget)
+		return fmt.Errorf("the response parameters are %d bytes, over the %d-byte message budget", len(parameters), budget)
+	}
+	if reassembly.maxDataCount > 0 && reassembly.maxDataCount < budget {
+		budget = reassembly.maxDataCount
 	}
 
 	sentData := 0

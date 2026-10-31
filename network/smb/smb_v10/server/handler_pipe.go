@@ -581,8 +581,9 @@ func (c *Connection) answerTransaction(w ResponseWriter, reassembly *transaction
 // client's MaxParameterCount. Nothing has been sent when it is returned.
 var errTransactionParametersOverLimit = errors.New("the response parameters exceed the client's MaxParameterCount")
 
-// statusForUnsentTransaction maps a failure of sendTransactionResponse onto the
-// status the dispatcher answers with.
+// statusForUnsentTransaction maps a failure of sendTransactionResponse,
+// sendTransaction2Response or sendNtTransactResponse onto the status the
+// dispatcher answers with.
 //
 // Parameters over the client's MaxParameterCount are refused before anything is
 // written, so the client is still waiting for an answer and gets
