@@ -243,7 +243,9 @@ func (c *Connection) runTransaction(w ResponseWriter, req *message.Message, reas
 }
 
 // maxPipeAnswerSize bounds the answer the server will take from a handler in one
-// exchange, and so bounds what one handle may hold undelivered.
+// exchange, and so bounds what one handle may hold undelivered: a handle with
+// part of an answer unread takes no new transaction, so it never holds more than
+// one answer.
 //
 // It is not the client's buffer: the client's buffer bounds one response, and an
 // answer larger than that is delivered across several reads. It is a ceiling on
@@ -446,6 +448,19 @@ func (c *Connection) transactNamedPipe(
 			return status
 		}
 		open, name = resolved, resolved.currentPath()
+
+		// A handle still holding part of an earlier answer takes no new
+		// transaction until the client has read that answer. Accepting one would
+		// append a second answer behind the first, so a client that keeps
+		// transacting without reading grows the buffer without limit, and the
+		// unread answer is what the client is owed first anyway. [MS-FSCC] section
+		// 2.3.48 gives the status a pipe transceive fails with when "the named
+		// pipe contains unread data".
+		if len(open.pipeOutput) > 0 {
+			logger.Debugf("SMB1 server: %s transacted pipe %q with %d bytes of the previous answer unread",
+				c.Remote, name, len(open.pipeOutput))
+			return nt_status.NT_STATUS_PIPE_BUSY
+		}
 	}
 	// A client that sent no FID may still have named the pipe outright. That is
 	// not what the subcommand specifies, but answering it costs nothing and a
