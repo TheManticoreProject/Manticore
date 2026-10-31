@@ -64,6 +64,17 @@ func writeLength(buf *bytes.Buffer, length int) {
 
 // ExtractNTLMToken extracts the NTLM token from a SPNEGO token (init or resp)
 func ExtractNTLMToken(spnegoToken []byte) ([]byte, error) {
+	// A continuation token is the bare negTokenResp [1] choice, without the GSS
+	// header (RFC 4178 section 4.2).
+	var blob SecurityBlob
+	if _, err := blob.Unmarshal(spnegoToken); err == nil {
+		var resp NegTokenResp
+		if _, err := resp.Unmarshal(blob.Data); err == nil && len(resp.ResponseToken) > 0 {
+			return resp.ResponseToken, nil
+		}
+		return nil, errors.New("no NTLM token found in SPNEGO message")
+	}
+
 	inner, err := unwrapSPNEGO(spnegoToken)
 	if err != nil {
 		return nil, err
@@ -73,9 +84,10 @@ func ExtractNTLMToken(spnegoToken []byte) ([]byte, error) {
 	if _, err := asn1.Unmarshal(inner, &init); err == nil && len(init.MechToken) > 0 {
 		return init.MechToken, nil
 	}
-	// Try NegTokenResp
+	// Try NegTokenResp. Its fields are EXPLICIT-tagged, which the struct tags on
+	// NegTokenResp do not describe, so it is decoded by its own Unmarshal.
 	var resp NegTokenResp
-	if _, err := asn1.Unmarshal(inner, &resp); err == nil && len(resp.ResponseToken) > 0 {
+	if _, err := resp.Unmarshal(inner); err == nil && len(resp.ResponseToken) > 0 {
 		return resp.ResponseToken, nil
 	}
 	return nil, errors.New("no NTLM token found in SPNEGO message")
