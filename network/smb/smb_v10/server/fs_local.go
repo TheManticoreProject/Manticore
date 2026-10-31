@@ -402,6 +402,11 @@ func (fs *LocalFileSystem) Remove(path string) error {
 	if info.IsDir() {
 		return ErrIsDirectory
 	}
+	// Unlinking a host file needs write access to its directory, not to the file,
+	// so the read-only attribute Stat reports has to be honoured here.
+	if info.Mode().Perm()&0o200 == 0 {
+		return ErrCannotDelete
+	}
 	return translate(os.Remove(host))
 }
 

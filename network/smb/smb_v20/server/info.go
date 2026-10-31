@@ -244,6 +244,13 @@ func (c *Connection) setInfo(r *request, resp *response) nt_status.NT_STATUS {
 				return nt_status.NT_STATUS_DIRECTORY_NOT_EMPTY
 			}
 		}
+		// A file carrying the read-only attribute cannot be marked for deletion,
+		// [MS-FSA] section 2.1.5.14.3.
+		if disposition.DeletePending && !open.isDir {
+			if attr, err := fs.Stat(open.path); err == nil && attr.ReadOnly {
+				return smb1.StatusForFSError(smb1.ErrCannotDelete)
+			}
+		}
 		c.server.oplocks.breakOthers(open)
 		open.deleteOnClose = disposition.DeletePending
 	case infoclass.FileRenameInformation:
