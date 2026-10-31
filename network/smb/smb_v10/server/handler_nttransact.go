@@ -149,11 +149,15 @@ func (c *Connection) runNtTransact(w ResponseWriter, req *message.Message, reass
 	}
 
 	parameters, data, status := handler(c, req, reassembly)
-	if status != nt_status.NT_STATUS_SUCCESS {
+	// A failure that comes with parameters is still answered with them: the
+	// status travels on the response rather than in place of it. That is how
+	// NT_TRANSACT_QUERY_SECURITY_DESC reports STATUS_BUFFER_TOO_SMALL, whose
+	// LengthNeeded is the only way a client learns how much to ask for.
+	if status != nt_status.NT_STATUS_SUCCESS && parameters == nil {
 		return status
 	}
 
-	if err := c.sendNtTransactResponse(w, reassembly, parameters, data); err != nil {
+	if err := c.sendNtTransactResponse(w, reassembly, parameters, data, status); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the NT_TRANSACT for %s: %v", c.Remote, err)
 		return statusForUnsentTransaction(err)
 	}
@@ -183,11 +187,13 @@ var ntTransactHandlers = map[subcommands.NtTransactSubcommand]ntTransactHandler{
 }
 
 // sendNtTransactResponse sends an NT_TRANSACT result, splitting it across as many
-// messages as it needs.
+// messages as it needs. The status is carried on each response rather than in
+// place of it.
 func (c *Connection) sendNtTransactResponse(
 	w ResponseWriter,
 	reassembly *transactionReassembly,
 	parameters, data []byte,
+	status nt_status.NT_STATUS,
 ) error {
 	budget := int(c.Server.config.MaxBufferSize) - ntTransactResponseOverhead
 	if budget <= 0 {
@@ -249,7 +255,13 @@ func (c *Connection) sendNtTransactResponse(
 		response.DataOffset = types.ULONG(afterParameters + pad2)
 		response.Data = []types.UCHAR(data[sentData : sentData+chunk])
 
-		if err := w.WriteResponse(response); err != nil {
+		var err error
+		if status == nt_status.NT_STATUS_SUCCESS {
+			err = w.WriteResponse(response)
+		} else {
+			err = w.WriteResponseWithStatus(response, status)
+		}
+		if err != nil {
 			return err
 		}
 
@@ -299,7 +311,8 @@ func handleQuerySecurityDescriptor(conn *Connection, req *message.Message, reass
 	binary.LittleEndian.PutUint32(responseParameters, uint32(len(descriptor)))
 
 	// A client whose buffer is too small is told the size and given no data,
-	// rather than a truncated descriptor it would parse as corrupt.
+	// rather than a truncated descriptor it would parse as corrupt. [MS-CIFS]
+	// section 3.3.5.59.5: LengthNeeded is set and the response is still sent.
 	if reassembly.maxDataCount > 0 && len(descriptor) > reassembly.maxDataCount {
 		return responseParameters, nil, nt_status.NT_STATUS_BUFFER_TOO_SMALL
 	}
