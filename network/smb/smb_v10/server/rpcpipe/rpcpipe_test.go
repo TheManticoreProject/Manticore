@@ -122,8 +122,22 @@ func (p *pipeInvoker) Invoke(in ndr.Call, out any) error {
 	if err != nil {
 		return fmt.Errorf("transact on %q: %w", p.pipe, err)
 	}
-	if more {
-		return fmt.Errorf("the answer was cut at %d bytes, which this test's ceiling should not do", len(reply))
+	// An answer past the ceiling arrives in parts, and asking again with no input
+	// is how the SMB server collects each one as its client reads the handle.
+	// Bounded so a session that never finishes fails the call rather than hanging.
+	for part := 0; more; part++ {
+		if part == 1024 {
+			return fmt.Errorf("the answer was still incomplete after %d bytes", len(reply))
+		}
+		var next []byte
+		next, more, err = p.session.Transact(nil, maxPipeAnswer)
+		if err != nil {
+			return fmt.Errorf("collecting the rest of the answer on %q after %d bytes: %w", p.pipe, len(reply), err)
+		}
+		if len(next) > maxPipeAnswer {
+			return fmt.Errorf("a part of the answer is %d bytes, past the %d ceiling", len(next), maxPipeAnswer)
+		}
+		reply = append(reply, next...)
 	}
 
 	answer, err := reassemble(reply)
@@ -766,6 +780,52 @@ func TestNetrShareEnumFragmentsALongList(t *testing.T) {
 			t.Fatalf("entry %d is named %q, want %q — the fragments did not reassemble in order",
 				i, container.Buffer[i].Shi1Netname, want.Name)
 		}
+	}
+}
+
+// TestNetrShareEnumAnswerPastTheCeilingIsDeliveredWhole asserts that an answer
+// larger than the ceiling the SMB server passes to Transact reaches the client
+// whole: it is handed over in parts no larger than the ceiling, and the part past
+// the first is returned when the caller asks again with no input.
+//
+// 1500 shares at level 1 is well past 64 KiB. Cutting the answer without keeping
+// the rest left the client with a final response PDU it could not reassemble.
+func TestNetrShareEnumAnswerPastTheCeilingIsDeliveredWhole(t *testing.T) {
+	shares := make([]ShareEntry, 0, 1500)
+	for i := 0; i < 1500; i++ {
+		shares = append(shares, ShareEntry{
+			Name:    fmt.Sprintf("SHARE%04d", i),
+			Comment: "a comment for this share",
+			Type:    STYPE_DISKTREE,
+		})
+	}
+
+	handler := testHandler(shares...)
+	rpc := openInvoker(t, handler, "srvsvc")
+	rpc.bind(srvsvcSyntax())
+
+	info, total, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
+		mssrvs.SHARE_ENUM_STRUCT{Level: 1, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 1}},
+		maxPreferredLength, nil)
+	if err != nil {
+		t.Fatalf("NetrShareEnum over 1500 shares failed: %v", err)
+	}
+	if int(total) != len(shares) {
+		t.Errorf("TotalEntries is %d, want %d", total, len(shares))
+	}
+	container := info.ShareInfo.Level1
+	if container == nil || len(container.Buffer) != len(shares) {
+		t.Fatalf("the container does not carry the %d shares", len(shares))
+	}
+	if last := string(container.Buffer[len(shares)-1].Shi1Netname); last != "SHARE1499" {
+		t.Fatalf("the last entry is named %q, want SHARE1499", last)
+	}
+
+	// The answer is finished, so the session is ready for the next request.
+	if _, _, _, err := srvsvcfunctions.NetrShareEnum(rpc, "",
+		mssrvs.SHARE_ENUM_STRUCT{Level: 0, ShareInfo: mssrvs.SHARE_ENUM_UNION{Tag: 0}},
+		maxPreferredLength, nil); err != nil {
+		t.Fatalf("a call after the large answer failed: %v", err)
 	}
 }
 

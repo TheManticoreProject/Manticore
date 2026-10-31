@@ -214,6 +214,11 @@ type Session struct {
 	// association is this open's RPC conversation with the endpoint.
 	association *rpcserver.Association
 
+	// pending is the part of the last answer not yet handed to the caller. An
+	// answer past the caller's ceiling is handed over in parts, and the caller
+	// collects each further part by transacting again with no input.
+	pending []byte
+
 	// mutex guards closed. A session belongs to one open on one connection, so
 	// the server does not use one from two goroutines; the guard is here so a
 	// caller that does still gets an error rather than a race.
@@ -223,8 +228,12 @@ type Session struct {
 
 // Transact answers one RPC exchange on this open.
 //
+// A call with no input while part of the last answer is still held returns the
+// next part of that answer instead, which is how the caller collects an answer
+// larger than maxOutput.
+//
 // Parameters:
-//   - input: the request PDU the client wrote
+//   - input: the request PDU the client wrote, or nothing to continue an answer
 //   - maxOutput: the largest answer the caller will take in one exchange
 //
 // Returns:
@@ -235,22 +244,48 @@ func (s *Session) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("pipe %q: the session is closed", s.name)
 	}
 
+	if len(input) == 0 && len(s.pending) > 0 {
+		output, more := s.nextPart(maxOutput)
+		logger.Debugf("rpcpipe: %q returned %d more bytes of its answer, more remains=%t", s.name, len(output), more)
+		return output, more, nil
+	}
+
+	// A new request starts a new answer. The caller collects one answer before
+	// sending another, so anything still held is an answer it abandoned.
+	s.pending = nil
+
 	reply, err := s.association.Handle(input)
 	if err != nil {
 		return nil, false, fmt.Errorf("pipe %q: %w", s.name, err)
 	}
 
-	// An answer past the caller's ceiling is cut and reported as incomplete,
-	// which is the contract: the caller tells the client more remains and the
-	// client reads the rest off the handle.
-	if maxOutput > 0 && len(reply) > maxOutput {
-		logger.Debugf("rpcpipe: %q answered with %d bytes, cut to the %d the caller allows",
-			s.name, len(reply), maxOutput)
-		return reply[:maxOutput], true, nil
+	// An answer past the caller's ceiling is handed over in parts and reported as
+	// incomplete, which is the contract: the caller tells the client more remains
+	// and collects the rest from here as the client reads it off the handle.
+	s.pending = reply
+	output, more := s.nextPart(maxOutput)
+	if more {
+		logger.Debugf("rpcpipe: %q answered with %d bytes, handing over the %d the caller allows",
+			s.name, len(reply), len(output))
+		return output, true, nil
 	}
 
 	logger.Debugf("rpcpipe: %q answered %d request bytes with %d", s.name, len(input), len(reply))
-	return reply, false, nil
+	return output, false, nil
+}
+
+// nextPart removes up to maxOutput bytes from the front of the held answer, or
+// all of it when maxOutput is not positive, and reports whether any is left.
+func (s *Session) nextPart(maxOutput int) ([]byte, bool) {
+	part := s.pending
+	if maxOutput > 0 && len(part) > maxOutput {
+		part = part[:maxOutput:maxOutput]
+	}
+	s.pending = s.pending[len(part):]
+	if len(s.pending) == 0 {
+		s.pending = nil
+	}
+	return part, s.pending != nil
 }
 
 // Close releases the session. It is safe to call more than once.
@@ -258,6 +293,7 @@ func (s *Session) Close() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.closed = true
+	s.pending = nil
 	return nil
 }
 

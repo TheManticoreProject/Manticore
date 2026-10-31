@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/TheManticoreProject/Manticore/logger"
 )
 
 // Tree is a connection to a share, established by a tree connect and named by a
@@ -76,6 +78,11 @@ type Open struct {
 	// acts on by its FID, and because closing the handle is what makes an
 	// undrained answer collectable.
 	pipeOutput []byte
+
+	// pipeMore records that the pipe's session reported more of the answer than
+	// it handed over, so once pipeOutput is drained the next part is fetched from
+	// the session rather than the answer being taken as finished.
+	pipeMore bool
 
 	// DeleteOnClose removes the file when the handle closes, which is how a
 	// client deletes something it holds open.
@@ -168,6 +175,7 @@ func (o *Open) pipeSession() PipeSession {
 // Returns:
 //   - The bytes removed, and whether more remain buffered
 func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
+	o.refillPipeOutput(limit)
 	if limit < 0 {
 		limit = 0
 	}
@@ -177,7 +185,7 @@ func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
 
 	chunk := o.pipeOutput[:limit:limit]
 	o.pipeOutput = o.pipeOutput[limit:]
-	return chunk, len(o.pipeOutput) > 0
+	return chunk, len(o.pipeOutput) > 0 || o.pipeMore
 }
 
 // peekPipeOutput returns up to limit bytes of the answer buffered on a pipe
@@ -189,6 +197,7 @@ func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
 // Returns:
 //   - The bytes at the front of the buffer, and the total buffered length
 func (o *Open) peekPipeOutput(limit int) ([]byte, int) {
+	o.refillPipeOutput(limit)
 	if limit < 0 {
 		limit = 0
 	}
@@ -196,6 +205,39 @@ func (o *Open) peekPipeOutput(limit int) ([]byte, int) {
 		limit = len(o.pipeOutput)
 	}
 	return o.pipeOutput[:limit:limit], len(o.pipeOutput)
+}
+
+// refillPipeOutput fetches further parts of an answer from the pipe's session
+// until the handle buffers at least want bytes or the answer is finished.
+//
+// A session hands over at most maxPipeAnswerSize bytes of an answer at a time and
+// reports that more remains; asking it again with no input is how the rest is
+// collected (see PipeSession.Transact). Without this the part past the first
+// maxPipeAnswerSize bytes is never read, and a client that was told more remains
+// is left with a truncated answer. Filling the read rather than stopping at a
+// part boundary matters too: a client takes a short read as the end of the
+// answer.
+//
+// The handle holds at most want plus one part, so the buffer stays bounded by
+// the read in progress.
+//
+// A session that fails, or that reports more while handing over nothing, is
+// taken to have nothing more to give, so the client sees the answer end rather
+// than a read that keeps reporting more forever.
+//
+// Parameters:
+//   - want: how many bytes the read in progress may return
+func (o *Open) refillPipeOutput(want int) {
+	for o.pipeMore && o.Pipe != nil && len(o.pipeOutput) < want {
+		output, moreRemains, err := o.Pipe.Transact(nil, maxPipeAnswerSize)
+		if err != nil {
+			logger.Debugf("SMB1 server: pipe %q failed to return the rest of its answer: %v", o.Path, err)
+			o.pipeMore = false
+			return
+		}
+		o.pipeOutput = append(o.pipeOutput, output...)
+		o.pipeMore = moreRemains && len(output) > 0
+	}
 }
 
 func (c *Connection) addTree(tree *Tree) {

@@ -365,7 +365,9 @@
 // bounded by maxPipeAnswerSize, because only the server knows how the client will
 // read the rest. A handle with part of an answer still unread refuses a new
 // transaction with STATUS_PIPE_BUSY until the client has read it, so a handle
-// never holds more than one answer.
+// never holds more than one answer. An answer larger than maxPipeAnswerSize is
+// handed over in parts: the session keeps the rest, and the server asks it for
+// the next part, by transacting with no input, as the client's reads need it.
 //
 // Package rpcpipe, in the subdirectory of the same name, is a PipeHandler that
 // answers the srvsvc and wkssvc RPC interfaces, which is what a client calls to
