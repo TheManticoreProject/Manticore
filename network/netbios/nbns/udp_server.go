@@ -1,6 +1,7 @@
 package nbns
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -188,10 +189,13 @@ func (s *UDPServer) handlePacket(data []byte, remoteAddr *net.UDPAddr) {
 		return
 	}
 
-	// Check if response needs to be sent via TCP due to size
+	// Check if response needs to be sent via TCP due to size. The response is
+	// already marshalled, so the TC bit is written into the header bytes that
+	// go on the wire rather than only onto the packet struct.
 	if len(responseData) > MaxUDPSize {
 		response.Header.Flags |= FlagTruncated
 		responseData = responseData[:MaxUDPSize]
+		binary.BigEndian.PutUint16(responseData[2:4], response.Header.Flags)
 	}
 
 	if err := s.conn.SetWriteDeadline(time.Now().Add(UDPWriteTimeout)); err != nil {
