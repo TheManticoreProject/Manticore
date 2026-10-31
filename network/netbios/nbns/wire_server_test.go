@@ -182,7 +182,7 @@ func TestBuildWACKWire(t *testing.T) {
 }
 
 // TestMarkNameConflictEmitsDemand confirms MarkNameConflict now flips local state
-// AND emits a NAME CONFLICT DEMAND (RFC 1002 4.2.15) to the affected owner when a
+// AND emits a NAME CONFLICT DEMAND (RFC 1002 4.2.8) to the affected owner when a
 // conflict-demand sender is installed.
 func TestMarkNameConflictEmitsDemand(t *testing.T) {
 	nbns := NewNetBIOSNameServer(false)
@@ -208,8 +208,8 @@ func TestMarkNameConflictEmitsDemand(t *testing.T) {
 	if !gotOwner.Equal(owner) {
 		t.Errorf("demand sent to %v, want %v", gotOwner, owner)
 	}
-	if gotPkt.Header.Flags&OpcodeMask != OpConflict {
-		t.Errorf("demand opcode = 0x%04x, want OpConflict", gotPkt.Header.Flags&OpcodeMask)
+	if gotPkt.Header.Flags&OpcodeMask != OpRegistration {
+		t.Errorf("demand opcode = 0x%04x, want OpRegistration", gotPkt.Header.Flags&OpcodeMask)
 	}
 	if gotPkt.Header.Flags&RcodeMask != RcodeConflict {
 		t.Errorf("demand RCODE = %d, want CFT_ERR (%d)", gotPkt.Header.Flags&RcodeMask, RcodeConflict)
@@ -221,13 +221,56 @@ func TestMarkNameConflictEmitsDemand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseIPFromRData: %v", err)
 	}
-	if !ip.Equal(owner) {
-		t.Errorf("demand ADDR_ENTRY = %v, want %v", ip, owner)
+	if !ip.Equal(net.IPv4zero) {
+		t.Errorf("demand NB_ADDRESS = %v, want 0.0.0.0", ip)
 	}
 
 	// The record must also be flagged in conflict locally.
 	if _, _, _, err := nbns.QueryName("DUPE", ""); err == nil {
 		t.Error("QueryName succeeded for a name marked in conflict")
+	}
+}
+
+// TestNameConflictDemandWireLayout pins the NAME CONFLICT DEMAND to the RFC 1002
+// 4.2.8 packet diagram: flags |1|0x5|1|0|1|1|0 0|0|0x7| (0xAD87, the
+// registration opcode with RCODE = CFT_ERR), one answer and no other records,
+// and an NB/IN answer RR with TTL 0 whose NB_FLAGS and NB_ADDRESS are zero.
+func TestNameConflictDemandWireLayout(t *testing.T) {
+	demand := buildNameConflictDemand(&NetBIOSName{Name: "DUPE"}, net.ParseIP("192.168.1.50"))
+	if demand == nil {
+		t.Fatal("buildNameConflictDemand returned nil for an IPv4 owner")
+	}
+	wire, err := demand.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if len(wire) < 12+16 {
+		t.Fatalf("demand is %d bytes, too short", len(wire))
+	}
+
+	if got := binary.BigEndian.Uint16(wire[2:4]); got != 0xAD87 {
+		t.Errorf("demand flags = 0x%04x, want 0xAD87", got)
+	}
+	for i, want := range []uint16{0, 1, 0, 0} {
+		if got := binary.BigEndian.Uint16(wire[4+2*i:]); got != want {
+			t.Errorf("header count %d = %d, want %d", i, got, want)
+		}
+	}
+
+	// The answer RR ends with TYPE, CLASS, TTL, RDLENGTH, NB_FLAGS, NB_ADDRESS.
+	tail := wire[len(wire)-16:]
+	want := []byte{
+		0x00, 0x20, // NB
+		0x00, 0x01, // IN
+		0x00, 0x00, 0x00, 0x00, // TTL
+		0x00, 0x06, // RDLENGTH
+		0x00, 0x00, // NB_FLAGS
+		0x00, 0x00, 0x00, 0x00, // NB_ADDRESS
+	}
+	for i := range want {
+		if tail[i] != want[i] {
+			t.Fatalf("answer RR tail = % x, want % x", tail, want)
+		}
 	}
 }
 
