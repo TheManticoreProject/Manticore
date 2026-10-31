@@ -83,13 +83,30 @@ func (h *PacketHandler) dispatch(packet, response *NBNSPacket, sendWACK func(*NB
 		} else {
 			h.handleRegistration(packet, response)
 		}
+		finishNameResponse(packet, response, OpRegistration, FlagRecursion|FlagRecursionAvailable)
 	case OpRelease:
 		h.handleRelease(packet, response)
+		finishNameResponse(packet, response, OpRelease, 0)
 	case OpRefresh:
+		// A refresh is answered with a POSITIVE or NEGATIVE NAME REGISTRATION
+		// RESPONSE (RFC 1002 5.1.4.1, NAME REFRESH REQUEST processing).
 		h.handleRefresh(packet, response)
+		finishNameResponse(packet, response, OpRegistration, FlagRecursion|FlagRecursionAvailable)
 	default:
 		response.Header.Flags |= RcodeNotImpl
 	}
+}
+
+// finishNameResponse shapes response as the answer to a name registration,
+// refresh or release request (RFC 1002 4.2.5, 4.2.6, 4.2.10 and 4.2.11): the
+// header carries R=1, the given OPCODE, AA plus the extra nmFlags (RD and RA for
+// a registration response) and the RCODE the handler already set, and the
+// single answer record echoes the request's RR_NAME, type, class, TTL and
+// NB_FLAGS/NB_ADDRESS RDATA.
+func finishNameResponse(request, response *NBNSPacket, opcode, nmFlags uint16) {
+	response.Header.Flags = FlagResponse | opcode | FlagAuthoritative | nmFlags | response.Header.Flags&RcodeMask
+	response.Answers = append([]NBNSResourceRecord(nil), request.Answers...)
+	response.Header.Answers = uint16(len(response.Answers))
 }
 
 // isNodeStatusQuery reports whether request is a NODE STATUS REQUEST: an OPCODE
