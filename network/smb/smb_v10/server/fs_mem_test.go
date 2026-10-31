@@ -246,3 +246,45 @@ func TestMemoryFileSystemRenameOntoItself(t *testing.T) {
 		t.Errorf("FreeBytes changed from %d to %d", before.FreeBytes, after.FreeBytes)
 	}
 }
+
+// TestMemoryFileSystemSeedOverExistingEntry asserts the seeding helpers refuse
+// to replace an entry of the other kind: replacing a file with a directory, or a
+// directory with a file, would leave data counted against the volume that no
+// name can free.
+func TestMemoryFileSystemSeedOverExistingEntry(t *testing.T) {
+	fs := NewMemoryFileSystem("FILES")
+	fs.volume.TotalBytes = 1000
+
+	if err := fs.AddFile("c", make([]byte, 5)); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.AddDirectory("c"); !errors.Is(err, ErrExists) {
+		t.Errorf("AddDirectory over a file = %v, want ErrExists", err)
+	}
+	if err := fs.AddFile("d/x", make([]byte, 7)); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.AddFile("d", make([]byte, 2000)); !errors.Is(err, ErrIsDirectory) {
+		t.Errorf("AddFile over a directory = %v, want ErrIsDirectory", err)
+	}
+	// Seeding an existing directory again is harmless and keeps its children.
+	if err := fs.AddDirectory("d"); err != nil {
+		t.Errorf("AddDirectory over a directory = %v, want nil", err)
+	}
+	if attr, err := fs.Stat("d/x"); err != nil || attr.Size != 7 {
+		t.Errorf("Stat(d/x) = %+v, %v; want the 7-byte file", attr, err)
+	}
+
+	for _, path := range []string{"c", "d/x"} {
+		if err := fs.Remove(path); err != nil {
+			t.Fatalf("Remove(%s) = %v", path, err)
+		}
+	}
+	volume, err := fs.VolumeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if volume.FreeBytes != volume.TotalBytes {
+		t.Errorf("FreeBytes = %d after every file was removed, want %d", volume.FreeBytes, volume.TotalBytes)
+	}
+}
