@@ -112,16 +112,22 @@ func (fs *MemoryFileSystem) AddFile(path string, contents []byte) error {
 		return err
 	}
 
+	held, exists := fs.entries[resolved]
+	// Dropping a directory's entry would orphan its children, whose data would
+	// stay counted against the volume with no name to free it by.
+	if exists && held.isDir {
+		return ErrIsDirectory
+	}
 	// A file added over an existing one replaces it, so the old one's data no
 	// longer counts against the room for the new one.
 	room := fs.volume.TotalBytes - fs.used
-	if held, ok := fs.entries[resolved]; ok && !held.isDir && held.links == 1 {
+	if exists && held.links == 1 {
 		room += int64(len(held.data))
 	}
 	if int64(len(contents)) > room {
 		return ErrDiskFull
 	}
-	if _, ok := fs.entries[resolved]; ok {
+	if exists {
 		fs.dropName(resolved)
 	}
 
@@ -157,6 +163,14 @@ func (fs *MemoryFileSystem) AddDirectory(path string) error {
 
 	if err := fs.ensureParents(resolved); err != nil {
 		return err
+	}
+	// Seeding a directory that already exists changes nothing. Seeding one over
+	// a file would leave the file's data counted with no name to free it by.
+	if held, ok := fs.entries[resolved]; ok {
+		if held.isDir {
+			return nil
+		}
+		return ErrExists
 	}
 	return fs.makeDirectory(resolved)
 }
