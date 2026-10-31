@@ -247,8 +247,12 @@ func (fs *MemoryFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		if !entry.isDir && flags.Directory {
 			return nil, ErrNotDirectory
 		}
-		if flags.Write && entry.readOnly {
-			return nil, ErrReadOnly
+		// A file carrying the read-only attribute refuses an open for writing
+		// and an overwrite with STATUS_ACCESS_DENIED, [MS-FSA] section
+		// 2.1.5.1.2.1. The truncate is checked too: an overwrite asking only
+		// for read access emptied the file below.
+		if (flags.Write || flags.Truncate) && entry.readOnly && !entry.isDir {
+			return nil, ErrAccessDenied
 		}
 		if flags.Truncate && !entry.isDir {
 			fs.used -= int64(len(entry.data))

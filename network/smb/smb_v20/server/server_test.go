@@ -1353,3 +1353,99 @@ func queryFileName(c *client.Client, id types.SMB2_FILEID) (string, error) {
 	}
 	return string(utf16.Decode(units)), nil
 }
+
+// TestServerReadOnlyFileRefusesWriteOpen asserts CREATE refuses to open a file
+// carrying FILE_ATTRIBUTE_READONLY for writing, or to overwrite or supersede it,
+// with STATUS_ACCESS_DENIED as [MS-FSA] section 2.1.5.1.2.1 requires, leaving
+// its data intact. An open for its attributes, and a MAXIMUM_ALLOWED one, are
+// still granted: the latter is granted everything but the right to change the
+// data.
+//
+// The memory backend emptied the file on an overwrite asking only to read, and
+// refused a write open with STATUS_MEDIA_WRITE_PROTECTED.
+func TestServerReadOnlyFileRefusesWriteOpen(t *testing.T) {
+	newLocal := func(t *testing.T) smb1.FileSystem {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("precious"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		fs, err := smb1.NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fs
+	}
+	newMemory := func(t *testing.T) smb1.FileSystem {
+		fs := smb1.NewMemoryFileSystem("FILES")
+		if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+			t.Fatal(err)
+		}
+		if err := fs.SetAttr("keep.txt", smb1.FileAttr{ReadOnly: true}, smb1.AttrMask{ReadOnly: true}); err != nil {
+			t.Fatal(err)
+		}
+		return fs
+	}
+	connect := func(t *testing.T, fs smb1.FileSystem) *client.Client {
+		config := server.Config{}
+		srv, err := server.NewServer(withTestIdentity(&config))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.AddShare(&server.Share{Name: "files", FS: fs}); err != nil {
+			t.Fatal(err)
+		}
+		listener, err := transport.ListenTCP("127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go srv.Serve(listener)
+		t.Cleanup(func() { srv.Close() })
+		c, err := dial(t, listener.Addr().(*net.TCPAddr).Port, dialects.SMB2_DIALECT_3_1_1, "Passw0rd!")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	const (
+		shareAll       = fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE
+		maximumAllowed = 0x02000000
+	)
+	opens := []struct {
+		name                string
+		access, disposition uint32
+		granted             bool
+	}{
+		{"write", fileflags.GENERIC_WRITE, fileflags.FILE_OPEN, false},
+		{"overwrite", fileflags.GENERIC_READ, fileflags.FILE_OVERWRITE, false},
+		{"overwrite-if", fileflags.GENERIC_READ, fileflags.FILE_OVERWRITE_IF, false},
+		{"supersede", fileflags.GENERIC_READ, fileflags.FILE_SUPERSEDE, false},
+		{"attributes", fileflags.FILE_READ_ATTRIBUTES | fileflags.FILE_WRITE_ATTRIBUTES, fileflags.FILE_OPEN, true},
+		{"maximum allowed", maximumAllowed, fileflags.FILE_OPEN, true},
+		{"maximum allowed with write", maximumAllowed | fileflags.FILE_WRITE_DATA, fileflags.FILE_OPEN, false},
+	}
+	backends := map[string]func(t *testing.T) smb1.FileSystem{"local": newLocal, "memory": newMemory}
+	for backendName, newBackend := range backends {
+		for _, tc := range opens {
+			t.Run(backendName+"/"+tc.name, func(t *testing.T) {
+				fs := newBackend(t)
+				c := connect(t, fs)
+				id, err := c.CreateFile("keep.txt", tc.access, shareAll, tc.disposition, 0)
+				switch {
+				case tc.granted && err != nil:
+					t.Errorf("CreateFile() error = %v", err)
+				case tc.granted:
+					c.CloseFile(id)
+				case err == nil:
+					c.CloseFile(id)
+					t.Error("the open of a read-only file was granted")
+				case !strings.Contains(err.Error(), "0xc0000022"):
+					t.Errorf("CreateFile() error = %v, want STATUS_ACCESS_DENIED", err)
+				}
+				if attr, err := fs.Stat("keep.txt"); err != nil || attr.Size != int64(len("precious")) {
+					t.Errorf("Stat() = %+v, %v; want the original 8 bytes", attr, err)
+				}
+			})
+		}
+	}
+}

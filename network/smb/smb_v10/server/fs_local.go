@@ -245,6 +245,12 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		return &localFile{path: host, directory: true}, nil
 	} else if statErr == nil && flags.Directory {
 		return nil, ErrNotDirectory
+	} else if statErr == nil && info.Mode().Perm()&0o200 == 0 && (flags.Write || flags.Truncate) {
+		// A file carrying the read-only attribute refuses an open for writing
+		// and an overwrite with STATUS_ACCESS_DENIED, [MS-FSA] section
+		// 2.1.5.1.2.1. The host enforces that only for an unprivileged
+		// process: one running as root truncated the file below.
+		return nil, ErrAccessDenied
 	}
 
 	mode := os.O_RDONLY

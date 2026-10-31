@@ -89,6 +89,16 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 	if !status.IsSuccess() {
 		return status
 	}
+	// MAXIMUM_ALLOWED on a file carrying the read-only attribute is granted
+	// everything but the right to change its data, [MS-FSA] section 2.1.5.1.2.1.
+	// Only the rights MAXIMUM_ALLOWED added are dropped: asking for the right to
+	// change the data explicitly is still refused by the backend.
+	if req.DesiredAccess&maximumAllowed != 0 {
+		if attr, err := share.FS.Stat(path); err == nil && !attr.IsDir && attr.ReadOnly {
+			explicit, _ := grantedAccess(req.DesiredAccess&^maximumAllowed, false)
+			access &^= writeDataRights &^ explicit
+		}
+	}
 	flags, status := smb1.OpenFlagsFor(access, req.CreateDisposition, req.CreateOptions)
 	if !status.IsSuccess() {
 		return status

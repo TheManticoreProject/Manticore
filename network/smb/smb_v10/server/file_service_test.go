@@ -1199,6 +1199,146 @@ func TestReadOnlyFileCannotBeDeleted(t *testing.T) {
 	}
 }
 
+// readOnlyFileBackends returns each backend holding keep.txt with the read-only
+// attribute set and an empty read-only directory rodir, the local one through a
+// host file and directory whose owner write bit is clear.
+func readOnlyFileBackends() map[string]func(t *testing.T) FileSystem {
+	newLocal := func(t *testing.T) FileSystem {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("precious"), 0o444); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		dir := filepath.Join(root, "rodir")
+		if err := os.Mkdir(dir, 0o555); err != nil {
+			t.Fatalf("Mkdir() error = %v", err)
+		}
+		t.Cleanup(func() { os.Chmod(dir, 0o755) })
+		fs, err := NewLocalFileSystem(root, "LOCAL")
+		if err != nil {
+			t.Fatalf("NewLocalFileSystem() error = %v", err)
+		}
+		return fs
+	}
+	newMemory := func(t *testing.T) FileSystem {
+		fs := NewMemoryFileSystem("FILES")
+		if err := fs.AddFile("keep.txt", []byte("precious")); err != nil {
+			t.Fatalf("AddFile() error = %v", err)
+		}
+		if err := fs.Mkdir("rodir"); err != nil {
+			t.Fatalf("Mkdir() error = %v", err)
+		}
+		for _, name := range []string{"keep.txt", "rodir"} {
+			if err := fs.SetAttr(name, FileAttr{ReadOnly: true}, AttrMask{ReadOnly: true}); err != nil {
+				t.Fatalf("SetAttr(%s) error = %v", name, err)
+			}
+		}
+		return fs
+	}
+	return map[string]func(t *testing.T) FileSystem{"local": newLocal, "memory": newMemory}
+}
+
+// TestFileSystemOpenRefusesWritingReadOnlyFile asserts both backends refuse an
+// open of a file carrying the read-only attribute for writing or truncating
+// with ErrAccessDenied, leaving its data intact, as [MS-FSA] section 2.1.5.1.2.1
+// requires.
+//
+// The memory backend refused a write open with ErrReadOnly, which answers
+// STATUS_MEDIA_WRITE_PROTECTED, and emptied the file on a truncating open that
+// asked only to read. The local backend relied on the host refusing the open,
+// which a process running as root bypasses.
+func TestFileSystemOpenRefusesWritingReadOnlyFile(t *testing.T) {
+	refused := map[string]OpenFlags{
+		"write":                  {Read: true, Write: true},
+		"overwrite":              {Read: true, Truncate: true},
+		"overwrite-if":           {Read: true, Create: true, Truncate: true},
+		"write and overwrite-if": {Write: true, Create: true, Truncate: true},
+	}
+	for backendName, newBackend := range readOnlyFileBackends() {
+		for name, flags := range refused {
+			t.Run(backendName+"/"+name, func(t *testing.T) {
+				fs := newBackend(t)
+				file, err := fs.Open("keep.txt", flags)
+				if err == nil {
+					file.Close()
+					t.Error("Open() of a read-only file was granted")
+				} else if !errors.Is(err, ErrAccessDenied) {
+					t.Errorf("Open() error = %v, want ErrAccessDenied", err)
+				}
+				if attr, err := fs.Stat("keep.txt"); err != nil || attr.Size != int64(len("precious")) {
+					t.Errorf("Stat() = %+v, %v; want the original 8 bytes", attr, err)
+				}
+			})
+		}
+
+		t.Run(backendName+"/still opens", func(t *testing.T) {
+			fs := newBackend(t)
+			for path, flags := range map[string]OpenFlags{
+				"keep.txt": {Read: true},
+				"rodir":    {Read: true, Write: true, Directory: true},
+			} {
+				file, err := fs.Open(path, flags)
+				if err != nil {
+					t.Errorf("Open(%s, %+v) error = %v", path, flags, err)
+					continue
+				}
+				file.Close()
+			}
+			// Clearing the attribute makes the file writable again.
+			if err := fs.SetAttr("keep.txt", FileAttr{}, AttrMask{ReadOnly: true}); err != nil {
+				t.Fatalf("SetAttr() error = %v", err)
+			}
+			file, err := fs.Open("keep.txt", OpenFlags{Read: true, Write: true})
+			if err != nil {
+				t.Fatalf("Open() after clearing read-only error = %v", err)
+			}
+			file.Close()
+		})
+	}
+}
+
+// TestReadOnlyFileRefusesWriteOpen asserts NT_CREATE_ANDX refuses to open a file
+// carrying FILE_ATTRIBUTE_READONLY for writing, or to overwrite or supersede it,
+// with STATUS_ACCESS_DENIED as [MS-FSA] section 2.1.5.1.2.1 requires, while an
+// open to change its attributes is still granted.
+func TestReadOnlyFileRefusesWriteOpen(t *testing.T) {
+	const shareAll = fileflags.FILE_SHARE_READ | fileflags.FILE_SHARE_WRITE | fileflags.FILE_SHARE_DELETE
+	refused := map[string]struct{ access, disposition uint32 }{
+		"write":        {fileflags.GENERIC_WRITE, fileflags.FILE_OPEN},
+		"overwrite":    {fileflags.GENERIC_READ, fileflags.FILE_OVERWRITE},
+		"overwrite-if": {fileflags.GENERIC_READ, fileflags.FILE_OVERWRITE_IF},
+		"supersede":    {fileflags.GENERIC_READ, fileflags.FILE_SUPERSEDE},
+	}
+	for backendName, newBackend := range readOnlyFileBackends() {
+		for name, tc := range refused {
+			t.Run(backendName+"/"+name, func(t *testing.T) {
+				fs := newBackend(t)
+				_, client := fileServer(t, fs, false)
+				fid, err := client.OpenFile("keep.txt", tc.access, shareAll, tc.disposition, 0)
+				if err == nil {
+					client.CloseFile(fid)
+					t.Error("the open of a read-only file was granted")
+				} else if !strings.Contains(err.Error(), "0xc0000022") {
+					t.Errorf("OpenFile() error = %v, want STATUS_ACCESS_DENIED", err)
+				}
+				if attr, err := fs.Stat("keep.txt"); err != nil || attr.Size != int64(len("precious")) {
+					t.Errorf("Stat() = %+v, %v; want the original 8 bytes", attr, err)
+				}
+			})
+		}
+
+		t.Run(backendName+"/attributes", func(t *testing.T) {
+			fs := newBackend(t)
+			_, client := fileServer(t, fs, false)
+			fid, err := client.OpenFile("keep.txt", fileflags.FILE_READ_ATTRIBUTES|fileflags.FILE_WRITE_ATTRIBUTES,
+				shareAll, fileflags.FILE_OPEN, 0)
+			if err != nil {
+				t.Fatalf("OpenFile() for attributes error = %v", err)
+			}
+			client.CloseFile(fid)
+		})
+	}
+}
+
 // TestLocalFileSystemRenameIntoOwnSubtree asserts the local backend refuses a
 // directory moved beneath itself with the same error as the in-memory one, so
 // a client sees the same status whichever backend serves the share.
