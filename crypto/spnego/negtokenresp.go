@@ -267,6 +267,11 @@ func (n *NegTokenResp) Unmarshal(data []byte) (int, error) {
 }
 
 // CreateNegTokenResp creates an ASN.1 encoded SPNEGO NegTokenResp
+//
+// The result is the negTokenResp [1] choice of NegotiationToken. Unlike the
+// initial NegTokenInit, a NegTokenResp is not wrapped in the GSS-API
+// InitialContextToken header (RFC 4178 section 4.2).
+//
 // Parameters:
 //   - state: The negotiation state
 //   - mech: The supported mechanism OID
@@ -276,15 +281,10 @@ func (n *NegTokenResp) Unmarshal(data []byte) (int, error) {
 //   - []byte: The encoded SPNEGO token
 //   - error: An error if token creation fails
 func CreateNegTokenResp(state NegState, mech asn1.ObjectIdentifier, token []byte) ([]byte, error) {
-	resp := NegTokenResp{
-		NegState:      state,
-		SupportedMech: mech,
-		ResponseToken: token,
-	}
-
-	respBytes, err := asn1.Marshal(resp)
+	respBytes, err := NewNegTokenResp(state, mech, token).Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal NegTokenResp: %v", err)
 	}
-	return wrapSPNEGO(respBytes)
+	blob := SecurityBlob{Data: respBytes}
+	return blob.Marshal()
 }
