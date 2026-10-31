@@ -193,7 +193,7 @@ func handleSetFileInformation(conn *Connection, req *message.Message, reassembly
 // dispositionStatus decides whether a handle may have its delete disposition set.
 //
 // Marking a file for deletion is a delete, not a write, so [MS-FSA] section
-// 2.1.5.14.3 holds it to what a delete needs: "If Open.GrantedAccess.DELETE is
+// 2.1.5.15.3 holds it to what a delete needs: "If Open.GrantedAccess.DELETE is
 // FALSE, the operation MUST be failed with STATUS_ACCESS_DENIED", and a file
 // carrying FILE_ATTRIBUTE_READONLY "MUST be failed with STATUS_CANNOT_DELETE".
 // Gating it on write access let a handle opened for writing alone delete the

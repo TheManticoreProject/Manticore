@@ -69,7 +69,7 @@ type Open struct {
 
 	// Deletable is whether the open was granted DELETE access, which marking it
 	// for deletion through FileDispositionInformation needs ([MS-FSA] section
-	// 2.1.5.14.3) whatever else it was granted. Only the NT opens ask for it: the
+	// 2.1.5.15.3) whatever else it was granted. Only the NT opens ask for it: the
 	// legacy access modes of [MS-CIFS] name reading and writing, not deleting.
 	Deletable bool
 

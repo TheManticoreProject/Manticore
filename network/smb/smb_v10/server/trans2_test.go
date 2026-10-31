@@ -1139,7 +1139,7 @@ func TestSecondaryOfAnotherFamilyLeavesThePendingTransaction(t *testing.T) {
 // TestSetFileDispositionNeedsDeleteAccess asserts a handle is marked for deletion
 // only when it was opened with DELETE access, whatever else it was granted.
 //
-// [MS-FSA] section 2.1.5.14.3: "If Open.GrantedAccess.DELETE is FALSE, the
+// [MS-FSA] section 2.1.5.15.3: "If Open.GrantedAccess.DELETE is FALSE, the
 // operation MUST be failed with STATUS_ACCESS_DENIED", and "If
 // Open.File.FileAttributes.FILE_ATTRIBUTE_READONLY is TRUE, the operation MUST be
 // failed with STATUS_CANNOT_DELETE". The set was gated on write access instead,
