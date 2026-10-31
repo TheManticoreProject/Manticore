@@ -141,8 +141,10 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 				return nil, fmt.Errorf("%s: %w", label, derr)
 			}
 			raw = plaintext
-			wasEncrypted = true
 		}
+		// Whether the response was encrypted is a property of the frame that
+		// carries it, not of any server-initiated frame read before it.
+		wasEncrypted = frameEncrypted
 
 		probe := header.NewHeader()
 		if _, err := probe.Unmarshal(raw); err != nil {
