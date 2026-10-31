@@ -107,8 +107,6 @@ func statusForFSError(err error) nt_status.NT_STATUS {
 		return nt_status.NT_STATUS_DISK_FULL
 	case errors.Is(err, ErrAccessDenied):
 		return nt_status.NT_STATUS_ACCESS_DENIED
-	case errors.Is(err, ErrInvalidParameter):
-		return nt_status.NT_STATUS_INVALID_PARAMETER
 	}
 	return nt_status.NT_STATUS_UNSUCCESSFUL
 }

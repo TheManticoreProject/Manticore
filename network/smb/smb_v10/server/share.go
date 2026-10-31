@@ -204,8 +204,8 @@ type FileSystem interface {
 	Remove(path string) error
 
 	// Rename moves a file or directory. When replace is false it fails if the
-	// destination exists. Moving a directory beneath itself fails with
-	// ErrInvalidParameter.
+	// destination exists. Moving a directory beneath itself, the share root
+	// included, fails with ErrAccessDenied.
 	Rename(oldPath, newPath string, replace bool) error
 
 	// Mkdir creates a directory. Its parent must exist.
@@ -315,10 +315,6 @@ var (
 	// ErrDiskFull reports that the storage cannot hold the size a write or a
 	// resize asks for.
 	ErrDiskFull = fmt.Errorf("disk full")
-
-	// ErrInvalidParameter reports a request that cannot be carried out as
-	// asked, such as moving a directory beneath itself.
-	ErrInvalidParameter = fmt.Errorf("invalid parameter")
 )
 
 // AddShare registers a share on the server. Share names are matched

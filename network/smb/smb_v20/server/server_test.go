@@ -969,9 +969,14 @@ func TestServerRefusesRenameIntoOwnSubtree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = c.RenameFile("a", `a\b\c`, false)
-	if err == nil || !strings.Contains(err.Error(), nt_status.NT_STATUS_INVALID_PARAMETER.Name()) {
-		t.Fatalf("RenameFile(a, a\\b\\c) = %v, want STATUS_INVALID_PARAMETER", err)
+	for _, rename := range [][2]string{{"a", `a\b\c`}, {"", `a\x`}} {
+		err = c.RenameFile(rename[0], rename[1], false)
+		if err == nil || !strings.Contains(err.Error(), nt_status.NT_STATUS_ACCESS_DENIED.Name()) {
+			t.Fatalf("RenameFile(%q, %q) = %v, want STATUS_ACCESS_DENIED", rename[0], rename[1], err)
+		}
+	}
+	if _, err := fs.Stat(""); err != nil {
+		t.Errorf("Stat(root) after the refused renames = %v", err)
 	}
 	for _, path := range []string{"a", "a/b", "a/f"} {
 		if _, err := fs.Stat(path); err != nil {

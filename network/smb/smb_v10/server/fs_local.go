@@ -449,7 +449,7 @@ func (fs *LocalFileSystem) Rename(oldPath, newPath string, replace bool) error {
 	// same as from any other backend.
 	if isBeneath(newPath, oldPath) {
 		if info, err := os.Lstat(oldHost); err == nil && info.IsDir() {
-			return ErrInvalidParameter
+			return ErrAccessDenied
 		}
 	}
 	if !replace {

@@ -462,7 +462,7 @@ func (fs *MemoryFileSystem) Rename(oldPath, newPath string, replace bool) error 
 	// cuts it off from the tree, and its data would stay counted against the
 	// volume with no name left to free it through.
 	if entry.isDir && isBeneath(newPath, oldPath) {
-		return ErrInvalidParameter
+		return ErrAccessDenied
 	}
 	if target, taken := fs.entries[newPath]; taken {
 		if !replace {

@@ -11,7 +11,6 @@ import (
 
 	smb1client "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
-	"github.com/TheManticoreProject/Manticore/windows/errors/nt_status"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
 )
 
@@ -1212,11 +1211,11 @@ func TestLocalFileSystemRenameIntoOwnSubtree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem() error = %v", err)
 	}
-	if err := fs.Rename("a", "a/b/c", false); !errors.Is(err, ErrInvalidParameter) {
-		t.Fatalf("Rename(a, a/b/c) = %v, want ErrInvalidParameter", err)
+	if err := fs.Rename("a", "a/b/c", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(a, a/b/c) = %v, want ErrAccessDenied", err)
 	}
-	if status := statusForFSError(ErrInvalidParameter); status != nt_status.NT_STATUS_INVALID_PARAMETER {
-		t.Errorf("statusForFSError(ErrInvalidParameter) = %s, want STATUS_INVALID_PARAMETER", status.Name())
+	if err := fs.Rename("", "a/x", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(root, a/x) = %v, want ErrAccessDenied", err)
 	}
 	if _, err := fs.Stat("a/b"); err != nil {
 		t.Errorf("Stat(a/b) after the refused rename = %v", err)

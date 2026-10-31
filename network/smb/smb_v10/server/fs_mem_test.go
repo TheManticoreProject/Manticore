@@ -454,16 +454,20 @@ func TestMemoryFileSystemRenameIntoOwnSubtree(t *testing.T) {
 	}
 
 	for _, target := range []string{"a/b/c", "a/c", "a/b/c/d"} {
-		if err := fs.Rename("a", target, false); !errors.Is(err, ErrInvalidParameter) {
-			t.Fatalf("Rename(a, %s) = %v, want ErrInvalidParameter", target, err)
+		if err := fs.Rename("a", target, false); !errors.Is(err, ErrAccessDenied) {
+			t.Fatalf("Rename(a, %s) = %v, want ErrAccessDenied", target, err)
 		}
-		if err := fs.Rename("a", target, true); !errors.Is(err, ErrInvalidParameter) {
-			t.Fatalf("Rename(a, %s, replace) = %v, want ErrInvalidParameter", target, err)
+		if err := fs.Rename("a", target, true); !errors.Is(err, ErrAccessDenied) {
+			t.Fatalf("Rename(a, %s, replace) = %v, want ErrAccessDenied", target, err)
 		}
 	}
-	for _, path := range []string{"a", "a/b", "a/f"} {
+	// The share root holds every other path, so it cannot be moved either.
+	if err := fs.Rename("", "a/x", false); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("Rename(root, a/x) = %v, want ErrAccessDenied", err)
+	}
+	for _, path := range []string{"", "a", "a/b", "a/f"} {
 		if _, err := fs.Stat(path); err != nil {
-			t.Errorf("Stat(%s) after the refused rename = %v", path, err)
+			t.Errorf("Stat(%q) after the refused rename = %v", path, err)
 		}
 	}
 
