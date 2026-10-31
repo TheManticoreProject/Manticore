@@ -253,10 +253,14 @@ func (ldapSession *Session) QueryWholeSubtreeWithControls(searchBase string, que
 	return entries, nil
 }
 
-// QueryChildren performs an LDAP query with a scope of Children.
+// QueryChildren performs an LDAP query over the immediate children of the base object.
 //
-// This function executes the specified query on the given search base with a scope of Children,
-// meaning it searches only the immediate children of the base object.
+// This function executes the specified query on the given search base with a scope of
+// singleLevel, meaning it searches only the immediate children of the base object. The
+// subordinateSubtree scope (ldap.ScopeChildren, value 3) is not used: it comes from an
+// expired IETF draft (draft-sermersheim-ldap-subordinate-scope) that Active Directory
+// does not implement, as its LDAP search accepts only baseObject, singleLevel and
+// wholeSubtree.
 //
 // Parameters:
 //   - searchBase (string): The base DN (Distinguished Name) from which the search should start.
@@ -283,7 +287,7 @@ func (ldapSession *Session) QueryWholeSubtreeWithControls(searchBase string, que
 //     is implemented correctly.
 //   - The function logs warnings if the search fails or if no entries are found.
 func (ldapSession *Session) QueryChildren(searchBase string, query string, attributes []string) ([]*ldap.Entry, error) {
-	entries, err := ldapSession.Query(searchBase, query, attributes, ldap.ScopeChildren)
+	entries, err := ldapSession.Query(searchBase, query, attributes, ldap.ScopeSingleLevel)
 	if err != nil {
 		return nil, fmt.Errorf("error querying LDAP: %w", err)
 	}
