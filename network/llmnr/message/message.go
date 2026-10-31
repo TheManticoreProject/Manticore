@@ -451,6 +451,12 @@ func (m *Message) Unmarshal(data []byte) (int, error) {
 		return 0, fmt.Errorf("message too short: %w", errors.ErrInvalidMessage)
 	}
 
+	// Decoded resource records retain the message buffer to resolve
+	// compression pointers in name-bearing RDATA later. Work on a private copy
+	// so they never alias the caller's buffer, which read loops reuse for the
+	// next datagram.
+	data = append([]byte(nil), data...)
+
 	// Unmarshal header. From here on we track an absolute offset into data so
 	// that 0xC0 compression pointers, which are relative to the start of the
 	// message (RFC 1035 §4.1.4), resolve against the message origin rather than
