@@ -57,7 +57,10 @@ type nativeGSSAPIClient struct {
 // (the DC), realm the Kerberos realm.
 func newNativeGSSAPIClient(kdc, realm string, creds *credentials.Credentials) (*nativeGSSAPIClient, error) {
 	user := creds.GetUsername()
-	kc := kerberos.NewClient(user, realm, kdc)
+	// An AD realm is the upper-cased DNS domain, and the client compares realms
+	// case-sensitively (RFC 4120), so a domain typed in lower case must be
+	// upper-cased here or the AS-REP's crealm does not match.
+	kc := kerberos.NewClient(user, strings.ToUpper(realm), kdc)
 
 	// A ccache or .kirbi already carries a TGT (pass-the-ticket): load it and skip
 	// the AS exchange. Otherwise derive a TGT from a secret, ordered strongest

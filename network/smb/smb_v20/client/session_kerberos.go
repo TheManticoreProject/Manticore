@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
@@ -42,8 +43,9 @@ func (c *Client) SessionSetupKerberos(creds *credentials.Credentials, kdcHost, s
 		return fmt.Errorf("kerberos session setup requires a service principal name (or a known server name)")
 	}
 
-	// Build the native Kerberos client from the SMB credentials (realm = domain).
-	kc := kerberos.NewClient(creds.GetUsername(), creds.GetDomain(), kdcHost)
+	// Build the native Kerberos client from the SMB credentials. The AD realm is
+	// the upper-cased domain; realms compare case-sensitively (RFC 4120).
+	kc := kerberos.NewClient(creds.GetUsername(), strings.ToUpper(creds.GetDomain()), kdcHost)
 	if nt := creds.GetNTHash(); nt != "" {
 		// Overpass-the-hash: obtain the TGT from the NT hash rather than a password.
 		if err := kc.WithNTHash(nt); err != nil {
