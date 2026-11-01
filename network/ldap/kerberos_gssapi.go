@@ -147,6 +147,7 @@ func (g *nativeGSSAPIClient) InitSecContextWithOptions(target string, token []by
 			Mutual:          true,
 			SubKey:          subKey,
 			SubKeyEType:     keyEType,
+			ClockOffset:     g.kc.ClockOffset(),
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("ldap gssapi: InitSecContext: %w", err)

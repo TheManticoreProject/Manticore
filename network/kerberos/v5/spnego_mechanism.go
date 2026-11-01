@@ -59,6 +59,7 @@ func (m *SPNEGOMechanism) InitToken() ([]byte, error) {
 		Mutual:       true,
 		SubKey:       subKey,
 		SubKeyEType:  keyEType,
+		ClockOffset:  m.client.ClockOffset(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kerberos spnego: InitSecContext: %w", err)

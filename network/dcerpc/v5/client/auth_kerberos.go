@@ -84,6 +84,7 @@ func (c *Client) SetAuthKerberos(authLevel uint8, kc *kerberos.KerberosClient, s
 		ClientRealm:  kc.Realm(),
 		Flags:        flags,
 		Mutual:       true,
+		ClockOffset:  kc.ClockOffset(),
 		// DCE/RPC seeds the acceptor's per-message receive sequence from the
 		// authenticator sequence number and starts its per-PDU counter at 0.
 		ZeroSeqNumber: perMessage,

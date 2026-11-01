@@ -137,6 +137,8 @@ type SecContext struct {
 	// ctime/cusec are retained to match the AP-REP echo (mutual authentication).
 	ctime time.Time
 	cusec int
+	// clockOffset is InitOptions.ClockOffset, applied again by MakeAPRep.
+	clockOffset time.Duration
 	// sendSeq is the running sequence number for outgoing per-message tokens.
 	sendSeq uint64
 	// acceptorSubkey records that the base key is an acceptor-asserted subkey,
@@ -197,6 +199,11 @@ type InitOptions struct {
 	// if set, SubKeyEType must be set too.
 	SubKey      []byte
 	SubKeyEType int
+	// ClockOffset is added to the local clock for the authenticator ctime and
+	// the third-leg AP-REP (MakeAPRep). Set it to the offset the Kerberos client
+	// learned from the KDC (KerberosClient.ClockOffset) so a client whose clock
+	// is outside the server's skew window is not rejected with KRB_AP_ERR_SKEW.
+	ClockOffset time.Duration
 	// ZeroSeqNumber sets the authenticator sequence number to 0 instead of a
 	// random value. DCE/RPC requires it (the acceptor's per-message receive
 	// sequence is seeded from it, and the per-PDU counter starts at 0).
@@ -228,7 +235,7 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 	if opts.Mutual {
 		flags |= GSSMutualFlag
 	}
-	now, cusec := messages.NextAuthenticatorTimestamp(time.Now(), 0)
+	now, cusec := messages.NextAuthenticatorTimestamp(time.Now(), opts.ClockOffset)
 
 	// The initiator's authenticator sequence number seeds the acceptor's expected
 	// per-message receive sequence. DCE/RPC (which starts its per-PDU counter at 0)
@@ -302,6 +309,7 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 		SeqNumber:    seqNum,
 		ctime:        now.Truncate(time.Second),
 		cusec:        cusec,
+		clockOffset:  opts.ClockOffset,
 		sendSeq:      uint64(seqNum),
 		// Receive-side enforcement: replay detection on unless disabled, strict
 		// sequencing only when explicitly requested (see InitOptions).
@@ -371,7 +379,7 @@ func (ctx *SecContext) acceptAPRepMessage(krbMsg []byte) error {
 // number the acceptor sent in its AP-REP, has no subkey, and is encrypted with
 // the ticket session key (key usage 12).
 func (ctx *SecContext) MakeAPRep() ([]byte, error) {
-	now := time.Now().UTC()
+	now := time.Now().UTC().Add(ctx.clockOffset)
 	enc := messages.EncAPRepPart{
 		CTime: now,
 		CUSec: now.Nanosecond() / 1000,
