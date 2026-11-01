@@ -46,7 +46,7 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 	c.kdcHost = conn.LocalAddr().String()
 
 	var mu sync.Mutex
-	var wrongKey, rightKey int
+	var requests, wrongKey, rightKey int
 	go func() {
 		buf := make([]byte, 65535)
 		for {
@@ -56,8 +56,12 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 			}
 			var req messages.ASReq
 			if _, err := req.Unmarshal(buf[:size]); err != nil {
+				t.Errorf("fake KDC: parse AS-REQ: %v", err)
 				return
 			}
+			mu.Lock()
+			requests++
+			mu.Unlock()
 			code := iana.ErrETypeNoSupp
 			for _, pa := range req.PAData {
 				if pa.PADataType != messages.PAEncTimestamp {
@@ -102,5 +106,9 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 	}
 	if rightKey != 1 {
 		t.Errorf("GetTGT sent %d AES256 pre-auth(s) with the KDC-advertised salt, want 1", rightKey)
+	}
+	// The strongest etype, then AES256 with the KDC's salt: no further guesses.
+	if requests != 2 {
+		t.Errorf("GetTGT sent %d AS-REQs, want 2", requests)
 	}
 }

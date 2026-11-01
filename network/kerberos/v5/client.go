@@ -289,8 +289,9 @@ func (c *KerberosClient) applyClockSkew(krbErr messages.KRBError) bool {
 //
 // Windows KDCs silently drop AS-REQs without PA-ENC-TIMESTAMP, so we skip
 // the probe and send PA-ENC-TIMESTAMP immediately with the default AD salt
-// (realm+username). If the KDC returns PREAUTH_REQUIRED with different
-// etype/salt info, we retry once with the corrected values.
+// (realm+username). If the KDC returns PREAUTH_REQUIRED, PREAUTH_FAILED or
+// ETYPE_NOSUPP with etype/salt info (ETYPE-INFO2), we retry once with the
+// values it advertises.
 func (c *KerberosClient) GetTGT() error {
 	// PKINIT (certificate / Shadow Credentials) pre-authentication takes its own
 	// path: a DH-based AS exchange with no long-term credential.
