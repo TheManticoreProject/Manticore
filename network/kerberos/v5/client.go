@@ -142,8 +142,11 @@ type cachedServiceTicket struct {
 }
 
 // PreferRC4ServiceTicket makes GetTGS request an RC4-HMAC service ticket (RC4
-// session key). Windows RPC's DCE-style Kerberos per-message protection is only
-// interoperable with RC4 on some servers, so the DCE/RPC client forces it.
+// session key), so GSS per-message tokens use the RFC 4757 RC4 forms instead of
+// the RFC 4121 AES ones. Nothing calls it by default: the DCE/RPC client uses
+// whatever session key the KDC picks, AES included. Without it the TGS-REQ lists
+// AES first, so the KDC returns an AES session key even when the TGT is RC4
+// (for example one obtained with an NT hash).
 func (c *KerberosClient) PreferRC4ServiceTicket() *KerberosClient {
 	c.stETypes = []int{messages.ETypeRC4HMAC}
 	return c
