@@ -235,7 +235,9 @@ func TestNewNativeGSSAPIClientUpperCasesRealm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCredentials() error = %v", err)
 	}
-	_, _ = newNativeGSSAPIClient(conn.LocalAddr().String(), "manticore.local", creds)
+	if _, err := newNativeGSSAPIClient(conn.LocalAddr().String(), "manticore.local", creds); err == nil {
+		t.Error("newNativeGSSAPIClient() error = nil, want the fake KDC's KRB-ERROR")
+	}
 
 	select {
 	case realm := <-realms:
