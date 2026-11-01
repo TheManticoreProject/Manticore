@@ -331,6 +331,14 @@ func (c *KerberosClient) GetTGT() error {
 		if _, parse_err := krb_err.Unmarshal(resp); parse_err == nil {
 			switch krb_err.ErrorCode {
 			case iana.ErrETypeNoSupp:
+				// The error usually carries ETYPE-INFO2 naming the etypes and salt
+				// the account accepts. Use it rather than retrying the next etype
+				// with the guessed salt: for an account whose salt is not
+				// realm+username that guess is a certain PREAUTH_FAILED, which the
+				// KDC logs as a failed logon.
+				if next, nextSalt, s2kParams, ok := c.advertisedETypeFromError(krb_err); ok && next != etype {
+					return c.doASReqWithPreauth(next, nextSalt, s2kParams)
+				}
 				i++
 				continue
 			case messages.ErrPreauthRequired, messages.ErrPreauthFailed:
@@ -546,12 +554,22 @@ func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
 // PA-ETYPE-INFO2 or legacy PA-ETYPE-INFO structure embedded in a KRBError's EData.
 // Falls back to AES-256 with the default AD salt if no EData is present.
 func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, string, []byte) {
+	if etype, salt, s2kParams, ok := c.advertisedETypeFromError(krb_err); ok {
+		return etype, salt, s2kParams
+	}
+	return c.cred.SupportedETypes()[0], c.cred.DefaultSalt(), nil
+}
+
+// advertisedETypeFromError returns the credential's most preferred etype among
+// those the KDC advertises in the error's ETYPE-INFO2 (or ETYPE-INFO), with the
+// salt and s2kparams the KDC gave for it. ok is false when the error advertises
+// no etype the credential supports.
+func (c *KerberosClient) advertisedETypeFromError(krb_err messages.KRBError) (etype int, salt string, s2kParams []byte, ok bool) {
 	preferred := c.cred.SupportedETypes()
 	default_salt := c.cred.DefaultSalt()
-	default_etype := preferred[0]
 
 	if len(krb_err.EData) == 0 {
-		return default_etype, default_salt, nil
+		return 0, "", nil, false
 	}
 
 	// EData may be a SEQUENCE OF PA-DATA or a raw ETYPE-INFO structure.
@@ -563,7 +581,7 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 			if pa.PADataType == messages.PAETypeInfo2 {
 				var info messages.ETypeInfo2
 				if _, err := info.Unmarshal(pa.PADataValue); err == nil && len(info) > 0 {
-					return pickBestEType(info, preferred, default_salt)
+					return matchETypeInfo(info, preferred, default_salt)
 				}
 			}
 		}
@@ -571,7 +589,7 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 			if pa.PADataType == messages.PAETypeInfo {
 				var legacy messages.ETypeInfo
 				if _, err := legacy.Unmarshal(pa.PADataValue); err == nil && len(legacy) > 0 {
-					return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
+					return matchETypeInfo(legacyETypeInfo2(legacy), preferred, default_salt)
 				}
 			}
 		}
@@ -580,14 +598,14 @@ func (c *KerberosClient) pickETypeFromError(krb_err messages.KRBError) (int, str
 	// Try to parse EData directly as ETYPE-INFO2.
 	var info messages.ETypeInfo2
 	if strictETypeInfo2(krb_err.EData, &info) && len(info) > 0 {
-		return pickBestEType(info, preferred, default_salt)
+		return matchETypeInfo(info, preferred, default_salt)
 	}
 	var legacy messages.ETypeInfo
 	if strictETypeInfo(krb_err.EData, &legacy) && len(legacy) > 0 {
-		return pickBestEType(legacyETypeInfo2(legacy), preferred, default_salt)
+		return matchETypeInfo(legacyETypeInfo2(legacy), preferred, default_salt)
 	}
 
-	return default_etype, default_salt, nil
+	return 0, "", nil, false
 }
 
 func strictETypeInfo2(wire []byte, out *messages.ETypeInfo2) bool {
@@ -619,6 +637,18 @@ func legacyETypeInfo2(info messages.ETypeInfo) messages.ETypeInfo2 {
 // in strength order). This prevents choosing, say, AES when only an NT hash is
 // held.
 func pickBestEType(info messages.ETypeInfo2, preferred []int, default_salt string) (int, string, []byte) {
+	if etype, salt, s2kParams, ok := matchETypeInfo(info, preferred, default_salt); ok {
+		return etype, salt, s2kParams
+	}
+	// No advertised etype is supported by the credential; fall back to the
+	// credential's strongest etype with the default salt.
+	return preferred[0], default_salt, nil
+}
+
+// matchETypeInfo returns the first etype of preferred that info advertises, with
+// its salt (default_salt when the entry has none) and s2kparams. ok is false
+// when info advertises none of them.
+func matchETypeInfo(info messages.ETypeInfo2, preferred []int, default_salt string) (int, string, []byte, bool) {
 	for _, want := range preferred {
 		for _, entry := range info {
 			if entry.EType == want {
@@ -626,13 +656,11 @@ func pickBestEType(info messages.ETypeInfo2, preferred []int, default_salt strin
 				if salt == "" {
 					salt = default_salt
 				}
-				return entry.EType, salt, entry.S2KParams
+				return entry.EType, salt, entry.S2KParams, true
 			}
 		}
 	}
-	// No advertised etype is supported by the credential; fall back to the
-	// credential's strongest etype with the default salt.
-	return preferred[0], default_salt, nil
+	return 0, "", nil, false
 }
 
 // sendASReqWithPreauth builds and sends an AS-REQ with PA-ENC-TIMESTAMP.
