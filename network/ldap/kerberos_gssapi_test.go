@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/binary"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
@@ -195,5 +197,54 @@ func TestNewNativeGSSAPIClientPrefersAESKeyOverHashAndPassword(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "AES key") {
 		t.Errorf("error = %q, want it to mention %q", err, "AES key")
+	}
+}
+
+// TestNewNativeGSSAPIClientUpperCasesRealm checks that a domain given in lower
+// case reaches the KDC as the upper-case AD realm. The Kerberos client compares
+// realms case-sensitively, so a lower-case realm makes it reject the AS-REP,
+// whose crealm the KDC spells in upper case.
+func TestNewNativeGSSAPIClientUpperCasesRealm(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	realms := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 65535)
+		size, peer, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		var req messages.ASReq
+		if _, err := req.Unmarshal(buf[:size]); err != nil {
+			realms <- "unparseable AS-REQ: " + err.Error()
+			return
+		}
+		realms <- req.ReqBody.Realm
+		// End the exchange: KDC_ERR_C_PRINCIPAL_UNKNOWN.
+		krbErr := messages.KRBError{ErrorCode: 6, Realm: req.ReqBody.Realm}
+		if out, err := krbErr.Marshal(); err == nil {
+			_, _ = conn.WriteToUDP(out, peer)
+		}
+	}()
+
+	creds, err := credentials.NewCredentials("manticore.local", "user", "password", "")
+	if err != nil {
+		t.Fatalf("NewCredentials() error = %v", err)
+	}
+	if _, err := newNativeGSSAPIClient(conn.LocalAddr().String(), "manticore.local", creds); err == nil {
+		t.Error("newNativeGSSAPIClient() error = nil, want the fake KDC's KRB-ERROR")
+	}
+
+	select {
+	case realm := <-realms:
+		if realm != "MANTICORE.LOCAL" {
+			t.Errorf("AS-REQ realm = %q, want %q", realm, "MANTICORE.LOCAL")
+		}
+	default:
+		t.Fatal("newNativeGSSAPIClient sent no AS-REQ")
 	}
 }

@@ -270,7 +270,8 @@ func (s *Session) Connect() (bool, error) {
 	// Use Kerberos
 	if s.usekerberos {
 		// Native (stdlib-only) GSSAPI SASL bind; the DC is both the LDAP server
-		// and the KDC. Realm is the credentials' domain (upper-cased by the client).
+		// and the KDC. Realm is the credentials' domain, upper-cased by
+		// newNativeGSSAPIClient.
 		// The SPN is built from the DC's FQDN when host is an IP (see spnHostname).
 		servicePrincipalName := fmt.Sprintf("ldap/%s", s.kerberosSPNHostname())
 		gssClient, gerr := newNativeGSSAPIClient(s.host, s.credentials.GetDomain(), s.credentials)
