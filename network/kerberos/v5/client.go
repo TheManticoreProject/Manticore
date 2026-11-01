@@ -270,6 +270,14 @@ func (c *KerberosClient) now() time.Time {
 	return time.Now().UTC().Add(c.clockOffset)
 }
 
+// ClockOffset returns the offset between the local clock and the KDC's that
+// the client learned from a KRB_AP_ERR_SKEW reply (zero if none). Pass it to
+// gssapi.InitOptions.ClockOffset so the AP-REQ to a service is stamped with the
+// same corrected time as the requests to the KDC.
+func (c *KerberosClient) ClockOffset() time.Duration {
+	return c.clockOffset
+}
+
 // applyClockSkew records the offset between the client's clock and the KDC's,
 // derived from the server time in a KRB_AP_ERR_SKEW reply, so a retry uses a
 // timestamp the KDC will accept (RFC 4120 Section 5.9.1). It reports false when
