@@ -50,7 +50,7 @@ type fastTGSContext struct {
 // subkey for TGS armoring). The authenticator is encrypted with the TGT session
 // key under key usage 7 (the PA-TGS-REQ authenticator usage).
 func (c *KerberosClient) buildTGSAPReqWithSubkey(body messages.KDCReqBody, tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int, subkey []byte) ([]byte, error) {
-	now, cusec := messages.NextAuthenticatorTimestamp(c.now())
+	now, cusec := messages.NextAuthenticatorTimestamp(time.Now(), c.clockOffset)
 
 	var seqBuf [4]byte
 	if _, err := rand.Read(seqBuf[:]); err != nil {

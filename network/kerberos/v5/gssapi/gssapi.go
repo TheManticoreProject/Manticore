@@ -228,7 +228,7 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 	if opts.Mutual {
 		flags |= GSSMutualFlag
 	}
-	now, cusec := messages.NextAuthenticatorTimestamp(time.Now())
+	now, cusec := messages.NextAuthenticatorTimestamp(time.Now(), 0)
 
 	// The initiator's authenticator sequence number seeds the acceptor's expected
 	// per-message receive sequence. DCE/RPC (which starts its per-PDU counter at 0)

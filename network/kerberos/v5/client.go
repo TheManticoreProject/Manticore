@@ -784,7 +784,7 @@ func (c *KerberosClient) buildAPReq(body messages.KDCReqBody) ([]byte, error) {
 // always identify the original client (they must match the crealm embedded in
 // the ticket, which stays the home realm across cross-realm referrals).
 func (c *KerberosClient) buildAPReqWith(body messages.KDCReqBody, tgt messages.Ticket, tgtRaw, sessionKey []byte, sessionEType int) ([]byte, error) {
-	now, cusec := messages.NextAuthenticatorTimestamp(c.now())
+	now, cusec := messages.NextAuthenticatorTimestamp(time.Now(), c.clockOffset)
 
 	var seq_buf [4]byte
 	if _, err := rand.Read(seq_buf[:]); err != nil {
