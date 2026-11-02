@@ -18,7 +18,16 @@ const ntStatusEndOfFile = 0xC0000011
 // The path is relative to the share root; a leading backslash is stripped (an
 // SMB2 CREATE name is share-relative). Wire: SMB2 CREATE.
 func (c *Client) CreateFile(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32) (types.SMB2_FILEID, error) {
-	fileId, _, err := c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, commands.SMB2_OPLOCK_LEVEL_NONE)
+	fileId, _, err := c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, 0, commands.SMB2_OPLOCK_LEVEL_NONE)
+	return fileId, err
+}
+
+// CreateFileWithAttributes is CreateFile with the FileAttributes of the CREATE
+// request (fileflags FILE_ATTRIBUTE_*), which the server applies to a file the
+// request creates or overwrites. Zero sends FILE_ATTRIBUTE_NORMAL, as CreateFile
+// does.
+func (c *Client) CreateFileWithAttributes(path string, desiredAccess, shareAccess, createDisposition, createOptions, fileAttributes uint32) (types.SMB2_FILEID, error) {
+	fileId, _, err := c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, fileAttributes, commands.SMB2_OPLOCK_LEVEL_NONE)
 	return fileId, err
 }
 
@@ -28,12 +37,12 @@ func (c *Client) CreateFile(path string, desiredAccess, shareAccess, createDispo
 // another client opens the same file — it sends an OPLOCK_BREAK notification; the
 // caller observes it with WaitOplockBreak and replies with AcknowledgeOplockBreak.
 func (c *Client) CreateFileWithOplock(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32, requestedOplock uint8) (types.SMB2_FILEID, uint8, error) {
-	return c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, requestedOplock)
+	return c.createFile(path, desiredAccess, shareAccess, createDisposition, createOptions, 0, requestedOplock)
 }
 
 // createFile performs an SMB2 CREATE and returns the FileId and the granted oplock
-// level.
-func (c *Client) createFile(path string, desiredAccess, shareAccess, createDisposition, createOptions uint32, requestedOplock uint8) (types.SMB2_FILEID, uint8, error) {
+// level. A zero fileAttributes sends FILE_ATTRIBUTE_NORMAL.
+func (c *Client) createFile(path string, desiredAccess, shareAccess, createDisposition, createOptions, fileAttributes uint32, requestedOplock uint8) (types.SMB2_FILEID, uint8, error) {
 	var fileId types.SMB2_FILEID
 	if c.Session == nil || c.Session.TreeId == 0 {
 		return fileId, 0, fmt.Errorf("no tree connect established")
@@ -47,8 +56,12 @@ func (c *Client) createFile(path string, desiredAccess, shareAccess, createDispo
 	req.CreateOptions = createOptions
 	// Impersonation (2): give the server a static snapshot of the client's context.
 	req.ImpersonationLevel = 0x00000002
-	// FILE_ATTRIBUTE_NORMAL.
-	req.FileAttributes = 0x00000080
+	// FILE_ATTRIBUTE_NORMAL unless the caller asked for attributes; it is only
+	// valid alone, and a zero value is not a request for no attributes.
+	if fileAttributes == 0 {
+		fileAttributes = 0x00000080
+	}
+	req.FileAttributes = fileAttributes
 	req.Name = strings.TrimPrefix(path, "\\")
 
 	response, err := c.sendReceive(c.newRequest(req), "Create")

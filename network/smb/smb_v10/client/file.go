@@ -115,6 +115,14 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 //
 // Wire: NtCreateAndxRequest / NtCreateAndxResponse.
 func (c *Client) OpenFile(path string, desiredAccess, shareAccess, createDisp, createOptions uint32) (FID, error) {
+	return c.OpenFileWithAttributes(path, desiredAccess, shareAccess, createDisp, createOptions, 0)
+}
+
+// OpenFileWithAttributes is OpenFile with the ExtFileAttributes of the
+// NT_CREATE_ANDX request (fileflags FILE_ATTRIBUTE_*), which the server applies
+// to a file the request creates or overwrites. Zero sends FILE_ATTRIBUTE_NORMAL,
+// as OpenFile does.
+func (c *Client) OpenFileWithAttributes(path string, desiredAccess, shareAccess, createDisp, createOptions, fileAttributes uint32) (FID, error) {
 	if c.Session == nil {
 		return 0, fmt.Errorf("no session established")
 	}
@@ -134,8 +142,11 @@ func (c *Client) OpenFile(path string, desiredAccess, shareAccess, createDisp, c
 	cmd.CreateOptions = types.ULONG(createOptions)
 	// SEC_IMPERSONATE (2): give the server a static snapshot of the client's security context.
 	cmd.ImpersonationLevel = types.ULONG(0x00000002)
-	// FILE_ATTRIBUTE_NORMAL
-	cmd.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(0x00000080)
+	// FILE_ATTRIBUTE_NORMAL unless the caller asked for attributes.
+	if fileAttributes == 0 {
+		fileAttributes = 0x00000080
+	}
+	cmd.ExtFileAttributes = types.SMB_EXT_FILE_ATTR(fileAttributes)
 	if err := cmd.FileName.SetStringWithEncoding(smbPath, c.useUnicode()); err != nil {
 		return 0, fmt.Errorf("failed to set file name: %v", err)
 	}
