@@ -181,7 +181,7 @@ func TestAttributesReturnCodes(t *testing.T) {
 }
 
 func TestJobCCSID(t *testing.T) {
-	srv := &hosttest.Server{JobCCSID: 273}
+	srv := &hosttest.Server{JobCCSID: 930}
 	if _, err := startSession(t, srv, testPassword, ibminet.PasswordFamilyDES, rmtcmd.StartOptions{}); !errors.Is(err, ccsid.ErrUnsupported) {
 		t.Fatalf("unsupported job CCSID error = %v", err)
 	}
@@ -189,14 +189,14 @@ func TestJobCCSID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv = &hosttest.Server{JobCCSID: 273}
+	srv = &hosttest.Server{JobCCSID: 930}
 	s, err := startSession(t, srv, testPassword, ibminet.PasswordFamilyDES, rmtcmd.StartOptions{JobCCSIDOverride: 1140})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close(time.Second)
 	info := s.Info()
-	if info.JobCCSID != 1140 || info.NegotiatedJobCCSID != 273 || len(info.Warnings) != 1 || s.Codec().CCSID() != ccsid.CCSID1140 {
+	if info.JobCCSID != 1140 || info.NegotiatedJobCCSID != 930 || len(info.Warnings) != 1 || s.Codec().CCSID() != ccsid.CCSID1140 {
 		t.Errorf("override info = %+v", info)
 	}
 	info.Warnings[0] = "mutated"

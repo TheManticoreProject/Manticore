@@ -195,7 +195,7 @@ func TestNewValidatesCCSIDs(t *testing.T) {
 	for name, opts := range map[string]users.Options{
 		"no system CCSID": {JobCCSID: 37},
 		"no job CCSID":    {SystemCCSID: 37},
-		"unsupported":     {SystemCCSID: 273, JobCCSID: 37},
+		"unsupported":     {SystemCCSID: 930, JobCCSID: 37},
 	} {
 		if _, err := users.New(f, opts); err == nil {
 			t.Errorf("%s accepted", name)

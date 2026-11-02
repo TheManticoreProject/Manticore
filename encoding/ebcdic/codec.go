@@ -38,13 +38,44 @@ func (e *UnmappableError) Is(target error) bool { return target == ErrUnmappable
 // A Codec is immutable and safe for concurrent use.
 type Codec struct {
 	name string
-	cm   *charmap.Charmap
+	// Exactly one of cm and table is set: x/text carries 037, 1047 and 1140,
+	// and the other IBM code pages come from the generated tables.
+	cm     *charmap.Charmap
+	table  *[256]rune
+	encode map[rune]byte
 }
 
 var (
 	codecCP037  = &Codec{name: "cp037", cm: charmap.CodePage037}
 	codecCP1140 = &Codec{name: "cp1140", cm: charmap.CodePage1140}
 )
+
+// ibmCodecs holds the codec of every IBM code page IBMCodePage knows, built once.
+var ibmCodecs = func() map[int]*Codec {
+	codecs := map[int]*Codec{
+		37:   codecCP037,
+		1047: {name: "cp1047", cm: charmap.CodePage1047},
+		1140: codecCP1140,
+	}
+	for cp, table := range ibmTables {
+		encode := make(map[rune]byte, len(table))
+		for b, r := range table {
+			encode[r] = byte(b)
+		}
+		codecs[cp] = &Codec{name: fmt.Sprintf("cp%03d", cp), table: table, encode: encode}
+	}
+	return codecs
+}()
+
+// IBMCodePage returns the codec for the single-byte EBCDIC IBM code page cp,
+// such as 273 (Germany) or 297 (France), and false when the package carries no
+// table for it. Code pages 037, 1047 and 1140 use golang.org/x/text; the others
+// are generated from IBM's mappings as published by ICU, and both directions
+// use only round-trip mappings.
+func IBMCodePage(cp int) (*Codec, bool) {
+	c, ok := ibmCodecs[cp]
+	return c, ok
+}
 
 // CP037 returns the codec for IBM code page 037 (US/Canada EBCDIC).
 func CP037() *Codec { return codecCP037 }
@@ -66,7 +97,7 @@ func (c *Codec) Encode(s string) ([]byte, error) {
 				return nil, &UnmappableError{Codepage: c.name, Rune: utf8.RuneError, Offset: i}
 			}
 		}
-		b, ok := c.cm.EncodeRune(r)
+		b, ok := c.encodeRune(r)
 		if !ok {
 			return nil, &UnmappableError{Codepage: c.name, Rune: r, Offset: i}
 		}
@@ -82,7 +113,20 @@ func (c *Codec) Decode(b []byte) (string, error) {
 	var sb strings.Builder
 	sb.Grow(len(b))
 	for _, v := range b {
-		sb.WriteRune(c.cm.DecodeByte(v))
+		if c.table != nil {
+			sb.WriteRune(c.table[v])
+		} else {
+			sb.WriteRune(c.cm.DecodeByte(v))
+		}
 	}
 	return sb.String(), nil
+}
+
+// encodeRune maps one rune to its byte in the code page.
+func (c *Codec) encodeRune(r rune) (byte, bool) {
+	if c.table != nil {
+		b, ok := c.encode[r]
+		return b, ok
+	}
+	return c.cm.EncodeRune(r)
 }

@@ -25,7 +25,7 @@ func TestLookup(t *testing.T) {
 	for _, id := range ccsid.Supported() {
 		mustLookup(t, id)
 	}
-	for _, id := range []ccsid.CCSID{0, 273, 500, 1047, 65535} {
+	for _, id := range []ccsid.CCSID{0, 930, 5035, 65535} {
 		c, err := ccsid.Lookup(id)
 		var ue *ccsid.UnsupportedError
 		if c != nil || !errors.Is(err, ccsid.ErrUnsupported) || !errors.As(err, &ue) || ue.CCSID != id {
@@ -95,5 +95,63 @@ func TestDecodeFixed(t *testing.T) {
 		if !bytes.Equal(tt.in, orig) {
 			t.Errorf("DecodeFixed modified its input")
 		}
+	}
+}
+
+// TestNationalCodePages decodes characters whose position differs between the
+// national code pages, as IBM's mappings place them, and checks every
+// supported codec maps all 256 bytes to distinct runes and back.
+func TestNationalCodePages(t *testing.T) {
+	anchors := []struct {
+		id   ccsid.CCSID
+		b    byte
+		want string
+	}{
+		{ccsid.CCSID273, 0x4A, "Ä"}, {ccsid.CCSID273, 0x7C, "§"},
+		{ccsid.CCSID277, 0x7B, "Æ"}, {ccsid.CCSID278, 0x7B, "Ä"},
+		{ccsid.CCSID278, 0x71, "\\"}, {ccsid.CCSID278, 0xE0, "É"},
+		{ccsid.CCSID280, 0x7B, "£"}, {ccsid.CCSID284, 0x7B, "Ñ"},
+		{ccsid.CCSID285, 0x5B, "£"}, {ccsid.CCSID285, 0xA1, "¯"},
+		{ccsid.CCSID297, 0x7C, "à"}, {ccsid.CCSID297, 0x44, "@"},
+		{ccsid.CCSID500, 0x4A, "["}, {ccsid.CCSID871, 0x4A, "Þ"},
+		{ccsid.CCSID871, 0xC0, "þ"}, {ccsid.CCSID1047, 0xAD, "["},
+		{ccsid.CCSID1141, 0x9F, "€"}, {ccsid.CCSID1142, 0x5A, "€"},
+		{ccsid.CCSID1143, 0x5A, "€"}, {ccsid.CCSID1144, 0x9F, "€"},
+		{ccsid.CCSID1145, 0x9F, "€"}, {ccsid.CCSID1146, 0x9F, "€"},
+		{ccsid.CCSID1147, 0x9F, "€"}, {ccsid.CCSID1148, 0x9F, "€"},
+		{ccsid.CCSID1149, 0x9F, "€"},
+	}
+	for _, a := range anchors {
+		got, err := mustLookup(t, a.id).Decode([]byte{a.b})
+		if err != nil || got != a.want {
+			t.Errorf("CCSID %d byte 0x%02X = %q, %v; want %q", a.id, a.b, got, err, a.want)
+		}
+	}
+
+	for _, id := range ccsid.Supported() {
+		c := mustLookup(t, id)
+		all := make([]byte, 256)
+		for i := range all {
+			all[i] = byte(i)
+		}
+		text, err := c.Decode(all)
+		if err != nil {
+			t.Fatalf("CCSID %d: %v", id, err)
+		}
+		if n := len([]rune(text)); n != 256 {
+			t.Errorf("CCSID %d decodes 256 bytes to %d runes", id, n)
+		}
+		back, err := c.Encode(text)
+		if err != nil || string(back) != string(all) {
+			t.Errorf("CCSID %d does not round-trip all 256 bytes: %v", id, err)
+		}
+		if blank, _ := c.Decode([]byte{ccsid.Blank}); blank != " " {
+			t.Errorf("CCSID %d: 0x40 decodes to %q, not a space", id, blank)
+		}
+	}
+
+	// A rune outside the code page is refused, not substituted.
+	if _, err := mustLookup(t, ccsid.CCSID297).Encode("€"); err == nil {
+		t.Error("CCSID 297 encoded the euro sign, which only 1147 carries")
 	}
 }

@@ -262,7 +262,7 @@ func TestConfigValidation(t *testing.T) {
 		"cleanup above operation": func(c *Config) { c.OperationTimeout, c.CleanupTimeout = time.Second, 2*time.Second },
 		"max frame":               func(c *Config) { c.MaxFrame = 10 },
 		"NLV":                     func(c *Config) { c.NLV = "29x4" },
-		"job CCSID override":      func(c *Config) { c.JobCCSIDOverride = 273 },
+		"job CCSID override":      func(c *Config) { c.JobCCSIDOverride = 930 },
 		"legacy TLS without flag": func(c *Config) { c.Transport = ibminet.TransportTLSRequired; c.TLS.MinVersion = 0x0301 },
 	} {
 		cfg := ok

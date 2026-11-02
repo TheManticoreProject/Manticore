@@ -7,12 +7,16 @@ const MaxObjectNameLength = 10
 
 // ObjectName is a validated IBM i library or program name.
 //
-// The first milestone accepts only the unquoted system-name subset that is a
-// single byte in both supported job CCSIDs (37 and 1140): 1 to 10 characters,
-// the first from A-Z, $, # or @, the rest from A-Z, 0-9, $, #, @ or _. ASCII
-// lowercase letters are uppercased. Anything else, including quoted names,
-// special values such as *LIBL, and national characters, is rejected rather
-// than truncated or repaired.
+// The first milestone accepts only the unquoted system-name subset: 1 to 10
+// characters, the first from A-Z, $, # or @, the rest from A-Z, 0-9, $, #, @
+// or _. ASCII lowercase letters are uppercased. Anything else, including
+// quoted names, special values such as *LIBL, and national characters, is
+// rejected rather than truncated or repaired.
+//
+// $, # and @ are EBCDIC variant characters: they sit at 0x5B, 0x7B and 0x7C
+// in CCSIDs 37, 500 and 1140, but elsewhere in the other national CCSIDs, and
+// names are encoded with the job CCSID. Whether system names must travel as
+// the CCSID 37 bytes instead is tracked in #1911.
 type ObjectName struct {
 	name string
 }

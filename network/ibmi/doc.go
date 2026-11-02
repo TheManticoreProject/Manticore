@@ -64,9 +64,10 @@
 //     back as 0x1106 (level 10) or 0x1107 (level 11+, IBM's RCVM0300
 //     order) records, which also carry help text; level 10 itself has no
 //     live target, so its 0x1106 records were captured from V7R5.
-//   - CCSIDs: 37 and 1140 for both the system and job CCSID. Any other
-//     value fails the connection unless client.Config.JobCCSIDOverride names
-//     a supported one, which always adds a warning.
+//   - CCSIDs: the single-byte EBCDIC CCSIDs ibmi/ccsid supports (37,
+//     273–871, 1047 and 1140–1149) for both the system and job CCSID. Any
+//     other value fails the connection unless client.Config.JobCCSIDOverride
+//     names a supported one, which always adds a warning.
 //   - Transport: verified TLS (TLS 1.2 or later unless
 //     hostserver.TLSOptions.AllowLegacy, never without certificate and name
 //     verification, never falling back to cleartext) or explicit cleartext
