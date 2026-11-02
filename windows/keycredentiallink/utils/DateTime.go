@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -170,11 +171,25 @@ func (dt *DateTime) SetTime(t time.Time) {
 
 	truncated := t.UTC().Truncate(100 * time.Nanosecond)
 	dt.time = truncated
-	// The tick count is built from whole seconds plus the sub-second remainder rather
-	// than from UnixNano(), whose result is undefined for times outside roughly
-	// 1678-2262 and would silently encode such dates as a different year.
-	ticks := truncated.Unix()*int64(ticksPerSecond) + int64(truncated.Nanosecond())/100
-	dt.ticks = ticksBetween1601AndUnix + uint64(ticks)
+	dt.ticks = fileTimeTicks(truncated)
+}
+
+// fileTimeTicks returns the FILETIME tick count (100-nanosecond intervals since
+// 1601-01-01 UTC) of t, clamped to what the unsigned 64-bit field can hold: a time
+// before 1601 has no FILETIME and gives 0, and a time past the field's range
+// gives its maximum. The count is built from whole seconds since 1601 plus the
+// sub-second remainder rather than from UnixNano(), whose result is undefined
+// for times outside roughly 1678-2262, and the epoch offset is added in signed
+// seconds so a time before 1601 cannot wrap around to the far future.
+func fileTimeTicks(t time.Time) uint64 {
+	secondsSince1601 := t.Unix() + int64(ticksBetween1601AndUnix/ticksPerSecond)
+	if secondsSince1601 < 0 {
+		return 0
+	}
+	if uint64(secondsSince1601) > math.MaxUint64/ticksPerSecond-1 {
+		return math.MaxUint64
+	}
+	return uint64(secondsSince1601)*ticksPerSecond + uint64(t.Nanosecond())/100
 }
 
 // GetTime returns the time.Time value stored in the DateTime instance.
