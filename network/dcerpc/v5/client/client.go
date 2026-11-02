@@ -95,8 +95,9 @@ type Client struct {
 	ntlmTargetName string
 }
 
-// SessionKey returns the NTLM exported session key established during an authenticated
-// Bind, or nil if the bind was anonymous or has not completed. It is the key DRSUAPI
+// SessionKey returns the session key established during an authenticated Bind — the
+// NTLM exported session key, or for Kerberos the GSS context key (the negotiated
+// subkey) — or nil if the bind was anonymous or has not completed. It is the key DRSUAPI
 // uses to decrypt replicated secrets (the OID/PEK unwrap in IDL_DRSGetNCChanges); most
 // callers do not need it. The returned slice is the client's own copy — do not mutate it.
 func (c *Client) SessionKey() []byte { return c.sessionKey }
@@ -211,6 +212,12 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 				if err := c.sendAuthContinuation(bind.ContextList, continuation); err != nil {
 					return fmt.Errorf("dcerpc bind: auth continuation: %w", err)
 				}
+			}
+			// A provider whose key is only final once the handshake completes
+			// (Kerberos adopts the acceptor's subkey from its AP-REP) reports it
+			// now, for callers such as DRSUAPI that encrypt with the session key.
+			if keyed, ok := c.sec.(sessionKeyer); ok {
+				c.sessionKey = append([]byte(nil), keyed.SessionKey()...)
 			}
 		}
 		c.bound = true

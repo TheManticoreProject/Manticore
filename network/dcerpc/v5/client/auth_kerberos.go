@@ -147,6 +147,23 @@ type kerberosSecurityContext struct {
 	spnego bool
 }
 
+// sessionKeyer is an optional capability of a SecurityContext that knows the
+// session key of the established context, which Client.SessionKey reports.
+type sessionKeyer interface {
+	SessionKey() []byte
+}
+
+// SessionKey returns the key of the established GSS context, as SSPI's
+// SECPKG_ATTR_SESSION_KEY does: the subkey when one was negotiated (the
+// acceptor's, adopted from its AP-REP, or else the initiator's), otherwise the
+// service ticket's session key. DRSUAPI encrypts replicated secrets with it.
+func (k *kerberosSecurityContext) SessionKey() []byte {
+	if len(k.ctx.SubKey) > 0 {
+		return k.ctx.SubKey
+	}
+	return k.ctx.SessionKey
+}
+
 // CompleteBind completes the mutual-authentication handshake from the bind_ack's
 // auth_value and returns an optional continuation token for the third leg. For
 // the SPNEGO/DCE-style path it unwraps the NegTokenResp, verifies the acceptor's

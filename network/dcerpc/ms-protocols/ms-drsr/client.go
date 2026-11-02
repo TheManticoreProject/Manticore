@@ -27,6 +27,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ms-protocols/msproto"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	dcerpcclient "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/client"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 	drsrtypes "github.com/TheManticoreProject/Manticore/windows/protocols/ms-drsr"
 )
@@ -42,6 +43,11 @@ type Client struct {
 	port    int // explicit drsuapi port; 0 means resolve via the endpoint mapper
 	creds   *credentials.Credentials
 	timeout time.Duration
+
+	// kerberos and spn, set by SetKerberos, authenticate the binding with
+	// Kerberos instead of NTLM.
+	kerberos *kerberos.KerberosClient
+	spn      string
 
 	rpc       *dcerpcclient.Client
 	handle    drsrtypes.DRS_HANDLE
@@ -74,6 +80,13 @@ func (c *Client) IsConnected() bool { return c.bound }
 // SetTimeout bounds each TCP dial and read. It must be called before Connect.
 func (c *Client) SetTimeout(d time.Duration) { c.timeout = d }
 
+// SetKerberos makes Connect authenticate with Kerberos for spn (for example
+// "host/<dc-fqdn>" or "ldap/<dc-fqdn>") instead of NTLM. The replicated secrets are then decrypted with the Kerberos
+// session key. It must be called before Connect.
+func (c *Client) SetKerberos(kc *kerberos.KerberosClient, spn string) {
+	c.kerberos, c.spn = kc, spn
+}
+
 // SetPort overrides endpoint-mapper resolution and dials drsuapi on the given TCP port
 // directly. It must be called before Connect.
 func (c *Client) SetPort(port int) { c.port = port }
@@ -93,6 +106,7 @@ func (c *Client) Connect() error {
 	}
 
 	binder := msproto.NewTCPBinder(c.host, c.port, c.creds, c.timeout)
+	binder.Kerberos, binder.SPN = c.kerberos, c.spn
 	rpc, _, err := binder.Bind(drsuapi.SyntaxID())
 	if err != nil {
 		return fmt.Errorf("msdrsr: %w", err)
@@ -126,8 +140,9 @@ func (c *Client) Handle() drsrtypes.DRS_HANDLE { return c.handle }
 // confirm negotiated features (e.g. STRONG_ENCRYPTION before requesting secrets).
 func (c *Client) ServerExtensions() *drsrtypes.DRS_EXTENSIONS_INT { return c.serverExt }
 
-// SessionKey returns the NTLM session key negotiated for this connection, used to
-// decrypt replicated secrets in IDL_DRSGetNCChanges. It is nil until Connect succeeds.
+// SessionKey returns the session key negotiated for this connection (NTLM, or
+// Kerberos after SetKerberos), used to decrypt replicated secrets in
+// IDL_DRSGetNCChanges. It is nil until Connect succeeds.
 func (c *Client) SessionKey() []byte {
 	if c.rpc == nil {
 		return nil

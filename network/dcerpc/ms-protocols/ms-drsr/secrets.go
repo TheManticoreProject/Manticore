@@ -34,7 +34,7 @@ type AccountSecrets struct {
 }
 
 // DecryptSecrets decrypts the secret attributes of every replicated object that carries
-// an objectSid (i.e. a security principal), using the connection's NTLM session key. It
+// an objectSid (i.e. a security principal), using the connection's session key (NTLM or Kerberos). It
 // must be called on the same Client whose ReplicateSingleObject (or full-NC call)
 // produced the result, because decryption is keyed by that connection's session key.
 func (c *Client) DecryptSecrets(res *ReplicationResult) ([]*AccountSecrets, error) {
