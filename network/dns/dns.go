@@ -9,6 +9,9 @@ import (
 
 // DNSLookup performs a DNS lookup of a hostname (FQDN or hostname) to a specified DNS server.
 //
+// A failed lookup returns no addresses, the same as a name with none; use
+// DNSLookupWithError to tell the two apart.
+//
 // Parameters:
 // - hostname: A string representing the hostname or FQDN to be resolved.
 // - dnsServer: A string representing the DNS server to use for the lookup.
@@ -16,6 +19,23 @@ import (
 // Returns:
 // - A slice of strings containing the IP addresses of the DNS server.
 func DNSLookup(hostname string, dnsServer string) []string {
+	ip, _ := DNSLookupWithError(hostname, dnsServer)
+	return ip
+}
+
+// DNSLookupWithError is DNSLookup that also returns the resolver's error, so a
+// failure (no answer from the server, NXDOMAIN, SERVFAIL) can be told apart from
+// a successful lookup. The error is a *net.DNSError when the resolver produced
+// one.
+//
+// Parameters:
+// - hostname: A string representing the hostname or FQDN to be resolved.
+// - dnsServer: A string representing the DNS server to use for the lookup.
+//
+// Returns:
+// - A slice of strings containing the resolved IP addresses.
+// - The resolver's error, or nil.
+func DNSLookupWithError(hostname string, dnsServer string) ([]string, error) {
 	dnsServer = dnsServerAddress(dnsServer)
 
 	r := &net.Resolver{
@@ -27,9 +47,7 @@ func DNSLookup(hostname string, dnsServer string) []string {
 			return d.DialContext(ctx, network, dnsServer)
 		},
 	}
-	ip, _ := r.LookupHost(context.Background(), hostname)
-
-	return ip
+	return r.LookupHost(context.Background(), hostname)
 }
 
 // dnsServerAddress returns the dial address for a DNS server, appending the
