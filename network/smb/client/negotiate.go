@@ -240,6 +240,29 @@ func finishSMB2(t transport.Transport, ip net.IP, host string, port int, opts Op
 		engine.Workstation = opts.Workstation
 	}
 
+	// A multi-protocol negotiate offers SMB2 only as the "SMB 2.002" and
+	// "SMB 2.???" strings, so the server can answer only the wildcard ([MS-SMB2]
+	// 3.3.5.3.1) or 2.0.2 (3.3.5.3.2), and each only if its string was offered: the
+	// wildcard is offered exactly when the preferences hold a dialect above
+	// 2.0.2.
+	offered2002, offeredWildcard := false, false
+	for _, d := range offered {
+		if d == smb2dialects.SMB2_DIALECT_2_0_2 {
+			offered2002 = true
+		} else {
+			offeredWildcard = true
+		}
+	}
+	switch {
+	case resp.DialectRevision == smb2dialects.SMB2_DIALECT_WILDCARD && !offeredWildcard:
+		t.Close()
+		return nil, fmt.Errorf("server answered the SMB2 wildcard, which the multi-protocol negotiate did not offer")
+	case resp.DialectRevision != smb2dialects.SMB2_DIALECT_WILDCARD &&
+		(resp.DialectRevision != smb2dialects.SMB2_DIALECT_2_0_2 || !offered2002):
+		t.Close()
+		return nil, fmt.Errorf("server selected SMB2 dialect 0x%04x, which the multi-protocol negotiate did not offer", uint16(resp.DialectRevision))
+	}
+
 	if resp.DialectRevision == smb2dialects.SMB2_DIALECT_WILDCARD {
 		// Wildcard response — perform a follow-up native SMB2 negotiate on the
 		// same transport, offering the SMB2 dialects of the preference list (with
