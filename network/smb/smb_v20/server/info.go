@@ -26,7 +26,6 @@ const (
 const (
 	fileModeInformation         = 16
 	fileAlignmentInformation    = 17
-	fileStreamInformation       = 22
 	fileAttributeTagInformation = 35
 )
 
@@ -130,15 +129,12 @@ func encodeFileInfo(class uint8, open *Open, attr smb1.FileAttr) ([]byte, bool, 
 		encodedName := utf16.EncodeUTF16LE(name)
 		encoded = append(binary.LittleEndian.AppendUint32(nil, uint32(len(encodedName))), encodedName...)
 		variable = true
-	case fileStreamInformation:
+	case infoclass.FileStreamInformation:
 		variable = true
 		if !attr.IsDir {
 			// The unnamed data stream, the only one there is.
-			name := utf16.EncodeUTF16LE("::$DATA")
-			encoded = binary.LittleEndian.AppendUint32(make([]byte, 4), uint32(len(name)))
-			encoded = binary.LittleEndian.AppendUint64(encoded, uint64(attr.Size))
-			encoded = binary.LittleEndian.AppendUint64(encoded, uint64(attr.AllocationSize))
-			encoded = append(encoded, name...)
+			stream := filesystem.FileStreamInformation{StreamSize: attr.Size, StreamAllocationSize: attr.AllocationSize, StreamName: "::$DATA"}
+			encoded, err = stream.Marshal()
 		}
 	default:
 		return nil, false, nt_status.NT_STATUS_INVALID_INFO_CLASS
@@ -170,6 +166,15 @@ func encodeVolumeInfo(class uint8, volume smb1.VolumeInfo) ([]byte, nt_status.NT
 		info := filesystem.FileFsFullSizeInformation{
 			TotalAllocationUnits: volume.TotalBytes / unit, CallerAvailableAllocationUnits: volume.FreeBytes / unit,
 			ActualAvailableAllocationUnits: volume.FreeBytes / unit, SectorsPerAllocationUnit: sectors, BytesPerSector: sectorSize,
+		}
+		encoded, err = info.Marshal()
+	case infoclass.FileFsSectorSizeInformation:
+		// The sector the volume reports, aligned at offset 0: nothing is known
+		// of the device behind it.
+		info := filesystem.FileFsSectorSizeInformation{
+			LogicalBytesPerSector: sectorSize, PhysicalBytesPerSectorForAtomicity: sectorSize,
+			PhysicalBytesPerSectorForPerformance: sectorSize, FileSystemEffectivePhysicalBytesPerSectorForAtomicity: sectorSize,
+			Flags: filesystem.SSINFO_FLAGS_ALIGNED_DEVICE | filesystem.SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE,
 		}
 		encoded, err = info.Marshal()
 	case infoclass.FileFsDeviceInformation:
@@ -373,9 +378,10 @@ func (c *Connection) queryDirectory(r *request, resp *response) nt_status.NT_STA
 // supportedDirectoryClass reports whether a listing can be returned in a class.
 func supportedDirectoryClass(class uint8) bool {
 	switch infoclass.FileInformationClass(class) {
-	case infoclass.FileFullDirectoryInformation, infoclass.FileBothDirectoryInformation,
-		infoclass.FileNamesInformation, infoclass.FileIdBothDirectoryInformation,
-		infoclass.FileIdFullDirectoryInformation:
+	case infoclass.FileDirectoryInformation, infoclass.FileFullDirectoryInformation,
+		infoclass.FileBothDirectoryInformation, infoclass.FileNamesInformation,
+		infoclass.FileIdBothDirectoryInformation, infoclass.FileIdFullDirectoryInformation,
+		infoclass.FileIdExtdDirectoryInformation:
 		return true
 	}
 	return false
@@ -389,6 +395,19 @@ func encodeDirectoryEntry(class uint8, directory string, attr smb1.FileAttr) []b
 
 	var entry interface{ Marshal() ([]byte, error) }
 	switch infoclass.FileInformationClass(class) {
+	case infoclass.FileDirectoryInformation:
+		entry = &filesystem.FileDirectoryInformation{
+			CreationTime: created, LastAccessTime: accessed, LastWriteTime: modified, ChangeTime: changed,
+			EndOfFile: attr.Size, AllocationSize: attr.AllocationSize, FileAttributes: attributes, FileName: attr.Name,
+		}
+	case infoclass.FileIdExtdDirectoryInformation:
+		// The 64-bit index, zero-extended to the 128-bit FileId.
+		extd := &filesystem.FileIdExtdDirectoryInformation{
+			CreationTime: created, LastAccessTime: accessed, LastWriteTime: modified, ChangeTime: changed,
+			EndOfFile: attr.Size, AllocationSize: attr.AllocationSize, FileAttributes: attributes, FileName: attr.Name,
+		}
+		binary.LittleEndian.PutUint64(extd.FileId[:8], id)
+		entry = extd
 	case infoclass.FileFullDirectoryInformation:
 		entry = &filesystem.FileFullDirectoryInformation{
 			CreationTime: created, LastAccessTime: accessed, LastWriteTime: modified, ChangeTime: changed,

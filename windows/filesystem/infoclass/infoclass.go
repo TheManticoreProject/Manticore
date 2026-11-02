@@ -30,9 +30,11 @@ const (
 	FileAllocationInformation      FileInformationClass = 19
 	FileEndOfFileInformation       FileInformationClass = 20
 	FileAlternateNameInformation   FileInformationClass = 21
+	FileStreamInformation          FileInformationClass = 22
 	FileNetworkOpenInformation     FileInformationClass = 34
 	FileIdBothDirectoryInformation FileInformationClass = 37
 	FileIdFullDirectoryInformation FileInformationClass = 38
+	FileIdExtdDirectoryInformation FileInformationClass = 60
 )
 
 // FsInformationClass identifies a FILE_FS_*_INFORMATION class used with the
@@ -43,12 +45,13 @@ const (
 type FsInformationClass uint8
 
 const (
-	FileFsVolumeInformation    FsInformationClass = 1
-	FileFsLabelInformation     FsInformationClass = 2
-	FileFsSizeInformation      FsInformationClass = 3
-	FileFsDeviceInformation    FsInformationClass = 4
-	FileFsAttributeInformation FsInformationClass = 5
-	FileFsControlInformation   FsInformationClass = 6
-	FileFsFullSizeInformation  FsInformationClass = 7
-	FileFsObjectIdInformation  FsInformationClass = 8
+	FileFsVolumeInformation     FsInformationClass = 1
+	FileFsLabelInformation      FsInformationClass = 2
+	FileFsSizeInformation       FsInformationClass = 3
+	FileFsDeviceInformation     FsInformationClass = 4
+	FileFsAttributeInformation  FsInformationClass = 5
+	FileFsControlInformation    FsInformationClass = 6
+	FileFsFullSizeInformation   FsInformationClass = 7
+	FileFsObjectIdInformation   FsInformationClass = 8
+	FileFsSectorSizeInformation FsInformationClass = 11
 )
