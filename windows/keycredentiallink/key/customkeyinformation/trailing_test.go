@@ -61,7 +61,7 @@ func TestCustomKeyInformationTrailingNeedsFullReserved(t *testing.T) {
 	cki.Flags = &flags
 	vt := CustomKeyInformationVolumeType(0)
 	cki.VolumeType = &vt
-	sn := SupportsNotification(false)
+	sn := SupportsNotification_FALSE
 	cki.SupportsNotification = &sn
 	fv := FekKeyVersion(1)
 	cki.FekKeyVersion = &fv
