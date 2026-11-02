@@ -47,6 +47,13 @@ type CustomKeyInformation struct {
 	// The contents of this field are defined in section 2.2.20.4.1.
 	// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/b2c0cb9b-e49e-4907-9235-f9fd7eee8c13
 	EncodedExtendedCKI *EncodedExtendedCKI
+
+	// Trailing holds the bytes after Reserved that are not a well-formed
+	// EncodedExtendedCKI (a lone byte, an unknown version, a Size past the end),
+	// or that follow one. They are kept as read and written back by Marshal, as
+	// DSInternals keeps everything after Reserved, so the entry and the KeyHash
+	// that covers it survive a round trip and the credential still parses.
+	Trailing []byte
 }
 
 // Unmarshal parses the provided byte slice into the CustomKeyInformation structure.
@@ -75,6 +82,7 @@ func (cki *CustomKeyInformation) Unmarshal(data []byte, kcv version.KeyCredentia
 	cki.KeyStrength = nil
 	cki.Reserved = nil
 	cki.EncodedExtendedCKI = nil
+	cki.Trailing = nil
 
 	bytesRead := 0
 
@@ -159,16 +167,20 @@ func (cki *CustomKeyInformation) Unmarshal(data []byte, kcv version.KeyCredentia
 		return bytesRead, nil
 	}
 
-	// Extended custom key information.
-	if len(data[bytesRead:]) >= 2 {
-		cki.EncodedExtendedCKI = new(EncodedExtendedCKI)
-		bytesReadEncodedExtendedCKI, err := cki.EncodedExtendedCKI.Unmarshal(data[bytesRead:])
-		if err != nil {
-			return 0, err
+	// Extended custom key information, when what follows is well formed; any
+	// other bytes are kept as Trailing rather than dropped or rejected.
+	rest := data[bytesRead:]
+	if len(rest) >= 2 {
+		ext := new(EncodedExtendedCKI)
+		if n, err := ext.Unmarshal(rest); err == nil {
+			cki.EncodedExtendedCKI = ext
+			bytesRead += n
+			rest = rest[n:]
 		}
-		bytesRead += bytesReadEncodedExtendedCKI
-	} else {
-		return bytesRead, nil
+	}
+	if len(rest) > 0 {
+		cki.Trailing = append([]byte(nil), rest...)
+		bytesRead += len(rest)
 	}
 
 	return bytesRead, nil
@@ -265,8 +277,15 @@ func (cki *CustomKeyInformation) Marshal() ([]byte, error) {
 			return nil, err
 		}
 		data = append(data, encodedExtendedCKIBytes...)
-	} else {
-		return data, nil
+	}
+
+	// Trailing bytes after Reserved, re-emitted as they were read. Like
+	// EncodedExtendedCKI they need a full Reserved before them.
+	if len(cki.Trailing) > 0 {
+		if len(*cki.Reserved) != reservedMaxSize {
+			return nil, fmt.Errorf("trailing data requires a %d-byte Reserved field, got %d bytes", reservedMaxSize, len(*cki.Reserved))
+		}
+		data = append(data, cki.Trailing...)
 	}
 
 	return data, nil
@@ -320,6 +339,10 @@ func (cki *CustomKeyInformation) Describe(indent int) {
 		fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: %s\n", indentPrompt, hex.EncodeToString(*cki.Reserved))
 	} else {
 		// fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: None\n", indentPrompt)
+	}
+
+	if len(cki.Trailing) > 0 {
+		fmt.Printf("%s │ \x1b[93mTrailing\x1b[0m: %s\n", indentPrompt, hex.EncodeToString(cki.Trailing))
 	}
 
 	if cki.EncodedExtendedCKI != nil {
