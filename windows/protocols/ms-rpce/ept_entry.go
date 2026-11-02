@@ -14,7 +14,9 @@ import (
 // A fixed-bound [string] array is encoded in NDR as a *varying* array — an offset and an
 // actual_count (number of characters, including the NUL terminator) followed by that many
 // octets, with no maximum_count. That two-count framing differs from the codec's general
-// conformant-varying string handling, so Annotation marshals itself.
+// conformant-varying string handling, so Annotation marshals itself. Under NDR64 the
+// offset and actual_count are 8-octet values, 8-aligned ([MS-RPCE] 2.2.5); under NDR 2.0
+// they are 4-octet values, 4-aligned.
 type Annotation string
 
 // Compile-time assertion that Annotation encodes itself as NDR.
@@ -23,16 +25,24 @@ var _ ndr.Marshaler = (*Annotation)(nil)
 // AnnotationMaxSize is ept_max_annotation_size, the fixed bound of the annotation array.
 const AnnotationMaxSize = 64
 
-// AlignmentNDR reports the 4-octet alignment of the leading offset/actual_count words.
+// AlignmentNDR reports the 4-octet alignment of the leading offset/actual_count words
+// under NDR 2.0. Under NDR64 the words are 8 octets and the marshal methods align to 8
+// themselves.
 func (*Annotation) AlignmentNDR() int { return 4 }
 
 // MarshalNDR writes the annotation as a varying char array: offset 0, actual_count
 // (string length plus the NUL terminator), then the bytes and the terminator.
 func (a *Annotation) MarshalNDR(e *ndr.Encoder) error {
-	e.Align(4)
 	s := string(*a)
-	e.WriteUint32(0)                  // offset
-	e.WriteUint32(uint32(len(s) + 1)) // actual_count, including the NUL terminator
+	if e.Syntax() == ndr.NDR64 {
+		e.Align(8)
+		e.WriteUint64(0)                  // offset
+		e.WriteUint64(uint64(len(s) + 1)) // actual_count, including the NUL terminator
+	} else {
+		e.Align(4)
+		e.WriteUint32(0)                  // offset
+		e.WriteUint32(uint32(len(s) + 1)) // actual_count, including the NUL terminator
+	}
 	e.WriteBytes([]byte(s))
 	e.WriteUint8(0) // NUL terminator
 	return nil
@@ -41,13 +51,27 @@ func (a *Annotation) MarshalNDR(e *ndr.Encoder) error {
 // UnmarshalNDR reads a varying char array (offset, actual_count, octets) and stores it
 // with the trailing NUL removed.
 func (a *Annotation) UnmarshalNDR(d *ndr.Decoder) error {
-	d.Align(4)
-	if _, err := d.ReadUint32(); err != nil { // offset
+	readCount := func() (uint64, error) {
+		v, err := d.ReadUint32()
+		return uint64(v), err
+	}
+	if d.Syntax() == ndr.NDR64 {
+		d.Align(8)
+		readCount = d.ReadUint64
+	} else {
+		d.Align(4)
+	}
+	offset, err := readCount()
+	if err != nil {
 		return fmt.Errorf("epm: annotation offset: %w", err)
 	}
-	n, err := d.ReadUint32() // actual_count (characters, including any NUL terminator)
+	n, err := readCount() // actual_count (characters, including any NUL terminator)
 	if err != nil {
 		return fmt.Errorf("epm: annotation length: %w", err)
+	}
+	// The transmitted slice must lie within the ept_max_annotation_size array.
+	if offset > AnnotationMaxSize || n > AnnotationMaxSize-offset {
+		return fmt.Errorf("epm: annotation offset %d and actual_count %d exceed %d", offset, n, AnnotationMaxSize)
 	}
 	b, err := d.ReadBytes(int(n))
 	if err != nil {
