@@ -4,6 +4,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/fingerprint"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/capabilities"
@@ -45,6 +46,14 @@ type Client struct {
 	pendingAsyncId   uint64
 	hasPendingAsync  bool
 
+	// outstandingMessageId, outstandingTreeId and outstandingSessionId name
+	// the request sendReceive is waiting on before any interim response has
+	// given it an AsyncId, so Cancel can target it synchronously.
+	outstandingMessageId uint64
+	outstandingTreeId    uint32
+	outstandingSessionId uint64
+	hasOutstanding       bool
+
 	// lastSentBytes / lastRecvBytes hold the plaintext wire bytes of the most
 	// recent request sent and final response received. They feed the SMB 3.1.1
 	// pre-authentication integrity hash, which is computed over the exact
@@ -68,11 +77,26 @@ func (c *Client) setPendingAsync(messageId, asyncId uint64) {
 	c.asyncMu.Unlock()
 }
 
-// clearPendingAsync forgets any recorded in-flight async operation.
+// clearPendingAsync forgets any recorded in-flight operation, async or not.
 func (c *Client) clearPendingAsync() {
 	c.asyncMu.Lock()
 	c.hasPendingAsync = false
+	c.hasOutstanding = false
 	c.asyncMu.Unlock()
+}
+
+// setOutstanding records the request just sent, before any interim response.
+func (c *Client) setOutstanding(messageId uint64, treeId uint32, sessionId uint64) {
+	c.asyncMu.Lock()
+	c.outstandingMessageId, c.outstandingTreeId, c.outstandingSessionId, c.hasOutstanding = messageId, treeId, sessionId, true
+	c.asyncMu.Unlock()
+}
+
+// outstanding returns the recorded synchronous request's identifiers.
+func (c *Client) outstanding() (messageId uint64, treeId uint32, sessionId uint64, ok bool) {
+	c.asyncMu.Lock()
+	defer c.asyncMu.Unlock()
+	return c.outstandingMessageId, c.outstandingTreeId, c.outstandingSessionId, c.hasOutstanding
 }
 
 // pendingAsync returns the recorded in-flight async operation's identifiers.
@@ -264,7 +288,7 @@ type Session struct {
 	// nonceCounter provides the monotonically increasing nonce for the SMB2
 	// TRANSFORM_HEADER of each encrypted message, ensuring a nonce is never
 	// reused within the session (MS-SMB2 3.2.4.1.8).
-	nonceCounter uint64
+	nonceCounter atomic.Uint64
 
 	// Credentials are the credentials used to authenticate the session.
 	Credentials *credentials.Credentials

@@ -87,6 +87,9 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	if _, err = c.Transport.Send(wire); err != nil {
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
+	// Until an interim response gives it an AsyncId, the request can only be
+	// cancelled synchronously, by its MessageId (MS-SMB2 3.2.4.24).
+	c.setOutstanding(uint64(msg.Header.MessageId), uint32(msg.Header.TreeId), uint64(msg.Header.SessionId))
 
 	// Receive the response. The server may first return one or more interim
 	// STATUS_PENDING responses (SMB2_FLAGS_ASYNC_COMMAND) for an operation it
@@ -180,7 +183,6 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 		// response.
 		c.setPendingAsync(msg.Header.MessageId, uint64(response.Header.GetAsyncId()))
 	}
-	c.clearPendingAsync()
 
 	// Retain the plaintext wire bytes of the final response for the pre-auth hash.
 	c.lastRecvBytes = append([]byte(nil), raw...)
