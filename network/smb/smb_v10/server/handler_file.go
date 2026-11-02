@@ -570,16 +570,83 @@ func writeLengthOf(conn *Connection, request *commands.WriteAndxRequest) int {
 // Returns:
 //   - The status to report, which is success once the response is sent
 func (c *Connection) readPipeHandle(w ResponseWriter, open *Open, length int) nt_status.NT_STATUS {
-	chunk, moreRemains := open.drainPipeOutput(length)
+	chunk, messageContinues := open.drainPipeMessage(length)
 
-	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, more remains=%t",
-		len(chunk), open.currentPath(), c.Remote, moreRemains)
+	logger.Debugf("SMB1 server: read %d bytes of pipe %q for %s, message continues=%t, more held by the session=%t",
+		len(chunk), open.currentPath(), c.Remote, messageContinues, open.pipeMore)
 
 	response := commands.NewReadAndxResponse()
 	response.Data = chunk
 
-	if err := w.WriteResponse(response); err != nil {
+	// A read shorter than the message returns its first part with
+	// STATUS_BUFFER_OVERFLOW, the warning a message-mode pipe gives; the status
+	// travels with the data and the rest is read next.
+	status := nt_status.NT_STATUS_SUCCESS
+	if messageContinues {
+		status = nt_status.NT_STATUS_BUFFER_OVERFLOW
+	}
+	if err := w.WriteResponseWithStatus(response, status); err != nil {
 		logger.Debugf("SMB1 server: failed to answer the pipe read for %s: %v", c.Remote, err)
+	}
+	return nt_status.NT_STATUS_SUCCESS
+}
+
+// writePipeHandle delivers a write on a pipe handle to the pipe's session as one
+// message, and keeps the session's answer on the handle for the reads that
+// collect it ([MS-CIFS] section 3.3.5.36 has a write on a named pipe "write to
+// the pipe" rather than to an offset).
+//
+// A handle still holding an unread answer takes no new message, as with a
+// transaction: the answer is what the client is owed first, and accepting more
+// would let a client that never reads grow the buffer without limit.
+//
+// Each write is taken as a whole message, which for RPC is a whole PDU. A
+// client that splits one PDU across several writes is not served: the first
+// piece is answered with a fault and the next write finds that answer unread.
+// impacket and Windows write one PDU per write.
+//
+// A zero-length write is a successful no-op; handing the session an empty
+// message would read as a request for the rest of an answer.
+//
+// Parameters:
+//   - w: where the response is written
+//   - open: the pipe handle being written
+//   - data: the message
+//
+// Returns:
+//   - The status to report, which is success once the response is sent
+func (c *Connection) writePipeHandle(w ResponseWriter, open *Open, data []byte) nt_status.NT_STATUS {
+	session := open.pipeSession()
+	if session == nil {
+		return nt_status.NT_STATUS_INVALID_HANDLE
+	}
+	if len(data) == 0 {
+		if err := w.WriteResponse(commands.NewWriteAndxResponse()); err != nil {
+			logger.Debugf("SMB1 server: failed to answer the pipe write for %s: %v", c.Remote, err)
+		}
+		return nt_status.NT_STATUS_SUCCESS
+	}
+	if len(open.pipeOutput) > 0 || open.pipeMore {
+		logger.Debugf("SMB1 server: %s wrote pipe %q with %d bytes of the previous answer unread, more held by the session=%t",
+			c.Remote, open.currentPath(), len(open.pipeOutput), open.pipeMore)
+		return nt_status.NT_STATUS_PIPE_BUSY
+	}
+
+	output, moreRemains, err := session.Transact(data, maxPipeAnswerSize)
+	if err != nil {
+		logger.Debugf("SMB1 server: pipe %q refused a write from %s: %v", open.currentPath(), c.Remote, err)
+		return statusForPipeError(err)
+	}
+	open.pipeOutput = append(open.pipeOutput, output...)
+	open.pipeMore = moreRemains
+	logger.Debugf("SMB1 server: wrote %d bytes to pipe %q for %s, %d bytes of answer buffered, more remains=%t",
+		len(data), open.currentPath(), c.Remote, len(output), moreRemains)
+
+	response := commands.NewWriteAndxResponse()
+	response.Count = types.USHORT(len(data) & 0xFFFF)
+	response.CountHigh = types.USHORT(len(data) >> 16)
+	if err := w.WriteResponse(response); err != nil {
+		logger.Debugf("SMB1 server: failed to answer the pipe write for %s: %v", c.Remote, err)
 	}
 	return nt_status.NT_STATUS_SUCCESS
 }
@@ -638,6 +705,14 @@ func handleWriteAndx(conn *Connection, w ResponseWriter, req *message.Message) n
 	data := []byte(request.Data)
 	if declared := writeLengthOf(conn, request); declared < len(data) {
 		data = data[:declared]
+	}
+
+	// A write to a pipe handle is a message to the pipe's handler. Clients that
+	// do not use TRANS_TRANSACT_NMPIPE, such as impacket, write each RPC PDU
+	// this way and collect the answer with reads. Checked before the lock table
+	// for the same reason the read path is: a pipe has no byte ranges.
+	if open.IsPipe {
+		return conn.writePipeHandle(w, open, data)
 	}
 
 	if status := lockedAgainst(open, uint64(offset), uint64(len(data)), true); status != nt_status.NT_STATUS_SUCCESS {
@@ -739,10 +814,10 @@ func handleFlush(conn *Connection, w ResponseWriter, req *message.Message) nt_st
 func fileFor(open *Open) (File, nt_status.NT_STATUS) {
 	switch {
 	case open.IsPipe:
-		// A pipe handle has a handler behind it rather than a file. Reading one is
-		// served by readPipeHandle before reaching here; writing one is a request
-		// the handler has no way to receive, since a handler answers a transaction
-		// rather than accepting a stream, so it is refused.
+		// A pipe handle has a handler behind it rather than a file. Reading and
+		// writing one with READ_ANDX and WRITE_ANDX are served by readPipeHandle
+		// and writePipeHandle before reaching here; the other read and write
+		// commands are refused.
 		return nil, nt_status.NT_STATUS_NOT_SUPPORTED
 	case open.File == nil:
 		// What a read or a write on a directory is answered with.

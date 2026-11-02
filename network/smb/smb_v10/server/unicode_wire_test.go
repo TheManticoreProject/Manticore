@@ -324,14 +324,14 @@ func TestFindPatternAcceptsAnExactName(t *testing.T) {
 	}
 }
 
-// TestFileCommandsOnAPipeHandle asserts a read through a pipe handle is served and
-// a write through one is refused, and that neither crashes the connection.
+// TestFileCommandsOnAPipeHandle asserts reads and writes through a pipe handle are
+// served, and that neither crashes the connection.
 //
 // An RPC client reads a pipe handle directly when its transaction did not return a
 // whole response, so the read has to work: it is how the rest of the answer is
 // collected. Reading with nothing buffered is not an error — it means the answer
-// is finished. Writing has nowhere to go, because a handler answers a transaction
-// rather than accepting a stream.
+// is finished. A write is a message to the pipe's handler, whose answer the next
+// read returns; clients that do not transact, such as impacket, work this way.
 //
 // A pipe handle has no file behind it, and reaching one through a file command
 // once found an unguarded dereference that took the connection down, so the
@@ -352,8 +352,11 @@ func TestFileCommandsOnAPipeHandle(t *testing.T) {
 	if len(data) != 0 {
 		t.Errorf("reading a pipe handle with nothing buffered returned %q, want no data", data)
 	}
-	if _, err := client.WriteFile(fid, 0, []byte("x")); err == nil {
-		t.Error("writing a pipe handle as a file succeeded")
+	if _, err := client.WriteFile(fid, 0, []byte("x")); err != nil {
+		t.Errorf("writing a pipe handle failed: %v", err)
+	}
+	if data, err := client.ReadFile(fid, 0, 16); err != nil || string(data) != "echo:x" {
+		t.Errorf("reading the answer to a pipe write = %q, %v; want \"echo:x\"", data, err)
 	}
 
 	// The connection must still be usable, which is what the crash cost.

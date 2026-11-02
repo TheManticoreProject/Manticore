@@ -194,6 +194,41 @@ func (o *Open) drainPipeOutput(limit int) ([]byte, bool) {
 	return chunk, len(o.pipeOutput) > 0 || o.pipeMore
 }
 
+// drainPipeMessage removes up to limit bytes of the current message buffered on
+// a pipe handle, and reports whether that message continues past them.
+//
+// The pipe is message mode, so a read never crosses from one message into the
+// next: the next part is fetched from the session only once the current one is
+// drained. A session hands over one message per part (rpcpipe hands over one
+// PDU), and a client such as impacket parses each read as a single PDU.
+//
+// Parameters:
+//   - limit: the most bytes to remove
+//
+// Returns:
+//   - The bytes removed, and whether the current message continues
+func (o *Open) drainPipeMessage(limit int) ([]byte, bool) {
+	if len(o.pipeOutput) == 0 && o.pipeMore && o.Pipe != nil {
+		output, moreRemains, err := o.Pipe.Transact(nil, maxPipeAnswerSize)
+		if err != nil {
+			logger.Debugf("SMB1 server: pipe %q failed to return the rest of its answer: %v", o.Path, err)
+			o.pipeMore = false
+		} else {
+			o.pipeOutput = output
+			o.pipeMore = moreRemains && len(output) > 0
+		}
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(o.pipeOutput) {
+		limit = len(o.pipeOutput)
+	}
+	chunk := o.pipeOutput[:limit:limit]
+	o.pipeOutput = o.pipeOutput[limit:]
+	return chunk, len(o.pipeOutput) > 0
+}
+
 // peekPipeOutput returns up to limit bytes of the answer buffered on a pipe
 // handle without removing any of it, along with how much is buffered in total.
 //
