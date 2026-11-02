@@ -7,6 +7,19 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 )
 
+// bigEndianBindUnsupported reports a big-endian bind-family PDU, which is not yet
+// supported: the presentation syntax identifiers these PDUs carry (an interface
+// UUID and version per context) would need byte-order-aware parsing, whereas the
+// request, response and fault data path is decoded in either order. A client here
+// always binds little-endian, so this guards against silently mis-parsing a
+// big-endian peer's bind rather than being a path the client reaches itself.
+func bigEndianBindUnsupported(h *Header, kind string) error {
+	if h.DataRepresentation[0]>>4 == drepBigEndian {
+		return fmt.Errorf("big-endian %s PDU is not supported: bind negotiation is little-endian only", kind)
+	}
+	return nil
+}
+
 // Presentation context negotiation result codes (p_cont_def_result_t), as returned in
 // the result field of each p_result_t in a bind_ack PDU.
 //
@@ -187,6 +200,9 @@ func (b *Bind) Unmarshal(data []byte) (int, error) {
 	if b.Header.PacketType != PacketTypeBind {
 		return 0, fmt.Errorf("not a bind PDU: packet type is %s", b.Header.PacketType)
 	}
+	if err := bigEndianBindUnsupported(&b.Header, "bind"); err != nil {
+		return 0, err
+	}
 	if len(data) < pos+12 {
 		return 0, fmt.Errorf("bind PDU truncated")
 	}
@@ -333,6 +349,9 @@ func (b *BindAck) Unmarshal(data []byte) (int, error) {
 	if b.Header.PacketType != PacketTypeBindAck {
 		return 0, fmt.Errorf("not a bind_ack PDU: packet type is %s", b.Header.PacketType)
 	}
+	if err := bigEndianBindUnsupported(&b.Header, "bind_ack"); err != nil {
+		return 0, err
+	}
 	if len(data) < pos+10 {
 		return 0, fmt.Errorf("bind_ack PDU truncated")
 	}
@@ -443,6 +462,9 @@ func (b *BindNak) Unmarshal(data []byte) (int, error) {
 	}
 	if b.Header.PacketType != PacketTypeBindNak {
 		return 0, fmt.Errorf("not a bind_nak PDU: packet type is %s", b.Header.PacketType)
+	}
+	if err := bigEndianBindUnsupported(&b.Header, "bind_nak"); err != nil {
+		return 0, err
 	}
 	if len(data) < pos+3 {
 		return 0, fmt.Errorf("bind_nak PDU truncated")

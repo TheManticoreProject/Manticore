@@ -71,9 +71,10 @@ func (r *Request) Unmarshal(data []byte) (int, error) {
 	if len(data) < pos+8 {
 		return 0, fmt.Errorf("request PDU truncated")
 	}
-	r.AllocHint = binary.LittleEndian.Uint32(data[pos : pos+4])
-	r.ContextID = binary.LittleEndian.Uint16(data[pos+4 : pos+6])
-	r.Opnum = binary.LittleEndian.Uint16(data[pos+6 : pos+8])
+	order := r.Header.ByteOrder()
+	r.AllocHint = order.Uint32(data[pos : pos+4])
+	r.ContextID = order.Uint16(data[pos+4 : pos+6])
+	r.Opnum = order.Uint16(data[pos+6 : pos+8])
 	pos += 8
 
 	if r.Header.PacketFlags.Has(PFCObjectUuid) {
@@ -153,8 +154,9 @@ func (r *Response) Unmarshal(data []byte) (int, error) {
 	if len(data) < pos+8 {
 		return 0, fmt.Errorf("response PDU truncated")
 	}
-	r.AllocHint = binary.LittleEndian.Uint32(data[pos : pos+4])
-	r.ContextID = binary.LittleEndian.Uint16(data[pos+4 : pos+6])
+	order := r.Header.ByteOrder()
+	r.AllocHint = order.Uint32(data[pos : pos+4])
+	r.ContextID = order.Uint16(data[pos+4 : pos+6])
 	r.CancelCount = data[pos+6]
 	pos += 8
 

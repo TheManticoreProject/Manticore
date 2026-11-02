@@ -1,6 +1,7 @@
 package ndr
 
 import (
+	"encoding/binary"
 	"fmt"
 	"reflect"
 )
@@ -37,6 +38,13 @@ func Unmarshal(data []byte, v any) error { return UnmarshalAs(data, v, NDR20) }
 // UnmarshalAs is Unmarshal under an explicit transfer syntax. See MarshalAs for the
 // NDR64 semantics and the union/pipe limitation.
 func UnmarshalAs(data []byte, v any, syntax Syntax) error {
+	return UnmarshalAsOrder(data, v, syntax, binary.LittleEndian)
+}
+
+// UnmarshalAsOrder is UnmarshalAs that reads multi-octet integers in order, as the
+// NDR receiver-makes-right rule requires for a stub a big-endian sender produced. A
+// nil order means little-endian.
+func UnmarshalAsOrder(data []byte, v any, syntax Syntax, order binary.ByteOrder) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("ndr: Unmarshal requires a non-nil pointer, got %T", v)
@@ -45,7 +53,7 @@ func UnmarshalAs(data []byte, v any, syntax Syntax) error {
 	if err != nil {
 		return err
 	}
-	return unmarshalStruct(NewDecoderForSyntax(data, syntax), sv, false)
+	return unmarshalStruct(NewDecoderForSyntaxWithOrder(data, syntax, order), sv, false)
 }
 
 // structValue dereferences pointers/interfaces to reach a struct value.

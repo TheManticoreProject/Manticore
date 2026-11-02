@@ -2,6 +2,7 @@ package pdu
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
@@ -34,16 +35,43 @@ func TestHeader_GoldenBytes(t *testing.T) {
 	}
 }
 
-func TestHeader_RejectsBigEndianDREP(t *testing.T) {
+func TestHeader_AcceptsBigEndianDREP(t *testing.T) {
+	// A big-endian DREP (first byte high nibble 0): frag_length, auth_length and
+	// call_id are then read most-significant byte first.
 	data := []byte{
 		0x05, 0x00, 0x0b, 0x03,
 		0x00, 0x00, 0x00, 0x00, // big-endian DREP (high nibble 0)
+		0x00, 0x48, // frag_length 72, big-endian
+		0x00, 0x00, // auth_length 0
+		0x00, 0x00, 0x00, 0x01, // call_id 1, big-endian
+	}
+	var h Header
+	if _, err := h.Unmarshal(data); err != nil {
+		t.Fatalf("Unmarshal of big-endian DREP: error = %v, want nil", err)
+	}
+	if h.ByteOrder() != binary.BigEndian {
+		t.Error("ByteOrder() is not big-endian for a big-endian DREP")
+	}
+	if h.FragLength != 72 {
+		t.Errorf("FragLength = %d, want 72 (big-endian)", h.FragLength)
+	}
+	if h.CallID != 1 {
+		t.Errorf("CallID = %d, want 1 (big-endian)", h.CallID)
+	}
+}
+
+func TestHeader_RejectsInvalidDREP(t *testing.T) {
+	// A DREP whose integer order is neither little- (1) nor big-endian (0) is not a
+	// defined representation and is rejected.
+	data := []byte{
+		0x05, 0x00, 0x0b, 0x03,
+		0x20, 0x00, 0x00, 0x00, // high nibble 2: undefined integer order
 		0x10, 0x00, 0x00, 0x00,
 		0x01, 0x00, 0x00, 0x00,
 	}
 	var h Header
 	if _, err := h.Unmarshal(data); err == nil {
-		t.Fatal("Unmarshal of big-endian DREP: error = nil, want non-nil")
+		t.Fatal("Unmarshal of an undefined DREP: error = nil, want non-nil")
 	}
 }
 

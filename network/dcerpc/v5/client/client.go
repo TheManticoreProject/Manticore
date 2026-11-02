@@ -25,6 +25,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
@@ -72,6 +73,12 @@ type Client struct {
 	// negotiatedSyntax is the transfer syntax the server accepted at Bind; Invoke
 	// marshals and unmarshals stubs under it. Default NDR20.
 	negotiatedSyntax ndr.Syntax
+
+	// respByteOrder is the integer byte order of the most recent response, taken
+	// from its PDU data representation. Invoke decodes the stub in it, as the NDR
+	// receiver-makes-right rule requires for a big-endian sender. nil means the
+	// little-endian default, which is what Windows and Samba always send.
+	respByteOrder binary.ByteOrder
 
 	bound bool
 
@@ -314,7 +321,11 @@ func (c *Client) Invoke(in ndr.Call, out any) error {
 	if out == nil {
 		return nil
 	}
-	if err := ndr.ResponseAs(resp, out, c.negotiatedSyntax); err != nil {
+	order := c.respByteOrder
+	if order == nil {
+		order = binary.LittleEndian
+	}
+	if err := ndr.ResponseAsOrder(resp, out, c.negotiatedSyntax, order); err != nil {
 		return fmt.Errorf("dcerpc invoke (opnum %d): unmarshal response: %w", in.Opnum(), err)
 	}
 	return nil
@@ -451,6 +462,10 @@ func (c *Client) readResponse() ([]byte, error) {
 			if resp.ContextID != c.contextID {
 				return nil, fmt.Errorf("response p_cont_id %d does not match request context %d", resp.ContextID, c.contextID)
 			}
+			// Record the sender's byte order so Invoke decodes the reassembled
+			// stub in it (receiver-makes-right). All fragments of one response
+			// carry the same data representation.
+			c.respByteOrder = resp.Header.ByteOrder()
 			chunk := resp.Stub
 			if c.protectsRequests() {
 				// At PKT and above every response fragment must carry an auth
