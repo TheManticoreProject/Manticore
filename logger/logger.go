@@ -216,6 +216,9 @@ type handler struct {
 	cfg       *config
 	timestamp bool
 	attrs     string
+	// group is the key prefix opened by WithGroup ("req." after
+	// WithGroup("req")); it qualifies every attribute added afterwards.
+	group string
 }
 
 func (h *handler) Enabled(_ context.Context, l slog.Level) bool {
@@ -229,10 +232,7 @@ func (h *handler) Handle(_ context.Context, r slog.Record) error {
 		sb.WriteString(msg)
 		sb.WriteString(h.attrs)
 		r.Attrs(func(a slog.Attr) bool {
-			sb.WriteByte(' ')
-			sb.WriteString(a.Key)
-			sb.WriteByte('=')
-			sb.WriteString(a.Value.String())
+			appendAttr(&sb, h.group, a)
 			return true
 		})
 		msg = sb.String()
@@ -241,15 +241,53 @@ func (h *handler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	s := h.attrs
-	for _, a := range attrs {
-		s += " " + a.Key + "=" + a.Value.String()
+// appendAttr writes " key=value" for a, with key qualified by prefix, following
+// the slog.Handler rules: the value is resolved first, an empty attribute is
+// skipped, and a group's members are written under "key." (inline when the
+// group has no key).
+func appendAttr(sb *strings.Builder, prefix string, a slog.Attr) {
+	a.Value = a.Value.Resolve()
+	if a.Equal(slog.Attr{}) {
+		return
 	}
-	return &handler{cfg: h.cfg, timestamp: h.timestamp, attrs: s}
+	if a.Value.Kind() == slog.KindGroup {
+		members := a.Value.Group()
+		if len(members) == 0 {
+			return
+		}
+		if a.Key != "" {
+			prefix += a.Key + "."
+		}
+		for _, m := range members {
+			appendAttr(sb, prefix, m)
+		}
+		return
+	}
+	sb.WriteByte(' ')
+	sb.WriteString(prefix)
+	sb.WriteString(a.Key)
+	sb.WriteByte('=')
+	sb.WriteString(a.Value.String())
 }
 
-func (h *handler) WithGroup(string) slog.Handler { return h }
+func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	var sb strings.Builder
+	sb.WriteString(h.attrs)
+	for _, a := range attrs {
+		appendAttr(&sb, h.group, a)
+	}
+	return &handler{cfg: h.cfg, timestamp: h.timestamp, attrs: sb.String(), group: h.group}
+}
+
+// WithGroup qualifies the keys of attributes added afterwards, through WithAttrs
+// or on a record, with name ("name.key"). An empty name leaves the handler
+// unchanged, as slog.Handler requires.
+func (h *handler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return h
+	}
+	return &handler{cfg: h.cfg, timestamp: h.timestamp, attrs: h.attrs, group: h.group + name + "."}
+}
 
 // Logger is a logging handle. Use New to create one, or the package-level functions for
 // the default logger.
