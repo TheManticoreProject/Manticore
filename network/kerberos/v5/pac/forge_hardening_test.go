@@ -126,3 +126,65 @@ func utf16Runes(units []uint16) []rune {
 	}
 	return out
 }
+
+// TestForgeExtendedKDCSignature checks that ForgeWithExtras + SignExtendedKDCSignature
+// produce a PAC whose extended KDC signature (0x13) verifies, whose server
+// signature still verifies over it, and that tampering with the extended KDC
+// signature breaks its own verification while leaving the server signature's
+// coverage intact (the server signature is computed over the filled 0x13).
+func TestForgeExtendedKDCSignature(t *testing.T) {
+	info := sampleInfo(t)
+	key := bytes.Repeat([]byte{0x42}, 16) // RC4 key signs both for a golden ticket
+
+	p, err := ForgeWithExtras(info, "Administrator", time.Unix(1700000000, 0), 23, ForgeExtras{ExtendedKDCSignature: true})
+	if err != nil {
+		t.Fatalf("ForgeWithExtras: %v", err)
+	}
+	if _, ok := p.Buffer(BufferExtendedKDCChecksum); !ok {
+		t.Fatal("no extended KDC signature buffer after Forge")
+	}
+	// The extended KDC signature is filled before Sign; the server signature then covers it.
+	if err := p.SignExtendedKDCSignature(key); err != nil {
+		t.Fatalf("SignExtendedKDCSignature: %v", err)
+	}
+	signed, err := p.Sign(key, key)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	parsed, err := Parse(signed)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := parsed.VerifyExtendedKDCSignature(key); err != nil {
+		t.Errorf("extended KDC signature: %v", err)
+	}
+	if err := parsed.VerifyServerSignature(key); err != nil {
+		t.Errorf("server signature over the extended KDC signature: %v", err)
+	}
+	if err := parsed.VerifyKDCSignature(key); err != nil {
+		t.Errorf("KDC signature: %v", err)
+	}
+
+	// Altering the extended KDC signature breaks both its own verification and,
+	// since the server signature covers it, the server signature.
+	ext, _ := parsed.Buffer(BufferExtendedKDCChecksum)
+	tampered := append([]byte(nil), signed...)
+	tampered[int(ext.Offset)+4] ^= 0xFF
+	re, err := Parse(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if re.VerifyExtendedKDCSignature(key) == nil {
+		t.Error("a tampered extended KDC signature verified")
+	}
+	if re.VerifyServerSignature(key) == nil {
+		t.Error("the server signature did not cover the extended KDC signature")
+	}
+
+	// A PAC without the buffer reports the absence.
+	noExt, _ := Forge(info, "Administrator", time.Unix(1700000000, 0), 23)
+	if noExt.VerifyExtendedKDCSignature(key) == nil {
+		t.Error("VerifyExtendedKDCSignature passed on a PAC without the buffer")
+	}
+}
