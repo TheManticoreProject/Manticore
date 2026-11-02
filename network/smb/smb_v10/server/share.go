@@ -107,6 +107,13 @@ type FileAttr struct {
 	// ReadOnly reports that the entry cannot be modified.
 	ReadOnly bool
 
+	// Hidden and System report the SMB_FILE_ATTRIBUTE_HIDDEN (0x02) and
+	// SMB_FILE_ATTRIBUTE_SYSTEM (0x04) attributes. A backend that cannot
+	// represent them (for example a POSIX host) leaves them false. They are what
+	// SearchAttributes filters on, alongside the directory bit.
+	Hidden bool
+	System bool
+
 	// Created, Accessed, Modified and Changed are the four timestamps SMB
 	// carries. A backend without a distinct value for one repeats another.
 	Created  time.Time
@@ -120,6 +127,8 @@ type FileAttr struct {
 type AttrMask struct {
 	Size     bool
 	ReadOnly bool
+	Hidden   bool
+	System   bool
 	Created  bool
 	Accessed bool
 	Modified bool

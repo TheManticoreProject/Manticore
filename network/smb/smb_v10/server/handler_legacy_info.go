@@ -41,6 +41,12 @@ func legacyAttributesFor(attr FileAttr) uint16 {
 	if attr.ReadOnly {
 		attributes |= smbFileAttributeReadOnly
 	}
+	if attr.Hidden {
+		attributes |= smbFileAttributeHidden
+	}
+	if attr.System {
+		attributes |= smbFileAttributeSystem
+	}
 	return attributes
 }
 
