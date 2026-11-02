@@ -374,10 +374,6 @@ func (kc *KeyCredentialLink) CheckIntegrity() bool {
 
 	for i := range hash {
 		if hash[i] != kc.KeyHash[i] {
-
-			fmt.Printf("computedhash : %s\n", hex.EncodeToString(hash))
-			fmt.Printf("kc.KeyHash   : %s\n", hex.EncodeToString(kc.KeyHash))
-
 			return false
 		}
 	}
