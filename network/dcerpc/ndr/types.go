@@ -1,6 +1,7 @@
 package ndr
 
 import (
+	"encoding/binary"
 	"reflect"
 	"strconv"
 	"strings"
@@ -80,6 +81,13 @@ func Response(stub []byte, out any) error {
 // ResponseAs is Response under an explicit transfer syntax.
 func ResponseAs(stub []byte, out any, syntax Syntax) error {
 	return UnmarshalAs(stub, out, syntax)
+}
+
+// ResponseAsOrder is ResponseAs that reads the stub's multi-octet integers in
+// order, as the NDR receiver-makes-right rule requires when the response's data
+// representation announced a big-endian sender. A nil order means little-endian.
+func ResponseAsOrder(stub []byte, out any, syntax Syntax, order binary.ByteOrder) error {
+	return UnmarshalAsOrder(stub, out, syntax, order)
 }
 
 // ptrKind is the NDR pointer attribute of a field.

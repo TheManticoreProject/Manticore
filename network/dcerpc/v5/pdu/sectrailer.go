@@ -70,16 +70,26 @@ func (s *SecTrailer) Marshal() []byte {
 	return buf
 }
 
-// Unmarshal parses an 8-byte sec_trailer from the front of data.
+// Unmarshal parses an 8-byte little-endian sec_trailer from the front of data.
 func (s *SecTrailer) Unmarshal(data []byte) error {
+	return s.UnmarshalWithOrder(data, binary.LittleEndian)
+}
+
+// UnmarshalWithOrder parses an 8-byte sec_trailer whose auth_context_id is read in
+// order, as a big-endian sender's data representation requires. A nil order means
+// little-endian.
+func (s *SecTrailer) UnmarshalWithOrder(data []byte, order binary.ByteOrder) error {
 	if len(data) < SecTrailerSize {
 		return fmt.Errorf("sec_trailer truncated: have %d bytes, need %d", len(data), SecTrailerSize)
+	}
+	if order == nil {
+		order = binary.LittleEndian
 	}
 	s.AuthType = data[0]
 	s.AuthLevel = data[1]
 	s.AuthPadLength = data[2]
 	s.AuthReserved = data[3]
-	s.AuthContextID = binary.LittleEndian.Uint32(data[4:8])
+	s.AuthContextID = order.Uint32(data[4:8])
 	return nil
 }
 
@@ -125,7 +135,7 @@ func ExtractAuthVerifier(raw []byte) (*SecTrailer, []byte, error) {
 		return nil, nil, fmt.Errorf("auth verifier overruns PDU: frag_length=%d auth_length=%d", hdr.FragLength, authLen)
 	}
 	var st SecTrailer
-	if err := st.Unmarshal(raw[trailerStart:]); err != nil {
+	if err := st.UnmarshalWithOrder(raw[trailerStart:], hdr.ByteOrder()); err != nil {
 		return nil, nil, err
 	}
 	authValue := append([]byte(nil), raw[trailerStart+SecTrailerSize:fragLen]...)

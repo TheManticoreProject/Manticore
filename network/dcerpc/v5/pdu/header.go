@@ -6,9 +6,11 @@
 // the complete on-the-wire bytes (header included) and sets the header's frag_length;
 // Unmarshal parses a complete PDU and returns the number of bytes consumed.
 //
-// Only the little-endian data representation (DREP first byte 0x10) is supported,
-// which is what Windows and Samba always send; a big-endian DREP is rejected on
-// Unmarshal rather than silently mis-parsed.
+// Integers are read in the byte order the sender's data representation (DREP)
+// announces: little-endian (DREP first byte 0x10), which is what Windows and Samba
+// always send, or big-endian (high nibble 0), which [C706] permits and some
+// non-Windows DCE peers use. A DREP whose integer order is neither is rejected on
+// Unmarshal. PDUs are always marshalled little-endian.
 package pdu
 
 import (
@@ -81,15 +83,37 @@ func (h *Header) Unmarshal(data []byte) (int, error) {
 	h.PacketType = PacketType(data[2])
 	h.PacketFlags = PFCFlags(data[3])
 	copy(h.DataRepresentation[:], data[4:8])
-	// Only little-endian integer representation is supported. The high nibble of the
-	// first DREP byte encodes the integer byte order (1 = little-endian).
-	if h.DataRepresentation[0]>>4 != 1 {
-		return 0, fmt.Errorf("unsupported data representation 0x%02x: only little-endian is supported", h.DataRepresentation[0])
+	// The high nibble of the first DREP byte encodes the integer byte order: 1 is
+	// little-endian (Windows, Samba), 0 is big-endian ([C706] section 14.1). Any
+	// other value is not a defined integer representation.
+	switch h.DataRepresentation[0] >> 4 {
+	case drepLittleEndian, drepBigEndian:
+	default:
+		return 0, fmt.Errorf("unsupported data representation 0x%02x: integer order must be little- or big-endian", h.DataRepresentation[0])
 	}
-	h.FragLength = binary.LittleEndian.Uint16(data[8:10])
-	h.AuthLength = binary.LittleEndian.Uint16(data[10:12])
-	h.CallID = binary.LittleEndian.Uint32(data[12:16])
+	order := h.ByteOrder()
+	h.FragLength = order.Uint16(data[8:10])
+	h.AuthLength = order.Uint16(data[10:12])
+	h.CallID = order.Uint32(data[12:16])
 	return HeaderSize, nil
+}
+
+// Integer byte-order codes carried in the high nibble of the first DREP octet
+// ([C706] section 14.1).
+const (
+	drepBigEndian    = 0
+	drepLittleEndian = 1
+)
+
+// ByteOrder returns the integer byte order the header's data representation
+// selects: big-endian when the high nibble of the first DREP octet is 0,
+// little-endian otherwise. A PDU body reads its own integer fields in this order,
+// and the stub is decoded in it under the NDR receiver-makes-right rule.
+func (h *Header) ByteOrder() binary.ByteOrder {
+	if h.DataRepresentation[0]>>4 == drepBigEndian {
+		return binary.BigEndian
+	}
+	return binary.LittleEndian
 }
 
 // String returns a human-readable one-line summary of the header.

@@ -107,10 +107,11 @@ func (f *Fault) Unmarshal(data []byte) (int, error) {
 	if len(data) < pos+16 {
 		return 0, fmt.Errorf("fault PDU truncated")
 	}
-	f.AllocHint = binary.LittleEndian.Uint32(data[pos : pos+4])
-	f.ContextID = binary.LittleEndian.Uint16(data[pos+4 : pos+6])
+	order := f.Header.ByteOrder()
+	f.AllocHint = order.Uint32(data[pos : pos+4])
+	f.ContextID = order.Uint16(data[pos+4 : pos+6])
 	f.CancelCount = data[pos+6]
-	f.Status = binary.LittleEndian.Uint32(data[pos+8 : pos+12])
+	f.Status = order.Uint32(data[pos+8 : pos+12])
 	pos += 16
 
 	end, err := stubEnd(&f.Header, len(data))

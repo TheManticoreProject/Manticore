@@ -205,12 +205,24 @@ func (e *Encoder) writeConformantBytes(b []byte) {
 	e.WriteBytes(b)
 }
 
-// Decoder reads an NDR octet stream produced under the little-endian data
-// representation.
+// Decoder reads an NDR octet stream in the data representation the sender chose.
+// Integers are little-endian (the Windows and Samba default) unless the decoder
+// was given a big-endian order, as the NDR receiver-makes-right rule requires
+// when a sender advertises big-endian in the PDU's data representation.
 type Decoder struct {
 	data   []byte
 	pos    int
 	syntax Syntax
+	order  binary.ByteOrder // nil means little-endian
+}
+
+// byteOrder is the integer byte order the decoder reads in, defaulting to
+// little-endian when none was set.
+func (d *Decoder) byteOrder() binary.ByteOrder {
+	if d.order == nil {
+		return binary.LittleEndian
+	}
+	return d.order
 }
 
 // NewDecoder returns a decoder over data for the NDR20 transfer syntax.
@@ -218,6 +230,14 @@ func NewDecoder(data []byte) *Decoder { return &Decoder{data: data} }
 
 // NewDecoderForSyntax returns a decoder over data for the given transfer syntax.
 func NewDecoderForSyntax(data []byte, s Syntax) *Decoder { return &Decoder{data: data, syntax: s} }
+
+// NewDecoderForSyntaxWithOrder returns a decoder over data for the given transfer
+// syntax that reads multi-octet integers in order. A nil order means
+// little-endian. Use it to decode a stub a big-endian sender produced, which the
+// PDU's data representation announces.
+func NewDecoderForSyntaxWithOrder(data []byte, s Syntax, order binary.ByteOrder) *Decoder {
+	return &Decoder{data: data, syntax: s, order: order}
+}
 
 // Syntax reports the transfer syntax the decoder operates under.
 func (d *Decoder) Syntax() Syntax { return d.syntax }
@@ -266,7 +286,7 @@ func (d *Decoder) ReadUint16() (uint16, error) {
 	if err != nil {
 		return 0, err
 	}
-	return binary.LittleEndian.Uint16(b), nil
+	return d.byteOrder().Uint16(b), nil
 }
 
 // ReadUint32 reads a 4-octet little-endian value, 4-aligned.
@@ -276,7 +296,7 @@ func (d *Decoder) ReadUint32() (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	return binary.LittleEndian.Uint32(b), nil
+	return d.byteOrder().Uint32(b), nil
 }
 
 // ReadUint64 reads an 8-octet little-endian value, 8-aligned.
@@ -286,7 +306,7 @@ func (d *Decoder) ReadUint64() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return binary.LittleEndian.Uint64(b), nil
+	return d.byteOrder().Uint64(b), nil
 }
 
 // readCount reads an NDR count or length determinant at the syntax's width: 4 octets
@@ -352,7 +372,24 @@ func (d *Decoder) readWString() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Each UTF-16 code unit is a 2-octet integer, so a big-endian sender lays its
+	// octets out most-significant first. Swap them to the little-endian order the
+	// decoder expects before reading the code points.
+	if d.byteOrder() == binary.BigEndian {
+		b = swapUTF16Octets(b)
+	}
 	return trimTerminator(utf16.DecodeUTF16LE(b)), nil
+}
+
+// swapUTF16Octets returns a copy of b with the two octets of each UTF-16 code unit
+// exchanged, turning a big-endian code-unit sequence into the little-endian layout
+// DecodeUTF16LE reads. b always has an even length (two octets per code unit).
+func swapUTF16Octets(b []byte) []byte {
+	out := make([]byte, len(b))
+	for i := 0; i+1 < len(b); i += 2 {
+		out[i], out[i+1] = b[i+1], b[i]
+	}
+	return out
 }
 
 // readAString reads a conformant+varying ASCII string and returns it with the NUL
