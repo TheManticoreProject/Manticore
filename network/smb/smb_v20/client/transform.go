@@ -9,13 +9,14 @@ import (
 
 // encryptMessage wraps a marshalled SMB2 message in an SMB2 TRANSFORM_HEADER
 // sealed with the session's EncryptionKey (MS-SMB2 3.1.4.3). The nonce comes
-// from a per-session counter so it never repeats.
+// from a per-session counter so it never repeats; it is advanced atomically
+// because a Cancel can encrypt from another goroutine while a request does.
 func (c *Client) encryptMessage(plaintext []byte) ([]byte, error) {
 	if c.Session == nil || len(c.Session.EncryptionKey) == 0 {
 		return nil, fmt.Errorf("transform: no session encryption key")
 	}
-	c.Session.nonceCounter++
-	return security.Encrypt(c.Connection.Cipher, c.Session.EncryptionKey, c.Session.SessionId, c.Session.nonceCounter, plaintext)
+	nonce := c.Session.nonceCounter.Add(1)
+	return security.Encrypt(c.Connection.Cipher, c.Session.EncryptionKey, c.Session.SessionId, nonce, plaintext)
 }
 
 // decryptMessage unwraps an SMB2 TRANSFORM_HEADER frame with the session's
