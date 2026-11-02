@@ -96,6 +96,12 @@ func (s *Session) sessionSetupKerberos(mech *kerberos.SPNEGOMechanism) error {
 		return fmt.Errorf("transport is not connected")
 	}
 
+	// Kerberos travels in the SPNEGO SecurityBlob, which exists only in the
+	// extended-security form of SESSION_SETUP_ANDX.
+	if s.Client.Connection.Server.Capabilities&capabilities.CAP_EXTENDED_SECURITY == 0 {
+		return fmt.Errorf("kerberos session setup requires a server that negotiated extended security")
+	}
+
 	useUnicode := s.Client.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
 
 	authCtx := spnego.NewAuthContext(
@@ -162,43 +168,16 @@ func (s *Session) sessionSetupKerberos(mech *kerberos.SPNEGOMechanism) error {
 		return fmt.Errorf("failed to marshal Kerberos session setup: %w", err)
 	}
 
-	// Signing bootstrap. Unlike NTLM (whose NEGOTIATE leg carries no key, so only
-	// the AUTHENTICATE leg can be signed), the Kerberos GSS context key is known
-	// before this single leg is sent, so the AP-REQ request is itself the first
-	// signed message (sequence 0) when the server enables or requires signing —
-	// mirroring the SMB1 NTLM AUTHENTICATE bootstrap (session.go). The response is
-	// then verified at sequence 1 and subsequent requests continue from sequence 2.
-	//
-	// NOTE: this signing path has not been validated against a live
-	// signing-required server; it reproduces the NTLM sequence bootstrap and is
-	// the primary thing to confirm in a lab. Non-signing servers skip it entirely.
+	// Signing bootstrap. The key that signs the session is the GSS context key,
+	// and with mutual authentication Windows takes it from the acceptor subkey in
+	// its KRB_AP_REP: the client cannot know it until the response arrives. So
+	// this request goes unsigned (sequence 0 is consumed by it), the response is
+	// verified at sequence 1 with the key the AP-REP established, and later
+	// requests continue from sequence 2. Validated against Windows Server 2012 R2
+	// with signing required, which signs the response with the 32-byte AES
+	// acceptor subkey.
 	signingAlreadyActive := s.Client.Connection.IsSigningActive
-	signingKey := authCtx.GetSessionKey()
-	if len(signingKey) == 0 {
-		signingKey = mech.SessionKey()
-	}
 	signingState := s.Client.Connection.Server.SigningState
-	if !signingAlreadyActive && signingState == SigningStateRequired && len(signingKey) == 0 {
-		return fmt.Errorf("server requires SMB signing but no Kerberos session key was derived")
-	}
-	signMessages := !signingAlreadyActive && signingState != SigningStateDisabled && len(signingKey) != 0
-
-	// Arm signing before sending; restore the connection's previous signing state
-	// if the setup does not complete.
-	authenticated := false
-	if signMessages {
-		previousKey := s.Client.Connection.SigningSessionKey
-		previousActive := s.Client.Connection.IsSigningActive
-		defer func() {
-			if !authenticated {
-				s.Client.Connection.SigningSessionKey = previousKey
-				s.Client.Connection.IsSigningActive = previousActive
-			}
-		}()
-		s.Client.Connection.SigningSessionKey = signingKey
-		s.Client.Connection.IsSigningActive = true
-		signing.Sign(signingKey, marshalled, 0)
-	}
 	respSequence, respSigned := uint32(0), false
 	if signingAlreadyActive {
 		respSequence, respSigned = s.Client.signOutgoing(marshalled)
@@ -253,20 +232,28 @@ func (s *Session) sessionSetupKerberos(mech *kerberos.SPNEGOMechanism) error {
 		}
 	}
 
-	if osName := resp.NativeOSString(); osName != "" {
-		s.Client.Connection.Server.OSName = osName
+	// The context key is final only now that the AP-REP has been processed.
+	signingKey := authCtx.GetSessionKey()
+	if len(signingKey) == 0 {
+		signingKey = mech.SessionKey()
 	}
-
-	s.SessionKey = signingKey
-	if signMessages {
+	if !signingAlreadyActive && signingState == SigningStateRequired && len(signingKey) == 0 {
+		return fmt.Errorf("server requires SMB signing but no Kerberos session key was derived")
+	}
+	if !signingAlreadyActive && signingState != SigningStateDisabled && len(signingKey) != 0 {
 		if !signing.Verify(signingKey, raw, 1) {
 			return fmt.Errorf("kerberos session setup response failed SMB signature verification")
 		}
+		s.Client.Connection.SigningSessionKey = signingKey
+		s.Client.Connection.IsSigningActive = true
 		// The AP-REQ request used sequence 0 and its response sequence 1, so the
 		// next outbound request uses sequence 2.
 		s.Client.Connection.ClientNextSendSequenceNumber = signing.NextRequestSequenceNumber(0)
 	}
 
-	authenticated = true
+	if osName := resp.NativeOSString(); osName != "" {
+		s.Client.Connection.Server.OSName = osName
+	}
+	s.SessionKey = signingKey
 	return nil
 }
