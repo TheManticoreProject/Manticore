@@ -351,7 +351,11 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	if encASRep.Nonce != requestNonce {
 		return fmt.Errorf("kerberos: FAST AS-REP nonce mismatch: got %d, want %d", encASRep.Nonce, requestNonce)
 	}
-	if err := c.validateKDCReplyIdentity("FAST AS-REP", asRep.CRealm, asRep.CName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
+	clientRealm, clientName, err := verifyFASTFinished("FAST AS-REP", fastResp, asRep.TicketRaw, armorKey)
+	if err != nil {
+		return err
+	}
+	if err := c.validateKDCReplyIdentity("FAST AS-REP", clientRealm, clientName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
 		return err
 	}
 	if err := validateKDCReplyServer("FAST AS-REP", asRep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
@@ -368,6 +372,30 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	c.tgtEnc = encASRep
 	c.hasTGT = true
 	return nil
+}
+
+// verifyFASTFinished checks the KrbFastFinished of a successful armored reply
+// (RFC 6113 section 5.4.3) and returns the client identity it authenticates.
+//
+// The KDC MUST send finished with a reply that returns a ticket. Its
+// ticket-checksum is a keyed checksum, under the armor key with key usage 53
+// (KEY_USAGE_FAST_FINISHED), over the ticket exactly as encoded in the reply;
+// it is what binds the returned ticket to the armored exchange. The client
+// identity is taken from finished, not from the unprotected cname and crealm
+// of the outer reply.
+func verifyFASTFinished(replyType string, fastResp *messages.KrbFastResponse, ticketRaw, armorKey []byte) (string, messages.PrincipalName, error) {
+	finished := fastResp.Finished
+	if finished == nil {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s carries no KrbFastFinished", replyType)
+	}
+	if len(ticketRaw) == 0 {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s ticket encoding unavailable to verify the FAST ticket-checksum", replyType)
+	}
+	cksum := finished.TicketChecksum
+	if !kerbcrypto.VerifyChecksum(cksum.CKSumType, armorKey, kerbcrypto.KeyUsageFASTFinished, ticketRaw, cksum.Checksum) {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s FAST ticket-checksum does not match the returned ticket", replyType)
+	}
+	return finished.CRealm, finished.CName, nil
 }
 
 // decryptFASTReply locates PA-FX-FAST in a reply's padata, unwraps the armored
