@@ -551,7 +551,7 @@ func TestLocalFileSystemContainsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlinks are not available here: %v", err)
 	}
 
-	fs, err := NewLocalFileSystem(root, "LOCAL")
+	fs, err := newLocalFS(t, root, "LOCAL")
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem() error = %v", err)
 	}
@@ -623,7 +623,7 @@ func TestLocalFileSystemContainsSymlinkEscape(t *testing.T) {
 // the in-memory one does, since a share can be served by either.
 func TestLocalFileSystemRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	fs, err := NewLocalFileSystem(root, "LOCAL")
+	fs, err := newLocalFS(t, root, "LOCAL")
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem() error = %v", err)
 	}
@@ -779,7 +779,7 @@ func TestLocalFileSystemNameOperationsDoNotFollowSymlinks(t *testing.T) {
 		if err := os.Symlink(filepath.Join(root, "targetdir"), filepath.Join(root, "linkdir")); err != nil {
 			t.Skipf("symbolic links are unavailable here: %v", err)
 		}
-		fs, err := NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -892,7 +892,7 @@ func TestLocalFileSystemDirectoryOpenDoesNotCreate(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			fs, err := NewLocalFileSystem(root, "LOCAL")
+			fs, err := newLocalFS(t, root, "LOCAL")
 			if err != nil {
 				t.Fatalf("NewLocalFileSystem() error = %v", err)
 			}
@@ -923,7 +923,7 @@ func TestLocalFileSystemDirectoryCreateStillWorks(t *testing.T) {
 	for name, disposition := range dispositions {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			fs, err := NewLocalFileSystem(root, "LOCAL")
+			fs, err := newLocalFS(t, root, "LOCAL")
 			if err != nil {
 				t.Fatalf("NewLocalFileSystem() error = %v", err)
 			}
@@ -982,7 +982,7 @@ func TestLocalFileSystemDanglingSymlinkDoesNotEscape(t *testing.T) {
 		if err := os.Symlink(filepath.Join(outside, "planted.txt"), filepath.Join(share, "link")); err != nil {
 			t.Skipf("symbolic links are unavailable here: %v", err)
 		}
-		fs, err := NewLocalFileSystem(share, "LOCAL")
+		fs, err := newLocalFS(t, share, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1009,7 +1009,7 @@ func TestLocalFileSystemDanglingSymlinkDoesNotEscape(t *testing.T) {
 		if err := os.Symlink(filepath.Join(outside, "planted.txt"), filepath.Join(share, "link")); err != nil {
 			t.Skipf("symbolic links are unavailable here: %v", err)
 		}
-		fs, err := NewLocalFileSystem(share, "LOCAL")
+		fs, err := newLocalFS(t, share, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1034,7 +1034,7 @@ func TestLocalFileSystemDanglingSymlinkDoesNotEscape(t *testing.T) {
 		if err := os.Symlink("../outside/x", filepath.Join(share, "sub", "rel")); err != nil {
 			t.Skipf("symbolic links are unavailable here: %v", err)
 		}
-		fs, err := NewLocalFileSystem(share, "LOCAL")
+		fs, err := newLocalFS(t, share, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1066,7 +1066,7 @@ func TestDeleteOnCloseNeedsDeleteAccessAndAWritableShare(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("precious"), 0o644); err != nil {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
-		fs, err := NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1138,7 +1138,7 @@ func TestReadOnlyFileCannotBeDeleted(t *testing.T) {
 		if err := os.WriteFile(host, []byte("precious"), 0o444); err != nil {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
-		fs, err := NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1213,7 +1213,7 @@ func readOnlyFileBackends() map[string]func(t *testing.T) FileSystem {
 			t.Fatalf("Mkdir() error = %v", err)
 		}
 		t.Cleanup(func() { os.Chmod(dir, 0o755) })
-		fs, err := NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatalf("NewLocalFileSystem() error = %v", err)
 		}
@@ -1347,7 +1347,7 @@ func TestLocalFileSystemRenameIntoOwnSubtree(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	fs, err := NewLocalFileSystem(root, "LOCAL")
+	fs, err := newLocalFS(t, root, "LOCAL")
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem() error = %v", err)
 	}

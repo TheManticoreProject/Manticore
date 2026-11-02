@@ -23,6 +23,15 @@ type LocalFileSystem struct {
 	// root is the absolute, symlink-resolved directory the share is rooted at.
 	root string
 
+	// rootDir is the share directory opened as an os.Root. Opening, creating,
+	// stating, listing and removing go through it: each path component is
+	// opened relative to the one before without following links blindly, and a
+	// link is followed only when its target stays beneath the root. A directory
+	// swapped for a link out of the share between two calls therefore cannot
+	// redirect the operation. A link with an absolute target is refused even
+	// when that target is inside the share, as os.Root requires.
+	rootDir *os.Root
+
 	// label is the volume label reported to a client.
 	label string
 
@@ -63,12 +72,32 @@ func NewLocalFileSystem(root, label string) (*LocalFileSystem, error) {
 		return nil, fmt.Errorf("%q is not a directory", resolved)
 	}
 
-	return &LocalFileSystem{root: resolved, label: label}, nil
+	rootDir, err := os.OpenRoot(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %q: %v", resolved, err)
+	}
+
+	return &LocalFileSystem{root: resolved, rootDir: rootDir, label: label}, nil
+}
+
+// rel turns a resolved share-relative path into the name the os.Root takes:
+// host separators, and "." for the share root itself.
+func rel(path string) string {
+	if path == "" {
+		return "."
+	}
+	return filepath.FromSlash(path)
 }
 
 // SetReadOnly refuses every modifying operation at the backend.
 func (fs *LocalFileSystem) SetReadOnly(readOnly bool) {
 	fs.readOnly = readOnly
+}
+
+// Close releases the handle held on the share directory. The file system is
+// unusable afterwards.
+func (fs *LocalFileSystem) Close() error {
+	return fs.rootDir.Close()
 }
 
 // Root returns the directory the share is rooted at.
@@ -195,7 +224,14 @@ func translate(err error) error {
 	case strings.Contains(text, "is a directory"):
 		return ErrIsDirectory
 	case strings.Contains(text, "too many levels of symbolic links"):
-		// O_NOFOLLOW refused a symbolic link in the final element.
+		// A link loop, or O_NOFOLLOW refusing a link in the final element.
+		return ErrAccessDenied
+	case strings.Contains(text, "no such device or address"):
+		// A FIFO opened for writing with nothing reading it.
+		return ErrAccessDenied
+	case strings.Contains(text, "path escapes from parent"):
+		// os.Root refused a path that resolves outside the share, or a link
+		// with an absolute target.
 		return ErrAccessDenied
 	}
 	return err
@@ -228,23 +264,28 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		return nil, ErrReadOnly
 	}
 
-	host, err := fs.hostPath(path)
-	if err != nil {
-		return nil, err
-	}
+	name := rel(path)
 
 	// A directory is opened for metadata only: the host refuses to open one for
 	// reading on some platforms, and SMB only ever uses such a handle to query.
-	if info, statErr := os.Stat(host); statErr == nil && info.IsDir() {
+	info, statErr := fs.rootDir.Stat(name)
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, translate(statErr)
+	}
+	if statErr == nil && info.IsDir() {
 		if flags.NonDirectory {
 			return nil, ErrIsDirectory
 		}
 		if flags.CreateNew {
 			return nil, ErrExists
 		}
-		return &localFile{path: host, directory: true}, nil
+		return &localFile{fs: fs, name: name, directory: true}, nil
 	} else if statErr == nil && flags.Directory {
 		return nil, ErrNotDirectory
+	} else if statErr == nil && !info.Mode().IsRegular() {
+		// A FIFO, socket or device is not a file a client can use, and opening
+		// a FIFO would block until its other end is opened.
+		return nil, ErrAccessDenied
 	} else if statErr == nil && info.Mode().Perm()&0o200 == 0 && (flags.Write || flags.Truncate) {
 		// A file carrying the read-only attribute refuses an open for writing
 		// and an overwrite with STATUS_ACCESS_DENIED, [MS-FSA] section
@@ -282,21 +323,57 @@ func (fs *LocalFileSystem) Open(path string, flags OpenFlags) (File, error) {
 		if !flags.Create {
 			return nil, ErrNotFound
 		}
-		if err := os.Mkdir(host, 0o750); err != nil {
+		if err := fs.rootDir.Mkdir(name, 0o750); err != nil {
 			return nil, translate(err)
 		}
-		return &localFile{path: host, directory: true}, nil
+		return &localFile{fs: fs, name: name, directory: true}, nil
 	}
 
-	// hostPath has resolved every link in the path, so the final element is not
-	// one. Refusing to follow it anyway closes the window between that check and
-	// this open in which another request can rename a link onto the name; it does
-	// not cover a directory earlier in the path being swapped in that window.
-	file, err := os.OpenFile(host, mode|openNoFollow, 0o640)
+	// A create through a dangling link would make the file at the link's
+	// target. os.Root keeps that target inside the share, but the name the
+	// client asked for would still not be the file created, so it is refused.
+	if errors.Is(statErr, os.ErrNotExist) && (flags.Create || flags.CreateNew) {
+		if linkInfo, err := fs.rootDir.Lstat(name); err == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+			return nil, ErrAccessDenied
+		}
+	}
+
+	// The open resolves every component beneath the root, so neither a link in
+	// the path nor a directory swapped for one between requests can lead out of
+	// the share.
+	file, err := fs.openRegular(name, mode, 0o640, false)
+	if err != nil {
+		return nil, err
+	}
+	return &localFile{fs: fs, file: file, name: name}, nil
+}
+
+// errNotRegular refuses a FIFO, socket or device, which no client operation can
+// use.
+var errNotRegular = fmt.Errorf("%w: not a regular file", ErrAccessDenied)
+
+// openRegular opens name beneath the root and refuses anything but a regular
+// file, or a directory when allowDir is set. The open does not block on a FIFO,
+// and the type is checked on the handle, so an entry replaced by a FIFO after an
+// earlier stat is still refused.
+func (fs *LocalFileSystem) openRegular(name string, mode int, perm os.FileMode, allowDir bool) (*os.File, error) {
+	file, err := fs.rootDir.OpenFile(name, mode|openNonBlock, perm)
 	if err != nil {
 		return nil, translate(err)
 	}
-	return &localFile{file: file, path: host}, nil
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, translate(err)
+	}
+	if !info.Mode().IsRegular() && !(allowDir && info.IsDir()) {
+		file.Close()
+		if info.IsDir() {
+			return nil, ErrIsDirectory
+		}
+		return nil, errNotRegular
+	}
+	return file, nil
 }
 
 // Link gives an existing file a second name.
@@ -343,11 +420,7 @@ func (fs *LocalFileSystem) Link(existing, target string) error {
 
 // Stat describes a path.
 func (fs *LocalFileSystem) Stat(path string) (FileAttr, error) {
-	host, err := fs.hostPath(path)
-	if err != nil {
-		return FileAttr{}, err
-	}
-	info, err := os.Stat(host)
+	info, err := fs.rootDir.Stat(rel(path))
 	if err != nil {
 		return FileAttr{}, translate(err)
 	}
@@ -363,29 +436,24 @@ func (fs *LocalFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) er
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	host, err := fs.hostPath(path)
-	if err != nil {
-		return err
-	}
+	name := rel(path)
 
+	// The size and read-only attribute are changed through a handle opened
+	// beneath the root, so the file changed is the one the share names.
 	if mask.Size {
-		if err := os.Truncate(host, attr.Size); err != nil {
+		file, err := fs.openRegular(name, os.O_WRONLY, 0, false)
+		if err != nil {
+			return err
+		}
+		err = file.Truncate(attr.Size)
+		file.Close()
+		if err != nil {
 			return translate(err)
 		}
 	}
 	if mask.ReadOnly {
-		info, err := os.Stat(host)
-		if err != nil {
-			return translate(err)
-		}
-		perm := info.Mode().Perm()
-		if attr.ReadOnly {
-			perm &= ^os.FileMode(0o222)
-		} else {
-			perm |= 0o200
-		}
-		if err := os.Chmod(host, perm); err != nil {
-			return translate(err)
+		if err := fs.setReadOnly(path, attr.ReadOnly); err != nil {
+			return err
 		}
 	}
 	// The host carries only an access and a modification time, so the two SMB
@@ -398,6 +466,12 @@ func (fs *LocalFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) er
 		}
 		if !mask.Modified || modified.IsZero() {
 			modified = time.Now()
+		}
+		// os.Root has no Chtimes before Go 1.25, so this one step is still
+		// path-based (#1896).
+		host, err := fs.hostPath(path)
+		if err != nil {
+			return err
 		}
 		if err := os.Chtimes(host, accessed, modified); err != nil {
 			return translate(err)
@@ -414,11 +488,8 @@ func (fs *LocalFileSystem) Remove(path string) error {
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	host, err := fs.hostPathNoFollow(path)
-	if err != nil {
-		return err
-	}
-	info, err := os.Lstat(host)
+	name := rel(path)
+	info, err := fs.rootDir.Lstat(name)
 	if err != nil {
 		return translate(err)
 	}
@@ -430,7 +501,7 @@ func (fs *LocalFileSystem) Remove(path string) error {
 	if info.Mode().Perm()&0o200 == 0 {
 		return ErrCannotDelete
 	}
-	return translate(os.Remove(host))
+	return translate(fs.rootDir.Remove(name))
 }
 
 // Rename moves a file or directory.
@@ -471,14 +542,11 @@ func (fs *LocalFileSystem) Mkdir(path string) error {
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	host, err := fs.hostPath(path)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Lstat(host); err == nil {
+	name := rel(path)
+	if _, err := fs.rootDir.Lstat(name); err == nil {
 		return ErrExists
 	}
-	return translate(os.Mkdir(host, 0o750))
+	return translate(fs.rootDir.Mkdir(name, 0o750))
 }
 
 // Rmdir removes an empty directory.
@@ -489,11 +557,8 @@ func (fs *LocalFileSystem) Rmdir(path string) error {
 	if path == "" {
 		return ErrAccessDenied
 	}
-	host, err := fs.hostPathNoFollow(path)
-	if err != nil {
-		return err
-	}
-	info, err := os.Lstat(host)
+	name := rel(path)
+	info, err := fs.rootDir.Lstat(name)
 	if err != nil {
 		return translate(err)
 	}
@@ -503,16 +568,17 @@ func (fs *LocalFileSystem) Rmdir(path string) error {
 	if !info.IsDir() {
 		return ErrNotDirectory
 	}
-	return translate(os.Remove(host))
+	return translate(fs.rootDir.Remove(name))
 }
 
 // ReadDir lists the entries of a directory that match pattern.
 func (fs *LocalFileSystem) ReadDir(path, pattern string) ([]DirEntry, error) {
-	host, err := fs.hostPath(path)
+	dir, err := fs.rootDir.OpenFile(rel(path), os.O_RDONLY|openNonBlock, 0)
 	if err != nil {
-		return nil, err
+		return nil, translate(err)
 	}
-	info, err := os.Stat(host)
+	defer dir.Close()
+	info, err := dir.Stat()
 	if err != nil {
 		return nil, translate(err)
 	}
@@ -520,7 +586,7 @@ func (fs *LocalFileSystem) ReadDir(path, pattern string) ([]DirEntry, error) {
 		return nil, ErrNotDirectory
 	}
 
-	held, err := os.ReadDir(host)
+	held, err := dir.ReadDir(-1)
 	if err != nil {
 		return nil, translate(err)
 	}
@@ -574,8 +640,9 @@ func serialNumberOf(path string) uint32 {
 // localFile is an open handle onto a host file. A directory handle carries no
 // file, because SMB only ever uses one to query metadata.
 type localFile struct {
+	fs        *LocalFileSystem
 	file      *os.File
-	path      string
+	name      string // root-relative name
 	directory bool
 }
 
@@ -618,11 +685,22 @@ func (f *localFile) Sync() error {
 }
 
 func (f *localFile) Stat() (FileAttr, error) {
-	info, err := os.Stat(f.path)
+	var info os.FileInfo
+	var err error
+	if f.file != nil {
+		info, err = f.file.Stat()
+	} else {
+		info, err = f.fs.rootDir.Stat(f.name)
+	}
 	if err != nil {
 		return FileAttr{}, translate(err)
 	}
-	return attrOf(filepath.Base(f.path), info), nil
+	name := filepath.Base(f.name)
+	if f.name == "." {
+		// The share root reports the directory's own name, as before.
+		name = filepath.Base(f.fs.root)
+	}
+	return attrOf(name, info), nil
 }
 
 func (f *localFile) Close() error {
