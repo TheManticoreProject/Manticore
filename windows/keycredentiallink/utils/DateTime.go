@@ -22,6 +22,16 @@ import (
 type DateTime struct {
 	time  time.Time
 	ticks uint64
+
+	// wire holds the 8 bytes a KeyCredentialLink timestamp entry was decoded
+	// from (ConvertFromBinaryTime), so EncodeBinaryTime re-emits exactly them.
+	// The entry encoding depends on the version and key source and a
+	// DateTime.ToBinary value carries a DateTimeKind that the instant alone does
+	// not, and the entries are covered by the KeyHash, so re-encoding from the
+	// instant would change a genuine blob. Every mutator clears it. It is an
+	// array with a flag rather than a slice so DateTime stays comparable.
+	wire    [8]byte
+	hasWire bool
 }
 
 const ticksBetween1601AndUnix uint64 = 116444736000000000 // (Unix(1970)-1601) in 100ns ticks
@@ -115,6 +125,7 @@ func (dt DateTime) ToUniversalTime() time.Time {
 // This function updates both the Ticks field and recalculates the corresponding Time field based on the provided ticks.
 func (dt *DateTime) SetTicks(ticks uint64) {
 	dt.ticks = ticks
+	dt.wire, dt.hasWire = [8]byte{}, false
 
 	// The epoch offset is applied in whole seconds with the sub-second remainder
 	// carried separately. Scaling the whole tick count to nanoseconds in one
@@ -149,6 +160,7 @@ func (dt *DateTime) GetTicks() uint64 {
 // Note:
 // This function updates both the Time field and recalculates the corresponding Ticks field based on the provided time.
 func (dt *DateTime) SetTime(t time.Time) {
+	dt.wire, dt.hasWire = [8]byte{}, false
 	epoch1601 := time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)
 	if t.UTC().Equal(epoch1601) {
 		dt.time = epoch1601

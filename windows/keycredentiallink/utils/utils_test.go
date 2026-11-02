@@ -3,6 +3,7 @@ package utils_test
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -63,17 +64,43 @@ func TestConvertFromBinaryTime(t *testing.T) {
 		expected time.Time
 	}{
 		{
+			// Version 0 stores .NET DateTime.Ticks (since 0001-01-01).
 			name:     "Version 0 AD source",
-			input:    testTimeBytes,
+			input:    []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x08},
 			source:   source.KeySource{Value: source.KeySource_AD},
 			version:  version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_0},
 			expected: testTimeStruct,
 		},
 		{
+			// Version 1 stores DateTime.ToBinary; this one has DateTimeKind.Utc.
 			name:     "Version 1 AD source",
-			input:    testTimeBytes,
+			input:    []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x48},
 			source:   source.KeySource{Value: source.KeySource_AD},
 			version:  version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1},
+			expected: testTimeStruct,
+		},
+		{
+			// DateTimeKind.Local: ToBinary stores the UTC ticks under the top bit.
+			name:     "Version 1 local kind",
+			input:    []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x88},
+			source:   source.KeySource{Value: source.KeySource_AD},
+			version:  version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1},
+			expected: testTimeStruct,
+		},
+		{
+			// DateTimeKind.Unspecified carries no zone and is read as UTC.
+			name:     "Version 1 unspecified kind",
+			input:    []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x08},
+			source:   source.KeySource{Value: source.KeySource_AD},
+			version:  version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1},
+			expected: testTimeStruct,
+		},
+		{
+			// Azure AD keys of version 2 store DateTime.ToBinary, not a FILETIME.
+			name:     "Version 2 Azure AD source",
+			input:    []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x48},
+			source:   source.KeySource{Value: source.KeySource_AzureAD},
+			version:  version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
 			expected: testTimeStruct,
 		},
 		{
@@ -106,25 +133,40 @@ func TestConvertToBinaryTime(t *testing.T) {
 	testTimeStruct := time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC)
 	testTimeBytes := []byte{0x80, 0xa3, 0x22, 0x34, 0x64, 0x38, 0xd8, 0x01}
 
+	// The same instant as .NET DateTime.Ticks and as DateTime.ToBinary with
+	// DateTimeKind.Utc.
+	dotNetTicksBytes := []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x08}
+	dotNetBinaryBytes := []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x48}
+
 	testCases := []struct {
 		name    string
 		source  source.KeySource
 		version version.KeyCredentialLinkVersion
+		want    []byte
 	}{
 		{
 			name:    "Version 0 AD source",
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_0},
+			want:    dotNetTicksBytes,
 		},
 		{
 			name:    "Version 1 AD source",
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1},
+			want:    dotNetBinaryBytes,
 		},
 		{
 			name:    "Version 2 AD source",
 			source:  source.KeySource{Value: source.KeySource_AD},
 			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
+			want:    testTimeBytes,
+		},
+		{
+			name:    "Version 2 Azure AD source",
+			source:  source.KeySource{Value: source.KeySource_AzureAD},
+			version: version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2},
+			want:    dotNetBinaryBytes,
 		},
 	}
 
@@ -132,9 +174,9 @@ func TestConvertToBinaryTime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			encoded := utils.ConvertToBinaryTime(testTimeStruct, tc.source, tc.version)
 
-			if !bytes.Equal(encoded, testTimeBytes) {
-				t.Errorf("ConvertToBinaryTime() = %s, want %s (the FILETIME Windows writes)",
-					hex.EncodeToString(encoded), hex.EncodeToString(testTimeBytes))
+			if !bytes.Equal(encoded, tc.want) {
+				t.Errorf("ConvertToBinaryTime() = %s, want %s",
+					hex.EncodeToString(encoded), hex.EncodeToString(tc.want))
 			}
 
 			// The two functions are named as inverses and have to behave as such.
@@ -214,12 +256,9 @@ func TestBinaryTimeInvolution(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Convert time to binary
+			// Convert time to binary in the encoding of this version and source
 			dt := utils.NewDateTimeFromTime(tc.time)
-			binary, err := dt.Marshal()
-			if err != nil {
-				t.Fatalf("Failed to marshal time: %v", err)
-			}
+			binary := utils.ConvertToBinaryTime(tc.time, tc.source, tc.version)
 
 			// Convert binary back to time
 			result, err := utils.ConvertFromBinaryTime(binary, tc.source, tc.version)
@@ -233,11 +272,8 @@ func TestBinaryTimeInvolution(t *testing.T) {
 					dt.GetTime(), result.GetTime())
 			}
 
-			// Additional check for exact tick matching
-			resultBinary, err := result.Marshal()
-			if err != nil {
-				t.Fatalf("Failed to marshal result time: %v", err)
-			}
+			// Additional check for exact byte matching
+			resultBinary := utils.ConvertToBinaryTime(result.GetTime(), tc.source, tc.version)
 
 			if !bytes.Equal(binary, resultBinary) {
 				t.Errorf("Binary representation mismatch after involution.\n | Original: %v\n | Final: %v",
@@ -247,24 +283,28 @@ func TestBinaryTimeInvolution(t *testing.T) {
 	}
 }
 
-// A timestamp entry of eight zero bytes is a well-formed FILETIME denoting
-// 1601-01-01, so decoding it must not consult the clock. It used to come back as
-// the moment of the call, because the decoder went through NewDateTimeFromTicks,
-// whose zero argument is overloaded to mean "now".
+// A timestamp entry of eight zero bytes is a well-formed value denoting its
+// encoding's epoch (1601-01-01 for a FILETIME, 0001-01-01 for .NET ticks), so
+// decoding it must not consult the clock. It used to come back as the moment of
+// the call, because the decoder went through NewDateTimeFromTicks, whose zero
+// argument is overloaded to mean "now".
 func TestConvertFromBinaryTime_ZeroIsTheEpochNotNow(t *testing.T) {
 	raw := make([]byte, 8)
 
-	for _, kcv := range []version.KeyCredentialLinkVersion{
-		{Value: version.KeyCredentialLinkVersion_0},
-		{Value: version.KeyCredentialLinkVersion_1},
-		{Value: version.KeyCredentialLinkVersion_2},
+	for _, tc := range []struct {
+		kcv      version.KeyCredentialLinkVersion
+		expected time.Time
+	}{
+		{version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_0}, time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_1}, time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2}, time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)},
 	} {
+		kcv, expected := tc.kcv, tc.expected
 		decoded, err := utils.ConvertFromBinaryTime(raw, source.KeySource{Value: source.KeySource_AD}, kcv)
 		if err != nil {
 			t.Fatalf("ConvertFromBinaryTime() error = %v, want nil", err)
 		}
 
-		expected := time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC)
 		if !decoded.GetTime().UTC().Equal(expected) {
 			t.Errorf("version %d: decoded %s, want %s", kcv.Value, decoded.GetTime().UTC(), expected)
 		}
@@ -380,5 +420,57 @@ func TestConvertToBinaryIdentifier_AcceptsUnpaddedInput(t *testing.T) {
 
 	if !bytes.Equal(decoded, raw) {
 		t.Errorf("decoded %d bytes, want the original 32", len(decoded))
+	}
+}
+
+// TestEncodeBinaryTimeKeepsDecodedBytes checks a decoded timestamp is re-emitted
+// byte for byte (here a DateTimeKind.Local value, which re-encoding from the
+// instant would turn into Utc), and that changing it re-encodes for the version
+// and source.
+func TestEncodeBinaryTimeKeepsDecodedBytes(t *testing.T) {
+	azure := source.KeySource{Value: source.KeySource_AzureAD}
+	v2 := version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_2}
+	local := []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x88}
+
+	dt, err := utils.ConvertFromBinaryTime(local, azure, v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := utils.EncodeBinaryTime(dt, azure, v2); !bytes.Equal(got, local) {
+		t.Errorf("EncodeBinaryTime = %x, want the decoded bytes %x", got, local)
+	}
+
+	dt.SetTime(dt.GetTime())
+	if got, want := utils.EncodeBinaryTime(dt, azure, v2), []byte{0x80, 0xa3, 0x99, 0x56, 0x7b, 0x06, 0xda, 0x48}; !bytes.Equal(got, want) {
+		t.Errorf("after SetTime: EncodeBinaryTime = %x, want the Utc encoding %x", got, want)
+	}
+}
+
+// TestConvertToBinaryTimeClampsDotNetRange checks a time outside what a .NET
+// DateTime holds is clamped instead of wrapping into another date or the kind
+// bits.
+func TestConvertToBinaryTimeClampsDotNetRange(t *testing.T) {
+	v0 := version.KeyCredentialLinkVersion{Value: version.KeyCredentialLinkVersion_0}
+	ad := source.KeySource{Value: source.KeySource_AD}
+	for _, tc := range []struct {
+		in   time.Time
+		want uint64
+	}{
+		{time.Date(0, 6, 1, 0, 0, 0, 0, time.UTC), 0},
+		{time.Date(15000, 1, 1, 0, 0, 0, 0, time.UTC), 3155378975999999999},
+	} {
+		got := binary.LittleEndian.Uint64(utils.ConvertToBinaryTime(tc.in, ad, v0))
+		if got != tc.want {
+			t.Errorf("%s: ticks %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestDateTimeStaysComparable pins that DateTime can still be compared with ==.
+func TestDateTimeStaysComparable(t *testing.T) {
+	a := utils.NewDateTimeFromTime(time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC))
+	b := utils.NewDateTimeFromTime(time.Date(2022, 3, 15, 12, 0, 3, 0, time.UTC))
+	if a != b {
+		t.Error("equal DateTimes compare unequal")
 	}
 }

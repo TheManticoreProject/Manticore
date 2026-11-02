@@ -95,23 +95,127 @@ func ConvertFromBinaryIdentifier(keyIdentifier []byte, kcv version.KeyCredential
 	}
 }
 
-// ConvertFromBinaryTime converts a binary representation of time to a time.Time object.
-// The binary representation is expected to be in little-endian format.
+// timeEncoding is how a KeyCredentialLink timestamp entry is encoded.
+type timeEncoding int
+
+const (
+	// fileTimeEncoding is a Windows FILETIME: 100-nanosecond ticks since
+	// 1601-01-01 UTC (DateTime.ToFileTime).
+	fileTimeEncoding timeEncoding = iota
+	// dotNetTicksEncoding is .NET DateTime.Ticks: 100-nanosecond ticks since
+	// 0001-01-01.
+	dotNetTicksEncoding
+	// dotNetBinaryEncoding is .NET DateTime.ToBinary: ticks since 0001-01-01 in
+	// the low 62 bits and the DateTimeKind in the top two.
+	dotNetBinaryEncoding
+)
+
+// timeEncodingFor returns the timestamp encoding of a KeyCredentialLink entry, as
+// DSInternals (KeyCredential.ConvertFromBinaryTime) and Windows use it: version 0
+// stores .NET ticks, version 1 DateTime.ToBinary, and version 2 and later a
+// FILETIME for keys whose source is AD and DateTime.ToBinary for Azure AD keys.
+func timeEncodingFor(ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) timeEncoding {
+	switch kcv.Value {
+	case version.KeyCredentialLinkVersion_0:
+		return dotNetTicksEncoding
+	case version.KeyCredentialLinkVersion_1:
+		return dotNetBinaryEncoding
+	default:
+		if ksrc.Value == source.KeySource_AD {
+			return fileTimeEncoding
+		}
+		return dotNetBinaryEncoding
+	}
+}
+
+const (
+	// ticksBetweenYear1And1601 is the number of 100-nanosecond ticks from
+	// 0001-01-01 (the .NET epoch) to 1601-01-01 (the FILETIME epoch).
+	ticksBetweenYear1And1601 uint64 = 504911232000000000
+
+	// unixSecondsOfYear1 is 0001-01-01 00:00:00 UTC in Unix seconds.
+	unixSecondsOfYear1 int64 = -62135596800
+
+	// dotNetTicksMask selects the tick count of a DateTime.ToBinary value; the
+	// top two bits hold the DateTimeKind.
+	dotNetTicksMask uint64 = 0x3FFFFFFFFFFFFFFF
+	// dotNetKindUtc is DateTimeKind.Utc in a DateTime.ToBinary value.
+	dotNetKindUtc uint64 = 0x4000000000000000
+	// dotNetKindLocal is set for DateTimeKind.Local, whose ToBinary value holds the
+	// UTC tick count, possibly wrapped below zero by the local offset.
+	dotNetKindLocal uint64 = 0x8000000000000000
+	// dotNetTicksCeiling and ticksPerDay bound the wrapped UTC tick count of a
+	// local DateTime (DateTime.FromBinary).
+	dotNetTicksCeiling uint64 = 0x4000000000000000
+	ticksPerDay        uint64 = 864000000000
+)
+
+// dateTimeFromDotNetTicks builds a DateTime from 100-nanosecond ticks since
+// 0001-01-01 UTC. An instant before 1601 has no FILETIME tick count, so its
+// DateTime holds the time with a tick count of 0.
+func dateTimeFromDotNetTicks(ticks uint64) DateTime {
+	if ticks >= ticksBetweenYear1And1601 {
+		return dateTimeFromWireTicks(ticks - ticksBetweenYear1And1601)
+	}
+	seconds := int64(ticks / ticksPerSecond)
+	nanos := int64(ticks%ticksPerSecond) * 100
+	return DateTime{time: time.Unix(unixSecondsOfYear1+seconds, nanos).UTC()}
+}
+
+// dateTimeFromDotNetBinary decodes a DateTime.ToBinary value the way
+// DateTime.FromBinary does, returning the instant it denotes. A local-kind value
+// already holds UTC ticks; an unspecified-kind value carries no zone and is read
+// as UTC.
+func dateTimeFromDotNetBinary(value uint64) DateTime {
+	ticks := value & dotNetTicksMask
+	if value&dotNetKindLocal != 0 && ticks > dotNetTicksCeiling-ticksPerDay {
+		// A local time within a day of 0001-01-01 whose UTC equivalent fell below
+		// zero; FromBinary unwraps it to a negative tick count, which is
+		// before any representable instant, so it is clamped to the epoch.
+		ticks = 0
+	}
+	return dateTimeFromDotNetTicks(ticks)
+}
+
+// dotNetMaxTicks is DateTime.MaxValue.Ticks, 9999-12-31 23:59:59.9999999.
+const dotNetMaxTicks uint64 = 3155378975999999999
+
+// dotNetTicksFromTime returns the 100-nanosecond ticks from 0001-01-01 UTC to t,
+// clamped to the range a .NET DateTime can hold (0001-01-01 to 9999-12-31), so
+// an out-of-range time cannot wrap into another date or into the kind bits.
+func dotNetTicksFromTime(t time.Time) uint64 {
+	t = t.UTC()
+	if t.Unix() < unixSecondsOfYear1 {
+		return 0
+	}
+	seconds := uint64(t.Unix() - unixSecondsOfYear1)
+	if seconds > dotNetMaxTicks/ticksPerSecond {
+		return dotNetMaxTicks
+	}
+	return min(seconds*ticksPerSecond+uint64(t.Nanosecond())/100, dotNetMaxTicks)
+}
+
+// ConvertFromBinaryTime converts the binary value of a KeyCredentialLink timestamp
+// entry (KeyApproximateLastLogonTimeStamp or KeyCreationTime) to a DateTime.
+//
+// The 64-bit little-endian value is decoded per the entry's version and key
+// source, as DSInternals and Windows encode it:
+//   - Version 0: .NET DateTime.Ticks, 100-nanosecond ticks since 0001-01-01.
+//   - Version 1: .NET DateTime.ToBinary, ticks since 0001-01-01 with the
+//     DateTimeKind in the top two bits.
+//   - Version 2 and later: a FILETIME (ticks since 1601-01-01 UTC) when the key
+//     source is AD, and DateTime.ToBinary when it is Azure AD.
 //
 // Parameters:
 // - rawBinaryTime: A byte slice containing the binary representation of the time.
-// - source: The source of the key, which can affect the interpretation of the time.
-// - version: The version of the KeyCredentialLink, which can affect the interpretation of the time.
+// - source: The source of the key, which selects the encoding for version 2 and later.
+// - version: The version of the KeyCredentialLink, which selects the encoding.
 //
 // Returns:
 // - A DateTime object representing the converted time.
 // - An error if the buffer cannot hold a 64-bit timestamp.
 //
-// Note:
-// The function currently treats all versions and sources the same way, decoding the binary
-// timestamp as a count of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC.
-//
-// Src : https://github.com/microsoft/referencesource/blob/master/mscorlib/system/datetime.cs
+// Src : https://github.com/MichaelGrafnetter/DSInternals/blob/master/Src/DSInternals.Common/Data/Hello/KeyCredential.cs
 func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) (DateTime, error) {
 	// The value comes from a KEYCREDENTIALLINK_ENTRY whose length is whatever the
 	// entry declared, so a blob can parse into an entry too short to hold the
@@ -122,61 +226,63 @@ func ConvertFromBinaryTime(rawBinaryTime []byte, ksrc source.KeySource, kcv vers
 
 	timeStamp := binary.LittleEndian.Uint64(rawBinaryTime)
 
-	switch kcv.Value {
-	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
-		return dateTimeFromWireTicks(timeStamp), nil
-	case version.KeyCredentialLinkVersion_2:
-		if ksrc.Value == source.KeySource_AD {
-			return dateTimeFromWireTicks(timeStamp), nil
-		} else {
-			// This is not fully supported right now, you may encounter issues.
-			return dateTimeFromWireTicks(timeStamp), nil
-		}
+	var dt DateTime
+	switch timeEncodingFor(ksrc, kcv) {
+	case dotNetTicksEncoding:
+		// Version 0 has no kind bits: the whole value is the tick count.
+		dt = dateTimeFromDotNetTicks(timeStamp)
+	case dotNetBinaryEncoding:
+		dt = dateTimeFromDotNetBinary(timeStamp)
 	default:
-		if ksrc.Value == source.KeySource_AD {
-			return dateTimeFromWireTicks(timeStamp), nil
-		} else {
-			// This is not fully supported right now, you may encounter issues.
-			return dateTimeFromWireTicks(timeStamp), nil
-		}
+		dt = dateTimeFromWireTicks(timeStamp)
 	}
+	copy(dt.wire[:], rawBinaryTime[:8])
+	dt.hasWire = true
+	return dt, nil
 }
 
-// ConvertToBinaryTime converts a time.Time object to its binary representation in little-endian format.
+// EncodeBinaryTime returns the binary value of a KeyCredentialLink timestamp entry
+// for dt: the bytes dt was decoded from when it came from ConvertFromBinaryTime
+// and has not been changed since, and otherwise ConvertToBinaryTime of its time
+// for the given version and key source.
+//
+// Re-emitting the decoded bytes keeps a parsed blob byte-identical when it is
+// marshalled again, which its KeyHash requires: a DateTime.ToBinary value carries
+// a DateTimeKind (local, unspecified) that re-encoding from the instant would
+// replace. The decoded bytes are tied to the version and key source they were
+// read under; a caller that changes either on the credential should SetTime the
+// timestamps so they are re-encoded.
+func EncodeBinaryTime(dt DateTime, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) []byte {
+	if dt.hasWire {
+		return append([]byte(nil), dt.wire[:]...)
+	}
+	return ConvertToBinaryTime(dt.GetTime(), ksrc, kcv)
+}
+
+// ConvertToBinaryTime converts a time.Time object to the binary value of a
+// KeyCredentialLink timestamp entry, little-endian, in the encoding
+// ConvertFromBinaryTime decodes for the same version and key source. A
+// DateTime.ToBinary value is written with DateTimeKind.Utc.
 //
 // Parameters:
 // - date: A time.Time object representing the time to be converted.
-// - source: The source of the key, which can affect the interpretation of the time.
-// - version: The version of the KeyCredentialLink, which can affect the interpretation of the time.
+// - source: The source of the key, which selects the encoding for version 2 and later.
+// - version: The version of the KeyCredentialLink, which selects the encoding.
 //
 // Returns:
 // - A byte slice containing the binary representation of the time in little-endian format.
-//
-// Note:
-// The function currently treats all versions and sources the same way, encoding the time as a
-// count of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC in little-endian format,
-// which is the representation ConvertFromBinaryTime decodes.
 func ConvertToBinaryTime(date time.Time, ksrc source.KeySource, kcv version.KeyCredentialLinkVersion) []byte {
-	// The field holds ticks since 1601, not nanoseconds since 1970. Deriving them
-	// through NewDateTimeFromTime keeps this function the exact inverse of
-	// ConvertFromBinaryTime instead of an encoder for a different representation.
-	timeStamp := NewDateTimeFromTime(date).ToTicks()
-
-	switch kcv.Value {
-	case version.KeyCredentialLinkVersion_0, version.KeyCredentialLinkVersion_1:
-		return binary.LittleEndian.AppendUint64(nil, timeStamp)
-	case version.KeyCredentialLinkVersion_2:
-		if ksrc.Value == source.KeySource_AD {
-			return binary.LittleEndian.AppendUint64(nil, timeStamp)
-		} else {
-			return binary.LittleEndian.AppendUint64(nil, timeStamp)
-		}
+	switch timeEncodingFor(ksrc, kcv) {
+	case dotNetTicksEncoding:
+		return binary.LittleEndian.AppendUint64(nil, dotNetTicksFromTime(date))
+	case dotNetBinaryEncoding:
+		return binary.LittleEndian.AppendUint64(nil, dotNetTicksFromTime(date)|dotNetKindUtc)
 	default:
-		if ksrc.Value == source.KeySource_AD {
-			return binary.LittleEndian.AppendUint64(nil, timeStamp)
-		} else {
-			return binary.LittleEndian.AppendUint64(nil, timeStamp)
-		}
+		// The field holds ticks since 1601, not nanoseconds since 1970. Deriving
+		// them through NewDateTimeFromTime keeps this function the exact inverse
+		// of ConvertFromBinaryTime instead of an encoder for a different
+		// representation.
+		return binary.LittleEndian.AppendUint64(nil, NewDateTimeFromTime(date).ToTicks())
 	}
 }
 
