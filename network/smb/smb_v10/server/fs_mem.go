@@ -56,6 +56,8 @@ type memoryEntry struct {
 	links int
 
 	readOnly bool
+	hidden   bool
+	system   bool
 	created  time.Time
 	accessed time.Time
 	modified time.Time
@@ -219,6 +221,8 @@ func (e *memoryEntry) attr() FileAttr {
 		Size:           int64(len(e.data)),
 		AllocationSize: int64(len(e.data)),
 		ReadOnly:       e.readOnly,
+		Hidden:         e.hidden,
+		System:         e.system,
 		Created:        e.created,
 		Accessed:       e.accessed,
 		Modified:       e.modified,
@@ -360,6 +364,12 @@ func (fs *MemoryFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) e
 	}
 	if mask.ReadOnly {
 		entry.readOnly = attr.ReadOnly
+	}
+	if mask.Hidden {
+		entry.hidden = attr.Hidden
+	}
+	if mask.System {
+		entry.system = attr.System
 	}
 	if mask.Created {
 		entry.created = attr.Created

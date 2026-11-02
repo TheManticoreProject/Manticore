@@ -124,12 +124,22 @@ func handleNtRename(conn *Connection, w ResponseWriter, req *message.Message) nt
 // matchesSearchAttributes reports whether an entry is one the request's
 // SearchAttributes admit.
 //
-// The field is inclusive rather than exclusive: a directory is matched only when
-// the directory bit is set, and a plain file always matches. That is what makes
-// SearchAttributes able to say "rename this only if it is a file".
+// The field is inclusive, not exclusive ([MS-CIFS] sections 2.2.1.2.4 and
+// 2.2.4.66.1): a normal file always matches, and each special attribute the
+// entry carries — hidden, system or directory — must also be set in
+// SearchAttributes for it to match. So SearchAttributes 0x0000 admits only
+// normal files, while the hidden or system bits make the match inclusive of
+// those special types. ReadOnly and Archive never affect matching.
 func matchesSearchAttributes(attr FileAttr, searchAttributes uint16) bool {
+	var entryAttributes uint16
 	if attr.IsDir {
-		return searchAttributes&smbFileAttributeDirectory != 0
+		entryAttributes |= smbFileAttributeDirectory
 	}
-	return true
+	if attr.Hidden {
+		entryAttributes |= smbFileAttributeHidden
+	}
+	if attr.System {
+		entryAttributes |= smbFileAttributeSystem
+	}
+	return entryAttributes&^searchAttributes == 0
 }

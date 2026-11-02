@@ -47,8 +47,20 @@ func handleDelete(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 		return nt_status.NT_STATUS_OBJECT_PATH_SYNTAX_BAD
 	}
 
-	// No wildcard: one named file.
+	// SearchAttributes filters which files the delete admits: a hidden or system
+	// file is only removed when its bit is set ([MS-CIFS] section 3.3.5.9).
+	searchAttributes := request.SearchAttributes.GetAttributes()
+
+	// No wildcard: one named file. The attribute match is best effort, as for
+	// rename: an entry whose attributes cannot be read is left for Remove to
+	// resolve rather than refused here.
 	if pattern == "" {
+		if attr, err := tree.Share.FS.Stat(directory); err == nil &&
+			!matchesSearchAttributes(attr, searchAttributes) {
+			logger.Debugf("SMB1 server: %s deleted %q, which does not match the search attributes 0x%04X",
+				conn.Remote, directory, searchAttributes)
+			return nt_status.NT_STATUS_NO_SUCH_FILE
+		}
 		// A delete is reached by path rather than by handle, so nothing has
 		// broken the oplocks on it yet. A holder has to be told before the file
 		// it is caching stops existing.
@@ -68,6 +80,9 @@ func handleDelete(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 	deleted := 0
 	for _, entry := range entries {
 		if entry.Attr.IsDir {
+			continue
+		}
+		if !matchesSearchAttributes(entry.Attr, searchAttributes) {
 			continue
 		}
 		conn.breakOplocksOn(tree.Share, joinPath(directory, entry.Attr.Name), nil)
@@ -112,6 +127,19 @@ func handleRename(conn *Connection, w ResponseWriter, req *message.Message) nt_s
 	if oldPath == "" || newPath == "" {
 		// Renaming the share root is not a thing.
 		return nt_status.NT_STATUS_ACCESS_DENIED
+	}
+
+	// SearchAttributes filters the source the same way SMB_COM_NT_RENAME does: a
+	// hidden or system file is renamed only when its bit is set, and a directory
+	// only when the directory bit is set ([MS-CIFS] section 2.2.4.8.1). The match
+	// is best effort: an entry whose attributes cannot be read — a dangling
+	// symlink, say — is left for the rename itself to resolve rather than refused
+	// here, so a link renames as it always has.
+	if attr, err := tree.Share.FS.Stat(oldPath); err == nil &&
+		!matchesSearchAttributes(attr, request.SearchAttributes.GetAttributes()) {
+		logger.Debugf("SMB1 server: %s renamed %q, which does not match the search attributes 0x%04X",
+			conn.Remote, oldPath, request.SearchAttributes.GetAttributes())
+		return nt_status.NT_STATUS_NO_SUCH_FILE
 	}
 
 	// A rename is reached by path too, and it moves the file out from under
