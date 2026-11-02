@@ -84,14 +84,23 @@ func (s SyntaxID) Marshal() ([]byte, error) {
 }
 
 // Unmarshal parses a syntax identifier from data and returns the number of bytes
-// consumed.
+// consumed, reading the little-endian wire form Windows and Samba send.
 func (s *SyntaxID) Unmarshal(data []byte) (int, error) {
+	return s.UnmarshalOrder(data, binary.LittleEndian)
+}
+
+// UnmarshalOrder parses a syntax identifier whose UUID integer fields and version are
+// encoded in the given byte order, as a big-endian NDR peer sends them ([C706] section
+// 14.1, receiver-makes-right). The UUID's clock_seq and node octets are byte strings
+// and are read most-significant-byte-first regardless, which GUID.FromRawBytesOrder
+// handles.
+func (s *SyntaxID) UnmarshalOrder(data []byte, order binary.ByteOrder) (int, error) {
 	if len(data) < Size {
 		return 0, fmt.Errorf("syntax identifier truncated: have %d bytes, need %d", len(data), Size)
 	}
-	s.UUID.FromRawBytes(data[0:16])
-	s.MajorVersion = binary.LittleEndian.Uint16(data[16:18])
-	s.MinorVersion = binary.LittleEndian.Uint16(data[18:20])
+	s.UUID.FromRawBytesOrder(data[0:16], order)
+	s.MajorVersion = order.Uint16(data[16:18])
+	s.MinorVersion = order.Uint16(data[18:20])
 	return Size, nil
 }
 

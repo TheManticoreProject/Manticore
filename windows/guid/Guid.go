@@ -86,16 +86,30 @@ func (guid *GUID) Equal(other *GUID) bool {
 // set to the zero (nil) GUID instead of reading past the end of the slice; callers
 // that must distinguish a short input check len(data) themselves.
 func (guid *GUID) FromRawBytes(data []byte) {
+	guid.FromRawBytesOrder(data, binary.LittleEndian)
+}
+
+// FromRawBytesOrder parses a GUID from its raw bytes using the given byte order for
+// the three integer fields, matching the DCE/RPC rule for a UUID carried in NDR.
+//
+// A uuid_t is time_low (unsigned32), time_mid (unsigned16) and time_hi_and_version
+// (unsigned16) — the A, B and C fields — followed by clock_seq_hi_and_reserved,
+// clock_seq_low and node[6], which are byte strings. Only the first three fields are
+// integers subject to the sender's byte order ([C706] section 14.1); D and E are read
+// most-significant-byte-first regardless. FromRawBytes passes binary.LittleEndian,
+// which is how Windows and Samba always send.
+//
+// Only the first 16 bytes are read. If data holds fewer than 16 bytes, the GUID is set
+// to the zero (nil) GUID instead of reading past the end of the slice.
+func (guid *GUID) FromRawBytesOrder(data []byte, order binary.ByteOrder) {
 	if len(data) < 16 {
 		*guid = GUID{}
 		return
 	}
 
-	guid.A = uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
-
-	guid.B = uint16(data[4]) | uint16(data[5])<<8
-
-	guid.C = uint16(data[6]) | uint16(data[7])<<8
+	guid.A = order.Uint32(data[0:4])
+	guid.B = order.Uint16(data[4:6])
+	guid.C = order.Uint16(data[6:8])
 
 	guid.D = uint16(data[8])<<8 | uint16(data[9])
 

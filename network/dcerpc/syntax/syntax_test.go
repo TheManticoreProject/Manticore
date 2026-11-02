@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 )
 
@@ -59,5 +60,51 @@ func TestSyntaxID_UnmarshalTruncated(t *testing.T) {
 func TestSyntaxID_NDRvsNDR64NotEqual(t *testing.T) {
 	if NDRTransferSyntax().Equal(NDR64TransferSyntax()) {
 		t.Error("NDR and NDR64 syntaxes compare equal")
+	}
+}
+
+// TestUnmarshalOrder_BigEndian checks that a big-endian syntax identifier decodes to
+// the same SyntaxID as its little-endian form: the three integer UUID fields and the
+// two version halves are byte-swapped on the wire, the clock_seq and node octets are
+// not.
+func TestUnmarshalOrder_BigEndian(t *testing.T) {
+	ndr := NDRTransferSyntax()
+	le, err := ndr.Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Re-encode big-endian: swap the integer fields, leave bytes 8..16 in place.
+	be := append([]byte(nil), le...)
+	swap := func(b []byte) {
+		for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+			b[i], b[j] = b[j], b[i]
+		}
+	}
+	swap(be[0:4])
+	swap(be[4:6])
+	swap(be[6:8])
+	swap(be[16:18])
+	swap(be[18:20])
+
+	var s SyntaxID
+	n, err := s.UnmarshalOrder(be, binary.BigEndian)
+	if err != nil {
+		t.Fatalf("UnmarshalOrder: %v", err)
+	}
+	if n != Size {
+		t.Errorf("consumed %d bytes, want %d", n, Size)
+	}
+	if !s.Equal(ndr) {
+		t.Errorf("decoded %s, want %s", s, ndr)
+	}
+
+	// The default Unmarshal stays little-endian: it reads the big-endian bytes the
+	// other way and must NOT match NDR.
+	var leParsed SyntaxID
+	if _, err := leParsed.Unmarshal(be); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if leParsed.Equal(ndr) {
+		t.Error("little-endian Unmarshal of big-endian bytes matched NDR; byte order not honored")
 	}
 }
