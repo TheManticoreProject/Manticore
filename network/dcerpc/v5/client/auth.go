@@ -184,23 +184,44 @@ func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authentic
 // It returns an optional continuation token: under Kerberos GSS_C_DCE_STYLE the
 // handshake has a third leg (the initiator's AP-REP), which the caller sends in
 // an alter_context PDU. NTLM and single-leg providers return a nil continuation.
+// checkHandshakeTrailer checks the sec_trailer of a bind_ack or
+// alter_context_resp names the auth_type and auth_context_id the bind proposed,
+// the same rule unprotectResponseStub applies to every protected response. A
+// bind_ack without a verifier is left to the provider's own check.
+func (c *Client) checkHandshakeTrailer(trailer *pdu.SecTrailer) error {
+	if trailer == nil {
+		return nil
+	}
+	if trailer.AuthType != c.authType || trailer.AuthContextID != c.authContextID {
+		return fmt.Errorf("bind_ack sec_trailer (auth_type %d, auth_context_id %d) does not match the bind (%d, %d)",
+			trailer.AuthType, trailer.AuthContextID, c.authType, c.authContextID)
+	}
+	return nil
+}
+
 func (c *Client) completeAuth(bindAckFrag []byte) ([]byte, error) {
 	if c.authType != pdu.AuthTypeNTLMSSP {
 		// A single-leg provider whose context needs the bind_ack's auth_value to
 		// finish establishing (Kerberos mutual auth: verify the KRB_AP_REP and adopt
 		// any acceptor subkey). Providers without this need (Netlogon) are unchanged.
 		if bc, ok := c.sec.(bindCompleter); ok {
-			_, authValue, err := pdu.ExtractAuthVerifier(bindAckFrag)
+			trailer, authValue, err := pdu.ExtractAuthVerifier(bindAckFrag)
 			if err != nil {
 				return nil, fmt.Errorf("read bind_ack auth verifier: %w", err)
+			}
+			if err := c.checkHandshakeTrailer(trailer); err != nil {
+				return nil, err
 			}
 			return bc.CompleteBind(authValue)
 		}
 		return nil, nil
 	}
-	_, challengeBytes, err := pdu.ExtractAuthVerifier(bindAckFrag)
+	trailer, challengeBytes, err := pdu.ExtractAuthVerifier(bindAckFrag)
 	if err != nil {
 		return nil, fmt.Errorf("read challenge: %w", err)
+	}
+	if err := c.checkHandshakeTrailer(trailer); err != nil {
+		return nil, err
 	}
 	if len(challengeBytes) == 0 {
 		return nil, fmt.Errorf("server returned no NTLM challenge in bind_ack")
@@ -451,6 +472,17 @@ func (c *Client) unprotectResponseStub(frag []byte) ([]byte, error) {
 	st, authValue, err := pdu.ExtractAuthVerifier(frag)
 	if err != nil {
 		return nil, err
+	}
+	// The response must be protected under the context the client bound: a
+	// trailer naming another auth_type, a lower (or any other) auth_level, or
+	// another auth_context_id is refused before its token is processed, so a
+	// response cannot be accepted under weaker protection than was negotiated.
+	if st == nil {
+		return nil, fmt.Errorf("authenticated response carries no sec_trailer")
+	}
+	if st.AuthType != c.authType || st.AuthLevel != c.authLevel || st.AuthContextID != c.authContextID {
+		return nil, fmt.Errorf("response sec_trailer (auth_type %d, auth_level %d, auth_context_id %d) does not match the bound context (%d, %d, %d)",
+			st.AuthType, st.AuthLevel, st.AuthContextID, c.authType, c.authLevel, c.authContextID)
 	}
 
 	stubStart := pdu.HeaderSize + 8 // response body: alloc_hint, ctx_id, cancel_count, reserved
