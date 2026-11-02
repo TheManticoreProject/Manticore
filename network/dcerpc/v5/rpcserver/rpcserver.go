@@ -51,6 +51,13 @@ const minFragmentStub = 8
 // alloc_hint(4) p_cont_id(2) cancel_count(1) reserved(1).
 const responseBodyOverhead = 8
 
+// MaxRequestStub bounds the stub a fragmented request may reassemble to. A
+// request that grows past it is refused with a fault rather than buffered
+// without limit. It is per association, and a client can open many, so it is
+// kept well below what one connection could otherwise pin: the interfaces
+// served here take requests of a few hundred bytes.
+const MaxRequestStub = 1 << 20
+
 // defaultAssocGroup is the association group handed out when a client asks for
 // one.
 const defaultAssocGroup = 0x00001234
@@ -124,6 +131,19 @@ type Association struct {
 
 	// maxFragment is the largest reply fragment this client said it can receive.
 	maxFragment uint16
+
+	// partial is the request being reassembled from its fragments, or nil. The
+	// association does not multiplex calls, so at most one is in progress.
+	partial *partialRequest
+}
+
+// partialRequest is a fragmented request received up to, but not including, its
+// last fragment.
+type partialRequest struct {
+	callID    uint32
+	contextID uint16
+	opnum     uint16
+	stub      []byte
 }
 
 // Handle answers one received PDU and returns the reply.
@@ -146,10 +166,19 @@ func (a *Association) Handle(request []byte) ([]byte, error) {
 
 	switch header.PacketType {
 	case pdu.PacketTypeBind, pdu.PacketTypeAlterContext:
+		// A bind or alter_context ends any request still being assembled.
+		a.dropPartial()
 		return a.handleBind(request, header)
 
 	case pdu.PacketTypeRequest:
 		return a.handleRequest(request, header)
+
+	case pdu.PacketTypeOrphaned:
+		// [C706] chapter 12: "The orphaned PDU is used by a client to notify a
+		// server that it is aborting a request in progress". The request being
+		// assembled is abandoned and nothing is sent back.
+		a.dropPartial()
+		return nil, nil
 
 	default:
 		// A packet type this endpoint does not answer for. A fault is a reply the
@@ -295,12 +324,24 @@ func (a *Association) handleRequest(request []byte, header *pdu.Header) ([]byte,
 		return a.fault(header.CallID, 0, pdu.NCASProtoError)
 	}
 
-	// A request arriving in fragments is refused rather than half-assembled.
-	// Reassembly needs per-call state keyed by call ID, and a partial stub handed
-	// to a Service would be decoded as a whole one.
+	// A request in one fragment ends any request still being assembled, which
+	// the client has evidently abandoned.
+	if header.PacketFlags.Has(pdu.PFCFirstFrag) && header.PacketFlags.Has(pdu.PFCLastFrag) {
+		a.dropPartial()
+	}
+
+	// A request in fragments is reassembled before any of it reaches a Service:
+	// a partial stub would be decoded as a whole one. Every fragment but the
+	// last is answered with nothing: the reply follows the whole request.
 	if !header.PacketFlags.Has(pdu.PFCFirstFrag) || !header.PacketFlags.Has(pdu.PFCLastFrag) {
-		logger.Debugf("rpcserver: refusing a fragmented request (flags %s)", header.PacketFlags)
-		return a.fault(header.CallID, incoming.ContextID, pdu.NCASProtoError)
+		stub, complete, status := a.reassemble(header, incoming)
+		if status != pdu.NCASStatusOK {
+			return a.fault(header.CallID, incoming.ContextID, status)
+		}
+		if !complete {
+			return nil, nil
+		}
+		incoming.Stub = stub
 	}
 
 	// The context the request names is what says which interface it is for, so a
@@ -328,6 +369,75 @@ func (a *Association) handleRequest(request []byte, header *pdu.Header) ([]byte,
 	}
 
 	return a.response(header.CallID, incoming.ContextID, stub)
+}
+
+// dropPartial abandons the request being reassembled, if any.
+func (a *Association) dropPartial() {
+	a.mutex.Lock()
+	a.partial = nil
+	a.mutex.Unlock()
+}
+
+// reassemble adds one fragment of a request to the request in progress, and
+// returns the whole stub once the last fragment has arrived.
+//
+// The fragments of one call carry its call_id, and the first fixes the context
+// and opnum the rest must repeat. A fragment that breaks
+// either rule, a first fragment arriving while another call is incomplete, or a
+// stub growing past MaxRequestStub abandons the request in progress and is
+// answered with nca_s_proto_error.
+//
+// Parameters:
+//   - header: the fragment's common header
+//   - incoming: the decoded fragment
+//
+// Returns:
+//   - The reassembled stub and true once complete, or false while fragments
+//     remain; a fault status other than NCASStatusOK when the fragment is refused
+func (a *Association) reassemble(header *pdu.Header, incoming *pdu.Request) ([]byte, bool, uint32) {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	if header.PacketFlags.Has(pdu.PFCFirstFrag) {
+		// A context this association never bound cannot be answered, so the
+		// request is refused before any of it is buffered.
+		if _, bound := a.contexts[incoming.ContextID]; !bound {
+			logger.Debugf("rpcserver: call %d starts on presentation context %d, which is not bound", header.CallID, incoming.ContextID)
+			a.partial = nil
+			return nil, false, pdu.NCASFaultContextMismatch
+		}
+		if a.partial != nil {
+			logger.Debugf("rpcserver: call %d started while call %d was incomplete", header.CallID, a.partial.callID)
+			a.partial = nil
+			return nil, false, pdu.NCASProtoError
+		}
+		a.partial = &partialRequest{
+			callID:    header.CallID,
+			contextID: incoming.ContextID,
+			opnum:     incoming.Opnum,
+			stub:      append([]byte(nil), incoming.Stub...),
+		}
+		return nil, false, pdu.NCASStatusOK
+	}
+
+	partial := a.partial
+	if partial == nil || partial.callID != header.CallID ||
+		partial.contextID != incoming.ContextID || partial.opnum != incoming.Opnum {
+		logger.Debugf("rpcserver: a fragment of call %d does not continue the call in progress", header.CallID)
+		a.partial = nil
+		return nil, false, pdu.NCASProtoError
+	}
+	if len(partial.stub)+len(incoming.Stub) > MaxRequestStub {
+		logger.Debugf("rpcserver: call %d grew past %d bytes", header.CallID, MaxRequestStub)
+		a.partial = nil
+		return nil, false, pdu.NCASProtoError
+	}
+	partial.stub = append(partial.stub, incoming.Stub...)
+	if !header.PacketFlags.Has(pdu.PFCLastFrag) {
+		return nil, false, pdu.NCASStatusOK
+	}
+	a.partial = nil
+	return partial.stub, true, pdu.NCASStatusOK
 }
 
 // response frames a response stub, splitting it across fragments if it exceeds

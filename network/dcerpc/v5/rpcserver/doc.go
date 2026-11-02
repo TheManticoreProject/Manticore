@@ -42,12 +42,14 @@
 // by that being absent than by a bind that succeeds and then cannot verify
 // anything.
 //
-// A request arriving in fragments is refused with a fault rather than
-// reassembled. Reassembly needs per-call state keyed by call id, and the request
-// stubs of the interfaces served here — an information level and a couple of
-// counts — do not approach a fragment's worth of bytes. Replies are fragmented,
-// which is the direction that matters: a share enumeration easily exceeds one
-// fragment.
+// A request arriving in fragments is reassembled before the Service sees it, up
+// to MaxRequestStub bytes. The association does not multiplex calls, so one
+// request is assembled at a time; a fragment that does not continue it (another
+// call_id, context or opnum) is answered with nca_s_proto_error and abandons it.
+// A first fragment on a context the association never bound is refused at once
+// with nca_s_fault_context_mismatch. A whole request, a bind or alter_context,
+// and an orphaned PDU each abandon the request in progress; the orphaned PDU is
+// not answered. Replies are fragmented to the size the bind negotiated.
 //
 // Only the NDR (little-endian, version 2) transfer syntax is accepted. NDR64 is
 // declined at bind time rather than accepted and then misencoded, which is the
