@@ -11,6 +11,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	dcerpctransport "github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/transport/tcp"
+	kerberos "github.com/TheManticoreProject/Manticore/network/kerberos/v5"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
@@ -82,6 +83,11 @@ type TCPBinder struct {
 	Timeout   time.Duration
 	AuthType  uint8 // DCE/RPC auth type; defaults to NTLMSSP
 	AuthLevel uint8 // DCE/RPC auth level; defaults to packet privacy (sign + seal)
+
+	// Kerberos, when set, authenticates with Kerberos for SPN instead of NTLM
+	// with Creds, at AuthLevel.
+	Kerberos *kerberos.KerberosClient
+	SPN      string
 }
 
 // NewTCPBinder returns a Binder over ncacn_ip_tcp to host authenticating with creds at
@@ -115,7 +121,11 @@ func (b *TCPBinder) Bind(s syntax.SyntaxID) (*dcerpcclient.Client, func() error,
 
 	rpc := dcerpcclient.NewClient(newTCPTransport(b.Host, port, b.Timeout))
 
-	if err := rpc.SetAuth(b.AuthType, b.AuthLevel, b.Creds); err != nil {
+	if b.Kerberos != nil {
+		if err := rpc.SetAuthKerberos(b.AuthLevel, b.Kerberos, b.SPN); err != nil {
+			return nil, nil, fmt.Errorf("msproto: configure Kerberos auth: %w", err)
+		}
+	} else if err := rpc.SetAuth(b.AuthType, b.AuthLevel, b.Creds); err != nil {
 		return nil, nil, fmt.Errorf("msproto: configure auth: %w", err)
 	}
 	if err := rpc.Bind(s); err != nil {
