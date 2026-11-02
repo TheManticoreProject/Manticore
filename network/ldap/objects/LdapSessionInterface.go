@@ -22,6 +22,11 @@ type LdapSessionInterface interface {
 
 	QueryChildren(searchBase string, query string, attributes []string) ([]*ldap.Entry, error)
 
+	// GetRootDSE returns the RootDSE entry (a base search of the empty DN). The
+	// Query functions cannot read it: they resolve an empty search base to the
+	// defaultNamingContext.
+	GetRootDSE() (*ldap.Entry, error)
+
 	// Domain functions
 	GetDomain(distinguishedName string) (*Domain, error)
 }

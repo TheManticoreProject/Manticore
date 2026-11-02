@@ -3,6 +3,7 @@ package objects
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap/ldap_attributes"
 	"github.com/go-ldap/ldap/v3"
@@ -76,7 +77,17 @@ func (domain *Domain) IsDomainFunctionalityLevelEqualTo(functionalityLevel ldap_
 }
 
 // GetDomainFunctionalityLevel gets the domain's functionality level.
+//
+// The RootDSE publishes it as domainFunctionality for the domain the DC hosts, and
+// any authenticated or anonymous client can read it, so it is used when the
+// RootDSE's defaultNamingContext is this domain. Otherwise (a DC of another
+// domain, or a RootDSE without the attribute) the domain head's
+// msDS-Behavior-Version is read instead.
 func (domain *Domain) GetDomainFunctionalityLevel() (ldap_attributes.DomainFunctionalityLevel, error) {
+	if level, ok := domain.domainFunctionalityFromRootDSE(); ok {
+		return level, nil
+	}
+
 	var err error
 
 	query := fmt.Sprintf("(distinguishedName=%s)", ldap.EscapeFilter(domain.DistinguishedName))
@@ -96,4 +107,22 @@ func (domain *Domain) GetDomainFunctionalityLevel() (ldap_attributes.DomainFunct
 	} else {
 		return 0, fmt.Errorf("domain functionality level not found for domain %s", domain.DistinguishedName)
 	}
+}
+
+// domainFunctionalityFromRootDSE reads domainFunctionality from the RootDSE when
+// the RootDSE's defaultNamingContext is this domain. ok is false when the RootDSE
+// cannot be read, describes another domain, or lacks a numeric value.
+func (domain *Domain) domainFunctionalityFromRootDSE() (ldap_attributes.DomainFunctionalityLevel, bool) {
+	rootDSE, err := domain.LdapSession.GetRootDSE()
+	if err != nil || rootDSE == nil {
+		return 0, false
+	}
+	if !strings.EqualFold(rootDSE.GetAttributeValue("defaultNamingContext"), domain.DistinguishedName) {
+		return 0, false
+	}
+	level, err := strconv.Atoi(rootDSE.GetAttributeValue("domainFunctionality"))
+	if err != nil {
+		return 0, false
+	}
+	return ldap_attributes.DomainFunctionalityLevel(level), true
 }
