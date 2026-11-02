@@ -6,6 +6,9 @@
 //
 //	serviceclass "/" hostname [":"port | ":"instancename] ["/" servicename]
 //
+// where an IPv6 literal hostname is written in brackets, "[" address "]", so its
+// colons are not read as the port separator (e.g. "cifs/[fe80::1]:445").
+//
 // An SPN consists of either two parts or three parts, each separated by a
 // forward slash ("/"). The first part is the service class, the second part is
 // the host name, and the third part (if present) is the service name. The host
@@ -22,6 +25,7 @@ package serviceprincipalname
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -43,8 +47,14 @@ type ServicePrincipalName struct {
 	Hostname string
 
 	// Port is the value of the optional numeric ":port" suffix on the host
-	// name. It is 0 when no numeric port suffix is present.
+	// name. It is 0 when no numeric port suffix is present; HasPort tells an
+	// explicit ":0" apart from no port.
 	Port uint16
+
+	// HasPort records that the host name carried a numeric ":port" suffix, so
+	// an explicit ":0" is kept when the SPN is rendered again. A non-zero Port
+	// is rendered whether or not it is set.
+	HasPort bool
 
 	// InstanceName is the value of the optional non-numeric ":instancename"
 	// suffix on the host name. It is empty when no such suffix is present.
@@ -58,8 +68,9 @@ type ServicePrincipalName struct {
 // FromString parses spn into a ServicePrincipalName and validates it.
 //
 // It returns an error when spn is empty, has fewer than two or more than three
-// "/"-separated parts, contains an empty component, or carries a numeric port
-// suffix that does not fit in a uint16.
+// "/"-separated parts, contains an empty component, carries a numeric port
+// suffix that does not fit in a uint16, or has a bracketed host that is not a
+// terminated IPv6 address followed by nothing or a ":" suffix.
 func FromString(spn string) (*ServicePrincipalName, error) {
 	if strings.TrimSpace(spn) == "" {
 		return nil, fmt.Errorf("invalid SPN: empty string")
@@ -82,10 +93,29 @@ func FromString(spn string) (*ServicePrincipalName, error) {
 	}
 
 	// Parse the host portion (parts[1]), splitting on the first ":" to detect
-	// an optional port or instance-name suffix.
+	// an optional port or instance-name suffix. An IPv6 literal host is written
+	// in brackets ("[fe80::1]:445"), so its colons are not separators: the host
+	// is the bracketed address and the suffix starts after the "]".
 	host := parts[1]
+	if strings.HasPrefix(host, "[") {
+		end := strings.Index(host, "]")
+		if end < 0 {
+			return nil, fmt.Errorf("invalid SPN %q: unterminated \"[\" in host name", spn)
+		}
+		s.Hostname = host[1:end]
+		if net.ParseIP(s.Hostname) == nil || !strings.Contains(s.Hostname, ":") {
+			return nil, fmt.Errorf("invalid SPN %q: %q in brackets is not an IPv6 address", spn, s.Hostname)
+		}
+		rest := host[end+1:]
+		if rest != "" && !strings.HasPrefix(rest, ":") {
+			return nil, fmt.Errorf("invalid SPN %q: unexpected %q after the IPv6 host", spn, rest)
+		}
+		host = "[]" + rest // leaves only the suffix for the split below
+	}
 	if colon := strings.Index(host, ":"); colon >= 0 {
-		s.Hostname = host[:colon]
+		if !strings.HasPrefix(host, "[") {
+			s.Hostname = host[:colon]
+		}
 		suffix := host[colon+1:]
 
 		if suffix == "" {
@@ -100,10 +130,11 @@ func FromString(spn string) (*ServicePrincipalName, error) {
 				return nil, fmt.Errorf("invalid SPN %q: port %q out of range: %w", spn, suffix, err)
 			}
 			s.Port = uint16(port)
+			s.HasPort = true
 		} else {
 			s.InstanceName = suffix
 		}
-	} else {
+	} else if !strings.HasPrefix(host, "[") {
 		s.Hostname = host
 	}
 
@@ -146,7 +177,7 @@ func (s *ServicePrincipalName) Validate() error {
 	if s.Hostname == "" {
 		return fmt.Errorf("invalid SPN: empty host name")
 	}
-	if s.Port != 0 && s.InstanceName != "" {
+	if (s.Port != 0 || s.HasPort) && s.InstanceName != "" {
 		return fmt.Errorf("invalid SPN: port and instance name are mutually exclusive")
 	}
 
@@ -161,7 +192,13 @@ func (s *ServicePrincipalName) Validate() error {
 			return fmt.Errorf("invalid SPN: %s %q contains a separator", label, value)
 		}
 	}
-	if strings.Contains(s.Hostname, "/") {
+	if strings.ContainsAny(s.Hostname, "/[]") {
+		return fmt.Errorf("invalid SPN: host name %q contains a separator", s.Hostname)
+	}
+	// A colon in the host name is only allowed in an IPv6 literal, which String
+	// writes in brackets; any other colon would be read back as a port or
+	// instance-name separator.
+	if strings.Contains(s.Hostname, ":") && net.ParseIP(s.Hostname) == nil {
 		return fmt.Errorf("invalid SPN: host name %q contains a separator", s.Hostname)
 	}
 
@@ -186,9 +223,17 @@ func (s *ServicePrincipalName) String() string {
 	var b strings.Builder
 	b.WriteString(s.ServiceClass)
 	b.WriteByte('/')
-	b.WriteString(s.Hostname)
+	if strings.Contains(s.Hostname, ":") {
+		// An IPv6 literal is bracketed so its colons are not read as the
+		// port or instance-name separator.
+		b.WriteByte('[')
+		b.WriteString(s.Hostname)
+		b.WriteByte(']')
+	} else {
+		b.WriteString(s.Hostname)
+	}
 
-	if s.Port != 0 {
+	if s.Port != 0 || s.HasPort {
 		b.WriteByte(':')
 		b.WriteString(strconv.FormatUint(uint64(s.Port), 10))
 	} else if s.InstanceName != "" {
@@ -214,6 +259,7 @@ func (s *ServicePrincipalName) Equal(other *ServicePrincipalName) bool {
 	return strings.EqualFold(s.ServiceClass, other.ServiceClass) &&
 		strings.EqualFold(s.Hostname, other.Hostname) &&
 		s.Port == other.Port &&
+		(s.Port != 0 || s.HasPort) == (other.Port != 0 || other.HasPort) &&
 		strings.EqualFold(s.InstanceName, other.InstanceName) &&
 		strings.EqualFold(s.ServiceName, other.ServiceName)
 }
