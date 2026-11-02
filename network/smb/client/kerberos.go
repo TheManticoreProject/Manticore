@@ -34,8 +34,7 @@ type KerberosOptions struct {
 // When creds holds none of them, the TGT is loaded from the ccache named by the
 // KRB5CCNAME environment variable.
 //
-// Kerberos is supported over SMB 2.0.2 and later; over SMB1 LoginKerberos
-// returns an error.
+// Kerberos is supported over SMB1 and SMB 2.0.2 and later.
 func (c *Client) LoginKerberos(creds *credentials.Credentials, opts KerberosOptions) error {
 	if creds == nil {
 		return fmt.Errorf("kerberos login requires credentials but none were provided")

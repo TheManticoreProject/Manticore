@@ -40,7 +40,7 @@ func (b *smb1Backend) Login(creds *credentials.Credentials) error {
 }
 
 func (b *smb1Backend) LoginKerberos(kc *kerberos.KerberosClient, spn string) error {
-	return fmt.Errorf("Kerberos authentication is not supported over SMB1; negotiate SMB2 or higher")
+	return b.engine.SessionSetupKerberosWithClient(kc, spn)
 }
 
 func (b *smb1Backend) ServerIdentity() ServerIdentity {

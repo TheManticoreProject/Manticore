@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/client"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
 
@@ -76,8 +77,11 @@ func TestNewKerberosClientSecrets(t *testing.T) {
 	}
 }
 
-func TestSMB1LoginKerberosUnsupported(t *testing.T) {
-	if err := (&smb1Backend{}).LoginKerberos(nil, "cifs/host"); err == nil {
-		t.Error("SMB1 backend accepted a Kerberos login")
+// TestSMB1LoginKerberosNilClient checks that the SMB1 backend, which now
+// supports Kerberos, refuses a login without a Kerberos client.
+func TestSMB1LoginKerberosNilClient(t *testing.T) {
+	err := (&smb1Backend{engine: &smb1.Client{}}).LoginKerberos(nil, "cifs/host")
+	if err == nil || !strings.Contains(err.Error(), "Kerberos client") {
+		t.Errorf("LoginKerberos(nil) = %v, want the missing-client error", err)
 	}
 }
