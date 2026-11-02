@@ -86,12 +86,9 @@ func ParseFileFullDirectoryInformationList(buf []byte) []FileFullDirectoryInform
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileFullDirInfoFixedSize, 60); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
@@ -252,12 +249,9 @@ func ParseFileBothDirectoryInformationList(buf []byte) []FileBothDirectoryInform
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileBothDirInfoFixedSize, 60); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
@@ -354,12 +348,9 @@ func ParseFileIdBothDirectoryInformationList(buf []byte) []FileIdBothDirectoryIn
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileIdBothDirInfoFixedSize, 60); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
@@ -413,12 +404,9 @@ func ParseFileNamesInformationList(buf []byte) []FileNamesInformation {
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileNamesInfoFixedSize, 8); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
@@ -496,12 +484,9 @@ func ParseFileDirectoryInformationList(buf []byte) []FileDirectoryInformation {
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileDirInfoFixedSize, 60); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
@@ -591,12 +576,9 @@ func ParseFileIdExtdDirectoryInformationList(buf []byte) []FileIdExtdDirectoryIn
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileIdExtdDirInfoFixedSize, 60); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }

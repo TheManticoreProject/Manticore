@@ -88,12 +88,9 @@ func ParseFileStreamInformationList(buf []byte) []FileStreamInformation {
 			break
 		}
 		out = append(out, e)
-		// A NextEntryOffset past the end of buf ends the chain; comparing in
-		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
-		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+		if pos = nextEntry(buf, pos, fileStreamInfoFixedSize, 4); pos < 0 {
 			break
 		}
-		pos += int(e.NextEntryOffset)
 	}
 	return out
 }
