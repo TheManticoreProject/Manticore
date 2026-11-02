@@ -91,3 +91,57 @@ func ParseSID(s string) (RPC_SID, error) {
 	}
 	return sid, nil
 }
+
+// sidMaxSubAuthorities is the largest SubAuthorityCount [MS-DTYP] 2.4.2.2 allows.
+const sidMaxSubAuthorities = 15
+
+// Marshal encodes the SID in its packed binary form ([MS-DTYP] 2.4.2.2): Revision,
+// SubAuthorityCount, the 6-byte big-endian IdentifierAuthority, then each
+// SubAuthority as a little-endian uint32. This is the form of the objectSid
+// attribute and of SIDs inside security descriptors, not the NDR form used on
+// RPC. SubAuthorityCount is taken from the length of SubAuthority.
+//
+// Returns:
+// - The packed SID, 8 + 4*len(SubAuthority) bytes.
+// - An error if there are more than 15 sub-authorities.
+func (s RPC_SID) Marshal() ([]byte, error) {
+	if len(s.SubAuthority) > sidMaxSubAuthorities {
+		return nil, fmt.Errorf("dtyp: SID has %d sub-authorities, max %d", len(s.SubAuthority), sidMaxSubAuthorities)
+	}
+	out := make([]byte, 0, 8+4*len(s.SubAuthority))
+	out = append(out, s.Revision, uint8(len(s.SubAuthority)))
+	out = append(out, s.IdentifierAuthority[:]...)
+	for _, sub := range s.SubAuthority {
+		out = binary.LittleEndian.AppendUint32(out, sub)
+	}
+	return out, nil
+}
+
+// Unmarshal decodes a packed binary SID ([MS-DTYP] 2.4.2.2) from the start of data,
+// as Marshal writes it.
+//
+// Returns:
+// - The number of bytes consumed, 8 + 4*SubAuthorityCount.
+// - An error if data is shorter than its SubAuthorityCount requires, or the count
+//   exceeds 15.
+func (s *RPC_SID) Unmarshal(data []byte) (int, error) {
+	if len(data) < 8 {
+		return 0, fmt.Errorf("dtyp: SID needs at least 8 bytes, got %d", len(data))
+	}
+	count := int(data[1])
+	if count > sidMaxSubAuthorities {
+		return 0, fmt.Errorf("dtyp: SID has %d sub-authorities, max %d", count, sidMaxSubAuthorities)
+	}
+	n := 8 + 4*count
+	if len(data) < n {
+		return 0, fmt.Errorf("dtyp: SID with %d sub-authorities needs %d bytes, got %d", count, n, len(data))
+	}
+	s.Revision = data[0]
+	s.SubAuthorityCount = uint8(count)
+	copy(s.IdentifierAuthority[:], data[2:8])
+	s.SubAuthority = make([]uint32, count)
+	for i := range s.SubAuthority {
+		s.SubAuthority[i] = binary.LittleEndian.Uint32(data[8+4*i:])
+	}
+	return n, nil
+}
