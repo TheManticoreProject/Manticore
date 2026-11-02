@@ -34,6 +34,7 @@ func TestFromString_Valid(t *testing.T) {
 				ServiceClass: "MSSQLSvc",
 				Hostname:     "host.domain.com",
 				Port:         1433,
+				HasPort:      true,
 			},
 		},
 		{
@@ -52,6 +53,7 @@ func TestFromString_Valid(t *testing.T) {
 				ServiceClass: "http",
 				Hostname:     "web",
 				Port:         8080,
+				HasPort:      true,
 				ServiceName:  "realm",
 			},
 		},
@@ -72,6 +74,7 @@ func TestFromString_Valid(t *testing.T) {
 				ServiceClass: "svc",
 				Hostname:     "host",
 				Port:         65535,
+				HasPort:      true,
 			},
 		},
 	}
@@ -194,5 +197,71 @@ func TestEqual(t *testing.T) {
 	var n1, n2 *ServicePrincipalName
 	if !n1.Equal(n2) {
 		t.Errorf("nil.Equal(nil) = false, want true")
+	}
+}
+
+// TestFromString_IPv6Host checks a bracketed IPv6 literal host is kept whole,
+// with the port or instance name after the "]", and renders back bracketed.
+func TestFromString_IPv6Host(t *testing.T) {
+	for _, tc := range []struct {
+		spn  string
+		want ServicePrincipalName
+	}{
+		{"host/[fe80::1]", ServicePrincipalName{ServiceClass: "host", Hostname: "fe80::1"}},
+		{"cifs/[fd2e:5387:e712:3333::1]:445", ServicePrincipalName{ServiceClass: "cifs", Hostname: "fd2e:5387:e712:3333::1", Port: 445, HasPort: true}},
+		{"MSSQLSvc/[::1]:SQLEXPRESS/corp.local", ServicePrincipalName{ServiceClass: "MSSQLSvc", Hostname: "::1", InstanceName: "SQLEXPRESS", ServiceName: "corp.local"}},
+	} {
+		got, err := FromString(tc.spn)
+		if err != nil {
+			t.Fatalf("FromString(%q): %v", tc.spn, err)
+		}
+		if *got != tc.want {
+			t.Errorf("FromString(%q) = %+v, want %+v", tc.spn, *got, tc.want)
+		}
+		if s := got.String(); s != tc.spn {
+			t.Errorf("String() = %q, want %q", s, tc.spn)
+		}
+	}
+	for _, bad := range []string{"host/[fe80::1", "host/[fe80::1]x", "host/[host.local]", "host/[fe80::1]:"} {
+		if _, err := FromString(bad); err == nil {
+			t.Errorf("FromString(%q) accepted a malformed bracketed host", bad)
+		}
+	}
+}
+
+// TestFromString_ExplicitZeroPortRoundTrips checks an explicit ":0" port is kept
+// through FromString and String, and distinguishes the SPN from one with no port.
+func TestFromString_ExplicitZeroPortRoundTrips(t *testing.T) {
+	got, err := FromString("svc/host:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasPort || got.Port != 0 {
+		t.Errorf("FromString(svc/host:0) = %+v, want HasPort with port 0", *got)
+	}
+	if s := got.String(); s != "svc/host:0" {
+		t.Errorf("String() = %q, want svc/host:0", s)
+	}
+	plain, _ := FromString("svc/host")
+	if got.Equal(plain) {
+		t.Error("svc/host:0 compares equal to svc/host")
+	}
+}
+
+// TestValidate_HostColonOnlyForIPv6 checks a hand-built host name with a colon is
+// accepted only when it is an IPv6 literal, which String brackets.
+func TestValidate_HostColonOnlyForIPv6(t *testing.T) {
+	if err := (&ServicePrincipalName{ServiceClass: "svc", Hostname: "fe80::1", Port: 88}).Validate(); err != nil {
+		t.Errorf("IPv6 host rejected: %v", err)
+	}
+	if err := (&ServicePrincipalName{ServiceClass: "svc", Hostname: "host:x"}).Validate(); err == nil {
+		t.Error("host name with a colon accepted")
+	}
+	// Brackets are rendering syntax, not part of a host name: "[x" would render
+	// as "svc/[x", which no longer parses.
+	for _, h := range []string{"[x", "x]", "[::1]"} {
+		if err := (&ServicePrincipalName{ServiceClass: "svc", Hostname: h}).Validate(); err == nil {
+			t.Errorf("host name %q with a bracket accepted", h)
+		}
 	}
 }
