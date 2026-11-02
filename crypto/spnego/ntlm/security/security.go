@@ -91,6 +91,19 @@ func NewContext(exportedSessionKey []byte, negFlg flags.NegotiateFlags) (*Contex
 	}, nil
 }
 
+// NewAcceptorContext derives the same keys as NewContext for the server side of
+// the session: outbound messages are signed and sealed with the server-to-client
+// keys and inbound ones verified and unsealed with the client-to-server keys.
+func NewAcceptorContext(exportedSessionKey []byte, negFlg flags.NegotiateFlags) (*Context, error) {
+	c, err := NewContext(exportedSessionKey, negFlg)
+	if err != nil {
+		return nil, err
+	}
+	c.clientSigningKey, c.serverSigningKey = c.serverSigningKey, c.clientSigningKey
+	c.clientSeal, c.serverSeal = c.serverSeal, c.clientSeal
+	return c, nil
+}
+
 // Sign returns the NTLMSSP_MESSAGE_SIGNATURE over message for an outbound
 // PKT_INTEGRITY PDU. The message is left in cleartext; only the signature is produced.
 // It advances the outbound sequence number.

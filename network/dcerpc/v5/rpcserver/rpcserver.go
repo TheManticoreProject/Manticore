@@ -71,6 +71,9 @@ type Dispatcher struct {
 	// services are the interfaces this endpoint answers for. Written once by New
 	// and only read afterwards.
 	services []Service
+
+	// ntlm, set by EnableNTLM, configures authenticated binds. Nil refuses them.
+	ntlm *NTLMAuth
 }
 
 // New builds a Dispatcher for a set of interfaces.
@@ -113,15 +116,22 @@ func (d *Dispatcher) Open() *Association {
 // fragment this client will accept. Two clients of one endpoint have separate
 // associations and negotiate separately.
 //
-// An association is guarded, so a transport that lets a client have several calls
-// in flight cannot corrupt the context table with a bind arriving beside a
-// request.
+// An association is guarded, and Handle processes one PDU at a time, so a
+// transport that lets a client have several calls in flight cannot corrupt the
+// context table or the security context: they are answered one after another.
 type Association struct {
 	// dispatcher is the endpoint this association is with.
 	dispatcher *Dispatcher
 
 	// mutex guards contexts and maxFragment.
 	mutex sync.Mutex
+
+	// handling serializes Handle. An authenticated association's security
+	// context is stateful (RC4 streams and sequence numbers advance with every
+	// PDU in wire order), so its PDUs must be processed one at a time and in the
+	// order they arrived; a transport with several calls in flight gets them
+	// answered one after another.
+	handling sync.Mutex
 
 	// contexts maps a presentation context identifier to the interface the
 	// client bound it to. It is what makes a request's p_cont_id meaningful:
@@ -135,6 +145,10 @@ type Association struct {
 	// partial is the request being reassembled from its fragments, or nil. The
 	// association does not multiplex calls, so at most one is in progress.
 	partial *partialRequest
+
+	// auth is what an authenticated bind established, or nil for an
+	// unauthenticated association.
+	auth *authState
 }
 
 // partialRequest is a fragmented request received up to, but not including, its
@@ -159,6 +173,9 @@ type partialRequest struct {
 // Returns:
 //   - The reply PDUs to send back, and an error only when no reply can be framed
 func (a *Association) Handle(request []byte) ([]byte, error) {
+	a.handling.Lock()
+	defer a.handling.Unlock()
+
 	header, err := pdu.PeekHeader(request)
 	if err != nil {
 		return nil, fmt.Errorf("not a DCE/RPC PDU: %w", err)
@@ -179,6 +196,9 @@ func (a *Association) Handle(request []byte) ([]byte, error) {
 		// assembled is abandoned and nothing is sent back.
 		a.dropPartial()
 		return nil, nil
+
+	case pdu.PacketTypeAuth3:
+		return a.handleAuth3(request)
 
 	default:
 		// A packet type this endpoint does not answer for. A fault is a reply the
@@ -218,15 +238,34 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 		return a.bindNak(header.CallID, bindNakProtocolVersionNotSupported)
 	}
 
-	// An authenticated bind is refused rather than half-answered. See the package
-	// documentation: completing one needs a security context this does not keep,
-	// and a bind that succeeded without one would leave every later request
-	// unverifiable.
-	if header.AuthLength > 0 || len(bind.AuthValue) > 0 {
-		logger.Debugf("rpcserver: refusing an authenticated bind (%d bytes of verifier)", header.AuthLength)
-		if altering {
-			return a.fault(header.CallID, 0, pdu.NCASFaultAccessDenied)
+	// An authenticated bind starts an NTLM exchange when the endpoint accepts
+	// one; otherwise it is refused rather than half-answered, since a bind that
+	// succeeded without a security context would leave every later request
+	// unverifiable. An alter_context does not renegotiate security.
+	var auth *authState
+	var challengeToken []byte
+	if header.AuthLength > 0 {
+		trailer, token, err := pdu.ExtractAuthVerifier(request)
+		if err == nil && trailer != nil && !altering {
+			auth, challengeToken, err = a.dispatcher.startAuth(trailer, token)
+		} else if err == nil {
+			err = fmt.Errorf("no security context can be negotiated here")
 		}
+		if err != nil {
+			logger.Debugf("rpcserver: refusing an authenticated bind (%d bytes of verifier): %v", header.AuthLength, err)
+			if altering {
+				return a.fault(header.CallID, 0, pdu.NCASFaultAccessDenied)
+			}
+			return a.bindNak(header.CallID, bindNakAuthenticationTypeNotRecognized)
+		}
+	}
+	// An association that negotiated security cannot be rebound without it:
+	// that would downgrade every later request to unverified.
+	a.mutex.Lock()
+	protected := a.auth != nil
+	a.mutex.Unlock()
+	if protected && auth == nil && !altering {
+		logger.Debugf("rpcserver: refusing an unauthenticated bind on an authenticated association")
 		return a.bindNak(header.CallID, bindNakAuthenticationTypeNotRecognized)
 	}
 
@@ -278,7 +317,7 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 	var negotiated uint16
 	switch {
 	case len(bound) > 0:
-		negotiated = a.negotiate(bound, bind.MaxRecvFrag, altering)
+		negotiated = a.negotiate(bound, bind.MaxRecvFrag, altering, auth != nil || protected)
 	case altering:
 		logger.Debugf("rpcserver: no presentation context in the alter_context could be accepted")
 		negotiated = a.fragment()
@@ -299,6 +338,17 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 		// is what a pipe endpoint reports.
 		SecondaryAddress: "",
 		Results:          results,
+	}
+	if !altering {
+		// A bind starts the association afresh, its security included.
+		a.mutex.Lock()
+		a.auth = auth
+		a.partial = nil
+		a.mutex.Unlock()
+	}
+	if auth != nil {
+		ack.SecTrailer = pdu.SecTrailer{AuthType: auth.authType, AuthLevel: auth.authLevel, AuthContextID: auth.contextID}
+		ack.AuthValue = challengeToken
 	}
 
 	encoded, err := ack.Marshal()
@@ -322,6 +372,37 @@ func (a *Association) handleRequest(request []byte, header *pdu.Header) ([]byte,
 	if _, err := incoming.Unmarshal(request); err != nil {
 		logger.Debugf("rpcserver: a request PDU would not decode: %v", err)
 		return a.fault(header.CallID, 0, pdu.NCASProtoError)
+	}
+
+	// On an authenticated association every fragment must arrive after a
+	// verified AUTH3, and at the packet levels each carries a verifier that is
+	// checked (and at the privacy level decrypted) before anything else reads
+	// its stub.
+	a.mutex.Lock()
+	auth := a.auth
+	a.mutex.Unlock()
+	if auth != nil {
+		if !auth.established {
+			logger.Debugf("rpcserver: a request on an association whose authentication did not complete")
+			return a.fault(header.CallID, incoming.ContextID, pdu.NCASFaultAccessDenied)
+		}
+		if auth.protectsMessages() {
+			stub, err := auth.unprotectRequest(request, header, incoming.ObjectUUID != nil)
+			if err != nil {
+				logger.Debugf("rpcserver: a protected request was refused: %v", err)
+				return a.fault(header.CallID, incoming.ContextID, pdu.NCASFaultAccessDenied)
+			}
+			incoming.Stub = stub
+		} else if header.AuthLength > 0 {
+			// At the connect level a verifier carries nothing to check but its
+			// context, and its padding is not part of the stub.
+			stub, err := auth.stripConnectVerifier(request, incoming.Stub)
+			if err != nil {
+				logger.Debugf("rpcserver: a connect-level verifier was refused: %v", err)
+				return a.fault(header.CallID, incoming.ContextID, pdu.NCASFaultAccessDenied)
+			}
+			incoming.Stub = stub
+		}
 	}
 
 	// A request in one fragment ends any request still being assembled, which
@@ -443,7 +524,15 @@ func (a *Association) reassemble(header *pdu.Header, incoming *pdu.Request) ([]b
 // response frames a response stub, splitting it across fragments if it exceeds
 // what the client said it can receive.
 func (a *Association) response(callID uint32, contextID uint16, stub []byte) ([]byte, error) {
+	a.mutex.Lock()
+	auth := a.auth
+	a.mutex.Unlock()
+	protect := auth != nil && auth.established && auth.protectsMessages()
+
 	budget := int(a.fragment()) - pdu.HeaderSize - responseBodyOverhead
+	if protect {
+		budget -= authOverhead
+	}
 	if budget < minFragmentStub {
 		budget = DefaultMaxFragment - pdu.HeaderSize - responseBodyOverhead
 	}
@@ -466,6 +555,16 @@ func (a *Association) response(callID uint32, contextID uint16, stub []byte) ([]
 			flags |= pdu.PFCLastFrag
 		}
 
+		if protect {
+			encoded, err := auth.protectResponse(pdu.NewHeader(pdu.PacketTypeResponse, flags, callID),
+				uint32(len(stub)-sent), contextID, stub[sent:sent+chunk])
+			if err != nil {
+				return nil, fmt.Errorf("failed to protect a response fragment: %w", err)
+			}
+			out = append(out, encoded...)
+			sent += chunk
+			continue
+		}
 		reply := &pdu.Response{
 			Header:    pdu.NewHeader(pdu.PacketTypeResponse, flags, callID),
 			ContextID: contextID,
@@ -525,7 +624,7 @@ func (a *Association) bindNak(callID uint32, reason uint16) ([]byte, error) {
 //
 // Returns:
 //   - The fragment size replies will be framed at
-func (a *Association) negotiate(bound map[uint16]Service, requested uint16, altering bool) uint16 {
+func (a *Association) negotiate(bound map[uint16]Service, requested uint16, altering, authenticated bool) uint16 {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
@@ -536,6 +635,12 @@ func (a *Association) negotiate(bound map[uint16]Service, requested uint16, alte
 		a.contexts[id] = service
 	}
 	a.maxFragment = negotiatedFragment(requested)
+	// A protected fragment also carries padding, a sec_trailer and a signature;
+	// a size too small for them falls back like any other unusable size, so the
+	// bind_ack announces the size replies are really framed at.
+	if authenticated && int(a.maxFragment) < pdu.HeaderSize+responseBodyOverhead+minFragmentStub+authOverhead {
+		a.maxFragment = DefaultMaxFragment
+	}
 	return a.maxFragment
 }
 

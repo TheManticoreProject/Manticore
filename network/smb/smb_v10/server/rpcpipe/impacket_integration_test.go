@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/targetinfo"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/rpcserver"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
 )
 
@@ -27,8 +30,14 @@ func TestImpacketCallsOverPipeWriteAndRead(t *testing.T) {
 
 	port := startPipeServer(t)
 
-	for _, fragment := range []string{"0", "40", "64", "100"} {
-		out, err := exec.Command("python3", "testdata/impacket_pipe.py", strconv.Itoa(port), "LAB", "alice", "Passw0rd!", fragment).CombinedOutput()
+	for _, run := range []struct{ fragment, level string }{
+		{"0", "0"}, {"40", "0"}, {"64", "0"}, {"100", "0"},
+		// NTLM-authenticated binds: connect, packet integrity and packet
+		// privacy, the last two also with fragmented requests.
+		{"0", "2"}, {"0", "5"}, {"0", "6"}, {"100", "5"}, {"100", "6"},
+	} {
+		fragment := run.fragment + "/auth level " + run.level
+		out, err := exec.Command("python3", "testdata/impacket_pipe.py", strconv.Itoa(port), "LAB", "alice", "Passw0rd!", run.fragment, run.level).CombinedOutput()
 		t.Logf("max fragment %s:\n%s", fragment, out)
 		if err != nil || !strings.Contains(string(out), "OK") {
 			t.Fatalf("impacket failed with max fragment %s: %v", fragment, err)
@@ -43,6 +52,25 @@ func TestImpacketCallsOverPipeWriteAndRead(t *testing.T) {
 
 // startPipeServer serves rpcpipe on IPC$ with 302 shares, enough for the
 // NetrShareEnum answer to span many fragments, and returns the port.
+// TestImpacketWrongRPCPasswordIsRefused checks the NTLM bind really
+// authenticates: with the SMB login correct but the RPC bind's password wrong,
+// the call is refused at every protected level.
+func TestImpacketWrongRPCPasswordIsRefused(t *testing.T) {
+	if err := exec.Command("python3", "-c", "import impacket").Run(); err != nil {
+		t.Skipf("impacket is not available: %v", err)
+	}
+	port := startPipeServer(t)
+	for _, level := range []string{"2", "5", "6"} {
+		out, err := exec.Command("python3", "testdata/impacket_pipe.py", strconv.Itoa(port), "LAB", "alice", "Passw0rd!", "0", level, "wrong").CombinedOutput()
+		if err == nil || strings.Contains(string(out), "OK") {
+			t.Errorf("auth level %s: a bind with the wrong password succeeded:\n%s", level, out)
+		}
+		if !strings.Contains(string(out), "access_denied") && !strings.Contains(string(out), "ACCESS_DENIED") {
+			t.Logf("auth level %s output:\n%s", level, out)
+		}
+	}
+}
+
 func startPipeServer(t *testing.T) int {
 	t.Helper()
 	srv, err := server.NewServer(server.Config{
@@ -56,9 +84,24 @@ func startPipeServer(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
+	targetInfo, err := targetinfo.BuildServerTargetInfo("MANTICORE", "LAB", "manticore.lab.local", "lab.local", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	pipes := New(Options{
 		ServerName: "MANTICORE",
 		DomainName: "LAB",
+		NTLM: &rpcserver.NTLMAuth{
+			CredentialLookup: func(domain, username string) ([16]byte, bool) {
+				if strings.EqualFold(username, "alice") {
+					return nt.NTHash("Passw0rd!"), true
+				}
+				return [16]byte{}, false
+			},
+			TargetName: "LAB",
+			TargetType: challenge.TargetTypeDomain,
+			TargetInfo: targetInfo,
+		},
 		// 300 shares make the NetrShareEnum answer span many fragments, which a
 		// message-mode pipe hands over one read at a time.
 		Shares: func() []ShareEntry {
