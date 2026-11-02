@@ -3,25 +3,123 @@ package lm
 import (
 	"crypto/des"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/unicode/norm"
 )
 
-// LMHash computes the LAN Manager hash of a password string
-// The LM hash is computed as follows:
-// 1. Convert password to uppercase and pad/truncate to 14 bytes
-// 2. Split into two 7-byte halves
-// 3. Create two DES keys from each 7-byte half (convert 7 bytes to 8 bytes adding parity bits)
-// 4. DES encrypt the constant "KGS!@#$%" with each key
-// 5. Concatenate the two DES outputs
+// DefaultOEMCodePage is the OEM code page LMHash converts passwords to: CP437,
+// the OEM code page of US-English Windows. Set it only during initialization:
+// LMHash reads it on every call.
+var DefaultOEMCodePage = charmap.CodePage437
+
+// ErrUnmappableCharacter reports a password character the OEM code page cannot
+// represent. Windows then computes no LM hash (RtlUpcaseUnicodeStringToOemString
+// fails with STATUS_UNMAPPABLE_CHARACTER).
+var ErrUnmappableCharacter = errors.New("lm: password character not representable in the OEM code page")
+
+// emptyLMHash is the LM hash of the empty password (aad3b435b51404ee twice), the
+// value tools show when an account has no LM hash.
+var emptyLMHash = [16]byte{0xaa, 0xd3, 0xb4, 0x35, 0xb5, 0x14, 0x04, 0xee, 0xaa, 0xd3, 0xb4, 0x35, 0xb5, 0x14, 0x04, 0xee}
+
+// LMHash computes the LM hash (LMOWFv1) of password as Windows does with the
+// default OEM code page (CP437): see LMHashOEM. A password Windows cannot convert
+// to the code page has no LM hash, and LMHash then returns the empty-password
+// hash aad3b435b51404eeaad3b435b51404ee; use LMHashOEM to get the error.
 func LMHash(password string) [16]byte {
-	// Convert to uppercase and pad/truncate to 14 bytes
-	password = strings.ToUpper(password)
-	if len(password) > 14 {
-		password = password[:14]
+	h, err := LMHashOEM(password, DefaultOEMCodePage)
+	if err != nil {
+		return emptyLMHash
 	}
-	if len(password) < 14 {
-		password = password + strings.Repeat("\x00", 14-len(password))
+	return h
+}
+
+// LMHashOEM computes the LM hash of password in the given OEM code page, as
+// Windows does: RtlUpcaseUnicodeStringToOemString upper-cases the password and
+// converts it to the code page, and the first 14 bytes, NUL-padded, key the two
+// DES halves that encrypt "KGS!@#$%".
+//
+// Upper-casing follows Windows' case table, which only maps a character with a
+// true case pair: ÿ becomes Ÿ, but µ, ſ, ς and ı are left as they are, where
+// Unicode would map them to Μ, S, Σ and I.
+//
+// A character the code page lacks is written as its best-fit equivalent, as
+// Windows' best-fit tables do: an accented letter whose base letter the code
+// page has (È becomes E in CP437), or one of the letters in bestFitLetters (ı
+// and Ø become I and O). Any other unmappable character returns
+// ErrUnmappableCharacter. This approximates Windows' best-fit tables for
+// letters; their mappings of punctuation and symbols are not reproduced.
+func LMHashOEM(password string, codePage *charmap.Charmap) ([16]byte, error) {
+	oem, err := toUpperOEM(password, codePage)
+	if err != nil {
+		return [16]byte{}, err
 	}
+	return lmHashOfOEM(oem), nil
+}
+
+// toUpperOEM upper-cases password and converts it to the OEM code page, mapping
+// an unrepresentable accented letter to its base letter.
+func toUpperOEM(password string, codePage *charmap.Charmap) ([]byte, error) {
+	if codePage == nil {
+		codePage = DefaultOEMCodePage
+	}
+	out := make([]byte, 0, len(password))
+	for _, r := range password {
+		r = windowsUpper(r)
+		if b, ok := codePage.EncodeRune(r); ok {
+			out = append(out, b)
+			continue
+		}
+		// Best fit: a letter Windows maps explicitly, or the base letter of a
+		// decomposed accented letter.
+		if fit, ok := bestFitLetters[r]; ok {
+			if b, ok := codePage.EncodeRune(fit); ok {
+				out = append(out, b)
+				continue
+			}
+		}
+		base := []rune(norm.NFD.String(string(r)))
+		if len(base) > 1 {
+			if b, ok := codePage.EncodeRune(base[0]); ok && base[0] < utf8.RuneSelf {
+				out = append(out, b)
+				continue
+			}
+		}
+		return nil, fmt.Errorf("%w: %q", ErrUnmappableCharacter, r)
+	}
+	return out, nil
+}
+
+// windowsUpper upper-cases r as Windows' case table does: only when r has a true
+// upper-case pair, i.e. lower-casing the upper-case form gives r back. Unicode
+// maps µ, ſ, ς and ı to Μ, S, Σ and I, whose lower-case forms are other
+// characters, and Windows leaves those four unchanged.
+func windowsUpper(r rune) rune {
+	u := unicode.ToUpper(r)
+	if u != r && unicode.ToLower(u) != r {
+		return r
+	}
+	return u
+}
+
+// bestFitLetters are best-fit mappings Windows applies to letters without a
+// Unicode decomposition, as observed with RtlUpcaseUnicodeStringToOemString on
+// code page 437.
+var bestFitLetters = map[rune]rune{
+	'ı': 'I',
+	'Ø': 'O',
+}
+
+// lmHashOfOEM computes the LM one-way function of OEM password bytes: they are
+// truncated or NUL-padded to 14 bytes and split into two DES keys.
+func lmHashOfOEM(oem []byte) [16]byte {
+	password := make([]byte, 14)
+	copy(password, oem)
 
 	// Split into two 7-byte halves
 	firstHalf := []byte(password[:7])
