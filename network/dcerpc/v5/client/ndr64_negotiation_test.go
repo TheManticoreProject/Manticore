@@ -119,7 +119,10 @@ func TestInvoke_UsesNegotiatedNDR64(t *testing.T) {
 		t.Fatalf("Bind() error = %v", err)
 	}
 
-	ft.queue(responseBytes(t, 2, pdu.PFCFirstFrag|pdu.PFCLastFrag, nil))
+	// The response answers on the NDR64 context (1) the request is sent on.
+	resp := &pdu.Response{ContextID: 1}
+	resp.Header = pdu.NewHeader(pdu.PacketTypeResponse, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2)
+	ft.queue(mustMarshal(t, resp))
 
 	req := &confReq{Data: []uint32{0xAAAA, 0xBBBB}}
 	if err := c.Invoke(req, nil); err != nil {

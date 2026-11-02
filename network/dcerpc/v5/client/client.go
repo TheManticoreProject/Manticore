@@ -393,6 +393,14 @@ func (c *Client) readResponse() ([]byte, error) {
 			if resp.Header.CallID != c.callID {
 				return nil, fmt.Errorf("response call_id %d does not match request call_id %d", resp.Header.CallID, c.callID)
 			}
+			// The stub is encoded in the transfer syntax of the context the
+			// response names, so one answering on another context than the
+			// request's cannot be decoded as this call's result. Every request
+			// is sent on c.contextID; if calls ever choose their own context,
+			// compare with that call's context instead.
+			if resp.ContextID != c.contextID {
+				return nil, fmt.Errorf("response p_cont_id %d does not match request context %d", resp.ContextID, c.contextID)
+			}
 			chunk := resp.Stub
 			if c.protectsRequests() {
 				// At PKT and above every response fragment must carry an auth

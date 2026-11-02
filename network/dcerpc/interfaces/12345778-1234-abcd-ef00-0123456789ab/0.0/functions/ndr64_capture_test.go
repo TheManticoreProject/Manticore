@@ -49,8 +49,15 @@ func TestLsarOpenPolicy_NDR64RequestMatchesCapture(t *testing.T) {
 		t.Fatalf("negotiated %s, want NDR64", c.NegotiatedSyntax())
 	}
 
-	// Canned success response: 20-byte handle + STATUS_SUCCESS (call_id 2).
-	ft.queue(responsePDU(t, 2, append(make([]byte, 20), 0x00, 0x00, 0x00, 0x00)))
+	// Canned success response: 20-byte handle + STATUS_SUCCESS (call_id 2), on
+	// the NDR64 presentation context (1) the request is sent on.
+	resp := &pdu.Response{ContextID: 1, Stub: append(make([]byte, 20), 0x00, 0x00, 0x00, 0x00)}
+	resp.Header = pdu.NewHeader(pdu.PacketTypeResponse, pdu.PFCFirstFrag|pdu.PFCLastFrag, 2)
+	raw, err := resp.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ft.queue(raw)
 
 	if _, err := functions.LsarOpenPolicy(c, 0x02000000); err != nil {
 		t.Fatalf("LsarOpenPolicy() under NDR64 error = %v", err)
