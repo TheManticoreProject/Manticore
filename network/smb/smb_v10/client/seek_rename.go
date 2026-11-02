@@ -66,7 +66,7 @@ func (c *Client) ntRename(oldPath, newPath string, informationLevel uint16) erro
 	msg := c.newFileIOMessage(codes.SMB_COM_NT_RENAME)
 
 	cmd := commands.NewNtRenameRequest()
-	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
+	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{Attributes: searchHiddenSystemDirectory}
 	cmd.InformationLevel = types.USHORT(informationLevel)
 	if err := cmd.OldFileName.SetStringWithEncoding(oldPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set old file name: %v", err)
