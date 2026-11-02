@@ -90,19 +90,34 @@ func (k *KERB_VALIDATION_INFO) DomainSID() *msdtyp.RPC_SID { return k.LogonDomai
 // sidWithRID appends a relative identifier to a domain SID and renders the result
 // in "S-1-5-21-…-<rid>" textual form. It returns "" if domain is nil.
 func sidWithRID(domain *msdtyp.RPC_SID, rid uint32) string {
-	if domain == nil {
+	full := rpcSIDWithRID(domain, rid)
+	if full == nil {
 		return ""
+	}
+	return full.String()
+}
+
+// rpcSIDWithRID appends a relative identifier to a domain SID, or returns nil if
+// domain is nil.
+func rpcSIDWithRID(domain *msdtyp.RPC_SID, rid uint32) *msdtyp.RPC_SID {
+	if domain == nil {
+		return nil
 	}
 	subs := make([]uint32, 0, len(domain.SubAuthority)+1)
 	subs = append(subs, domain.SubAuthority...)
 	subs = append(subs, rid)
-	full := msdtyp.RPC_SID{
+	return &msdtyp.RPC_SID{
 		Revision:            domain.Revision,
 		SubAuthorityCount:   uint8(len(subs)),
 		IdentifierAuthority: domain.IdentifierAuthority,
 		SubAuthority:        subs,
 	}
-	return full.String()
+}
+
+// UserRPCSID returns the account's SID (the domain SID with the UserId RID
+// appended), or nil if the PAC has no LogonDomainId.
+func (k *KERB_VALIDATION_INFO) UserRPCSID() *msdtyp.RPC_SID {
+	return rpcSIDWithRID(k.LogonDomainId, k.UserId)
 }
 
 // UserSID returns the account's SID as the domain SID with the UserId RID

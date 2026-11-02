@@ -81,6 +81,12 @@ type ForgeOptions struct {
 	// KeyEType is the Kerberos encryption type of Key (23 = RC4, 17 = AES128,
 	// 18 = AES256).
 	KeyEType int
+	// OldPAC omits PAC_ATTRIBUTES_INFO and PAC_REQUESTOR from the PAC, the
+	// layout from before the November 2021 hardening. DCs enforcing it (Windows
+	// Server 2025 by default) refuse such a TGT with KDC_ERR_TGT_REVOKED.
+	OldPAC bool
+	// ExtraPAC adds a UPN_DNS_INFO buffer (UPN, DNS domain, SAM name and SID).
+	ExtraPAC bool
 	// KvNo is the key version number recorded in the ticket enc-part (optional;
 	// omitted when zero).
 	KvNo int
@@ -348,7 +354,16 @@ func buildPACAuthData(opts *ForgeOptions, authTime time.Time) ([]messages.Author
 		return nil, err
 	}
 
-	p, err := pac.Forge(info, opts.Username, authTime, opts.KeyEType)
+	extras := pac.ForgeExtras{OldPAC: opts.OldPAC}
+	if opts.ExtraPAC {
+		extras.UPNDNS = &pac.UPNDNSInfo{
+			UPN:           strings.ToLower(opts.Username) + "@" + strings.ToLower(opts.Realm),
+			DNSDomainName: strings.ToUpper(opts.Realm),
+			SamName:       opts.Username,
+			SID:           info.UserRPCSID(),
+		}
+	}
+	p, err := pac.ForgeWithExtras(info, opts.Username, authTime, opts.KeyEType, extras)
 	if err != nil {
 		return nil, err
 	}
