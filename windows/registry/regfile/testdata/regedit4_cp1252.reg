@@ -1,0 +1,7 @@
+REGEDIT4
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\McRegTest]
+"Café"="naïve € ü"
+"Exp"=hex(2):25,53,79,73,74,65,6d,52,6f,6f,74,25,5c,74,e9,00
+"Bin"=hex:01,02,fe
+
