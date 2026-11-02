@@ -167,6 +167,25 @@ func (i *IPv4) IsInSubnet(subnet *IPv4) bool {
 	return i.ToUInt32()&mask == subnet.ToUInt32()&mask
 }
 
+// CIDRRange returns the range of addresses the prefix covers, from its network
+// address to its broadcast address. Both ends are /32 addresses; a prefix longer
+// than 32 is treated as /32.
+func (i *IPv4) CIDRRange() *IPv4Range {
+	bits := min(i.MaskBits, 32)
+	mask := uint32(0)
+	if bits > 0 {
+		mask = ^uint32(0) << (32 - bits)
+	}
+	start := i.ToUInt32() & mask
+	end := start | ^mask
+	return &IPv4Range{Start: ipv4FromUint32(start), End: ipv4FromUint32(end)}
+}
+
+// ipv4FromUint32 builds a /32 IPv4 from its 32-bit value.
+func ipv4FromUint32(v uint32) *IPv4 {
+	return NewIPv4(uint8(v>>24), uint8(v>>16), uint8(v>>8), uint8(v), 32)
+}
+
 // IsInRange checks if the IPv4 address is within the range of two other IPv4 addresses.
 //
 // Parameters:

@@ -11,16 +11,19 @@ func TestNewIPv6FromString(t *testing.T) {
 		input string
 		want  ip.IPv6
 	}{
-		{"1:2:3:4:5:6:7:8", ip.IPv6{A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8}},
-		{"fe80:0:0:0:0:0:0:1", ip.IPv6{A: 0xfe80, H: 1}},
-		{"2001:0db8:0000:0000:0000:0000:0000:0001", ip.IPv6{A: 0x2001, B: 0xdb8, H: 1}},
-		{"::", ip.IPv6{}},
-		{"::1", ip.IPv6{H: 1}},
-		{"fe80::1", ip.IPv6{A: 0xfe80, H: 1}},
-		{"2001:db8::", ip.IPv6{A: 0x2001, B: 0xdb8}},
-		{"2001:db8::8:800:200c:417a", ip.IPv6{A: 0x2001, B: 0xdb8, E: 8, F: 0x800, G: 0x200c, H: 0x417a}},
-		{"FF01::101", ip.IPv6{A: 0xff01, H: 0x101}},
-		{"::ffff:1.2.3.4", ip.IPv6{F: 0xffff, G: 0x0102, H: 0x0304}},
+		{"1:2:3:4:5:6:7:8", ip.IPv6{A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8, MaskBits: 128}},
+		{"fe80:0:0:0:0:0:0:1", ip.IPv6{A: 0xfe80, H: 1, MaskBits: 128}},
+		{"2001:0db8:0000:0000:0000:0000:0000:0001", ip.IPv6{A: 0x2001, B: 0xdb8, H: 1, MaskBits: 128}},
+		{"::", ip.IPv6{MaskBits: 128}},
+		{"::1", ip.IPv6{H: 1, MaskBits: 128}},
+		{"fe80::1", ip.IPv6{A: 0xfe80, H: 1, MaskBits: 128}},
+		{"2001:db8::", ip.IPv6{A: 0x2001, B: 0xdb8, MaskBits: 128}},
+		{"2001:db8::8:800:200c:417a", ip.IPv6{A: 0x2001, B: 0xdb8, E: 8, F: 0x800, G: 0x200c, H: 0x417a, MaskBits: 128}},
+		{"FF01::101", ip.IPv6{A: 0xff01, H: 0x101, MaskBits: 128}},
+		{"::ffff:1.2.3.4", ip.IPv6{F: 0xffff, G: 0x0102, H: 0x0304, MaskBits: 128}},
+		{"::1/128", ip.IPv6{H: 1, MaskBits: 128}},
+		{"2001:db8::1/64", ip.IPv6{A: 0x2001, B: 0xdb8, H: 1, MaskBits: 64}},
+		{"::/0", ip.IPv6{}},
 	}
 	for _, tt := range valid {
 		got := ip.NewIPv6FromString(tt.input)
@@ -31,7 +34,7 @@ func TestNewIPv6FromString(t *testing.T) {
 		if *got != tt.want {
 			t.Errorf("NewIPv6FromString(%q) = %v, want %v", tt.input, got.String(), tt.want.String())
 		}
-		if again := ip.NewIPv6FromString(got.String()); again == nil || *again != *got {
+		if again := ip.NewIPv6FromString(got.CIDRAddress()); again == nil || *again != *got {
 			t.Errorf("NewIPv6FromString(%q) does not round-trip through String()", tt.input)
 		}
 	}
@@ -49,7 +52,10 @@ func TestNewIPv6FromString(t *testing.T) {
 		"g::1",
 		"1.2.3.4",
 		"fe80::1%eth0",
-		"::1/128",
+		"::1/129",
+		"::1/",
+		"::1/-1",
+		"1.2.3.4/24",
 	}
 	for _, input := range invalid {
 		if got := ip.NewIPv6FromString(input); got != nil {
