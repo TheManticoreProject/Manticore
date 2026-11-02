@@ -90,6 +90,9 @@ type Client struct {
 	// ntlmNegotiate is the NTLM NEGOTIATE message sent in the bind, kept as sent
 	// because the AUTHENTICATE MIC is computed over it (MS-NLMP 3.1.5.1.2).
 	ntlmNegotiate []byte
+	// ntlmTargetName is the SPN the NTLM AUTHENTICATE asserts in MsvAvTargetName,
+	// set by SetNTLMTargetName; empty selects "cifs/<DnsComputerName>".
+	ntlmTargetName string
 }
 
 // SessionKey returns the NTLM exported session key established during an authenticated

@@ -105,8 +105,19 @@ type AuthenticateMessage struct {
 // AUTHENTICATE still asserted extended session security and key exchange with no
 // session key behind them.
 func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, password, domain, workstation string) (*AuthenticateMessage, error) {
+	return CreateAuthenticateMessageWithOptions(challenge, username, password, domain, workstation, targetinfo.BlobOptions{})
+}
+
+// CreateAuthenticateMessageWithOptions is CreateAuthenticateMessage with the target
+// SPN and channel bindings the NTLMv2 blob asserts taken from opts (see
+// targetinfo.BlobOptions). An anonymous AUTHENTICATE carries no blob, so opts do not
+// apply to it.
+func CreateAuthenticateMessageWithOptions(challenge *challenge.ChallengeMessage, username, password, domain, workstation string, opts targetinfo.BlobOptions) (*AuthenticateMessage, error) {
 	if username == "" && password == "" {
 		return CreateAnonymousAuthenticateMessage(challenge, domain, workstation)
+	}
+	if err := validateBlobOptions(opts); err != nil {
+		return nil, err
 	}
 
 	clientChallenge := [8]byte{}
@@ -117,7 +128,7 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 	if err != nil {
 		return nil, err
 	}
-	return newAuthenticateMessage(challenge, username, domain, workstation, v2)
+	return newAuthenticateMessage(challenge, username, domain, workstation, v2, opts)
 }
 
 // CreateAuthenticateMessageWithNTHash creates an NTLM AUTHENTICATE message from an NT
@@ -126,6 +137,16 @@ func CreateAuthenticateMessage(challenge *challenge.ChallengeMessage, username, 
 // the server offering NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY ([MS-NLMP] 3.3.2),
 // so a CHALLENGE without it is answered the same way.
 func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, username string, ntHash [16]byte, domain, workstation string) (*AuthenticateMessage, error) {
+	return CreateAuthenticateMessageWithNTHashAndOptions(challenge, username, ntHash, domain, workstation, targetinfo.BlobOptions{})
+}
+
+// CreateAuthenticateMessageWithNTHashAndOptions is CreateAuthenticateMessageWithNTHash
+// with the target SPN and channel bindings the NTLMv2 blob asserts taken from opts
+// (see targetinfo.BlobOptions).
+func CreateAuthenticateMessageWithNTHashAndOptions(challenge *challenge.ChallengeMessage, username string, ntHash [16]byte, domain, workstation string, opts targetinfo.BlobOptions) (*AuthenticateMessage, error) {
+	if err := validateBlobOptions(opts); err != nil {
+		return nil, err
+	}
 	clientChallenge := [8]byte{}
 	if _, err := rand.Read(clientChallenge[:]); err != nil {
 		return nil, err
@@ -134,7 +155,16 @@ func CreateAuthenticateMessageWithNTHash(challenge *challenge.ChallengeMessage, 
 	if err != nil {
 		return nil, err
 	}
-	return newAuthenticateMessage(challenge, username, domain, workstation, v2)
+	return newAuthenticateMessage(challenge, username, domain, workstation, v2, opts)
+}
+
+// validateBlobOptions rejects a target SPN whose UTF-16LE form does not fit the
+// 16-bit AvLen of its AV_PAIR.
+func validateBlobOptions(opts targetinfo.BlobOptions) error {
+	if n := len(utf16.EncodeUTF16LE(opts.TargetName)); n > 0xFFFF {
+		return fmt.Errorf("target name is %d bytes in UTF-16LE, which does not fit the 16-bit AvLen field", n)
+	}
+	return nil
 }
 
 // CreateAnonymousAuthenticateMessage creates the AUTHENTICATE message of an
@@ -192,7 +222,7 @@ func (msg *AuthenticateMessage) IsAnonymous() bool {
 
 // newAuthenticateMessage builds the AUTHENTICATE message shared by the password and
 // pass-the-hash entry points, computing the NTLMv2 responses and session key from v2.
-func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, domain, workstation string, v2 *ntlmv2.NTLMv2Ctx) (*AuthenticateMessage, error) {
+func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, domain, workstation string, v2 *ntlmv2.NTLMv2Ctx, opts targetinfo.BlobOptions) (*AuthenticateMessage, error) {
 	// Create the AuthenticateMessage struct
 	msg := AuthenticateMessage{}
 
@@ -235,7 +265,7 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, dom
 	// MIC-present bit when a MIC will follow. All are added before the NT
 	// response is computed, so they are covered by the NTProofStr as well as by
 	// the MIC.
-	blobTargetInfo := targetinfo.BuildBlobTargetInfo(challenge.TargetInfo, msg.NeedsMIC)
+	blobTargetInfo := targetinfo.BuildBlobTargetInfoWithOptions(challenge.TargetInfo, msg.NeedsMIC, opts)
 
 	var ntProofStr []byte
 	msg.NtChallengeResponse, ntProofStr, err = v2.ComputeNTChallengeResponse(timestamp, blobTargetInfo)

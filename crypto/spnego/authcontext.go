@@ -28,6 +28,18 @@ type AuthContext struct {
 	// can authenticate with only the NT hash. Empty means authenticate with Password.
 	NTHash string
 
+	// TargetName is the SPN of the service, e.g. "cifs/fs01.corp.local", that the
+	// NTLM AUTHENTICATE asserts in MsvAvTargetName. Empty selects
+	// "cifs/<DnsComputerName>" when the server's CHALLENGE carries a DNS
+	// computer name, and sends no MsvAvTargetName otherwise.
+	TargetName string
+
+	// ChannelBindings is the gss_channel_bindings_struct application data, e.g. an
+	// RFC 5929 "tls-server-end-point:" token, the NTLM AUTHENTICATE is bound to
+	// through MsvAvChannelBindings. Nil sends the all-zero value of a client with
+	// no bindings.
+	ChannelBindings []byte
+
 	// NTLM specific fields
 	NTLMChallenge *challenge.ChallengeMessage
 

@@ -1,6 +1,7 @@
 package targetinfo
 
 import (
+	"crypto/md5"
 	"encoding/binary"
 	"errors"
 
@@ -74,29 +75,78 @@ func GetTimestamp(targetInfo []byte) []byte {
 // bindings ([MS-NLMP] 2.2.2.1).
 const channelBindingsLength = 16
 
-// BuildBlobTargetInfo constructs the modified TargetInfo to embed in the NTLMv2 blob.
+// BlobOptions are the client assertions BuildBlobTargetInfoWithOptions writes into
+// the NTLMv2 blob. The zero value reproduces BuildBlobTargetInfo.
+type BlobOptions struct {
+	// TargetName is the SPN of the service being authenticated to, e.g.
+	// "ldap/dc01.corp.local" or "host/dc01.corp.local", sent as MsvAvTargetName.
+	// Empty selects "cifs/<DnsComputerName>" from the challenge, which is what a
+	// Windows SMB client sends.
+	TargetName string
+
+	// ChannelBindings is the application data of the gss_channel_bindings_struct
+	// the authentication is bound to, e.g. the RFC 5929 "tls-server-end-point:"
+	// token of a TLS channel. MsvAvChannelBindings carries the MD5 of the
+	// serialized structure (see ChannelBindingsHash). Nil sends the all-zero
+	// value of a client with no bindings.
+	ChannelBindings []byte
+}
+
+// ChannelBindingsHash returns the MsvAvChannelBindings value for the given channel
+// binding application data: the MD5 hash of the gss_channel_bindings_struct
+// ([MS-NLMP] 2.2.2.1) holding it, with empty initiator and acceptor addresses. The
+// structure is serialized as RFC 2744 3.11 lays it out, with little-endian
+// address-type and length fields, as Windows SSPI and MIT krb5 hash it. Empty
+// application data means no bindings, which is the all-zero value.
+func ChannelBindingsHash(applicationData []byte) []byte {
+	if len(applicationData) == 0 {
+		return make([]byte, channelBindingsLength)
+	}
+	// initiator_addrtype, initiator_address.length, acceptor_addrtype and
+	// acceptor_address.length are all zero; application_data.length follows.
+	structure := make([]byte, 16, 20+len(applicationData))
+	structure = binary.LittleEndian.AppendUint32(structure, uint32(len(applicationData)))
+	structure = append(structure, applicationData...)
+	sum := md5.Sum(structure)
+	return sum[:]
+}
+
+// BuildBlobTargetInfo constructs the modified TargetInfo to embed in the NTLMv2 blob,
+// with the default SPN and no channel bindings (see BuildBlobTargetInfoWithOptions).
+func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
+	return BuildBlobTargetInfoWithOptions(targetInfo, micPresent, BlobOptions{})
+}
+
+// BuildBlobTargetInfoWithOptions constructs the modified TargetInfo to embed in the
+// NTLMv2 blob.
 //
-// It copies all AVPairs from the challenge TargetInfo and, when a DNS computer name
-// (MsvAvDnsComputerName) is present, inserts an MsvAvTargetName AVPair set to the SMB
-// service principal name "cifs/<DnsComputerName>" before the EOL marker. This mirrors
-// what the Windows client sends; modern Windows servers require the SPN in the
-// AUTHENTICATE's NTLMv2 AVPairs and reject the authentication (STATUS_INVALID_PARAMETER)
-// when it is absent.
+// It copies all AVPairs from the challenge TargetInfo and inserts an MsvAvTargetName
+// AVPair before the EOL marker: opts.TargetName when set, otherwise the SMB service
+// principal name "cifs/<DnsComputerName>" when the challenge carries a DNS computer
+// name (MsvAvDnsComputerName). This mirrors what the Windows client sends; modern
+// Windows servers require the SPN in the AUTHENTICATE's NTLMv2 AVPairs and reject the
+// authentication (STATUS_INVALID_PARAMETER) when it is absent.
+//
+// MsvAvChannelBindings is always inserted, holding ChannelBindingsHash of
+// opts.ChannelBindings, so all zeroes when the caller supplied no bindings.
 //
 // When the AUTHENTICATE will carry a MIC and the challenge TargetInfo already holds an
 // MsvAvFlags AVPair, the MIC-present bit is set in that pair rather than a second one
 // being added (MS-NLMP 3.1.5.1.2). The MsvAvChannelBindings and MsvAvTargetName pairs
 // are the client's own assertions, so any copy of them in the challenge TargetInfo is
 // replaced rather than duplicated.
-func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
-	// Build the SMB SPN "cifs/<DnsComputerName>" from the DNS computer name AVPair,
-	// in UTF-16LE (DnsComputerName is already UTF-16LE on the wire).
+func BuildBlobTargetInfoWithOptions(targetInfo []byte, micPresent bool, opts BlobOptions) []byte {
+	// The SPN is UTF-16LE on the wire. The default is the SMB SPN built from the
+	// DNS computer name AVPair, which is already UTF-16LE.
 	var targetName []byte
-	if pairs, err := ParseTargetInfo(targetInfo); err == nil {
+	if opts.TargetName != "" {
+		targetName = utf16.EncodeUTF16LE(opts.TargetName)
+	} else if pairs, err := ParseTargetInfo(targetInfo); err == nil {
 		if dnsComputer, ok := pairs[avpair.MsvAvDnsComputerName]; ok && len(dnsComputer) > 0 {
 			targetName = append(utf16.EncodeUTF16LE("cifs/"), dnsComputer...)
 		}
 	}
+	channelBindings := ChannelBindingsHash(opts.ChannelBindings)
 
 	result := make([]byte, 0, len(targetInfo)+4+len(targetName))
 	flagsWritten := false
@@ -129,7 +179,7 @@ func BuildBlobTargetInfo(targetInfo []byte, micPresent bool) []byte {
 			binary.LittleEndian.PutUint16(hdr[0:2], uint16(avpair.MsvAvChannelBindings))
 			binary.LittleEndian.PutUint16(hdr[2:4], channelBindingsLength)
 			result = append(result, hdr...)
-			result = append(result, make([]byte, channelBindingsLength)...)
+			result = append(result, channelBindings...)
 
 			// Insert MsvAvTargetName (SPN) before EOL, then append EOL.
 			if len(targetName) > 0 {

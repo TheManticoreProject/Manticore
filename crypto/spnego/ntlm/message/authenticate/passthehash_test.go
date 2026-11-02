@@ -1,11 +1,13 @@
 package authenticate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/challenge"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/targetinfo"
 )
 
 // newTestChallenge builds a minimal CHALLENGE_MESSAGE for driving AUTHENTICATE
@@ -70,5 +72,18 @@ func TestCreateAuthenticateMessageWithNTHashWithoutESS(t *testing.T) {
 	}
 	if msg.NegotiateFlags&flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY != 0 {
 		t.Error("AUTHENTICATE asserts extended session security although the CHALLENGE did not offer it")
+	}
+}
+
+// TestCreateAuthenticateMessageRejectsOversizedTargetName checks a target SPN too
+// long for the 16-bit AvLen of its AV_PAIR is refused instead of being truncated.
+func TestCreateAuthenticateMessageRejectsOversizedTargetName(t *testing.T) {
+	chal := &challenge.ChallengeMessage{}
+	opts := targetinfo.BlobOptions{TargetName: strings.Repeat("a", 0x8000)}
+	if _, err := CreateAuthenticateMessageWithOptions(chal, "user", "pass", "TMP", "", opts); err == nil {
+		t.Error("password path accepted an oversized target name")
+	}
+	if _, err := CreateAuthenticateMessageWithNTHashAndOptions(chal, "user", [16]byte{}, "TMP", "", opts); err == nil {
+		t.Error("NT-hash path accepted an oversized target name")
 	}
 }
