@@ -216,3 +216,127 @@ func (fi *FileFsDeviceInformation) Unmarshal(data []byte) error {
 	fi.Characteristics = binary.LittleEndian.Uint32(data[4:8])
 	return nil
 }
+
+// FILE_FS_SECTOR_SIZE_INFORMATION Flags values.
+const (
+	SSINFO_FLAGS_ALIGNED_DEVICE              = 0x00000001
+	SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE = 0x00000002
+	SSINFO_FLAGS_NO_SEEK_PENALTY             = 0x00000004
+	SSINFO_FLAGS_TRIM_ENABLED                = 0x00000008
+)
+
+// SSINFO_OFFSET_UNKNOWN in ByteOffsetForSectorAlignment or
+// ByteOffsetForPartitionAlignment means the offset could not be computed.
+const SSINFO_OFFSET_UNKNOWN = 0xFFFFFFFF
+
+// FileFsSectorSizeInformation is FILE_FS_SECTOR_SIZE_INFORMATION
+// (FsInformationClass 11): the logical and physical sector sizes of the device
+// backing a volume, and its alignment. Fixed 28-byte wire layout.
+//
+// [MS-FSCC] FileFsSectorSizeInformation:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/3e75d97f-1d0b-4e47-b435-73c513837a57
+type FileFsSectorSizeInformation struct {
+	LogicalBytesPerSector                                 uint32
+	PhysicalBytesPerSectorForAtomicity                    uint32
+	PhysicalBytesPerSectorForPerformance                  uint32
+	FileSystemEffectivePhysicalBytesPerSectorForAtomicity uint32
+	Flags                                                 uint32
+	ByteOffsetForSectorAlignment                          uint32
+	ByteOffsetForPartitionAlignment                       uint32
+}
+
+// FileFsSectorSizeInformationSize is the fixed wire size of
+// FILE_FS_SECTOR_SIZE_INFORMATION.
+const FileFsSectorSizeInformationSize = 28
+
+// Marshal encodes the structure to its 28-byte wire form.
+func (fi *FileFsSectorSizeInformation) Marshal() ([]byte, error) {
+	b := make([]byte, FileFsSectorSizeInformationSize)
+	binary.LittleEndian.PutUint32(b[0:4], fi.LogicalBytesPerSector)
+	binary.LittleEndian.PutUint32(b[4:8], fi.PhysicalBytesPerSectorForAtomicity)
+	binary.LittleEndian.PutUint32(b[8:12], fi.PhysicalBytesPerSectorForPerformance)
+	binary.LittleEndian.PutUint32(b[12:16], fi.FileSystemEffectivePhysicalBytesPerSectorForAtomicity)
+	binary.LittleEndian.PutUint32(b[16:20], fi.Flags)
+	binary.LittleEndian.PutUint32(b[20:24], fi.ByteOffsetForSectorAlignment)
+	binary.LittleEndian.PutUint32(b[24:28], fi.ByteOffsetForPartitionAlignment)
+	return b, nil
+}
+
+// Unmarshal decodes the structure from its wire form.
+func (fi *FileFsSectorSizeInformation) Unmarshal(data []byte) error {
+	if len(data) < FileFsSectorSizeInformationSize {
+		return fmt.Errorf("FILE_FS_SECTOR_SIZE_INFORMATION: need %d bytes, got %d", FileFsSectorSizeInformationSize, len(data))
+	}
+	fi.LogicalBytesPerSector = binary.LittleEndian.Uint32(data[0:4])
+	fi.PhysicalBytesPerSectorForAtomicity = binary.LittleEndian.Uint32(data[4:8])
+	fi.PhysicalBytesPerSectorForPerformance = binary.LittleEndian.Uint32(data[8:12])
+	fi.FileSystemEffectivePhysicalBytesPerSectorForAtomicity = binary.LittleEndian.Uint32(data[12:16])
+	fi.Flags = binary.LittleEndian.Uint32(data[16:20])
+	fi.ByteOffsetForSectorAlignment = binary.LittleEndian.Uint32(data[20:24])
+	fi.ByteOffsetForPartitionAlignment = binary.LittleEndian.Uint32(data[24:28])
+	return nil
+}
+
+// FILE_FS_CONTROL_INFORMATION FileSystemControlFlags values.
+const (
+	FILE_VC_QUOTA_TRACK            = 0x00000001
+	FILE_VC_QUOTA_ENFORCE          = 0x00000002
+	FILE_VC_CONTENT_INDEX_DISABLED = 0x00000008
+	FILE_VC_LOG_QUOTA_THRESHOLD    = 0x00000010
+	FILE_VC_LOG_QUOTA_LIMIT        = 0x00000020
+	FILE_VC_LOG_VOLUME_THRESHOLD   = 0x00000040
+	FILE_VC_LOG_VOLUME_LIMIT       = 0x00000080
+	FILE_VC_QUOTAS_INCOMPLETE      = 0x00000100
+	FILE_VC_QUOTAS_REBUILDING      = 0x00000200
+)
+
+// QuotaNoLimit in DefaultQuotaThreshold or DefaultQuotaLimit means no default
+// per-user threshold or limit is set.
+const QuotaNoLimit = 0xFFFFFFFFFFFFFFFF
+
+// FileFsControlInformation is FILE_FS_CONTROL_INFORMATION (FsInformationClass
+// 6): the quota and content-indexing control settings of a volume, used for
+// both query and set. Fixed 48-byte wire layout, the last 4 bytes padding.
+//
+// [MS-FSCC] FileFsControlInformation:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e5a70738-7ee4-46d9-a5f7-6644daa49a51
+type FileFsControlInformation struct {
+	FreeSpaceStartFiltering int64
+	FreeSpaceThreshold      int64
+	FreeSpaceStopFiltering  int64
+	DefaultQuotaThreshold   uint64
+	DefaultQuotaLimit       uint64
+	FileSystemControlFlags  uint32
+}
+
+// FileFsControlInformationSize is the fixed wire size of
+// FILE_FS_CONTROL_INFORMATION, including its 4 bytes of padding.
+const FileFsControlInformationSize = 48
+
+// Marshal encodes the structure to its 48-byte wire form, the padding zero.
+func (fi *FileFsControlInformation) Marshal() ([]byte, error) {
+	b := make([]byte, FileFsControlInformationSize)
+	binary.LittleEndian.PutUint64(b[0:8], uint64(fi.FreeSpaceStartFiltering))
+	binary.LittleEndian.PutUint64(b[8:16], uint64(fi.FreeSpaceThreshold))
+	binary.LittleEndian.PutUint64(b[16:24], uint64(fi.FreeSpaceStopFiltering))
+	binary.LittleEndian.PutUint64(b[24:32], fi.DefaultQuotaThreshold)
+	binary.LittleEndian.PutUint64(b[32:40], fi.DefaultQuotaLimit)
+	binary.LittleEndian.PutUint32(b[40:44], fi.FileSystemControlFlags)
+	return b, nil
+}
+
+// Unmarshal decodes the structure from its wire form. The trailing padding is
+// ignored, and a 44-byte buffer without it is accepted.
+func (fi *FileFsControlInformation) Unmarshal(data []byte) error {
+	const withoutPadding = FileFsControlInformationSize - 4
+	if len(data) < withoutPadding {
+		return fmt.Errorf("FILE_FS_CONTROL_INFORMATION: need %d bytes, got %d", withoutPadding, len(data))
+	}
+	fi.FreeSpaceStartFiltering = int64(binary.LittleEndian.Uint64(data[0:8]))
+	fi.FreeSpaceThreshold = int64(binary.LittleEndian.Uint64(data[8:16]))
+	fi.FreeSpaceStopFiltering = int64(binary.LittleEndian.Uint64(data[16:24]))
+	fi.DefaultQuotaThreshold = binary.LittleEndian.Uint64(data[24:32])
+	fi.DefaultQuotaLimit = binary.LittleEndian.Uint64(data[32:40])
+	fi.FileSystemControlFlags = binary.LittleEndian.Uint32(data[40:44])
+	return nil
+}

@@ -422,3 +422,181 @@ func ParseFileNamesInformationList(buf []byte) []FileNamesInformation {
 	}
 	return out
 }
+
+// FileDirectoryInformation is FILE_DIRECTORY_INFORMATION (FileInformationClass
+// 1): a directory entry with timestamps, sizes and attributes.
+//
+// [MS-FSCC] FileDirectoryInformation:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/b38bf518-9057-4c88-9ddd-5e2d3976a64b
+type FileDirectoryInformation struct {
+	NextEntryOffset uint32
+	FileIndex       uint32
+	CreationTime    uint64
+	LastAccessTime  uint64
+	LastWriteTime   uint64
+	ChangeTime      uint64
+	EndOfFile       int64
+	AllocationSize  int64
+	FileAttributes  uint32
+	FileName        string
+}
+
+// fileDirInfoFixedSize is the fixed portion preceding FileName.
+const fileDirInfoFixedSize = 64
+
+// Marshal encodes a single entry (fixed prefix + FileName). NextEntryOffset is
+// written verbatim; callers chaining entries set it themselves.
+func (fi *FileDirectoryInformation) Marshal() ([]byte, error) {
+	name := encodeUTF16LE(fi.FileName)
+	b := make([]byte, fileDirInfoFixedSize+len(name))
+	binary.LittleEndian.PutUint32(b[0:4], fi.NextEntryOffset)
+	binary.LittleEndian.PutUint32(b[4:8], fi.FileIndex)
+	binary.LittleEndian.PutUint64(b[8:16], fi.CreationTime)
+	binary.LittleEndian.PutUint64(b[16:24], fi.LastAccessTime)
+	binary.LittleEndian.PutUint64(b[24:32], fi.LastWriteTime)
+	binary.LittleEndian.PutUint64(b[32:40], fi.ChangeTime)
+	binary.LittleEndian.PutUint64(b[40:48], uint64(fi.EndOfFile))
+	binary.LittleEndian.PutUint64(b[48:56], uint64(fi.AllocationSize))
+	binary.LittleEndian.PutUint32(b[56:60], fi.FileAttributes)
+	binary.LittleEndian.PutUint32(b[60:64], uint32(len(name)))
+	copy(b[fileDirInfoFixedSize:], name)
+	return b, nil
+}
+
+// Unmarshal decodes a single entry from the start of data.
+func (fi *FileDirectoryInformation) Unmarshal(data []byte) error {
+	if len(data) < fileDirInfoFixedSize {
+		return fmt.Errorf("FILE_DIRECTORY_INFORMATION: need %d bytes, got %d", fileDirInfoFixedSize, len(data))
+	}
+	*fi = FileDirectoryInformation{
+		NextEntryOffset: binary.LittleEndian.Uint32(data[0:4]),
+		FileIndex:       binary.LittleEndian.Uint32(data[4:8]),
+		CreationTime:    binary.LittleEndian.Uint64(data[8:16]),
+		LastAccessTime:  binary.LittleEndian.Uint64(data[16:24]),
+		LastWriteTime:   binary.LittleEndian.Uint64(data[24:32]),
+		ChangeTime:      binary.LittleEndian.Uint64(data[32:40]),
+		EndOfFile:       int64(binary.LittleEndian.Uint64(data[40:48])),
+		AllocationSize:  int64(binary.LittleEndian.Uint64(data[48:56])),
+		FileAttributes:  binary.LittleEndian.Uint32(data[56:60]),
+	}
+	nameLen := int(binary.LittleEndian.Uint32(data[60:64]))
+	if nameLen > 0 && nameLen <= len(data)-fileDirInfoFixedSize {
+		fi.FileName = decodeUTF16LE(data[fileDirInfoFixedSize : fileDirInfoFixedSize+nameLen])
+	}
+	return nil
+}
+
+// ParseFileDirectoryInformationList decodes a chained buffer of
+// FILE_DIRECTORY_INFORMATION entries.
+func ParseFileDirectoryInformationList(buf []byte) []FileDirectoryInformation {
+	var out []FileDirectoryInformation
+	for pos := 0; pos+fileDirInfoFixedSize <= len(buf); {
+		var e FileDirectoryInformation
+		if err := e.Unmarshal(buf[pos:]); err != nil {
+			break
+		}
+		out = append(out, e)
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+			break
+		}
+		pos += int(e.NextEntryOffset)
+	}
+	return out
+}
+
+// FileIdExtdDirectoryInformation is FILE_ID_EXTD_DIR_INFORMATION
+// (FileInformationClass 60): a directory entry with EA size, reparse tag and
+// the file's 128-bit FileId.
+//
+// [MS-FSCC] FileIdExtdDirectoryInformation:
+// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/36172f0b-8dce-435a-8748-859978d632f8
+type FileIdExtdDirectoryInformation struct {
+	NextEntryOffset uint32
+	FileIndex       uint32
+	CreationTime    uint64
+	LastAccessTime  uint64
+	LastWriteTime   uint64
+	ChangeTime      uint64
+	EndOfFile       int64
+	AllocationSize  int64
+	FileAttributes  uint32
+	EaSize          uint32
+	// ReparsePointTag is meaningful only when FileAttributes has
+	// FILE_ATTRIBUTE_REPARSE_POINT set.
+	ReparsePointTag uint32
+	// FileId is the 128-bit file ID, little-endian as on the wire; zero when
+	// the file system has no 128-bit IDs.
+	FileId   [16]byte
+	FileName string
+}
+
+// fileIdExtdDirInfoFixedSize is the fixed portion preceding FileName: the
+// full-dir prefix (68) plus ReparsePointTag(4) FileId(16).
+const fileIdExtdDirInfoFixedSize = 88
+
+// Marshal encodes a single entry (fixed prefix + FileName).
+func (fi *FileIdExtdDirectoryInformation) Marshal() ([]byte, error) {
+	full := FileFullDirectoryInformation{
+		NextEntryOffset: fi.NextEntryOffset, FileIndex: fi.FileIndex,
+		CreationTime: fi.CreationTime, LastAccessTime: fi.LastAccessTime,
+		LastWriteTime: fi.LastWriteTime, ChangeTime: fi.ChangeTime,
+		EndOfFile: fi.EndOfFile, AllocationSize: fi.AllocationSize,
+		FileAttributes: fi.FileAttributes, EaSize: fi.EaSize,
+	}
+	b, err := full.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	name := encodeUTF16LE(fi.FileName)
+	binary.LittleEndian.PutUint32(b[60:64], uint32(len(name)))
+	b = binary.LittleEndian.AppendUint32(b, fi.ReparsePointTag)
+	b = append(b, fi.FileId[:]...)
+	return append(b, name...), nil
+}
+
+// Unmarshal decodes a single entry from the start of data.
+func (fi *FileIdExtdDirectoryInformation) Unmarshal(data []byte) error {
+	if len(data) < fileIdExtdDirInfoFixedSize {
+		return fmt.Errorf("FILE_ID_EXTD_DIR_INFORMATION: need %d bytes, got %d", fileIdExtdDirInfoFixedSize, len(data))
+	}
+	var full FileFullDirectoryInformation
+	if err := full.Unmarshal(data[:fileFullDirInfoFixedSize]); err != nil {
+		return err
+	}
+	*fi = FileIdExtdDirectoryInformation{
+		NextEntryOffset: full.NextEntryOffset, FileIndex: full.FileIndex,
+		CreationTime: full.CreationTime, LastAccessTime: full.LastAccessTime,
+		LastWriteTime: full.LastWriteTime, ChangeTime: full.ChangeTime,
+		EndOfFile: full.EndOfFile, AllocationSize: full.AllocationSize,
+		FileAttributes: full.FileAttributes, EaSize: full.EaSize,
+		ReparsePointTag: binary.LittleEndian.Uint32(data[68:72]),
+	}
+	copy(fi.FileId[:], data[72:88])
+	nameLen := int(binary.LittleEndian.Uint32(data[60:64]))
+	if nameLen > 0 && nameLen <= len(data)-fileIdExtdDirInfoFixedSize {
+		fi.FileName = decodeUTF16LE(data[fileIdExtdDirInfoFixedSize : fileIdExtdDirInfoFixedSize+nameLen])
+	}
+	return nil
+}
+
+// ParseFileIdExtdDirectoryInformationList decodes a chained buffer of
+// FILE_ID_EXTD_DIR_INFORMATION entries.
+func ParseFileIdExtdDirectoryInformationList(buf []byte) []FileIdExtdDirectoryInformation {
+	var out []FileIdExtdDirectoryInformation
+	for pos := 0; pos+fileIdExtdDirInfoFixedSize <= len(buf); {
+		var e FileIdExtdDirectoryInformation
+		if err := e.Unmarshal(buf[pos:]); err != nil {
+			break
+		}
+		out = append(out, e)
+		// A NextEntryOffset past the end of buf ends the chain; comparing in
+		// uint64 keeps a 2 GiB+ offset from wrapping pos on 32-bit platforms.
+		if e.NextEntryOffset == 0 || uint64(e.NextEntryOffset) > uint64(len(buf)-pos) {
+			break
+		}
+		pos += int(e.NextEntryOffset)
+	}
+	return out
+}

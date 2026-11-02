@@ -191,6 +191,45 @@ func (c *Client) QueryFsDeviceInfo(fileId types.SMB2_FILEID) (*filesystem.FileFs
 	return fi, nil
 }
 
+// QueryFileStreamInfo returns the data streams of an open file: the unnamed
+// "::$DATA" stream and any alternate ":name:$DATA" streams. A directory with no
+// named streams returns none.
+func (c *Client) QueryFileStreamInfo(fileId types.SMB2_FILEID) ([]filesystem.FileStreamInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILE, uint8(infoclass.FileStreamInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	return filesystem.ParseFileStreamInformationList(raw), nil
+}
+
+// QueryFsSectorSizeInfo returns the FILE_FS_SECTOR_SIZE_INFORMATION (logical
+// and physical sector sizes and alignment) of the volume backing fileId.
+func (c *Client) QueryFsSectorSizeInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsSectorSizeInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsSectorSizeInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsSectorSizeInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
+// QueryFsControlInfo returns the FILE_FS_CONTROL_INFORMATION (default quota
+// threshold and limit, quota flags) of the volume backing fileId.
+func (c *Client) QueryFsControlInfo(fileId types.SMB2_FILEID) (*filesystem.FileFsControlInformation, error) {
+	raw, err := c.QueryInfo(fileId, commands.SMB2_0_INFO_FILESYSTEM, uint8(infoclass.FileFsControlInformation), 0)
+	if err != nil {
+		return nil, err
+	}
+	fi := &filesystem.FileFsControlInformation{}
+	if err := fi.Unmarshal(raw); err != nil {
+		return nil, err
+	}
+	return fi, nil
+}
+
 // SetEndOfFile sets the logical size of an open file (truncate or extend).
 func (c *Client) SetEndOfFile(fileId types.SMB2_FILEID, size int64) error {
 	buf, err := (&filesystem.FileEndOfFileInformation{EndOfFile: size}).Marshal()
