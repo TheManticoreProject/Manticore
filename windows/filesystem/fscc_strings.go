@@ -26,3 +26,24 @@ func decodeUTF16LE(b []byte) string {
 	}
 	return strings.TrimRight(string(utf16.Decode(u16)), "\x00")
 }
+
+// nextEntry returns the offset of the entry after the one at pos in a chained
+// information-class buffer, or -1 when the chain ends there. fixedSize is the
+// entry's fixed part and nameLenOffset the offset of its 4-byte name length.
+//
+// The chain ends when NextEntryOffset is zero, runs past buf, or points inside
+// the current entry's fixed part and name. Following such an offset would make
+// entries overlap, and each would decode most of the remaining buffer again,
+// so a small hostile buffer could expand into gigabytes of names. An offset
+// that is not 8-byte aligned, which [MS-FSCC] forbids, is still followed: it
+// cannot cause overlap, and refusing it would only lose entries from a
+// careless server. Offsets are compared in uint64 so a 2 GiB+ value cannot
+// wrap pos on 32-bit platforms.
+func nextEntry(buf []byte, pos, fixedSize, nameLenOffset int) int {
+	next := uint64(binary.LittleEndian.Uint32(buf[pos:]))
+	nameLen := uint64(binary.LittleEndian.Uint32(buf[pos+nameLenOffset:]))
+	if next == 0 || next > uint64(len(buf)-pos) || next < uint64(fixedSize)+nameLen {
+		return -1
+	}
+	return pos + int(next)
+}
