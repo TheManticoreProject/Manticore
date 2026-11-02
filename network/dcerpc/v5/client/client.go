@@ -93,6 +93,14 @@ type Client struct {
 	// ntlmTargetName is the SPN the NTLM AUTHENTICATE asserts in MsvAvTargetName,
 	// set by SetNTLMTargetName; empty selects "cifs/<DnsComputerName>".
 	ntlmTargetName string
+
+	// proposeFeatures and proposedFeatureBits, set by ProposeBindTimeFeatures,
+	// offer bind-time feature negotiation; bindFeatures and bindFeaturesAcked
+	// hold the server's answer.
+	proposeFeatures     bool
+	proposedFeatureBits uint8
+	bindFeatures        uint16
+	bindFeaturesAcked   bool
 }
 
 // SessionKey returns the session key established during an authenticated Bind — the
@@ -114,6 +122,26 @@ func NewClient(t transport.Transport) *Client {
 // default is false (NDR 2.0 only).
 func (c *Client) PreferNDR64(enable bool) { c.preferNDR64 = enable }
 
+// ProposeBindTimeFeatures makes Bind offer bind-time feature negotiation
+// ([MS-RPCE] 3.3.1.5.3) with the given bits of the first bitmask octet
+// (syntax.SecurityContextMultiplexingSupported,
+// syntax.KeepConnectionOnOrphanSupported). A client sets only the bits of
+// features it supports, since the server answers for those alone. This client
+// implements neither feature yet, so the answer is informational: it tells the
+// caller what the server supports and changes nothing about later calls. It
+// must be called before Bind.
+func (c *Client) ProposeBindTimeFeatures(bits uint8) {
+	c.proposeFeatures, c.proposedFeatureBits = true, bits
+}
+
+// BindTimeFeatures reports what the server answered to bind-time feature
+// negotiation: its BindTimeFeatureNegotiationResponseBitmask, and whether it
+// acknowledged the negotiation at all. It is meaningful only after a successful
+// Bind that proposed the negotiation.
+func (c *Client) BindTimeFeatures() (bits uint16, acknowledged bool) {
+	return c.bindFeatures, c.bindFeaturesAcked
+}
+
 // NegotiatedSyntax reports the transfer syntax the server accepted at Bind. It is
 // meaningful only after a successful Bind.
 func (c *Client) NegotiatedSyntax() ndr.Syntax { return c.negotiatedSyntax }
@@ -131,6 +159,7 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	}
 
 	c.callID = 1
+	c.bindFeatures, c.bindFeaturesAcked = 0, false
 
 	// Context 0 is always NDR 2.0; an optional context 1 offers NDR64. Each context
 	// carries a single transfer syntax so the bind_ack's per-context result identifies
@@ -147,6 +176,17 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 			ContextID:        1,
 			AbstractSyntax:   abstractSyntax,
 			TransferSyntaxes: []syntax.SyntaxID{syntax.NDR64TransferSyntax()},
+		})
+	}
+	// The negotiation rides in one more context naming the same interface,
+	// whose single transfer syntax carries the proposed bits.
+	featureContext := -1
+	if c.proposeFeatures {
+		featureContext = len(contexts)
+		contexts = append(contexts, pdu.ContextElement{
+			ContextID:        uint16(len(contexts)),
+			AbstractSyntax:   abstractSyntax,
+			TransferSyntaxes: []syntax.SyntaxID{syntax.BindTimeFeatureNegotiation(c.proposedFeatureBits)},
 		})
 	}
 
@@ -192,6 +232,9 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		var ack pdu.BindAck
 		if _, err := ack.Unmarshal(respFrag); err != nil {
 			return fmt.Errorf("dcerpc bind: parse bind_ack: %w", err)
+		}
+		if featureContext >= 0 && featureContext < len(ack.Results) && ack.Results[featureContext].Result == pdu.ResultNegotiateAck {
+			c.bindFeatures, c.bindFeaturesAcked = ack.Results[featureContext].Reason, true
 		}
 		ctxID, negotiated, ok := selectContext(bind.ContextList, ack.Results)
 		if !ok {

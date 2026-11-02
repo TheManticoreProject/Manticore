@@ -44,6 +44,31 @@ func NDR64TransferSyntax() SyntaxID {
 	}
 }
 
+// Bind-time feature negotiation bits ([MS-RPCE] 2.2.2.14
+// BindTimeFeatureNegotiationBitmask, first octet).
+const (
+	SecurityContextMultiplexingSupported uint8 = 0x01
+	KeepConnectionOnOrphanSupported      uint8 = 0x02
+)
+
+// BindTimeFeatureNegotiation returns the transfer syntax a client offers to
+// indicate support for bind-time feature negotiation ([MS-RPCE] 3.3.1.5.3): the
+// UUID prefix 6CB71C2C-9812-4540 followed by the eight-octet bitmask, version
+// 1.0. bits is the first octet of the bitmask; the rest are reserved and zero.
+func BindTimeFeatureNegotiation(bits uint8) SyntaxID {
+	return SyntaxID{
+		UUID:         guid.GUID{A: 0x6cb71c2c, B: 0x9812, C: 0x4540, D: uint16(bits) << 8, E: 0},
+		MajorVersion: 1,
+		MinorVersion: 0,
+	}
+}
+
+// IsBindTimeFeatureNegotiation reports whether s is a bind-time feature
+// negotiation transfer syntax, whatever its bitmask.
+func (s SyntaxID) IsBindTimeFeatureNegotiation() bool {
+	return s.UUID.A == 0x6cb71c2c && s.UUID.B == 0x9812 && s.UUID.C == 0x4540
+}
+
 // Equal reports whether two syntax identifiers are identical.
 func (s SyntaxID) Equal(other SyntaxID) bool {
 	return s.UUID.Equal(&other.UUID) && s.MajorVersion == other.MajorVersion && s.MinorVersion == other.MinorVersion
