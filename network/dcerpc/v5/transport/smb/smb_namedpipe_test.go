@@ -119,6 +119,16 @@ func TestNew_DefaultFragmentSizes(t *testing.T) {
 	}
 }
 
+// TestSetMaxFragNormalizes checks a size of 0 selects the default and a size
+// below the C706 minimum is raised to 1432, so a pipe read is never 0 bytes.
+func TestSetMaxFragNormalizes(t *testing.T) {
+	p := New(nil, `\PIPE\lsarpc`)
+	p.SetMaxFrag(1, 0)
+	if p.MaxXmitFrag() != 1432 || p.MaxRecvFrag() != DefaultMaxRecvFrag {
+		t.Errorf("after SetMaxFrag(1, 0): xmit=%d recv=%d, want 1432/%d", p.MaxXmitFrag(), p.MaxRecvFrag(), DefaultMaxRecvFrag)
+	}
+}
+
 func TestConnect_OpensPipeWithExpectedArgs(t *testing.T) {
 	fake := &fakePipeConn{openFID: 0x4242}
 	p := newWithConn(fake, `\PIPE\lsarpc`)

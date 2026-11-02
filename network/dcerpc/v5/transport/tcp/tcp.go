@@ -98,10 +98,12 @@ func (t *TCPTransport) SetTimeout(d time.Duration) {
 }
 
 // SetMaxFrag overrides the transmit and receive fragment sizes proposed at Bind time.
-// It must be called before Connect to take effect.
+// A size of 0 selects the transport's default, and a size below the C706 minimum
+// (transport.MinFragSize, 1432) is raised to it. It must be called before Connect
+// to take effect.
 func (t *TCPTransport) SetMaxFrag(xmit, recv uint16) {
-	t.maxXmit = xmit
-	t.maxRecv = recv
+	t.maxXmit = dcerpctransport.NormalizeFragSize(xmit, DefaultMaxXmitFrag)
+	t.maxRecv = dcerpctransport.NormalizeFragSize(recv, DefaultMaxRecvFrag)
 }
 
 // Connect opens the TCP connection. It is idempotent.

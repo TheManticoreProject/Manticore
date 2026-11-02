@@ -42,3 +42,22 @@ type Transport interface {
 	// willing to receive. It is proposed in the Bind PDU alongside MaxXmitFrag.
 	MaxRecvFrag() uint16
 }
+
+// MinFragSize is the smallest fragment size a connection-oriented DCE/RPC peer may
+// propose for max_xmit_frag or max_recv_frag: MustRecvFragSize in C706 12.6.4.1.
+// Every implementation must accept fragments of this size.
+const MinFragSize uint16 = 1432
+
+// NormalizeFragSize returns the fragment size a transport proposes at Bind for a
+// requested size: def when size is 0, MinFragSize when size is below it, and size
+// otherwise.
+func NormalizeFragSize(size, def uint16) uint16 {
+	switch {
+	case size == 0:
+		return def
+	case size < MinFragSize:
+		return MinFragSize
+	default:
+		return size
+	}
+}
