@@ -41,6 +41,11 @@ type Session struct {
 
 	// The credentials for this session
 	Credentials *credentials.Credentials
+
+	// Guest reports that the server logged the user on as a guest
+	// (SMB_SETUP_GUEST in the response's Action field) rather than as the
+	// identity the credentials name. A guest session does not sign.
+	Guest bool
 }
 
 func (s *Session) SessionSetup() error {
@@ -412,7 +417,7 @@ func (s *Session) SessionSetup() error {
 		previousKey := s.Client.Connection.SigningSessionKey
 		previousActive := s.Client.Connection.IsSigningActive
 		defer func() {
-			if !authenticated {
+			if !authenticated || !signMessages {
 				s.Client.Connection.SigningSessionKey = previousKey
 				s.Client.Connection.IsSigningActive = previousActive
 			}
@@ -474,6 +479,22 @@ func (s *Session) SessionSetup() error {
 		s.Client.Connection.Server.OSName = osName
 	} else if osName := challengeResponse.NativeOSString(); osName != "" {
 		s.Client.Connection.Server.OSName = osName
+	}
+
+	// Signing MUST NOT be activated for a guest or an anonymous logon ([MS-SMB]
+	// 3.2.5.3): neither shares a key with the server, which does not sign its
+	// response. A guest bit from a server that requires signing is refused, since
+	// accepting it would let anyone able to alter the unsigned response strip
+	// signing from the connection by setting that bit. An anonymous logon is not
+	// refused there: Windows grants one, unsigned, even when it requires signing.
+	s.Guest = authResponse.Action&commands.SMB_SETUP_GUEST != 0
+	if s.Guest || authCtx.IsAnonymous() {
+		if s.Guest && signMessages && signingState == SigningStateRequired {
+			return fmt.Errorf("server granted a guest session, which cannot sign, but requires signing")
+		}
+		// Clearing signMessages makes the deferred restore undo the arming.
+		signMessages = false
+		signingKey = nil
 	}
 
 	// Persist the derived session key and, when this setup activated signing,

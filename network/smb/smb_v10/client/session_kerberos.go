@@ -237,6 +237,17 @@ func (s *Session) sessionSetupKerberos(mech *kerberos.SPNEGOMechanism) error {
 	if len(signingKey) == 0 {
 		signingKey = mech.SessionKey()
 	}
+	// A guest shares no key with the server, so signing MUST NOT be activated
+	// for it ([MS-SMB] 3.2.5.3). A guest bit from a server that requires signing
+	// is refused, since accepting it would let anyone able to alter the unsigned
+	// response strip signing by setting that bit.
+	s.Guest = resp.Action&commands.SMB_SETUP_GUEST != 0
+	if s.Guest {
+		if !signingAlreadyActive && signingState == SigningStateRequired {
+			return fmt.Errorf("server granted a guest session, which cannot sign, but requires signing")
+		}
+		signingKey = nil
+	}
 	if !signingAlreadyActive && signingState == SigningStateRequired && len(signingKey) == 0 {
 		return fmt.Errorf("server requires SMB signing but no Kerberos session key was derived")
 	}
