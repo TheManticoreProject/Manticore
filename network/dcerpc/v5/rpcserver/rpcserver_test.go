@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -41,6 +42,8 @@ type stubService struct {
 	// interface.
 	mutex sync.Mutex
 	calls int
+	// lastStub is the stub of the most recent call.
+	lastStub []byte
 }
 
 func (s *stubService) AbstractSyntax() syntax.SyntaxID { return testSyntax() }
@@ -48,6 +51,7 @@ func (s *stubService) AbstractSyntax() syntax.SyntaxID { return testSyntax() }
 func (s *stubService) Call(opnum uint16, stub []byte) ([]byte, error) {
 	s.mutex.Lock()
 	s.calls++
+	s.lastStub = append([]byte(nil), stub...)
 	s.mutex.Unlock()
 
 	switch opnum {
@@ -398,41 +402,158 @@ func TestRequestFaultStatuses(t *testing.T) {
 	}
 }
 
-func TestFragmentedRequestIsRefusedWithoutReachingTheInterface(t *testing.T) {
-	service := &stubService{answer: []byte("unreachable")}
-	endpoint := New(service)
-	association := endpoint.Open()
-	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
-		t.Fatalf("the bind failed: %v", err)
-	}
-
-	// PFC_FIRST_FRAG without PFC_LAST_FRAG: the first fragment of a request whose
-	// stub is incomplete. Handing it to the interface would decode a fragment as
-	// a whole stub.
+// fragment builds one request fragment of call callID.
+func fragment(t *testing.T, flags pdu.PFCFlags, callID uint32, contextID, opnum uint16, stub string) []byte {
+	t.Helper()
 	request := &pdu.Request{
-		Header: pdu.NewHeader(pdu.PacketTypeRequest, pdu.PFCFirstFrag, 1),
-		Opnum:  0,
-		Stub:   []byte("half a st"),
+		Header:    pdu.NewHeader(pdu.PacketTypeRequest, flags, callID),
+		ContextID: contextID,
+		Opnum:     opnum,
+		Stub:      []byte(stub),
 	}
 	encoded, err := request.Marshal()
 	if err != nil {
-		t.Fatalf("failed to marshal the request: %v", err)
+		t.Fatalf("failed to marshal the fragment: %v", err)
 	}
+	return encoded
+}
 
-	reply, err := association.Handle(encoded)
-	if err != nil {
-		t.Fatalf("Handle returned an error instead of framing a fault: %v", err)
+// boundAssociation returns an association with testSyntax bound on context 0.
+func boundAssociation(t *testing.T, service *stubService) *Association {
+	t.Helper()
+	association := New(service).Open()
+	if _, err := association.Handle(bindRequest(t, 1, 4280, testSyntax())); err != nil {
+		t.Fatalf("the bind failed: %v", err)
 	}
+	return association
+}
 
-	fault := &pdu.Fault{}
-	if _, err := fault.Unmarshal(reply); err != nil {
-		t.Fatalf("a fragmented request was not answered with a fault: %v", err)
-	}
-	if fault.Status != pdu.NCASProtoError {
-		t.Errorf("the fault reports %s, want %s", pdu.FaultStatus(fault.Status), pdu.FaultStatus(pdu.NCASProtoError))
+// TestFragmentedRequestIsReassembled sends one call in three fragments. The
+// first two get no reply and do not reach the interface; the last delivers the
+// whole stub and is answered.
+func TestFragmentedRequestIsReassembled(t *testing.T) {
+	service := &stubService{answer: []byte("answer")}
+	association := boundAssociation(t, service)
+
+	for _, f := range []struct {
+		flags pdu.PFCFlags
+		stub  string
+	}{{pdu.PFCFirstFrag, "first "}, {0, "middle "}} {
+		reply, err := association.Handle(fragment(t, f.flags, 7, 0, 0, f.stub))
+		if err != nil || len(reply) != 0 {
+			t.Fatalf("a non-last fragment was answered with %x, %v; want nothing", reply, err)
+		}
 	}
 	if service.callCount() != 0 {
-		t.Errorf("the interface was called %d times for a fragmented request, want 0", service.callCount())
+		t.Fatalf("the interface was called before the last fragment")
+	}
+
+	reply, err := association.Handle(fragment(t, pdu.PFCLastFrag, 7, 0, 0, "last"))
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	response := &pdu.Response{}
+	if _, err := response.Unmarshal(reply); err != nil {
+		t.Fatalf("the last fragment was not answered with a response: %v", err)
+	}
+	if response.Header.CallID != 7 || string(response.Stub) != "answer" {
+		t.Errorf("response call %d stub %q", response.Header.CallID, response.Stub)
+	}
+	if got := string(service.lastStub); got != "first middle last" {
+		t.Errorf("the interface received %q, want the reassembled stub", got)
+	}
+
+	// The association is ready for the next call.
+	if reply, err := association.Handle(callRequest(t, 8, 0, []byte("in"))); err != nil || len(reply) == 0 {
+		t.Errorf("a whole request after a reassembled one = %x, %v", reply, err)
+	}
+}
+
+// TestFragmentThatDoesNotContinueTheCallIsFaulted checks the reassembly rules:
+// a fragment of another call, context or opnum, a continuation with no call in
+// progress, and a second first fragment are each refused with
+// nca_s_proto_error, and none reaches the interface.
+func TestFragmentThatDoesNotContinueTheCallIsFaulted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+	}{
+		{"another call_id"},
+		{"another opnum"},
+		{"another context"},
+		{"a second first fragment"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &stubService{answer: []byte("x")}
+			association := boundAssociation(t, service)
+			if reply, _ := association.Handle(fragment(t, pdu.PFCFirstFrag, 7, 0, 0, "first")); len(reply) != 0 {
+				t.Fatalf("the first fragment was answered")
+			}
+			var next []byte
+			switch tc.name {
+			case "another call_id":
+				next = fragment(t, pdu.PFCLastFrag, 8, 0, 0, "last")
+			case "another opnum":
+				next = fragment(t, pdu.PFCLastFrag, 7, 0, 3, "last")
+			case "another context":
+				next = fragment(t, pdu.PFCLastFrag, 7, 1, 0, "last")
+			case "a second first fragment":
+				next = fragment(t, pdu.PFCFirstFrag, 8, 0, 0, "first")
+			}
+			reply, err := association.Handle(next)
+			if err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+			fault := &pdu.Fault{}
+			if _, err := fault.Unmarshal(reply); err != nil || fault.Status != pdu.NCASProtoError {
+				t.Fatalf("reply %x is not an nca_s_proto_error fault: %v", reply, err)
+			}
+			if service.callCount() != 0 {
+				t.Errorf("the interface was called")
+			}
+		})
+	}
+
+	// A continuation with nothing in progress.
+	service := &stubService{answer: []byte("x")}
+	association := boundAssociation(t, service)
+	reply, _ := association.Handle(fragment(t, pdu.PFCLastFrag, 9, 0, 0, "orphan"))
+	fault := &pdu.Fault{}
+	if _, err := fault.Unmarshal(reply); err != nil || fault.Status != pdu.NCASProtoError {
+		t.Errorf("an orphan last fragment was answered with %x, %v", reply, err)
+	}
+}
+
+// TestFragmentedRequestIsBounded checks a request growing past MaxRequestStub
+// is refused instead of buffered.
+func TestFragmentedRequestIsBounded(t *testing.T) {
+	service := &stubService{answer: []byte("x")}
+	association := boundAssociation(t, service)
+	chunk := strings.Repeat("a", 60000)
+	if reply, _ := association.Handle(fragment(t, pdu.PFCFirstFrag, 7, 0, 0, chunk)); len(reply) != 0 {
+		t.Fatalf("the first fragment was answered")
+	}
+	for sent := len(chunk); ; sent += len(chunk) {
+		reply, err := association.Handle(fragment(t, 0, 7, 0, 0, chunk))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(reply) == 0 {
+			if sent > MaxRequestStub {
+				t.Fatalf("%d bytes buffered without a fault", sent)
+			}
+			continue
+		}
+		fault := &pdu.Fault{}
+		if _, err := fault.Unmarshal(reply); err != nil || fault.Status != pdu.NCASProtoError {
+			t.Fatalf("the oversize request was answered with %x, %v", reply, err)
+		}
+		if sent+len(chunk) <= MaxRequestStub {
+			t.Errorf("refused at %d bytes, below the %d bound", sent+len(chunk), MaxRequestStub)
+		}
+		break
+	}
+	if service.callCount() != 0 {
+		t.Errorf("the interface was called")
 	}
 }
 
@@ -909,5 +1030,73 @@ func TestErrorsAreDistinguishable(t *testing.T) {
 	}
 	if errors.Is(wrapped, ErrUnknownOpnum) {
 		t.Error("a wrapped ErrBadStub is mistaken for ErrUnknownOpnum")
+	}
+}
+
+// TestAbandonedPartialDoesNotBreakTheNextCall checks that a request left half
+// assembled is dropped by what ends it — a whole request, a bind, an
+// alter_context or an orphaned PDU — so the next fragmented call is served.
+func TestAbandonedPartialDoesNotBreakTheNextCall(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pdu   func(t *testing.T) []byte
+		reply bool
+	}{
+		{"whole request", func(t *testing.T) []byte { return callRequest(t, 8, 0, []byte("in")) }, true},
+		{"bind", func(t *testing.T) []byte { return bindRequest(t, 8, 4280, testSyntax()) }, true},
+		{"orphaned", func(t *testing.T) []byte {
+			header := pdu.NewHeader(pdu.PacketTypeOrphaned, pdu.PFCFirstFrag|pdu.PFCLastFrag, 7)
+			header.FragLength = pdu.HeaderSize
+			encoded, err := header.Marshal()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return encoded
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &stubService{answer: []byte("answer")}
+			association := boundAssociation(t, service)
+			if reply, _ := association.Handle(fragment(t, pdu.PFCFirstFrag, 7, 0, 0, "abandoned")); len(reply) != 0 {
+				t.Fatalf("the first fragment was answered")
+			}
+			reply, err := association.Handle(tc.pdu(t))
+			if err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+			if got := len(reply) > 0; got != tc.reply {
+				t.Fatalf("the %s was answered=%t, want %t", tc.name, got, tc.reply)
+			}
+
+			if reply, _ := association.Handle(fragment(t, pdu.PFCFirstFrag, 10, 0, 0, "first ")); len(reply) != 0 {
+				t.Fatalf("the next call's first fragment was answered with %x", reply)
+			}
+			reply, err = association.Handle(fragment(t, pdu.PFCLastFrag, 10, 0, 0, "last"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := &pdu.Response{}
+			if _, err := response.Unmarshal(reply); err != nil {
+				t.Fatalf("the next fragmented call was not served: %x, %v", reply, err)
+			}
+			if got := string(service.lastStub); got != "first last" {
+				t.Errorf("the interface received %q", got)
+			}
+		})
+	}
+}
+
+// TestFragmentOnAnUnboundContextIsRefusedAtOnce checks a first fragment naming a
+// context the association never bound is faulted before anything is buffered.
+func TestFragmentOnAnUnboundContextIsRefusedAtOnce(t *testing.T) {
+	service := &stubService{answer: []byte("x")}
+	association := boundAssociation(t, service)
+	reply, err := association.Handle(fragment(t, pdu.PFCFirstFrag, 7, 5, 0, "first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fault := &pdu.Fault{}
+	if _, err := fault.Unmarshal(reply); err != nil || fault.Status != pdu.NCASFaultContextMismatch {
+		t.Fatalf("a first fragment on an unbound context was answered with %x, %v", reply, err)
 	}
 }

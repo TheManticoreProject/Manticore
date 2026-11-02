@@ -27,7 +27,7 @@ func TestImpacketCallsOverPipeWriteAndRead(t *testing.T) {
 
 	port := startPipeServer(t)
 
-	for _, fragment := range []string{"0"} {
+	for _, fragment := range []string{"0", "40", "64", "100"} {
 		out, err := exec.Command("python3", "testdata/impacket_pipe.py", strconv.Itoa(port), "LAB", "alice", "Passw0rd!", fragment).CombinedOutput()
 		t.Logf("max fragment %s:\n%s", fragment, out)
 		if err != nil || !strings.Contains(string(out), "OK") {
