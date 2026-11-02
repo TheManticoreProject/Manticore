@@ -14,6 +14,15 @@ import (
 	"github.com/TheManticoreProject/Manticore/utils"
 )
 
+// SESSION_SETUP_ANDX response Action bits ([MS-CIFS] SMB_COM_SESSION_SETUP_ANDX
+// response, linked below).
+const (
+	// SMB_SETUP_GUEST: the server logged the user on as a guest.
+	SMB_SETUP_GUEST = 0x0001
+	// SMB_SETUP_USE_LANMAN_KEY: the client must use the LAN Manager session key.
+	SMB_SETUP_USE_LANMAN_KEY = 0x0002
+)
+
 // SessionSetupAndxResponse
 // Source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cifs/e7514918-a0f6-4932-9f00-ced094445537
 // SMBv1.0 extension: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb/e5a467bc-cd36-4afa-825e-3f2a7bfd6189
