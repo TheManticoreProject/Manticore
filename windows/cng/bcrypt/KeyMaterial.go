@@ -27,8 +27,11 @@ type KeyMaterial interface {
 // - An error if the unmarshalling fails, otherwise nil.
 //
 // Note:
-// The function expects the byte slice to follow the key material format, starting with the "KEY1" blob type identifier.
-// It extracts the key type from the byte slice and stores it in the BCRYPT_KEY_BLOB structure.
+// The blob type is selected by the leading magic: RSA public and private
+// (BCRYPT_RSAKEY_BLOB), ECDH and ECDSA P-256/P-384/P-521 public and private
+// (BCRYPT_ECCKEY_BLOB), and DSA public and private (BCRYPT_DSA_KEY_BLOB, the
+// FIPS 186-2 form). Windows Hello for Business can register ECC keys in
+// msDS-KeyCredentialLink.
 func UnmarshalKeyMaterial(data []byte) (KeyMaterial, int, error) {
 	blobMagic := magic.BCRYPT_KEY_BLOB{}
 	_, err := blobMagic.Unmarshal(data)
@@ -53,20 +56,40 @@ func UnmarshalKeyMaterial(data []byte) (KeyMaterial, int, error) {
 			return nil, 0, err
 		}
 		return &blob, bytesRead, nil
-		// case magic.BCRYPT_ECCPUBLIC_MAGIC:
-		// 	blob := keys.BCRYPT_ECC_PUBLIC_KEY{}
-		// 	bytesRead, err := blob.Unmarshal(data)
-		// 	if err != nil {
-		// 		return nil, 0, err
-		// 	}
-		// 	return &blob, bytesRead, nil
-		// case magic.BCRYPT_ECCPRIVATE_MAGIC:
-		// 	blob := keys.BCRYPT_ECC_PRIVATE_KEY{}
-		// 	bytesRead, err := blob.Unmarshal(data)
-		// 	if err != nil {
-		// 		return nil, 0, err
-		// 	}
-		// 	return &blob, bytesRead, nil
+
+	case magic.BCRYPT_ECDH_PUBLIC_P256_MAGIC, magic.BCRYPT_ECDH_PUBLIC_P384_MAGIC, magic.BCRYPT_ECDH_PUBLIC_P521_MAGIC,
+		magic.BCRYPT_ECDSA_PUBLIC_P256_MAGIC, magic.BCRYPT_ECDSA_PUBLIC_P384_MAGIC, magic.BCRYPT_ECDSA_PUBLIC_P521_MAGIC:
+		blob := keys.BCRYPT_ECC_PUBLIC_KEY{}
+		bytesRead, err := blob.Unmarshal(data)
+		if err != nil {
+			return nil, 0, err
+		}
+		return &blob, bytesRead, nil
+
+	case magic.BCRYPT_ECDH_PRIVATE_P256_MAGIC, magic.BCRYPT_ECDH_PRIVATE_P384_MAGIC, magic.BCRYPT_ECDH_PRIVATE_P521_MAGIC,
+		magic.BCRYPT_ECDSA_PRIVATE_P256_MAGIC, magic.BCRYPT_ECDSA_PRIVATE_P384_MAGIC, magic.BCRYPT_ECDSA_PRIVATE_P521_MAGIC:
+		blob := keys.BCRYPT_ECC_PRIVATE_KEY{}
+		bytesRead, err := blob.Unmarshal(data)
+		if err != nil {
+			return nil, 0, err
+		}
+		return &blob, bytesRead, nil
+
+	case magic.BCRYPT_DSA_PUBLIC_MAGIC:
+		blob := keys.BCRYPT_DSA_PUBLIC_KEY{}
+		bytesRead, err := blob.Unmarshal(data)
+		if err != nil {
+			return nil, 0, err
+		}
+		return &blob, bytesRead, nil
+
+	case magic.BCRYPT_DSA_PRIVATE_MAGIC:
+		blob := keys.BCRYPT_DSA_PRIVATE_KEY{}
+		bytesRead, err := blob.Unmarshal(data)
+		if err != nil {
+			return nil, 0, err
+		}
+		return &blob, bytesRead, nil
 	}
 
 	return nil, 0, fmt.Errorf("invalid key material magic: 0x%08x", blobMagic.Magic)
