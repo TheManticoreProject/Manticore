@@ -108,7 +108,7 @@ type OpenOptions struct {
 	ShareAccess       uint32 // fileflags FILE_SHARE_*
 	CreateDisposition uint32 // fileflags FILE_OPEN / FILE_CREATE / ...
 	CreateOptions     uint32 // fileflags FILE_DIRECTORY_FILE / FILE_NON_DIRECTORY_FILE / ...
-	FileAttributes    uint32 // fileflags FILE_ATTRIBUTE_*
+	FileAttributes    uint32 // fileflags FILE_ATTRIBUTE_* for a created or overwritten file; 0 = FILE_ATTRIBUTE_NORMAL
 }
 
 // FileInfo is a version-agnostic directory entry, normalized from the SMB1

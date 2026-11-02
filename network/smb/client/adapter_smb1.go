@@ -62,7 +62,7 @@ func (b *smb1Backend) TreeConnect(share string) error {
 }
 
 func (b *smb1Backend) OpenFile(path string, opts OpenOptions) (FileHandle, error) {
-	fid, err := b.engine.OpenFile(path, opts.DesiredAccess, opts.ShareAccess, opts.CreateDisposition, opts.CreateOptions)
+	fid, err := b.engine.OpenFileWithAttributes(path, opts.DesiredAccess, opts.ShareAccess, opts.CreateDisposition, opts.CreateOptions, opts.FileAttributes)
 	if err != nil {
 		return FileHandle{}, err
 	}
