@@ -2,9 +2,12 @@ package ntlmv1
 
 import (
 	"crypto/des"
+	"crypto/hmac"
+	"crypto/md5"
 	"fmt"
 
 	"github.com/TheManticoreProject/Manticore/crypto/lm"
+	"github.com/TheManticoreProject/Manticore/crypto/md4"
 	"github.com/TheManticoreProject/Manticore/crypto/nt"
 )
 
@@ -205,54 +208,7 @@ func (h *NTLMv1Ctx) ComputeResponse() (*NTLMv1Response, error) {
 //   - []byte: The 24-byte NT response
 //   - error: If key adjustment or encryption fails
 func (n *NTLMv1Ctx) ComputeNtChallengeResponse() ([24]byte, error) {
-	// Split the NT hash into three 7-byte keys
-	key1 := n.NTHash[:7]
-	key2 := n.NTHash[7:14]
-	key3 := n.NTHash[14:16]
-	// Pad the third key to 7 bytes with zeros
-	key3 = append(key3, make([]byte, 5)...)
-
-	// Adjust keys for DES parity
-	key1, err := ParityAdjust(key1)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key1 parity: %v", err)
-	}
-	key2, err = ParityAdjust(key2)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key2 parity: %v", err)
-	}
-	key3, err = ParityAdjust(key3)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key3 parity: %v", err)
-	}
-
-	// Create DES ciphers with each key
-	cipher1, err := des.NewCipher(key1)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key1: %v", err)
-	}
-	cipher2, err := des.NewCipher(key2)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key2: %v", err)
-	}
-	cipher3, err := des.NewCipher(key3)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key3: %v", err)
-	}
-
-	// Encrypt the challenge with each cipher
-	result1 := make([]byte, 8)
-	result2 := make([]byte, 8)
-	result3 := make([]byte, 8)
-	cipher1.Encrypt(result1, n.ServerChallenge[:])
-	cipher2.Encrypt(result2, n.ServerChallenge[:])
-	cipher3.Encrypt(result3, n.ServerChallenge[:])
-
-	// Concatenate the results
-	ntResponse := append(result1, result2...)
-	ntResponse = append(ntResponse, result3...)
-
-	return [24]byte(ntResponse), nil
+	return desl(n.NTHash, n.ServerChallenge[:])
 }
 
 // LmChallengeResponse calculates the LM response for NTLMv1 authentication.
@@ -277,54 +233,86 @@ func (n *NTLMv1Ctx) ComputeLmChallengeResponse() ([24]byte, error) {
 	// mirrors ComputeNtChallengeResponse, which keys off n.NTHash; recomputing
 	// from n.Password here would discard a supplied hash, since the hash-based
 	// constructors leave Password empty.
-	lmHash := n.LMHash
+	return desl(n.LMHash, n.ServerChallenge[:])
+}
 
-	// Split the LM hash into three 7-byte keys
-	key1 := lmHash[:7]
-	key2 := lmHash[7:14]
-	key3 := lmHash[14:16]
-	// Pad the third key to 7 bytes with zeros
-	key3 = append(key3, make([]byte, 5)...)
+// desl is the DESL function of [MS-NLMP] 6: the 16-byte key is split into three
+// 7-byte DES keys (the last zero-padded), each parity-adjusted, and the 8-byte
+// data is encrypted under each in turn; the three ciphertexts are concatenated.
+func desl(key [16]byte, data []byte) ([24]byte, error) {
+	var out [24]byte
+	parts := [3][]byte{key[:7], key[7:14], append(append([]byte(nil), key[14:16]...), make([]byte, 5)...)}
+	for i, part := range parts {
+		desKey, err := ParityAdjust(part)
+		if err != nil {
+			return [24]byte{}, fmt.Errorf("failed to adjust key%d parity: %v", i+1, err)
+		}
+		c, err := des.NewCipher(desKey)
+		if err != nil {
+			return [24]byte{}, fmt.Errorf("failed to create DES cipher with key%d: %v", i+1, err)
+		}
+		c.Encrypt(out[8*i:8*i+8], data)
+	}
+	return out, nil
+}
 
-	// Adjust keys for DES parity
-	key1, err := ParityAdjust(key1)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key1 parity: %v", err)
+// ComputeResponseESS computes the NTLMv1 response with extended session security
+// ([MS-NLMP] 3.3.1, NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY with NTLMv1), also
+// called the NTLM2 session response:
+//
+//	NtChallengeResponse = DESL(NTOWFv1, MD5(ServerChallenge || ClientChallenge)[0:8])
+//	LmChallengeResponse = ClientChallenge || Z(16)
+//
+// The LM hash is not used. hashcat cracks the result as mode 5500, recognizing
+// the extended session security form from the zero-padded LM response.
+//
+// Parameters:
+//   - clientChallenge: the client's 8-byte random challenge
+//
+// Returns:
+//   - *NTLMv1Response: the responses, with the server challenge
+//   - error: if no NT hash or password is set
+func (h *NTLMv1Ctx) ComputeResponseESS(clientChallenge [8]byte) (*NTLMv1Response, error) {
+	if h.NTHash == [16]byte{} && len(h.Password) == 0 {
+		return nil, fmt.Errorf("NTHash and Password are not set")
 	}
-	key2, err = ParityAdjust(key2)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key2 parity: %v", err)
-	}
-	key3, err = ParityAdjust(key3)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to adjust key3 parity: %v", err)
-	}
-
-	// Create DES ciphers with each key
-	cipher1, err := des.NewCipher(key1)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key1: %v", err)
-	}
-	cipher2, err := des.NewCipher(key2)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key2: %v", err)
-	}
-	cipher3, err := des.NewCipher(key3)
-	if err != nil {
-		return [24]byte{}, fmt.Errorf("failed to create DES cipher with key3: %v", err)
+	if h.NTHash == [16]byte{} {
+		h.NTHash = nt.NTHash(h.Password)
 	}
 
-	// Encrypt the challenge with each cipher
-	result1 := make([]byte, 8)
-	result2 := make([]byte, 8)
-	result3 := make([]byte, 8)
-	cipher1.Encrypt(result1, n.ServerChallenge[:])
-	cipher2.Encrypt(result2, n.ServerChallenge[:])
-	cipher3.Encrypt(result3, n.ServerChallenge[:])
+	sum := md5.Sum(append(append([]byte(nil), h.ServerChallenge[:]...), clientChallenge[:]...))
+	ntResponse, err := desl(h.NTHash, sum[:8])
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute NT response: %v", err)
+	}
+	var lmResponse [24]byte
+	copy(lmResponse[:8], clientChallenge[:])
 
-	// Concatenate the results
-	lmResponse := append(result1, result2...)
-	lmResponse = append(lmResponse, result3...)
+	return NewNTLMv1Response(h.Username, h.Domain, h.ServerChallenge, lmResponse, ntResponse), nil
+}
 
-	return [24]byte(lmResponse), nil
+// SessionBaseKey returns the NTLMv1 SessionBaseKey, MD4(NTOWFv1) ([MS-NLMP]
+// 3.3.1). When the NT hash is unset it is derived from the password, as
+// ComputeResponse does.
+func (h *NTLMv1Ctx) SessionBaseKey() [16]byte {
+	if h.NTHash == [16]byte{} && len(h.Password) != 0 {
+		h.NTHash = nt.NTHash(h.Password)
+	}
+	m := md4.New()
+	m.Write(h.NTHash[:])
+	return m.Sum()
+}
+
+// KeyExchangeKeyESS returns the KeyExchangeKey of an NTLMv1 exchange with
+// extended session security ([MS-NLMP] 3.4.5.1):
+// HMAC_MD5(SessionBaseKey, ServerChallenge || LmChallengeResponse[0:8]), where
+// the first 8 bytes of the LM response are the client challenge.
+func (h *NTLMv1Ctx) KeyExchangeKeyESS(clientChallenge [8]byte) [16]byte {
+	sbk := h.SessionBaseKey()
+	mac := hmac.New(md5.New, sbk[:])
+	mac.Write(h.ServerChallenge[:])
+	mac.Write(clientChallenge[:])
+	var key [16]byte
+	copy(key[:], mac.Sum(nil))
+	return key
 }
