@@ -95,6 +95,9 @@ func (c *Client) sendReceive(msg *message.Message, label string) (*message.Messa
 	// until the final response arrives.
 	var raw []byte
 	response := message.NewMessage()
+	// An interim response records its AsyncId for Cancel; whatever ends the
+	// wait, success or error, the record must not outlive it.
+	defer c.clearPendingAsync()
 	for {
 		raw, err = c.Transport.Receive()
 		if err != nil {
