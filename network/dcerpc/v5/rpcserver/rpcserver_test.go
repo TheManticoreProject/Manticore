@@ -561,16 +561,14 @@ func TestUnexpectedPacketTypeIsFaulted(t *testing.T) {
 	endpoint := New(&stubService{})
 	association := endpoint.Open()
 
-	// An auth3 PDU, which only an authenticated association uses and which this
-	// endpoint never negotiates.
-	auth3 := &pdu.Auth3{
-		Header:     pdu.NewHeader(pdu.PacketTypeAuth3, pdu.PFCFirstFrag|pdu.PFCLastFrag, 11),
-		SecTrailer: pdu.SecTrailer{AuthType: 10, AuthLevel: 6},
-		AuthValue:  []byte("a token"),
+	// A response PDU, which only a server sends.
+	response := &pdu.Response{
+		Header: pdu.NewHeader(pdu.PacketTypeResponse, pdu.PFCFirstFrag|pdu.PFCLastFrag, 11),
+		Stub:   []byte("a stub"),
 	}
-	encoded, err := auth3.Marshal()
+	encoded, err := response.Marshal()
 	if err != nil {
-		t.Fatalf("failed to marshal the auth3: %v", err)
+		t.Fatalf("failed to marshal the response: %v", err)
 	}
 
 	reply, err := association.Handle(encoded)
@@ -580,7 +578,7 @@ func TestUnexpectedPacketTypeIsFaulted(t *testing.T) {
 
 	fault := &pdu.Fault{}
 	if _, err := fault.Unmarshal(reply); err != nil {
-		t.Fatalf("an auth3 was not answered with a fault: %v", err)
+		t.Fatalf("a response PDU was not answered with a fault: %v", err)
 	}
 	if fault.Header.CallID != 11 {
 		t.Errorf("the fault carries call id %d, want the request's 11", fault.Header.CallID)

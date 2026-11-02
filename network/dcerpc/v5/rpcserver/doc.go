@@ -30,17 +30,22 @@
 // does it, and the structures in windows/protocols/... describe the parameters —
 // so a Service is the interface's methods and nothing else.
 //
-// # What this does not do
+// # Authentication
 //
-// RPC-level authentication is refused rather than half-implemented. A bind
-// carrying an authentication verifier is answered with a bind_nak (an
-// alter_context, which has no nak PDU, with a fault), because
-// completing one means an NTLM or Kerberos exchange over auth3 PDUs and a
-// per-context security context to verify and seal every later request against.
-// Over an SMB named pipe the pipe is already authenticated by the SMB session, so
-// the common case needs none; a caller that needs RPC-level auth is better served
-// by that being absent than by a bind that succeeds and then cannot verify
-// anything.
+// An endpoint refuses authenticated binds unless EnableNTLM configured it. With
+// NTLM enabled it accepts RPC_C_AUTHN_WINNT (auth_type 10) at the connect,
+// packet, integrity and privacy levels: the bind_ack carries the CHALLENGE, the
+// client's AUTH3 carries the AUTHENTICATE, which is verified against
+// NTLMAuth.CredentialLookup, and at the packet levels every request fragment is
+// verified (and at privacy decrypted) and every response fragment signed (and
+// sealed). A request on an association whose AUTH3 failed, or one without a
+// valid verifier at a packet level, is faulted with nca_s_fault_access_denied.
+// The call level (3) is refused, as is privacy without 128-bit keys. An
+// association that negotiated security cannot be rebound without it. SPNEGO
+// (auth_type 9) and Kerberos binds are still refused with a bind_nak, and an
+// alter_context carrying a verifier is faulted: it does not renegotiate
+// security. An authenticated association's PDUs are processed one at a time,
+// since its security context advances with every PDU in wire order.
 //
 // A request arriving in fragments is reassembled before the Service sees it, up
 // to MaxRequestStub bytes. The association does not multiplex calls, so one

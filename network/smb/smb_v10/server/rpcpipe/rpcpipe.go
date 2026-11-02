@@ -59,6 +59,12 @@ type Options struct {
 	// presentation context it negotiated, so a caller can serve its own interface
 	// over IPC$ without writing a PipeHandler.
 	Services map[string][]rpcserver.Service
+
+	// NTLM, when set, makes every pipe accept NTLM-authenticated binds at the
+	// connect, packet, integrity and privacy levels. Nil refuses authenticated
+	// binds, which a client over SMB rarely needs: the pipe is already reached
+	// through an authenticated SMB session.
+	NTLM *rpcserver.NTLMAuth
 }
 
 // defaultVersionMajor and defaultVersionMinor are the version reported when the
@@ -134,7 +140,11 @@ func New(options Options) *Handler {
 
 	endpoints := make(map[string]*rpcserver.Dispatcher, len(served))
 	for endpoint, services := range served {
-		endpoints[endpoint] = rpcserver.New(services...)
+		dispatcher := rpcserver.New(services...)
+		if options.NTLM != nil {
+			dispatcher.EnableNTLM(*options.NTLM)
+		}
+		endpoints[endpoint] = dispatcher
 	}
 	return &Handler{endpoints: endpoints}
 }

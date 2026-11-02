@@ -184,3 +184,44 @@ func TestNewContextRejectsNTLMv1(t *testing.T) {
 		t.Fatal("expected error for non-extended-session-security flags, got nil")
 	}
 }
+
+// TestAcceptorContextMirrorsTheClient checks that NewAcceptorContext verifies and
+// unseals what a client context signs and seals, and that the client verifies
+// and unseals what the acceptor sends back.
+func TestAcceptorContextMirrorsTheClient(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	negFlg := flags.NegotiateFlags(flags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | flags.NTLMSSP_NEGOTIATE_KEY_EXCH | flags.NTLMSSP_NEGOTIATE_128 | flags.NTLMSSP_NEGOTIATE_SEAL | flags.NTLMSSP_NEGOTIATE_SIGN)
+	clientCtx, err := NewContext(key, negFlg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCtx, err := NewAcceptorContext(key, negFlg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		message := []byte("client to server")
+		if err := serverCtx.VerifySignature(message, clientCtx.Sign(message)); err != nil {
+			t.Fatalf("message %d: the acceptor rejected a client signature: %v", i, err)
+		}
+		plain := []byte("sealed by the client")
+		sealed, sig := clientCtx.SealWith(plain, plain)
+		serverCtx.DecryptInbound(sealed)
+		if string(sealed) != string(plain) {
+			t.Fatalf("message %d: the acceptor decrypted %q", i, sealed)
+		}
+		if err := serverCtx.VerifySignature(sealed, sig); err != nil {
+			t.Fatalf("message %d: the acceptor rejected a sealed message: %v", i, err)
+		}
+
+		reply := []byte("sealed by the server")
+		sealedReply, replySig := serverCtx.SealWith(reply, reply)
+		clientCtx.DecryptInbound(sealedReply)
+		if string(sealedReply) != string(reply) {
+			t.Fatalf("message %d: the client decrypted %q", i, sealedReply)
+		}
+		if err := clientCtx.VerifySignature(sealedReply, replySig); err != nil {
+			t.Fatalf("message %d: the client rejected the acceptor's signature: %v", i, err)
+		}
+	}
+}

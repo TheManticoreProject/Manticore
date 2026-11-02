@@ -266,6 +266,12 @@ type BindAck struct {
 	AssocGroupID     uint32
 	SecondaryAddress string // port_spec, without the trailing NUL
 	Results          []PresentationResult
+
+	// SecTrailer and AuthValue carry the server's authentication verifier, such
+	// as the NTLM CHALLENGE answering an authenticated bind. When AuthValue is
+	// non-empty, Marshal pads the body to a 4-byte boundary and appends both.
+	SecTrailer SecTrailer
+	AuthValue  []byte
 }
 
 // Marshal serializes the complete bind_ack PDU, including the 4-byte alignment pad
@@ -302,11 +308,13 @@ func (b *BindAck) Marshal() ([]byte, error) {
 		rl = append(rl, r...)
 	}
 	body = append(body, rl...)
+	body = appendAuthVerifier(body, &b.SecTrailer, b.AuthValue)
 
 	if b.Header.RPCVersion == 0 && b.Header.DataRepresentation == ([4]byte{}) {
 		b.Header = NewHeader(PacketTypeBindAck, b.Header.PacketFlags, b.Header.CallID)
 	}
 	b.Header.PacketType = PacketTypeBindAck
+	b.Header.AuthLength = uint16(len(b.AuthValue))
 	b.Header.FragLength = uint16(HeaderSize + len(body))
 
 	hdr, err := b.Header.Marshal()
