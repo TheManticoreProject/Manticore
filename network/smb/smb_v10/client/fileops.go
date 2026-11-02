@@ -8,6 +8,16 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
+// SearchAttributes values for the requests that name existing files. A server
+// matches only normal files unless the request's SearchAttributes include the
+// hidden and system bits ([MS-CIFS] 2.2.4.7.1, 2.2.4.8.1, 2.2.4.66.1), so leaving
+// them clear makes hidden and system files unreachable. Renames also include
+// directories, which SMB_COM_DELETE never removes.
+const (
+	searchHiddenSystem          uint16 = 0x0002 | 0x0004
+	searchHiddenSystemDirectory uint16 = searchHiddenSystem | 0x0010
+)
+
 // DeleteFile deletes one or more files matching pattern on the current tree.
 // pattern uses backslash separators relative to the share root (e.g. "\subdir\file.txt").
 // Wildcards are permitted in the filename component.
@@ -21,7 +31,7 @@ func (c *Client) DeleteFile(pattern string) error {
 	msg := c.newFileIOMessage(codes.SMB_COM_DELETE)
 
 	cmd := commands.NewDeleteRequest()
-	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
+	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{Attributes: searchHiddenSystem}
 	if err := cmd.FileName.SetStringWithEncoding(pattern, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set file name: %v", err)
 	}
@@ -52,7 +62,7 @@ func (c *Client) RenameFile(oldPath, newPath string) error {
 	msg := c.newFileIOMessage(codes.SMB_COM_RENAME)
 
 	cmd := commands.NewRenameRequest()
-	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{}
+	cmd.SearchAttributes = types.SMB_FILE_ATTRIBUTES{Attributes: searchHiddenSystemDirectory}
 	if err := cmd.OldFileName.SetStringWithEncoding(oldPath, c.useUnicode()); err != nil {
 		return fmt.Errorf("failed to set old file name: %v", err)
 	}
