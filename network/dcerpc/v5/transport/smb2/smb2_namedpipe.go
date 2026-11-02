@@ -75,10 +75,13 @@ func newWithConn(conn pipeConn, pipeName string) *SMBNamedPipe {
 	}
 }
 
-// SetMaxFrag overrides the fragment sizes proposed at Bind time. Call before Connect.
+// SetMaxFrag overrides the transmit and receive fragment sizes proposed at Bind time.
+// A size of 0 selects the transport's default, and a size below the C706 minimum
+// (transport.MinFragSize, 1432) is raised to it. It must be called before Connect
+// to take effect.
 func (p *SMBNamedPipe) SetMaxFrag(xmit, recv uint16) {
-	p.maxXmit = xmit
-	p.maxRecv = recv
+	p.maxXmit = dcerpctransport.NormalizeFragSize(xmit, DefaultMaxXmitFrag)
+	p.maxRecv = dcerpctransport.NormalizeFragSize(recv, DefaultMaxRecvFrag)
 }
 
 // Connect opens the named pipe on the SMB tree. It is idempotent.

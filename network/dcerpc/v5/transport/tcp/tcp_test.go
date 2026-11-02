@@ -51,9 +51,19 @@ func TestTCPTransport_AddressIPv6(t *testing.T) {
 
 func TestTCPTransport_SetMaxFrag(t *testing.T) {
 	tr := New("127.0.0.1", 135)
-	tr.SetMaxFrag(1024, 2048)
-	if tr.MaxXmitFrag() != 1024 || tr.MaxRecvFrag() != 2048 {
-		t.Errorf("frag sizes = %d/%d, want 1024/2048", tr.MaxXmitFrag(), tr.MaxRecvFrag())
+	tr.SetMaxFrag(1500, 2048)
+	if tr.MaxXmitFrag() != 1500 || tr.MaxRecvFrag() != 2048 {
+		t.Errorf("frag sizes = %d/%d, want 1500/2048", tr.MaxXmitFrag(), tr.MaxRecvFrag())
+	}
+}
+
+// TestTCPTransport_SetMaxFragNormalizes checks a size of 0 selects the default and
+// a size below the C706 minimum is raised to 1432, so the Bind never proposes one.
+func TestTCPTransport_SetMaxFragNormalizes(t *testing.T) {
+	tr := New("127.0.0.1", 135)
+	tr.SetMaxFrag(0, 512)
+	if tr.MaxXmitFrag() != DefaultMaxXmitFrag || tr.MaxRecvFrag() != 1432 {
+		t.Errorf("frag sizes = %d/%d, want %d/1432", tr.MaxXmitFrag(), tr.MaxRecvFrag(), DefaultMaxXmitFrag)
 	}
 }
 

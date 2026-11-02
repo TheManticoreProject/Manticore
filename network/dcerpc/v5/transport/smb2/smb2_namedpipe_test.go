@@ -112,3 +112,17 @@ func TestSendBeforeConnect(t *testing.T) {
 		t.Error("expected error sending before Connect")
 	}
 }
+
+// TestSetMaxFragNormalizes checks a size of 0 selects the default and a size
+// below the C706 minimum is raised to 1432.
+func TestSetMaxFragNormalizes(t *testing.T) {
+	p := newWithConn(&fakePipe{}, "lsarpc")
+	p.SetMaxFrag(0, 1000)
+	if p.MaxXmitFrag() != DefaultMaxXmitFrag || p.MaxRecvFrag() != 1432 {
+		t.Errorf("after SetMaxFrag(0, 1000): xmit=%d recv=%d, want %d/1432", p.MaxXmitFrag(), p.MaxRecvFrag(), DefaultMaxXmitFrag)
+	}
+	p.SetMaxFrag(1432, 0xFFFF)
+	if p.MaxXmitFrag() != 1432 || p.MaxRecvFrag() != 0xFFFF {
+		t.Errorf("after SetMaxFrag(1432, 65535): xmit=%d recv=%d", p.MaxXmitFrag(), p.MaxRecvFrag())
+	}
+}
