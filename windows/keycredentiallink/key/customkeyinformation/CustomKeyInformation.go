@@ -293,7 +293,7 @@ func (cki *CustomKeyInformation) Describe(indent int) {
 	}
 
 	if cki.VolumeType != nil {
-		fmt.Printf("%s │ \x1b[93mVolumeType\x1b[0m: %s (0x%02x)\n", indentPrompt, cki.VolumeType.String(), cki.VolumeType)
+		fmt.Printf("%s │ \x1b[93mVolumeType\x1b[0m: %s (0x%02x)\n", indentPrompt, cki.VolumeType.String(), uint8(*cki.VolumeType))
 	} else {
 		// fmt.Printf("%s │ \x1b[93mVolumeType\x1b[0m: None\n", indentPrompt)
 	}
@@ -305,13 +305,13 @@ func (cki *CustomKeyInformation) Describe(indent int) {
 	}
 
 	if cki.FekKeyVersion != nil {
-		fmt.Printf("%s │ \x1b[93mFekKeyVersion\x1b[0m: %d\n", indentPrompt, cki.FekKeyVersion)
+		fmt.Printf("%s │ \x1b[93mFekKeyVersion\x1b[0m: %d\n", indentPrompt, uint8(*cki.FekKeyVersion))
 	} else {
 		// fmt.Printf("%s │ \x1b[93mFekKeyVersion\x1b[0m: None\n", indentPrompt)
 	}
 
 	if cki.KeyStrength != nil {
-		fmt.Printf("%s │ \x1b[93mStrength\x1b[0m: %s (0x%02x)\n", indentPrompt, cki.KeyStrength.String(), cki.KeyStrength)
+		fmt.Printf("%s │ \x1b[93mStrength\x1b[0m: %s (0x%02x)\n", indentPrompt, cki.KeyStrength.String(), uint32(*cki.KeyStrength))
 	} else {
 		// fmt.Printf("%s │ \x1b[93mStrength\x1b[0m: None\n", indentPrompt)
 	}
