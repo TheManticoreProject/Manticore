@@ -77,9 +77,10 @@ func signCompound(dialect dialects.Dialect, signingAlg int, key, buf []byte) err
 // that carry one (mirroring sendReceive). Server-initiated frames (an interleaved
 // OPLOCK_BREAK) are skipped.
 //
-// Interim STATUS_PENDING responses are not supported on the compound path: a
-// compounded chain is expected to complete synchronously. A pending segment is
-// reported as an error.
+// A segment answered with an interim STATUS_PENDING is completed later by a
+// final response in a frame of its own, and the responses may arrive chained or
+// in separate frames; frames are read until every request has its final
+// response, and the responses are returned in request order.
 func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*message.Message, error) {
 	if !c.Transport.IsConnected() {
 		return nil, fmt.Errorf("%s: transport is not connected", label)
@@ -122,92 +123,114 @@ func (c *Client) sendReceiveCompound(msgs []*message.Message, label string) ([]*
 		return nil, fmt.Errorf("failed to send %s: %w", label, err)
 	}
 
-	// Read the response frame, skipping any leading server-initiated message
-	// (reserved MessageId), which is not a reply to this chain. An encrypted
-	// response is decrypted before probing; the AEAD tag authenticates the
-	// entire frame, so per-segment signature verification is skipped below.
-	var raw []byte
-	wasEncrypted := false
-	for {
-		raw, err = c.Transport.Receive()
+	// Read frames until every request has its final response. A server may
+	// answer a compound in one chained frame or in several ([MS-SMB2]
+	// 3.2.5.1.9), and may answer any request with an interim STATUS_PENDING
+	// and complete it later in a frame of its own ([MS-SMB2] 3.3.4.1.3).
+	// Server-initiated frames (an interleaved OPLOCK_BREAK) are queued and
+	// skipped. An encrypted response is decrypted before probing; the AEAD tag
+	// authenticates the entire frame, so per-segment signature verification is
+	// skipped for it.
+	final := make(map[uint64]*message.Message, len(msgs))
+	// An interim response records its AsyncId for Cancel; whatever ends the
+	// wait, success or error, the record must not outlive it.
+	defer c.clearPendingAsync()
+	requestCommands := make(map[uint64]uint16, len(msgs))
+	for _, m := range msgs {
+		requestCommands[uint64(m.Header.MessageId)] = uint16(m.Header.Command)
+	}
+	for len(final) < len(msgs) {
+		raw, err := c.Transport.Receive()
 		if err != nil {
 			return nil, fmt.Errorf("failed to receive %s response: %w", label, err)
 		}
 
-		frameEncrypted := security.IsTransformHeader(raw)
-		if frameEncrypted {
+		wasEncrypted := security.IsTransformHeader(raw)
+		if wasEncrypted {
 			plaintext, derr := c.decryptMessage(raw)
 			if derr != nil {
 				return nil, fmt.Errorf("%s: %w", label, derr)
 			}
 			raw = plaintext
 		}
-		// Whether the response was encrypted is a property of the frame that
-		// carries it, not of any server-initiated frame read before it.
-		wasEncrypted = frameEncrypted
 
 		probe := header.NewHeader()
 		if _, err := probe.Unmarshal(raw); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %s response header: %w", label, err)
 		}
-		if uint64(probe.MessageId) != unsolicitedMessageId {
-			break
-		}
-		// A break is queued for the next WaitOplockBreak / WaitBreakNotification.
-		if probe.Command == codes.SMB2_OPLOCK_BREAK {
-			c.queueBreak(raw, frameEncrypted)
-		}
-	}
-
-	if encrypt && !wasEncrypted {
-		return nil, fmt.Errorf("%s: session requires encryption but response was not encrypted", label)
-	}
-
-	segments, err := compoundSegments(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", label, err)
-	}
-
-	responses := make([]*message.Message, 0, len(segments))
-	for i, seg := range segments {
-		resp := message.NewMessage()
-		if _, err := resp.Header.Unmarshal(seg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s response segment %d header: %w", label, i, err)
-		}
-		if !resp.Header.HasValidProtocolId() {
-			return nil, fmt.Errorf("%s response segment %d is not an SMB2 message (ProtocolId % x)", label, i, resp.Header.ProtocolId)
-		}
-
-		// Enforce signing per segment, with the same exemptions as the
-		// single-message path (MS-SMB2 3.2.5.1.3). When the frame was
-		// encrypted, the AEAD tag already authenticated it.
-		if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
-			if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
-				return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
+		if uint64(probe.MessageId) == unsolicitedMessageId {
+			// A break is queued for the next WaitOplockBreak / WaitBreakNotification.
+			if probe.Command == codes.SMB2_OPLOCK_BREAK {
+				c.queueBreak(raw, wasEncrypted)
 			}
+			continue
 		}
-		if resp.Header.Credit > 0 {
-			c.grantCredits(resp.Header.Credit)
-		}
-
-		if uint64(resp.Header.MessageId) != unsolicitedMessageId && !requestIds[uint64(resp.Header.MessageId)] {
-			return nil, fmt.Errorf("%s response segment %d MessageId %d does not match any request", label, i, uint64(resp.Header.MessageId))
-		}
-		if resp.Header.Status == ntStatusPending {
-			return nil, fmt.Errorf("%s response segment %d returned STATUS_PENDING; the compound path does not support async completion", label, i)
+		if encrypt && !wasEncrypted {
+			return nil, fmt.Errorf("%s: session requires encryption but response was not encrypted", label)
 		}
 
-		// Decode the command body only for statuses that carry one (mirrors
-		// sendReceive); an error segment carries the fixed SMB2 ERROR body.
-		status := resp.Header.Status
-		if status == 0x00000000 || status == ntStatusMoreProcessingRequired || status == ntStatusBufferOverflow {
-			if _, err := resp.Unmarshal(seg); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal %s response segment %d: %w", label, i, err)
+		segments, err := compoundSegments(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+
+		for i, seg := range segments {
+			resp := message.NewMessage()
+			if _, err := resp.Header.Unmarshal(seg); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal %s response segment %d header: %w", label, i, err)
 			}
-		}
-		responses = append(responses, resp)
-	}
+			if !resp.Header.HasValidProtocolId() {
+				return nil, fmt.Errorf("%s response segment %d is not an SMB2 message (ProtocolId % x)", label, i, resp.Header.ProtocolId)
+			}
 
+			// Enforce signing per segment, with the same exemptions as the
+			// single-message path (MS-SMB2 3.2.5.1.3). When the frame was
+			// encrypted, the AEAD tag already authenticated it.
+			if !wasEncrypted && c.Session != nil && c.Session.SigningActive && signatureRequired(resp) {
+				if !security.Verify(c.Connection.Dialect, c.Connection.SigningAlgorithmId, c.Session.SigningKey, seg) {
+					return nil, fmt.Errorf("%s response segment %d failed SMB2 signature verification", label, i)
+				}
+			}
+			if resp.Header.Credit > 0 {
+				c.grantCredits(resp.Header.Credit)
+			}
+
+			id := uint64(resp.Header.MessageId)
+			if id == unsolicitedMessageId {
+				continue
+			}
+			if !requestIds[id] {
+				return nil, fmt.Errorf("%s response segment %d MessageId %d does not match any request", label, i, id)
+			}
+			if final[id] != nil {
+				return nil, fmt.Errorf("%s response segment %d answers MessageId %d a second time", label, i, id)
+			}
+			if uint16(resp.Header.Command) != requestCommands[id] {
+				return nil, fmt.Errorf("%s response segment %d command 0x%04x does not match request command 0x%04x", label, i, uint16(resp.Header.Command), requestCommands[id])
+			}
+			if resp.Header.Status == ntStatusPending {
+				// An interim response: the final one follows in a later frame.
+				// Record it so a concurrent Cancel can target it.
+				c.setPendingAsync(resp.Header.MessageId, uint64(resp.Header.GetAsyncId()))
+				continue
+			}
+
+			// Decode the command body only for statuses that carry one (mirrors
+			// sendReceive); an error segment carries the fixed SMB2 ERROR body.
+			status := resp.Header.Status
+			if status == 0x00000000 || status == ntStatusMoreProcessingRequired || status == ntStatusBufferOverflow {
+				if _, err := resp.Unmarshal(seg); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal %s response segment %d: %w", label, i, err)
+				}
+			}
+			final[id] = resp
+		}
+	}
+	// Return the responses in request order.
+	responses := make([]*message.Message, 0, len(msgs))
+	for _, m := range msgs {
+		responses = append(responses, final[uint64(m.Header.MessageId)])
+	}
 	return responses, nil
 }
 
