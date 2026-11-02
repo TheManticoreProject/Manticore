@@ -54,7 +54,7 @@ func TestMarshalHeaderAndBOM(t *testing.T) {
 	if len(out) < 2 || out[0] != 0xFF || out[1] != 0xFE {
 		t.Fatalf("Marshal output missing UTF-16LE BOM: % x", out[:min(2, len(out))])
 	}
-	text := decodeToUTF8(out)
+	text := decodeText(out, nil)
 	if !strings.HasPrefix(text, Header+"\r\n\r\n") {
 		t.Errorf("Marshal output does not start with header + blank line; got %q", text[:min(60, len(text))])
 	}
