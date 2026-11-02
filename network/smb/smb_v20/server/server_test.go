@@ -1055,7 +1055,7 @@ func TestServerReadOnlyFileCannotBeDeleted(t *testing.T) {
 		if err := os.WriteFile(host, []byte("precious"), 0o444); err != nil {
 			t.Fatal(err)
 		}
-		fs, err := smb1.NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1369,7 +1369,7 @@ func TestServerReadOnlyFileRefusesWriteOpen(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("precious"), 0o444); err != nil {
 			t.Fatal(err)
 		}
-		fs, err := smb1.NewLocalFileSystem(root, "LOCAL")
+		fs, err := newLocalFS(t, root, "LOCAL")
 		if err != nil {
 			t.Fatal(err)
 		}

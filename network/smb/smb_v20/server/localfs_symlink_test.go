@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
-	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/server"
 	"github.com/TheManticoreProject/Manticore/windows/fileflags"
@@ -28,7 +27,7 @@ func TestServerLocalFileSystemDanglingSymlink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "planted.txt"), filepath.Join(share, "link")); err != nil {
 		t.Skipf("symbolic links are unavailable here: %v", err)
 	}
-	fs, err := smb1.NewLocalFileSystem(share, "FILES")
+	fs, err := newLocalFS(t, share, "FILES")
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem() error = %v", err)
 	}
