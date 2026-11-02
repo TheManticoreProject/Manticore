@@ -239,6 +239,11 @@ type ForgeExtras struct {
 	// UPNDNS, when set, adds a UPN_DNS_INFO buffer with the SAM name and SID
 	// extension.
 	UPNDNS *UPNDNSInfo
+	// ExtendedKDCSignature, when set, adds an empty extended KDC signature
+	// buffer (0x13), which a DC with KrbtgtFullPacSignature enforcement requires.
+	// The caller fills it with PAC.SignExtendedKDCSignature (KDC/krbtgt key)
+	// before PAC.Sign, so the server signature then covers it.
+	ExtendedKDCSignature bool
 }
 
 // Forge assembles an unsigned PAC from an NDR-encoded logon info and the client
@@ -296,6 +301,9 @@ func ForgeWithExtras(info *KERB_VALIDATION_INFO, clientName string, clientAuthTi
 		Buffer{Type: BufferServerChecksum, Data: newSignatureBuffer(sigType, sigSize)},
 		Buffer{Type: BufferKDCChecksum, Data: newSignatureBuffer(sigType, sigSize)},
 	)
+	if extras.ExtendedKDCSignature {
+		buffers = append(buffers, Buffer{Type: BufferExtendedKDCChecksum, Data: newSignatureBuffer(sigType, sigSize)})
+	}
 	return &PAC{Buffers: buffers}, nil
 }
 

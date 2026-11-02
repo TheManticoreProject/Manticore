@@ -169,13 +169,13 @@ var signatureBufferTypes = map[uint32]bool{
 	BufferKDCChecksum:    true,
 }
 
-// zeroedForServerSig returns a copy of the marshaled PAC with the Signature
-// fields (the bytes after the 4-byte SignatureType) of every signature buffer
-// set to zero, as required before computing the server signature.
-func zeroedForServerSig(marshaled []byte, buffers []Buffer, offsets []int) ([]byte, error) {
+// zeroedForSig returns a copy of the marshaled PAC with the Signature fields
+// (the bytes after the 4-byte SignatureType) of every buffer whose type is in
+// zero set to zero.
+func zeroedForSig(marshaled []byte, buffers []Buffer, offsets []int, zero map[uint32]bool) ([]byte, error) {
 	out := append([]byte(nil), marshaled...)
 	for i, b := range buffers {
-		if !signatureBufferTypes[b.Type] {
+		if !zero[b.Type] {
 			continue
 		}
 		if len(b.Data) < 4 {
@@ -195,6 +195,21 @@ func zeroedForServerSig(marshaled []byte, buffers []Buffer, offsets []int) ([]by
 		}
 	}
 	return out, nil
+}
+
+// zeroedForServerSig zeroes only the server and KDC signatures, as required
+// before the server signature is computed.
+func zeroedForServerSig(marshaled []byte, buffers []Buffer, offsets []int) ([]byte, error) {
+	return zeroedForSig(marshaled, buffers, offsets, signatureBufferTypes)
+}
+
+// extendedSigZeroSet is the set of signature buffers zeroed before the extended
+// KDC signature is computed: the server, KDC, and extended KDC signatures, as
+// the extended KDC signature covers the whole PAC with all three zeroed.
+var extendedSigZeroSet = map[uint32]bool{
+	BufferServerChecksum:      true,
+	BufferKDCChecksum:         true,
+	BufferExtendedKDCChecksum: true,
 }
 
 // layout re-marshals and returns the bytes plus each buffer's offset.
@@ -230,7 +245,10 @@ func (p *PAC) Sign(serverKey, kdcKey []byte) ([]byte, error) {
 		return nil, fmt.Errorf("pac: Sign requires both server (0x06) and KDC (0x07) checksum buffers")
 	}
 
-	// Server signature: over the whole PAC with signature fields zeroed.
+	// Server signature: over the whole PAC with signature fields zeroed. Any
+	// ticket (0x10) or extended KDC (0x13) signature is left as it is and
+	// covered by the server signature; a caller fills the extended KDC signature
+	// with SignExtendedKDCSignature before Sign.
 	marshaled, offsets := p.layout()
 	zeroed, err := zeroedForServerSig(marshaled, p.Buffers, offsets)
 	if err != nil {
@@ -325,12 +343,81 @@ func (p *PAC) VerifyKDCSignature(krbtgtKey []byte) error {
 	return nil
 }
 
+// SignExtendedKDCSignature fills the extended KDC signature buffer (0x13) with a
+// keyed hash of the whole PAC, computed with the KDC (krbtgt) key over the PAC
+// with the server, KDC and extended KDC signature fields zeroed ([MS-PAC]
+// 2.8.3). It MUST be called before Sign, so the server signature then covers
+// the filled buffer. A DC with KrbtgtFullPacSignature enforcement requires it.
+func (p *PAC) SignExtendedKDCSignature(kdcKey []byte) error {
+	extIdx := -1
+	for i, b := range p.Buffers {
+		if b.Type == BufferExtendedKDCChecksum {
+			extIdx = i
+		}
+	}
+	if extIdx < 0 {
+		return fmt.Errorf("pac: no extended KDC signature buffer to sign")
+	}
+	marshaled, offsets := p.layout()
+	zeroed, err := zeroedForSig(marshaled, p.Buffers, offsets, extendedSigZeroSet)
+	if err != nil {
+		return err
+	}
+	extType := binary.LittleEndian.Uint32(p.Buffers[extIdx].Data[0:])
+	sig, err := kerbcrypto.GetChecksum(cksumType(extType), kdcKey, iana.KeyUsageKerbNonKerbCksumSalt, zeroed)
+	if err != nil {
+		return fmt.Errorf("pac: extended KDC signature: %w", err)
+	}
+	copy(p.Buffers[extIdx].Data[4:], sig)
+	return nil
+}
+
+// VerifyExtendedKDCSignature recomputes the extended KDC signature (0x13) with
+// krbtgtKey and compares it, in constant time, to the stored value. It errors
+// if the PAC carries no extended KDC signature buffer.
+func (p *PAC) VerifyExtendedKDCSignature(krbtgtKey []byte) error {
+	if p.raw == nil {
+		return fmt.Errorf("pac: VerifyExtendedKDCSignature requires a parsed PAC")
+	}
+	var ext *Buffer
+	for i := range p.Buffers {
+		if p.Buffers[i].Type == BufferExtendedKDCChecksum {
+			ext = &p.Buffers[i]
+		}
+	}
+	if ext == nil {
+		return fmt.Errorf("pac: no extended KDC signature buffer")
+	}
+	zeroed, err := p.rawZeroedForSig(extendedSigZeroSet)
+	if err != nil {
+		return err
+	}
+	extType := binary.LittleEndian.Uint32(ext.Data[0:])
+	sz, ok := checksumSize(extType)
+	if !ok {
+		return fmt.Errorf("pac: unsupported signature type 0x%x", extType)
+	}
+	if len(ext.Data) < 4+sz {
+		return fmt.Errorf("pac: extended KDC signature buffer too short")
+	}
+	if !kerbcrypto.VerifyChecksum(cksumType(extType), krbtgtKey, iana.KeyUsageKerbNonKerbCksumSalt, zeroed, ext.Data[4:4+sz]) {
+		return fmt.Errorf("pac: extended KDC signature verification failed")
+	}
+	return nil
+}
+
 // rawZeroedForServerSig zeroes the signature fields within the originally parsed
 // bytes, locating each signature buffer by its recorded Offset.
 func (p *PAC) rawZeroedForServerSig() ([]byte, error) {
+	return p.rawZeroedForSig(signatureBufferTypes)
+}
+
+// rawZeroedForSig zeroes the signature fields of the buffer types in zero,
+// within the originally parsed bytes.
+func (p *PAC) rawZeroedForSig(zero map[uint32]bool) ([]byte, error) {
 	out := append([]byte(nil), p.raw...)
 	for _, b := range p.Buffers {
-		if !signatureBufferTypes[b.Type] {
+		if !zero[b.Type] {
 			continue
 		}
 		if len(b.Data) < 4 {

