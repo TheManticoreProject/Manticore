@@ -1,7 +1,6 @@
 package strength
 
 import (
-	"encoding/binary"
 	"fmt"
 )
 
@@ -20,37 +19,32 @@ const (
 	KeyStrength_Normal KeyStrength = 0x02
 )
 
-// Unmarshal parses the provided byte slice into the KeyStrength structure.
-//
-// Parameters:
-// - value: A byte slice containing the raw key strength to be parsed.
+// Unmarshal parses the 1-byte KeyStrength field of a CUSTOM_KEY_INFORMATION
+// structure ([MS-ADTS] 2.2.20.2.1).
 //
 // Returns:
 // - The number of bytes read from the data.
-// - An error if the parsing fails, otherwise nil.
-//
-// Note:
-// The function expects the byte slice to contain a 4-byte unsigned integer representing the key strength.
-// It extracts the key strength value from the byte slice and assigns it to the KeyStrength structure.
+// - An error if the data is empty.
 func (ks *KeyStrength) Unmarshal(data []byte) (int, error) {
-	if len(data) < 4 {
+	if len(data) < 1 {
 		return 0, fmt.Errorf("invalid data length: %d", len(data))
 	}
 
-	*ks = KeyStrength(binary.LittleEndian.Uint32(data[:4]))
+	*ks = KeyStrength(data[0])
 
-	return 4, nil
+	return 1, nil
 }
 
-// Marshal returns the raw bytes of the KeyStrength structure.
+// Marshal returns the 1-byte wire form of the KeyStrength field.
 //
 // Returns:
 // - A byte slice representing the raw bytes of the KeyStrength structure.
-// - An error if the conversion fails.
+// - An error if the value does not fit in one byte.
 func (ks *KeyStrength) Marshal() ([]byte, error) {
-	marshalledData := make([]byte, 4)
-	binary.LittleEndian.PutUint32(marshalledData, uint32(*ks))
-	return marshalledData, nil
+	if *ks > 0xFF {
+		return nil, fmt.Errorf("KeyStrength 0x%x does not fit the 1-byte field", uint32(*ks))
+	}
+	return []byte{byte(*ks)}, nil
 }
 
 func (ks KeyStrength) String() string {

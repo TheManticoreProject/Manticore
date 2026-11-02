@@ -133,8 +133,8 @@ func (cki *CustomKeyInformation) Unmarshal(data []byte, kcv version.KeyCredentia
 		return bytesRead, nil
 	}
 
-	// An 32-bit unsigned integer that specifies the strength of the NGC key.
-	if len(data[bytesRead:]) >= 4 {
+	// An 8-bit unsigned integer that specifies the strength of the NGC key.
+	if len(data[bytesRead:]) >= 1 {
 		cki.KeyStrength = new(strength.KeyStrength)
 		bytesReadKeyStrength, err := cki.KeyStrength.Unmarshal(data[bytesRead:])
 		if err != nil {
@@ -145,8 +145,10 @@ func (cki *CustomKeyInformation) Unmarshal(data []byte, kcv version.KeyCredentia
 		return bytesRead, nil
 	}
 
-	// Reserved (10 bytes) precedes the extended custom key information.
-	if len(data[bytesRead:]) >= 10 {
+	// Reserved (10 bytes) precedes the extended custom key information. A
+	// structure that ends inside it keeps the bytes it has, as Windows writes
+	// them, so the entry marshals back unchanged.
+	if len(data[bytesRead:]) >= 1 {
 		cki.Reserved = new(Reserved)
 		bytesReadReserved, err := cki.Reserved.Unmarshal(data[bytesRead:])
 		if err != nil {
@@ -251,8 +253,13 @@ func (cki *CustomKeyInformation) Marshal() ([]byte, error) {
 		return data, nil
 	}
 
-	// EncodedExtendedCKI: Extended custom key information.
+	// EncodedExtendedCKI: Extended custom key information. It follows a full
+	// 10-byte Reserved field; after a shorter one, a reader would take its
+	// bytes as the rest of Reserved.
 	if cki.EncodedExtendedCKI != nil {
+		if len(*cki.Reserved) != reservedMaxSize {
+			return nil, fmt.Errorf("EncodedExtendedCKI requires a %d-byte Reserved field, got %d bytes", reservedMaxSize, len(*cki.Reserved))
+		}
 		encodedExtendedCKIBytes, err := cki.EncodedExtendedCKI.Marshal()
 		if err != nil {
 			return nil, err
@@ -310,7 +317,7 @@ func (cki *CustomKeyInformation) Describe(indent int) {
 	}
 
 	if cki.Reserved != nil {
-		fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: %s\n", indentPrompt, hex.EncodeToString(cki.Reserved[:]))
+		fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: %s\n", indentPrompt, hex.EncodeToString(*cki.Reserved))
 	} else {
 		// fmt.Printf("%s │ \x1b[93mReserved\x1b[0m: None\n", indentPrompt)
 	}
