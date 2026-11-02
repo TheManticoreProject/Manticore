@@ -10,18 +10,22 @@ import (
 
 // John the Ripper's krb5asrep/krb5tgs formats differ from hashcat's in a few
 // subtle-but-load-bearing ways (verified against John Jumbo's own tests[]
-// vectors in src/krb5_asrep_fmt_plug.c and src/krb5_tgs_common_plug.c):
+// vectors in src/krb5_asrep_common_plug.c, src/krb5_tgs_common_plug.c for RC4
+// TGS and src/krb5_tgsrep_common_plug.c for AES TGS):
 //
 //   - RC4 (etype 23) AS-REP: John drops the "user@realm:" salt that hashcat mode
 //     18200 carries and stores only "$krb5asrep$23$<checksum>$<edata>" (RC4 has
 //     no salt, so the principal is not needed to crack).
 //   - RC4 (etype 23) TGS: John matches hashcat mode 13100 exactly —
 //     "$krb5tgs$23$*<user>$<realm>$<spn>*$<checksum>$<edata>".
-//   - AES (etype 17/18): both AS-REP and TGS use "$krb5<kind>$<etype>$<salt>$
-//     <edata>$<checksum>", where the checksum (the truncated HMAC) is appended
-//     AFTER the encrypted data (the reverse of RC4, where it comes first) and the
-//     salt is the Kerberos string-to-key salt "<UPPER-REALM><account>" with no
-//     separator (e.g. "EXAMPLE.COMluser").
+//   - AES (etype 17/18) AS-REP: "$krb5asrep$<etype>$<salt>$<edata>$<checksum>",
+//     where the checksum (the truncated HMAC) comes AFTER the encrypted data.
+//   - AES (etype 17/18) TGS: "$krb5tgs$<etype>$<salt>$<checksum>$<edata>", where
+//     the checksum comes BEFORE the encrypted data, the reverse of the AS-REP.
+//
+// In both AES layouts the salt is the Kerberos string-to-key salt, by default
+// "<UPPER-REALM><account>" with no separator (e.g. "EXAMPLE.COMluser"), and John
+// splits the fields on '$'.
 //
 // These functions sit alongside the hashcat formatters (FormatASREPHash /
 // FormatTGSHash) and reuse the same splitCipher helper to separate the checksum
@@ -31,8 +35,8 @@ import (
 // the uppercased realm concatenated with the account name and no separator, as
 // John expects it (e.g. realm "example.com" + user "luser" -> "EXAMPLE.COMluser").
 // This is correct for user service accounts (the common Kerberoasting /
-// AS-REP-roasting target); machine accounts use a host-based salt that the caller
-// must supply explicitly if it differs.
+// AS-REP-roasting target); machine accounts and renamed users use another salt,
+// which the caller passes to the ...WithSalt formatters.
 func aesSalt(account, realm string) string {
 	return strings.ToUpper(realm) + account
 }
@@ -42,8 +46,23 @@ func aesSalt(account, realm string) string {
 //
 // RC4 (etype 23) yields "$krb5asrep$23$<checksum>$<edata>" (no principal, unlike
 // hashcat mode 18200). AES enctypes (17/18) yield
-// "$krb5asrep$<etype>$<UPPER-REALM><username>$<edata>$<checksum>".
+// "$krb5asrep$<etype>$<UPPER-REALM><username>$<edata>$<checksum>", which is only
+// crackable when the account's keys use that default salt: computer accounts and
+// users renamed after their password was set need FormatASREPHashJohnWithSalt.
 func FormatASREPHashJohn(username, realm string, etype int, cipher []byte) (string, error) {
+	return FormatASREPHashJohnWithSalt(username, realm, "", etype, cipher)
+}
+
+// FormatASREPHashJohnWithSalt is FormatASREPHashJohn for an account whose AES keys
+// use the given string-to-key salt, such as the one the KDC reports in the
+// AS-REP's PA-ETYPE-INFO2 (kerberos.ASREPRoastResult.Salt). An empty salt selects
+// the default, the upper-cased realm followed by the user name. RC4 keys are
+// unsalted, so an RC4 hash ignores salt.
+//
+// John splits the hash on '$', so an AES salt containing one cannot be represented
+// and is refused. A computer account's name ends in '$' but its KDC-reported salt
+// ("<REALM>host<name>.<realm>") does not, so it formats once that salt is passed.
+func FormatASREPHashJohnWithSalt(username, realm, salt string, etype int, cipher []byte) (string, error) {
 	cksum, edata, err := splitCipher(etype, cipher)
 	if err != nil {
 		return "", err
@@ -52,8 +71,25 @@ func FormatASREPHashJohn(username, realm string, etype int, cipher []byte) (stri
 		return fmt.Sprintf("$krb5asrep$23$%s$%s",
 			hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
 	}
+	salt, err = johnAESSalt(username, realm, salt)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("$krb5asrep$%d$%s$%s$%s",
-		etype, aesSalt(username, realm), hex.EncodeToString(edata), hex.EncodeToString(cksum)), nil
+		etype, salt, hex.EncodeToString(edata), hex.EncodeToString(cksum)), nil
+}
+
+// johnAESSalt returns salt, or the default salt for account when salt is empty,
+// refusing one that contains John's '$' field separator.
+func johnAESSalt(account, realm, salt string) (string, error) {
+	if salt == "" {
+		salt = aesSalt(account, realm)
+	}
+	if strings.Contains(salt, "$") {
+		return "", fmt.Errorf("attacks: John cannot load an AES hash whose salt %q contains '$'; "+
+			"pass the salt the KDC reports for the account", salt)
+	}
+	return salt, nil
 }
 
 // FormatTGSHashJohn formats a service ticket's encrypted part as a John the
@@ -61,9 +97,19 @@ func FormatASREPHashJohn(username, realm string, etype int, cipher []byte) (stri
 //
 // RC4 (etype 23) yields "$krb5tgs$23$*<account>$<realm>$<spn>*$<checksum>$<edata>"
 // (identical to hashcat mode 13100). AES enctypes (17/18) yield
-// "$krb5tgs$<etype>$<UPPER-REALM><account>$<edata>$<checksum>" (the checksum is
-// appended after the encrypted data and the account is folded into the salt).
+// "$krb5tgs$<etype>$<UPPER-REALM><account>$<checksum>$<edata>" (the account is
+// folded into the salt, and the checksum precedes the encrypted data).
+// An account whose keys use another salt needs FormatTGSHashJohnWithSalt.
 func FormatTGSHashJohn(account, realm, spn string, etype int, cipher []byte) (string, error) {
+	return FormatTGSHashJohnWithSalt(account, realm, spn, "", etype, cipher)
+}
+
+// FormatTGSHashJohnWithSalt is FormatTGSHashJohn for a service account whose AES
+// keys use the given string-to-key salt. A TGS-REP does not carry it; the KDC
+// reports it in the PA-ETYPE-INFO2 of a pre-authentication-required error to an
+// AS-REQ for the account. An empty salt selects the default, and a salt containing
+// '$' is refused as for FormatASREPHashJohnWithSalt.
+func FormatTGSHashJohnWithSalt(account, realm, spn, salt string, etype int, cipher []byte) (string, error) {
 	cksum, edata, err := splitCipher(etype, cipher)
 	if err != nil {
 		return "", err
@@ -72,6 +118,10 @@ func FormatTGSHashJohn(account, realm, spn string, etype int, cipher []byte) (st
 		return fmt.Sprintf("$krb5tgs$23$*%s$%s$%s*$%s$%s",
 			account, realm, spn, hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
 	}
+	salt, err = johnAESSalt(account, realm, salt)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("$krb5tgs$%d$%s$%s$%s",
-		etype, aesSalt(account, realm), hex.EncodeToString(edata), hex.EncodeToString(cksum)), nil
+		etype, salt, hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
 }

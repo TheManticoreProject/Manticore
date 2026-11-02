@@ -60,8 +60,8 @@ func TestFormatTGSHashJohnRC4(t *testing.T) {
 }
 
 // TestFormatTGSHashJohnAES checks the AES (etype 18) TGS form:
-// "$krb5tgs$18$<UPPER-REALM><account>$<edata>$<checksum>" with the checksum
-// appended after the encrypted data (mirroring the AES AS-REP layout).
+// "$krb5tgs$18$<UPPER-REALM><account>$<checksum>$<edata>", with the checksum
+// before the encrypted data (the reverse of the AES AS-REP layout).
 func TestFormatTGSHashJohnAES(t *testing.T) {
 	edata := "8899aabbccddeeff0011223344556677"
 	cksum := "aabbccddeeff00112233445566"[:24] // 12 bytes
@@ -71,7 +71,7 @@ func TestFormatTGSHashJohnAES(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormatTGSHashJohn: %v", err)
 	}
-	want := "$krb5tgs$18$CORP.LOCALsvc_web$" + edata + "$" + cksum
+	want := "$krb5tgs$18$CORP.LOCALsvc_web$" + cksum + "$" + edata
 	if got != want {
 		t.Errorf("AES TGS John:\n got  %s\n want %s", got, want)
 	}
