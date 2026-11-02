@@ -1263,11 +1263,7 @@ func TestNamedPipeAnswerPastTheCeilingIsDeliveredWhole(t *testing.T) {
 			status)
 	}
 
-	rest, err := client.ReadFile(fid, 0, uint32(len(answer)))
-	if err != nil {
-		t.Fatalf("reading the rest of the answer failed: %v", err)
-	}
-	collected = append(collected, rest...)
+	collected = append(collected, readPipeUntilEmpty(t, client, fid, uint32(len(answer)))...)
 	if !bytes.Equal(collected, answer) {
 		t.Fatalf("the answer reassembled to %d bytes, want the %d the handler produced", len(collected), len(answer))
 	}
@@ -1667,12 +1663,27 @@ func TestNamedPipeTinyPeekSeesTheRestOfAnAnswer(t *testing.T) {
 			len(answer)-len(collected))
 	}
 
-	rest, err := client.ReadFile(fid, 0, uint32(len(answer)))
-	if err != nil {
-		t.Fatalf("reading the rest of the answer failed: %v", err)
-	}
-	collected = append(collected, rest...)
+	collected = append(collected, readPipeUntilEmpty(t, client, fid, uint32(len(answer)))...)
 	if !bytes.Equal(collected, answer) {
 		t.Fatalf("the answer reassembled to %d bytes, want %d", len(collected), len(answer))
+	}
+}
+
+// readPipeUntilEmpty reads a pipe handle until a read returns nothing. The pipe
+// is message mode, so one read returns at most one message (one part of a
+// session's answer); collecting the rest of a multi-part answer takes a read per
+// part, as it does on Windows.
+func readPipeUntilEmpty(t *testing.T, client *smb1client.Client, fid smb1client.FID, size uint32) []byte {
+	t.Helper()
+	var collected []byte
+	for {
+		part, err := client.ReadFile(fid, 0, size)
+		if err != nil {
+			t.Fatalf("reading the rest of the answer failed: %v", err)
+		}
+		if len(part) == 0 {
+			return collected
+		}
+		collected = append(collected, part...)
 	}
 }

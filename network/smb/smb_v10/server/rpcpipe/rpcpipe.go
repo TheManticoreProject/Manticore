@@ -1,11 +1,13 @@
 package rpcpipe
 
 import (
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/TheManticoreProject/Manticore/logger"
+	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/rpcserver"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
 )
@@ -274,10 +276,19 @@ func (s *Session) Transact(input []byte, maxOutput int) ([]byte, bool, error) {
 	return output, false, nil
 }
 
-// nextPart removes up to maxOutput bytes from the front of the held answer, or
-// all of it when maxOutput is not positive, and reports whether any is left.
+// nextPart removes the next PDU of the held answer, or at most maxOutput bytes
+// of it when maxOutput is positive and smaller, and reports whether any is left.
+//
+// Each part is one PDU because the pipe is message mode: on Windows every
+// fragment of a reply is its own message and a read returns at most one, and
+// clients such as impacket rely on that, parsing a read as a single PDU.
 func (s *Session) nextPart(maxOutput int) ([]byte, bool) {
 	part := s.pending
+	if len(part) >= pdu.HeaderSize {
+		if fragLength := int(binary.LittleEndian.Uint16(part[8:10])); fragLength >= pdu.HeaderSize && fragLength < len(part) {
+			part = part[:fragLength:fragLength]
+		}
+	}
 	if maxOutput > 0 && len(part) > maxOutput {
 		part = part[:maxOutput:maxOutput]
 	}
