@@ -7,19 +7,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 )
 
-// bigEndianBindUnsupported reports a big-endian bind-family PDU, which is not yet
-// supported: the presentation syntax identifiers these PDUs carry (an interface
-// UUID and version per context) would need byte-order-aware parsing, whereas the
-// request, response and fault data path is decoded in either order. A client here
-// always binds little-endian, so this guards against silently mis-parsing a
-// big-endian peer's bind rather than being a path the client reaches itself.
-func bigEndianBindUnsupported(h *Header, kind string) error {
-	if h.DataRepresentation[0]>>4 == drepBigEndian {
-		return fmt.Errorf("big-endian %s PDU is not supported: bind negotiation is little-endian only", kind)
-	}
-	return nil
-}
-
 // Presentation context negotiation result codes (p_cont_def_result_t), as returned in
 // the result field of each p_result_t in a bind_ack PDU.
 //
@@ -97,16 +84,23 @@ func (c *ContextElement) Marshal() ([]byte, error) {
 	return buf, nil
 }
 
-// Unmarshal parses a presentation context element and returns the bytes consumed.
+// Unmarshal parses a presentation context element and returns the bytes consumed,
+// reading the little-endian wire form.
 func (c *ContextElement) Unmarshal(data []byte) (int, error) {
+	return c.UnmarshalOrder(data, binary.LittleEndian)
+}
+
+// UnmarshalOrder parses a presentation context element whose scalar fields and nested
+// syntax identifiers are encoded in the given byte order.
+func (c *ContextElement) UnmarshalOrder(data []byte, order binary.ByteOrder) (int, error) {
 	if len(data) < 4 {
 		return 0, fmt.Errorf("context element header truncated")
 	}
-	c.ContextID = binary.LittleEndian.Uint16(data[0:2])
+	c.ContextID = order.Uint16(data[0:2])
 	n := int(data[2])
 	pos := 4
 
-	read, err := c.AbstractSyntax.Unmarshal(data[pos:])
+	read, err := c.AbstractSyntax.UnmarshalOrder(data[pos:], order)
 	if err != nil {
 		return 0, fmt.Errorf("context element %d abstract syntax: %w", c.ContextID, err)
 	}
@@ -115,7 +109,7 @@ func (c *ContextElement) Unmarshal(data []byte) (int, error) {
 	c.TransferSyntaxes = make([]syntax.SyntaxID, 0, n)
 	for i := 0; i < n; i++ {
 		var ts syntax.SyntaxID
-		read, err := ts.Unmarshal(data[pos:])
+		read, err := ts.UnmarshalOrder(data[pos:], order)
 		if err != nil {
 			return 0, fmt.Errorf("context element %d transfer syntax %d: %w", c.ContextID, i, err)
 		}
@@ -200,22 +194,20 @@ func (b *Bind) Unmarshal(data []byte) (int, error) {
 	if b.Header.PacketType != PacketTypeBind {
 		return 0, fmt.Errorf("not a bind PDU: packet type is %s", b.Header.PacketType)
 	}
-	if err := bigEndianBindUnsupported(&b.Header, "bind"); err != nil {
-		return 0, err
-	}
+	order := b.Header.ByteOrder()
 	if len(data) < pos+12 {
 		return 0, fmt.Errorf("bind PDU truncated")
 	}
-	b.MaxXmitFrag = binary.LittleEndian.Uint16(data[pos : pos+2])
-	b.MaxRecvFrag = binary.LittleEndian.Uint16(data[pos+2 : pos+4])
-	b.AssocGroupID = binary.LittleEndian.Uint32(data[pos+4 : pos+8])
+	b.MaxXmitFrag = order.Uint16(data[pos : pos+2])
+	b.MaxRecvFrag = order.Uint16(data[pos+2 : pos+4])
+	b.AssocGroupID = order.Uint32(data[pos+4 : pos+8])
 	n := int(data[pos+8]) // n_context_elem
 	pos += 12             // skip n_context_elem + reserved + reserved2
 
 	b.ContextList = make([]ContextElement, 0, n)
 	for i := 0; i < n; i++ {
 		var elem ContextElement
-		read, err := elem.Unmarshal(data[pos:])
+		read, err := elem.UnmarshalOrder(data[pos:], order)
 		if err != nil {
 			return 0, err
 		}
@@ -253,14 +245,21 @@ func (r *PresentationResult) Marshal() ([]byte, error) {
 	return append(buf, ts...), nil
 }
 
-// Unmarshal parses a single presentation result and returns the bytes consumed.
+// Unmarshal parses a single presentation result and returns the bytes consumed,
+// reading the little-endian wire form.
 func (r *PresentationResult) Unmarshal(data []byte) (int, error) {
+	return r.UnmarshalOrder(data, binary.LittleEndian)
+}
+
+// UnmarshalOrder parses a single presentation result whose scalar fields and transfer
+// syntax are encoded in the given byte order.
+func (r *PresentationResult) UnmarshalOrder(data []byte, order binary.ByteOrder) (int, error) {
 	if len(data) < 4 {
 		return 0, fmt.Errorf("presentation result truncated")
 	}
-	r.Result = binary.LittleEndian.Uint16(data[0:2])
-	r.Reason = binary.LittleEndian.Uint16(data[2:4])
-	read, err := r.TransferSyntax.Unmarshal(data[4:])
+	r.Result = order.Uint16(data[0:2])
+	r.Reason = order.Uint16(data[2:4])
+	read, err := r.TransferSyntax.UnmarshalOrder(data[4:], order)
 	if err != nil {
 		return 0, err
 	}
@@ -349,18 +348,16 @@ func (b *BindAck) Unmarshal(data []byte) (int, error) {
 	if b.Header.PacketType != PacketTypeBindAck {
 		return 0, fmt.Errorf("not a bind_ack PDU: packet type is %s", b.Header.PacketType)
 	}
-	if err := bigEndianBindUnsupported(&b.Header, "bind_ack"); err != nil {
-		return 0, err
-	}
+	order := b.Header.ByteOrder()
 	if len(data) < pos+10 {
 		return 0, fmt.Errorf("bind_ack PDU truncated")
 	}
-	b.MaxXmitFrag = binary.LittleEndian.Uint16(data[pos : pos+2])
-	b.MaxRecvFrag = binary.LittleEndian.Uint16(data[pos+2 : pos+4])
-	b.AssocGroupID = binary.LittleEndian.Uint32(data[pos+4 : pos+8])
+	b.MaxXmitFrag = order.Uint16(data[pos : pos+2])
+	b.MaxRecvFrag = order.Uint16(data[pos+2 : pos+4])
+	b.AssocGroupID = order.Uint32(data[pos+4 : pos+8])
 	pos += 8
 
-	addrLen := int(binary.LittleEndian.Uint16(data[pos : pos+2]))
+	addrLen := int(order.Uint16(data[pos : pos+2]))
 	pos += 2
 	if len(data) < pos+addrLen {
 		return 0, fmt.Errorf("bind_ack secondary address truncated")
@@ -387,7 +384,7 @@ func (b *BindAck) Unmarshal(data []byte) (int, error) {
 	b.Results = make([]PresentationResult, 0, n)
 	for i := 0; i < n; i++ {
 		var r PresentationResult
-		read, err := r.Unmarshal(data[pos:])
+		read, err := r.UnmarshalOrder(data[pos:], order)
 		if err != nil {
 			return 0, err
 		}
@@ -463,13 +460,11 @@ func (b *BindNak) Unmarshal(data []byte) (int, error) {
 	if b.Header.PacketType != PacketTypeBindNak {
 		return 0, fmt.Errorf("not a bind_nak PDU: packet type is %s", b.Header.PacketType)
 	}
-	if err := bigEndianBindUnsupported(&b.Header, "bind_nak"); err != nil {
-		return 0, err
-	}
+	order := b.Header.ByteOrder()
 	if len(data) < pos+3 {
 		return 0, fmt.Errorf("bind_nak PDU truncated")
 	}
-	b.RejectReason = binary.LittleEndian.Uint16(data[pos : pos+2])
+	b.RejectReason = order.Uint16(data[pos : pos+2])
 	n := int(data[pos+2])
 	pos += 3
 	if len(data) < pos+2*n {
