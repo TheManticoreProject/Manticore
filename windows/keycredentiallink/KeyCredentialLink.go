@@ -343,17 +343,22 @@ func (kc *KeyCredentialLink) Unmarshal(data []byte) (int, error) {
 // - A pointer to the decoded DateTime object.
 // - An error if the value cannot hold a timestamp.
 func (kc *KeyCredentialLink) parseBinaryTime(value []byte) (*utils.DateTime, error) {
-	keySource := source.KeySource{}
-	if kc.Source != nil {
-		keySource = *kc.Source
-	}
-
-	t, err := utils.ConvertFromBinaryTime(value, keySource, kc.Version)
+	t, err := utils.ConvertFromBinaryTime(value, kc.keySourceOrDefault(), kc.Version)
 	if err != nil {
 		return nil, fmt.Errorf("malformed KeyCredentialLink: %w", err)
 	}
 
 	return &t, nil
+}
+
+// keySourceOrDefault returns the credential's key source, or the zero source (AD)
+// when the optional KeySource entry is absent, which selects the timestamp
+// encoding.
+func (kc *KeyCredentialLink) keySourceOrDefault() source.KeySource {
+	if kc.Source != nil {
+		return *kc.Source
+	}
+	return source.KeySource{}
 }
 
 // CheckIntegrity checks the integrity of the key credential.
@@ -567,10 +572,7 @@ func (kc *KeyCredentialLink) ToKeyCredentialLinkBlob() (*KEYCREDENTIALLINK_BLOB,
 
 	// Last Logon Time (entry type 0x08) [OPTIONAL]
 	if kc.LastLogonTime != nil {
-		lastLogonTimeBytes, err := kc.LastLogonTime.Marshal()
-		if err != nil {
-			return nil, err
-		}
+		lastLogonTimeBytes := utils.EncodeBinaryTime(*kc.LastLogonTime, kc.keySourceOrDefault(), kc.Version)
 		blob.Entries = append(
 			blob.Entries,
 			KEYCREDENTIALLINK_ENTRY{
@@ -583,10 +585,7 @@ func (kc *KeyCredentialLink) ToKeyCredentialLinkBlob() (*KEYCREDENTIALLINK_BLOB,
 
 	// Creation Time (entry type 0x09) [OPTIONAL]
 	if kc.CreationTime != nil {
-		creationTimeBytes, err := kc.CreationTime.Marshal()
-		if err != nil {
-			return nil, err
-		}
+		creationTimeBytes := utils.EncodeBinaryTime(*kc.CreationTime, kc.keySourceOrDefault(), kc.Version)
 		blob.Entries = append(
 			blob.Entries,
 			KEYCREDENTIALLINK_ENTRY{
