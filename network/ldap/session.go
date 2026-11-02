@@ -309,8 +309,23 @@ func (s *Session) Connect() (bool, error) {
 		// Use NTLM authentification or null auth
 		if s.credentials.CanPassTheHash() {
 			// Bind with Pass the NT Hash using an NTLMSSP bind keyed on the NT hash,
-			// not a cleartext simple bind keyed on the password.
-			err = ldapConnection.NTLMBindWithHash(s.credentials.GetDomain(), s.credentials.GetUsername(), s.credentials.GetNTHash())
+			// not a cleartext simple bind keyed on the password. The native NTLM
+			// client asserts the ldap/ SPN and, over LDAPS, binds the
+			// authentication to the TLS channel (RFC 5929 tls-server-end-point),
+			// which a DC enforcing LDAP channel binding requires.
+			negotiator := &nativeNTLMNegotiator{
+				domain:  s.credentials.GetDomain(),
+				spnHost: s.kerberosSPNHostname(),
+			}
+			if serverCert != nil {
+				negotiator.channelBindings = tlsServerEndPointCBT(serverCert)
+			}
+			_, err = ldapConnection.NTLMChallengeBind(&ldap.NTLMBindRequest{
+				Domain:     s.credentials.GetDomain(),
+				Username:   s.credentials.GetUsername(),
+				Hash:       s.credentials.GetNTHash(),
+				Negotiator: negotiator,
+			})
 			if err != nil {
 				ldapConnection.Close()
 				return false, fmt.Errorf("error binding with Pass the NT Hash: %w", err)

@@ -10,6 +10,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/message/negotiate/flags"
 	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/security"
+	"github.com/TheManticoreProject/Manticore/crypto/spnego/ntlm/targetinfo"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
 	"github.com/TheManticoreProject/Manticore/windows/credentials"
 )
@@ -59,6 +60,16 @@ func (c *Client) SetAuth(authType, authLevel uint8, creds *credentials.Credentia
 	c.authLevel = authLevel
 	c.creds = creds
 	return nil
+}
+
+// SetNTLMTargetName sets the SPN of the RPC server, e.g. "host/dc01.corp.local",
+// that the NTLM AUTHENTICATE asserts in its MsvAvTargetName AV_PAIR. A server that
+// validates the target name against its own SPNs checks this value. Empty, the
+// default, sends "cifs/<DnsComputerName>" built from the server's CHALLENGE, as for
+// SMB, or no MsvAvTargetName when the CHALLENGE carries no DNS computer name. It
+// must be called before Bind.
+func (c *Client) SetNTLMTargetName(spn string) {
+	c.ntlmTargetName = spn
 }
 
 // SetAuthProvider configures an authenticated bind with a caller-supplied single-leg
@@ -146,6 +157,7 @@ func (c *Client) negotiateToken() ([]byte, error) {
 // credentials. When the credentials carry an NT hash but no password it authenticates
 // by pass-the-hash; otherwise it uses the cleartext password.
 func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authenticate.AuthenticateMessage, error) {
+	opts := targetinfo.BlobOptions{TargetName: c.ntlmTargetName}
 	if c.creds.GetPassword() == "" && c.creds.CanPassTheHash() {
 		raw, err := hex.DecodeString(c.creds.GetNTHash())
 		if err != nil {
@@ -156,9 +168,9 @@ func (c *Client) buildAuthenticate(chal *challenge.ChallengeMessage) (*authentic
 		}
 		var ntHash [16]byte
 		copy(ntHash[:], raw)
-		return authenticate.CreateAuthenticateMessageWithNTHash(chal, c.creds.GetUsername(), ntHash, c.creds.GetDomain(), c.workstation)
+		return authenticate.CreateAuthenticateMessageWithNTHashAndOptions(chal, c.creds.GetUsername(), ntHash, c.creds.GetDomain(), c.workstation, opts)
 	}
-	return authenticate.CreateAuthenticateMessage(chal, c.creds.GetUsername(), c.creds.GetPassword(), c.creds.GetDomain(), c.workstation)
+	return authenticate.CreateAuthenticateMessageWithOptions(chal, c.creds.GetUsername(), c.creds.GetPassword(), c.creds.GetDomain(), c.workstation, opts)
 }
 
 // completeAuth finishes the authenticated bind after a bind_ack. For a single-leg provider
