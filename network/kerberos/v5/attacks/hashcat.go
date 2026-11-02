@@ -8,6 +8,7 @@ package attacks
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/iana"
 )
@@ -55,27 +56,91 @@ func splitCipher(etype int, cipher []byte) (cksum, edata []byte, err error) {
 }
 
 // FormatASREPHash formats an AS-REP encrypted part as a hashcat AS-REP-roast
-// hash. Only RC4 (etype 23) is supported: it yields the mode-18200 form
-// "$krb5asrep$23$user@realm:<checksum>$<edata>".
+// hash:
 //
-// hashcat has NO AS-REP mode for AES enctypes — mode 18200 is RC4/etype-23 only,
-// and the AES Kerberos modes cover TGS-REP (19600/19700), Pre-Auth (19800/19900)
-// and the KDC database (28800/28900), not AS-REP. Emitting an "$krb5asrep$17/18$"
-// string is therefore uncrackable (hashcat rejects it with a token-length error),
-// so this function returns an error for any non-RC4 etype. Use
-// FormatASREPHashJohn (John the Ripper), which does support AES AS-REP roasting.
+//   - RC4 (etype 23), mode 18200: "$krb5asrep$23$user@realm:<checksum>$<edata>".
+//   - AES128 (etype 17), mode 32100, and AES256 (etype 18), mode 32200:
+//     "$krb5asrep$<etype>$user$realm$<checksum>$<edata>", where the checksum is
+//     the 12-byte truncated HMAC-SHA1 that ends the ciphertext.
+//
+// hashcat derives the AES string-to-key salt as the upper-cased realm followed by
+// the user name. An account whose keys use another salt needs
+// FormatASREPHashWithSalt with the salt the KDC reports: a computer account, whose
+// salt is "<REALM>host<name>.<realm>", or a user renamed after its password was
+// set. hashcat has no mode for the SHA-2 AES enctypes (19 and 20), so they are
+// refused.
+//
+// hashcat splits these fields on '$', so an AES hash for a user name containing
+// one cannot be loaded and is refused; FormatASREPHashJohn has the same layout
+// limit, and FormatASREPHashWithSalt avoids it when the salt has no '$'.
 func FormatASREPHash(username, realm string, etype int, cipher []byte) (string, error) {
-	if etype != iana.ETypeRC4HMAC {
+	switch etype {
+	case iana.ETypeRC4HMAC:
+		cksum, edata, err := splitCipher(etype, cipher)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("$krb5asrep$23$%s@%s:%s$%s",
+			username, realm, hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
+	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196:
+		if strings.Contains(username, "$") {
+			return "", fmt.Errorf("attacks: hashcat cannot load an AES AS-REP hash whose user name %q contains '$'; "+
+				"use FormatASREPHashWithSalt with the salt the KDC reported", username)
+		}
+		cksum, edata, err := splitASREPAES(etype, cipher)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("$krb5asrep$%d$%s$%s$%s$%s",
+			etype, username, realm, hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
+	default:
 		return "", fmt.Errorf("attacks: hashcat has no AS-REP mode for etype %d; "+
-			"hashcat AS-REP roasting supports only RC4 (etype 23, mode 18200) — "+
-			"format AES AS-REP hashes with FormatASREPHashJohn (John the Ripper) instead", etype)
+			"it supports RC4 (23, mode 18200), AES128 (17, mode 32100) and AES256 (18, mode 32200)", etype)
 	}
-	cksum, edata, err := splitCipher(etype, cipher)
+}
+
+// FormatASREPHashWithSalt is FormatASREPHash for an account whose AES keys use the
+// given string-to-key salt, such as the one the KDC reports in the AS-REP's
+// PA-ETYPE-INFO2 (ASREPRoastResult.Salt).
+//
+// When salt is empty or is the default hashcat derives (upper-cased realm followed
+// by the user name), the result is FormatASREPHash's. Otherwise, for etypes 17
+// and 18, it is the salt-carrying form modes 32100 and 32200 also accept:
+// "$krb5asrep$<etype>$<salt>$<edata>$<checksum>", which carries no user name, so it
+// also serves accounts whose name contains '$' such as computer accounts. RC4 keys
+// are unsalted, so an RC4 hash ignores salt.
+func FormatASREPHashWithSalt(username, realm, salt string, etype int, cipher []byte) (string, error) {
+	if salt == "" || salt == strings.ToUpper(realm)+username || etype == iana.ETypeRC4HMAC {
+		return FormatASREPHash(username, realm, etype, cipher)
+	}
+	switch etype {
+	case iana.ETypeAES128CTSHMACSHA196, iana.ETypeAES256CTSHMACSHA196:
+		if strings.Contains(salt, "$") {
+			return "", fmt.Errorf("attacks: hashcat cannot load an AES AS-REP hash whose salt %q contains '$'", salt)
+		}
+		cksum, edata, err := splitASREPAES(etype, cipher)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("$krb5asrep$%d$%s$%s$%s",
+			etype, salt, hex.EncodeToString(edata), hex.EncodeToString(cksum)), nil
+	default:
+		return FormatASREPHash(username, realm, etype, cipher)
+	}
+}
+
+// splitASREPAES splits an AES-SHA1 AS-REP ciphertext for modes 32100/32200. Those
+// modes take at least 32 bytes of encrypted data (64 hex characters): the
+// 16-byte confounder and a cipher block. A shorter ciphertext is not an AS-REP.
+func splitASREPAES(etype int, cipher []byte) (cksum, edata []byte, err error) {
+	cksum, edata, err = splitCipher(etype, cipher)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	return fmt.Sprintf("$krb5asrep$23$%s@%s:%s$%s",
-		username, realm, hex.EncodeToString(cksum), hex.EncodeToString(edata)), nil
+	if len(edata) < 32 {
+		return nil, nil, fmt.Errorf("attacks: AES AS-REP ciphertext too short (%d bytes of encrypted data)", len(edata))
+	}
+	return cksum, edata, nil
 }
 
 // FormatTGSHash formats a service ticket's encrypted part as a hashcat
