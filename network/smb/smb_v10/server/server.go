@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	"github.com/TheManticoreProject/Manticore/windows/guid"
@@ -54,6 +55,13 @@ type Config struct {
 	// server whose purpose is to harvest responses wants. Holding NT hashes
 	// rather than passwords is deliberate — the hash is all verification needs.
 	Authenticator func(domain, username string) (ntHash [16]byte, ok bool)
+
+	// OnAcceptContext, when set, is called with each session's acceptor after it
+	// is created and before the NEGOTIATE is answered. It exposes the whole
+	// AcceptContext so a caller can drive the exchange — for instance setting
+	// ChallengeProvider to source the CHALLENGE from an upstream connection. Nil
+	// leaves the default behaviour untouched.
+	OnAcceptContext func(accept *spnego.AcceptContext)
 
 	// AllowGuest admits a logon whose identity the Authenticator does not know,
 	// as a guest, reporting SMB_SETUP_GUEST so the client knows it was not
