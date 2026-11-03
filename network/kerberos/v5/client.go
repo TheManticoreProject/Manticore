@@ -53,6 +53,11 @@ type KerberosClient struct {
 	tgtEnc       messages.EncASRepPart // decrypted AS-REP enc-part: times, flags, sname
 	hasTGT       bool
 
+	// sendFunc, when non-nil, replaces the network send in sendToRealm so a test
+	// can drive the KDC exchange in-process without a socket. Production code
+	// never sets it; it is nil for every client built through the public API.
+	sendFunc func(realm string, msg []byte) ([]byte, error)
+
 	// stETypes overrides the etype list requested in the TGS-REQ (the service
 	// ticket's session-key etype). nil requests all supported AES profiles,
 	// strongest first, then RC4.
@@ -551,6 +556,9 @@ func (c *KerberosClient) buildASReq(pa_data []messages.PAData, nonce int) *messa
 // resolver, or DNS SRV) and sends msg, failing over across them (see
 // endpointsForRealm and kdcSendEndpoints).
 func (c *KerberosClient) sendToRealm(realm string, msg []byte) ([]byte, error) {
+	if c.sendFunc != nil {
+		return c.sendFunc(realm, msg)
+	}
 	endpoints, err := c.endpointsForRealm(realm)
 	if err != nil {
 		return nil, err

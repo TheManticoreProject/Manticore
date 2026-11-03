@@ -109,7 +109,9 @@ func (c *KerberosClient) getTGTFAST() error {
 	var cookie *messages.PAData
 
 	// At most three attempts: one for a cookie/etype correction, one for a
-	// clock-skew correction, plus the initial try.
+	// clock-skew correction, plus the initial try. corrected guards the single
+	// PREAUTH_FAILED salt-correction retry so a wrong credential cannot loop.
+	corrected := false
 	for attempt := 0; attempt < 3; attempt++ {
 		nonce := randomNonce()
 		resp, err := c.sendFASTAS(fastArmorStruct, armorKey, armorEType, clientEType, salt, s2kParams, nonce, cookie)
@@ -135,6 +137,20 @@ func (c *KerberosClient) getTGTFAST() error {
 			case messages.ErrPreauthRequired:
 				if attempt < 2 {
 					continue // retry with the corrected etype/salt and cookie
+				}
+			case messages.ErrPreauthFailed:
+				// The optimistic first challenge used the default salt
+				// (UPPERCASE-REALM + account). An account whose salt is not that —
+				// a renamed domain or a pre-created account — fails with
+				// PREAUTH_FAILED, and the armored error carries a PA-ETYPE-INFO2
+				// naming the salt the account actually uses. Retry once with that
+				// correction, exactly as the non-FAST path does. Guard on an
+				// actual correction (info != nil) and retry at most once, so a
+				// genuinely wrong credential does not hammer the KDC with repeated
+				// failed logons.
+				if info != nil && !corrected {
+					corrected = true
+					continue
 				}
 			case messages.ErrSkew:
 				if attempt < 2 && c.applyClockSkew(effective) {
