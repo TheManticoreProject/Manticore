@@ -109,6 +109,14 @@ type AcceptContext struct {
 	Negotiate             *negotiate.NegotiateMessage
 	NegotiateMessageBytes []byte
 
+	// RawNegotiateToken and RawAuthenticateToken hold the tokens exactly as
+	// received, with their SPNEGO/GSS framing intact — unlike the MessageBytes
+	// fields, which are the bare NTLM message after the framing is stripped. They
+	// let a caller forward the token verbatim, preserving the SPNEGO MechTypeList
+	// and the mechListMIC that a peer computes over it (and may require). Each is
+	// nil until its token is accepted.
+	RawNegotiateToken []byte
+
 	// Challenge and ChallengeMessageBytes hold the CHALLENGE that was issued,
 	// for the same reason.
 	Challenge             *challenge.ChallengeMessage
@@ -117,6 +125,10 @@ type AcceptContext struct {
 	// Authenticate and AuthenticateMessageBytes hold the client's AUTHENTICATE.
 	Authenticate             *authenticate.AuthenticateMessage
 	AuthenticateMessageBytes []byte
+
+	// RawAuthenticateToken holds the AUTHENTICATE token as received, framing
+	// intact. See RawNegotiateToken.
+	RawAuthenticateToken []byte
 
 	// SessionKey is the ExportedSessionKey, set by a successful Verify. It is the
 	// key a consumer uses for message signing and sealing. It stays nil until
@@ -174,6 +186,8 @@ func (ctx *AcceptContext) AcceptNegotiateToken(token []byte) ([]byte, error) {
 	// The MIC is computed over the raw message, so keep the bytes as received
 	// rather than a re-marshalling of them.
 	ctx.NegotiateMessageBytes = append([]byte(nil), inner...)
+	// Keep the token with its framing intact, so a caller can forward it verbatim.
+	ctx.RawNegotiateToken = append([]byte(nil), token...)
 
 	var challengeBytes []byte
 	if ctx.ChallengeProvider != nil {
@@ -265,6 +279,9 @@ func (ctx *AcceptContext) AcceptAuthenticateToken(token []byte) error {
 
 	ctx.Authenticate = authenticateMessage
 	ctx.AuthenticateMessageBytes = append([]byte(nil), inner...)
+	// Keep the token with its framing intact (SPNEGO MechTypeList + mechListMIC),
+	// so a caller can forward it verbatim.
+	ctx.RawAuthenticateToken = append([]byte(nil), token...)
 
 	return nil
 }

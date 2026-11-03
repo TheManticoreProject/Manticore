@@ -700,3 +700,28 @@ func authenticateShapedToken(t *testing.T) []byte {
 	}
 	return raw
 }
+
+// TestAcceptorRetainsRawTokens asserts the tokens are kept with their SPNEGO
+// framing intact, not only as the stripped NTLM message — which is what lets a
+// caller forward a token verbatim (preserving the MechTypeList and the
+// mechListMIC a peer computes over it).
+func TestAcceptorRetainsRawTokens(t *testing.T) {
+	ctx := NewAcceptContext("LAB", challenge.TargetTypeDomain, serverTargetInfo(t, nil))
+	runExchange(t, ctx)
+
+	if len(ctx.RawNegotiateToken) == 0 || len(ctx.RawAuthenticateToken) == 0 {
+		t.Fatal("raw tokens were not retained")
+	}
+	if !bytes.Contains(ctx.RawNegotiateToken, ctx.NegotiateMessageBytes) {
+		t.Fatal("RawNegotiateToken does not embed the NEGOTIATE message")
+	}
+	if len(ctx.RawNegotiateToken) <= len(ctx.NegotiateMessageBytes) {
+		t.Fatal("RawNegotiateToken carries no framing around the NEGOTIATE message")
+	}
+	if !bytes.Contains(ctx.RawAuthenticateToken, ctx.AuthenticateMessageBytes) {
+		t.Fatal("RawAuthenticateToken does not embed the AUTHENTICATE message")
+	}
+	if len(ctx.RawAuthenticateToken) <= len(ctx.AuthenticateMessageBytes) {
+		t.Fatal("RawAuthenticateToken carries no framing around the AUTHENTICATE message")
+	}
+}
