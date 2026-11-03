@@ -83,6 +83,19 @@ type AcceptContext struct {
 	// Version is advertised in the CHALLENGE. Nil omits it.
 	Version *version.Version
 
+	// ChallengeProvider, when set, supplies the CHALLENGE to send back instead of
+	// generating one locally. It receives the client's NEGOTIATE as received and
+	// returns a marshalled CHALLENGE_MESSAGE, which is wrapped and sent verbatim:
+	// the ServerChallenge, TargetInfo and flags the client folds into its response
+	// are therefore the provider's, not this acceptor's config. It is the seam for
+	// sourcing the challenge from an upstream exchange rather than owning it, so
+	// ServerChallenge, TargetName, TargetType, TargetInfo and Version are ignored
+	// when it is set.
+	//
+	// Nil keeps the default: generate a fresh challenge from the system's
+	// cryptographic random source.
+	ChallengeProvider func(negotiate []byte) (challengeMessage []byte, err error)
+
 	// CredentialLookup resolves a claimed identity to the account's NT hash.
 	// Returning false means the identity is unknown.
 	//
@@ -162,28 +175,45 @@ func (ctx *AcceptContext) AcceptNegotiateToken(token []byte) ([]byte, error) {
 	// rather than a re-marshalling of them.
 	ctx.NegotiateMessageBytes = append([]byte(nil), inner...)
 
-	// A zero challenge means one was not supplied, so generate one. Reusing a
-	// challenge across exchanges would let a response captured from one be
-	// replayed into another.
-	if ctx.ServerChallenge == ([8]byte{}) {
-		generated, err := challenge.NewServerChallenge()
+	var challengeBytes []byte
+	if ctx.ChallengeProvider != nil {
+		// The challenge is sourced upstream: take its bytes as given so the nonce
+		// and TargetInfo the client commits to are the provider's, untouched.
+		provided, err := ctx.ChallengeProvider(ctx.NegotiateMessageBytes)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("challenge provider failed: %v", err)
 		}
-		ctx.ServerChallenge = generated
-	}
+		parsed := &challenge.ChallengeMessage{}
+		if _, err := parsed.Unmarshal(provided); err != nil {
+			return nil, fmt.Errorf("failed to parse the provided NTLM CHALLENGE message: %v", err)
+		}
+		ctx.Challenge = parsed
+		ctx.ServerChallenge = parsed.ServerChallenge
+		challengeBytes = append([]byte(nil), provided...)
+	} else {
+		// A zero challenge means one was not supplied, so generate one. Reusing a
+		// challenge across exchanges would let a response captured from one be
+		// replayed into another.
+		if ctx.ServerChallenge == ([8]byte{}) {
+			generated, err := challenge.NewServerChallenge()
+			if err != nil {
+				return nil, err
+			}
+			ctx.ServerChallenge = generated
+		}
 
-	challengeMessage, err := challenge.CreateChallengeMessage(
-		negotiateMessage, ctx.ServerChallenge, ctx.TargetName, ctx.TargetType, ctx.TargetInfo, ctx.Version)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build the NTLM CHALLENGE message: %v", err)
-	}
+		challengeMessage, err := challenge.CreateChallengeMessage(
+			negotiateMessage, ctx.ServerChallenge, ctx.TargetName, ctx.TargetType, ctx.TargetInfo, ctx.Version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build the NTLM CHALLENGE message: %v", err)
+		}
 
-	challengeBytes, err := challengeMessage.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal the NTLM CHALLENGE message: %v", err)
+		challengeBytes, err = challengeMessage.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal the NTLM CHALLENGE message: %v", err)
+		}
+		ctx.Challenge = challengeMessage
 	}
-	ctx.Challenge = challengeMessage
 	ctx.ChallengeMessageBytes = challengeBytes
 
 	// The CHALLENGE is a continuation token: a NegTokenResp naming the mechanism

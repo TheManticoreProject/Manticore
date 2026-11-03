@@ -510,6 +510,45 @@ func TestAcceptorHonoursSuppliedChallenge(t *testing.T) {
 	}
 }
 
+// TestAcceptorRelaysSuppliedChallenge asserts a ChallengeProvider sources the
+// CHALLENGE verbatim — the nonce and TargetInfo the client commits to are the
+// provider's, not this acceptor's config — and that the response still verifies
+// against that relayed challenge. This is the seam a relay uses to carry an
+// upstream exchange without ever holding a credential of its own.
+func TestAcceptorRelaysSuppliedChallenge(t *testing.T) {
+	// An upstream acceptor stands in for the relay target: it owns the real
+	// nonce and answers the client's NEGOTIATE as the target would.
+	upstreamChallenge := [8]byte{0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04}
+	upstream := NewAcceptContext("UPSTREAM", challenge.TargetTypeDomain, serverTargetInfo(t, nil))
+	upstream.ServerChallenge = upstreamChallenge
+
+	var asked, gotNegotiate = [2]string{}, []byte(nil)
+	ctx := NewAcceptContext("LAB", challenge.TargetTypeDomain, serverTargetInfo(t, nil))
+	ctx.CredentialLookup = lookupFor(testDomain, testUsername, testPassword, &asked)
+	ctx.ChallengeProvider = func(negotiate []byte) ([]byte, error) {
+		gotNegotiate = negotiate
+		if _, err := upstream.AcceptNegotiateToken(negotiate); err != nil {
+			return nil, err
+		}
+		return upstream.ChallengeMessageBytes, nil
+	}
+
+	runExchange(t, ctx)
+
+	if len(gotNegotiate) == 0 {
+		t.Fatal("ChallengeProvider was not called with the client's NEGOTIATE")
+	}
+	if ctx.Challenge.ServerChallenge != upstreamChallenge {
+		t.Fatalf("relayed CHALLENGE carries %x, want %x", ctx.Challenge.ServerChallenge, upstreamChallenge)
+	}
+	if !bytes.Equal(ctx.ChallengeMessageBytes, upstream.ChallengeMessageBytes) {
+		t.Fatal("relayed CHALLENGE bytes were not passed through verbatim")
+	}
+	if err := ctx.Verify(); err != nil {
+		t.Fatalf("response did not verify against the relayed challenge: %v", err)
+	}
+}
+
 // TestAcceptorRejectsMalformedTokens asserts each way a token can be wrong is
 // refused rather than parsed as something else.
 func TestAcceptorRejectsMalformedTokens(t *testing.T) {
