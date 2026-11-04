@@ -26,6 +26,14 @@ func (c *Client) SessionSetupNegotiateBlob(negotiateToken []byte) (challengeToke
 		return nil, 0, fmt.Errorf("transport is not connected")
 	}
 
+	// The opening leg of a relay is session-less: it goes out on SessionId 0 and
+	// must be neither signed nor encrypted. The engine keys signing and
+	// encryption off c.Session (not the header), so any session already
+	// established on this client would otherwise protect this SessionId-0 request
+	// with that unrelated session's key — which a server rejects. Clear it; the
+	// relay session is installed by SessionSetupAuthenticateBlob on success.
+	c.Session = nil
+
 	req := commands.NewSessionSetupRequest()
 	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 	req.SecurityBuffer = negotiateToken
