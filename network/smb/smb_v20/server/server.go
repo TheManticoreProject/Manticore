@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/gssapi"
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
@@ -35,6 +36,13 @@ type Config struct {
 	// Authenticator resolves an NTLM identity to its NT hash. Nil verifies no
 	// NTLM logon, which only AllowGuest can then admit.
 	Authenticator func(domain, username string) (ntHash [16]byte, ok bool)
+
+	// OnAcceptContext, when set, is called with each session's acceptor after it
+	// is created and before the NEGOTIATE is answered. It exposes the whole
+	// AcceptContext so a caller can drive the exchange — for instance setting
+	// ChallengeProvider to source the CHALLENGE from an upstream connection. Nil
+	// leaves the default behaviour untouched.
+	OnAcceptContext func(accept *spnego.AcceptContext)
 
 	// Kerberos, when set, accepts Kerberos logons with these acceptor options.
 	Kerberos *gssapi.AcceptOptions

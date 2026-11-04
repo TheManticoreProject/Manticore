@@ -93,6 +93,9 @@ func (c *Connection) beginAuthentication(w ResponseWriter, request *commands.Ses
 	// an account against.
 	accept := spnego.NewAcceptContext(c.Server.config.DomainName, challenge.TargetTypeDomain, targetInfo)
 	accept.CredentialLookup = c.Server.config.Authenticator
+	if c.Server.config.OnAcceptContext != nil {
+		c.Server.config.OnAcceptContext(accept)
+	}
 
 	challengeBlob, err := accept.AcceptNegotiateToken([]byte(request.SecurityBlob))
 	if err != nil {

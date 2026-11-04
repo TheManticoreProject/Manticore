@@ -126,6 +126,9 @@ func (c *Connection) authenticate(session *Session, token []byte) ([]byte, *iden
 	}
 	accept := spnego.NewAcceptContext(config.DomainName, challenge.TargetTypeDomain, info)
 	accept.CredentialLookup = config.Authenticator
+	if config.OnAcceptContext != nil {
+		config.OnAcceptContext(accept)
+	}
 	challengeToken, err := accept.AcceptNegotiateToken(token)
 	if err != nil {
 		logger.Debugf("SMB2 server: unusable NTLM NEGOTIATE from %s: %v", c.remote, err)
