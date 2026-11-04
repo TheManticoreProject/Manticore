@@ -37,6 +37,20 @@ func (d *Dispatcher) EnableNTLM(auth NTLMAuth) {
 	d.ntlm = &auth
 }
 
+// OnAcceptContext registers a hook invoked with each authenticated bind's SPNEGO
+// acceptor, just after it is created and before the client's NEGOTIATE is answered.
+// It is the inbound-relay seam: the hook may set the acceptor's ChallengeProvider to
+// source the CHALLENGE from an upstream target (so the client commits to the target's
+// nonce and TargetInfo) and its CredentialLookup to forward the captured AUTHENTICATE
+// (available verbatim as the acceptor's RawAuthenticateToken) and refuse local
+// admission. EnableNTLM must also be called so the endpoint accepts authenticated
+// binds; in relay mode an empty NTLMAuth{} suffices, since the CHALLENGE comes from the
+// provider. It mirrors the SMB server's Config.OnAcceptContext. Call before the
+// dispatcher serves any association.
+func (d *Dispatcher) OnAcceptContext(fn func(accept *spnego.AcceptContext)) {
+	d.onAcceptContext = fn
+}
+
 // authState is what an authenticated bind established on an association.
 type authState struct {
 	authType  uint8
@@ -73,6 +87,12 @@ func (d *Dispatcher) startAuth(trailer *pdu.SecTrailer, token []byte) (*authStat
 	}
 	acceptor := spnego.NewAcceptContext(d.ntlm.TargetName, d.ntlm.TargetType, d.ntlm.TargetInfo)
 	acceptor.CredentialLookup = d.ntlm.CredentialLookup
+	// A relay installs its ChallengeProvider (and its own CredentialLookup) here, so
+	// the CHALLENGE returned below is sourced from the upstream target rather than
+	// generated locally.
+	if d.onAcceptContext != nil {
+		d.onAcceptContext(acceptor)
+	}
 	if _, err := acceptor.AcceptNegotiateToken(token); err != nil {
 		return nil, nil, err
 	}

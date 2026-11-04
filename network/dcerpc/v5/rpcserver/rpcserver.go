@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/TheManticoreProject/Manticore/crypto/spnego"
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/v5/pdu"
@@ -74,6 +75,14 @@ type Dispatcher struct {
 
 	// ntlm, set by EnableNTLM, configures authenticated binds. Nil refuses them.
 	ntlm *NTLMAuth
+
+	// onAcceptContext, set by OnAcceptContext, is invoked with each authenticated
+	// bind's SPNEGO acceptor before its NEGOTIATE is answered, so a relay can drive
+	// the exchange — setting ChallengeProvider to source the CHALLENGE from an
+	// upstream target, and CredentialLookup to forward the captured AUTHENTICATE.
+	// Nil leaves the acceptor driven solely by EnableNTLM. It mirrors the SMB
+	// server's Config.OnAcceptContext.
+	onAcceptContext func(accept *spnego.AcceptContext)
 }
 
 // New builds a Dispatcher for a set of interfaces.
