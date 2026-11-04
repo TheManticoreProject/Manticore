@@ -132,6 +132,25 @@ func NewSession(host string, port int, credentials *credentials.Credentials, use
 	return s, nil
 }
 
+// NewSessionFromConn wraps an already connected and already bound go-ldap
+// connection in a Session, so the high-level LDAP workflows (queries, RBCD,
+// shadow credentials, ACL edits, ...) run over it regardless of how it was
+// authenticated. It is the LDAP counterpart of the SMB client's NewSMB2Session:
+// the attack layer takes a *Session, and this is how a caller that obtained its
+// connection by some other means — an NTLM relay, a pass-the-hash or
+// pass-the-ticket bind performed elsewhere, a replayed exchange, an external SSP
+// — hands that connection to it without re-authenticating here.
+//
+// conn MUST already be connected and bound; this constructor performs no bind and
+// holds no credentials (none are needed once the bind is done). Searches page at
+// DefaultPageSize; change it with SetPageSize. Closing the Session closes conn.
+func NewSessionFromConn(conn *ldap.Conn) *Session {
+	return &Session{
+		connection: conn,
+		pageSize:   DefaultPageSize,
+	}
+}
+
 // SetGSSAPISigning requests the RFC 4752 integrity (signing) security layer for
 // Kerberos binds: after the bind, every LDAP PDU is GSS-signed and its integrity
 // verified on receipt. It must be called before Connect.
