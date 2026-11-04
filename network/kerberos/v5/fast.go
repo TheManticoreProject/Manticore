@@ -367,7 +367,13 @@ func (c *KerberosClient) processFASTASRep(resp, armorKey []byte, armorEType, cli
 	if encASRep.Nonce != requestNonce {
 		return fmt.Errorf("kerberos: FAST AS-REP nonce mismatch: got %d, want %d", encASRep.Nonce, requestNonce)
 	}
-	if err := c.validateKDCReplyIdentity("FAST AS-REP", asRep.CRealm, asRep.CName, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
+	// Authenticate the issued ticket and take the client identity from the armored
+	// KrbFastFinished rather than the unprotected outer reply (RFC 6113 §5.4.3).
+	crealm, cname, err := c.verifyFASTFinished(fastResp.Finished, asRep.TicketRaw, armorKey, armorEType, "FAST AS-REP")
+	if err != nil {
+		return err
+	}
+	if err := c.validateKDCReplyIdentity("FAST AS-REP", crealm, cname, asRep.Ticket, encASRep.SRealm, encASRep.SName); err != nil {
 		return err
 	}
 	if err := validateKDCReplyServer("FAST AS-REP", asRep.Ticket, c.realm, messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"krbtgt", c.realm}}, false); err != nil {
@@ -460,4 +466,35 @@ func (c *KerberosClient) parseFASTError(krbErr messages.KRBError, armorKey []byt
 		}
 	}
 	return innerErr, cookie, info
+}
+
+// verifyFASTFinished authenticates a FAST reply and returns the armor-authenticated
+// client identity. RFC 6113 §5.4.3 requires the client to verify the
+// KrbFastFinished ticket-checksum — a keyed checksum over the issued ticket,
+// computed with the armor key under key usage 53 (KEY_USAGE_FAST_FINISHED) — and to
+// take the client principal (cname/crealm) from the finished structure rather than
+// the unprotected outer KDC-REP, where an on-path attacker could alter it.
+//
+// The checksum type is pinned to the required (keyed) checksum type of the armor
+// key's enctype: accepting an arbitrary type would let an unkeyed checksum (which
+// needs no key to forge) pass, defeating the authentication. ticketRaw is the
+// verbatim APPLICATION 1 Ticket as issued, which is what the KDC checksummed.
+func (c *KerberosClient) verifyFASTFinished(finished *messages.KrbFastFinished, ticketRaw, armorKey []byte, armorEType int, replyType string) (string, messages.PrincipalName, error) {
+	if finished == nil {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s has no KrbFastFinished: the issued ticket is not authenticated by the armor", replyType)
+	}
+	if len(ticketRaw) == 0 {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s has no raw ticket to verify the FAST ticket-checksum against", replyType)
+	}
+	required, ok := kerbcrypto.ChecksumTypeForEType(armorEType)
+	if !ok {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s: no checksum type for armor etype %d", replyType, armorEType)
+	}
+	if finished.TicketChecksum.CKSumType != required {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s FAST ticket-checksum type %d is not the required keyed type %d for the armor key", replyType, finished.TicketChecksum.CKSumType, required)
+	}
+	if !kerbcrypto.VerifyChecksum(required, armorKey, kerbcrypto.KeyUsageFASTFinished, ticketRaw, finished.TicketChecksum.Checksum) {
+		return "", messages.PrincipalName{}, fmt.Errorf("kerberos: %s FAST ticket-checksum mismatch: the issued ticket is not authenticated by the armor key", replyType)
+	}
+	return finished.CRealm, finished.CName, nil
 }

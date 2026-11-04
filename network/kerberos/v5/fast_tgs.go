@@ -299,7 +299,13 @@ func (c *KerberosClient) processFASTTGSRep(resp []byte, ctx *fastTGSContext) (*m
 	if encRep.Nonce != ctx.nonce {
 		return nil, nil, nil, nil, fmt.Errorf("kerberos: FAST TGS-REP nonce mismatch: got %d, want %d", encRep.Nonce, ctx.nonce)
 	}
-	if err := c.validateKDCReplyIdentity("FAST TGS-REP", tgsRep.CRealm, tgsRep.CName, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
+	// Authenticate the issued ticket and take the client identity from the armored
+	// KrbFastFinished rather than the unprotected outer reply (RFC 6113 §5.4.3).
+	crealm, cname, err := c.verifyFASTFinished(fastResp.Finished, tgsRep.TicketRaw, ctx.armorKey, ctx.armorEType, "FAST TGS-REP")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := c.validateKDCReplyIdentity("FAST TGS-REP", crealm, cname, tgsRep.Ticket, encRep.SRealm, encRep.SName); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	if err := validateKDCReplyServer("FAST TGS-REP", tgsRep.Ticket, ctx.requestRealm, ctx.requestName, true); err != nil {
