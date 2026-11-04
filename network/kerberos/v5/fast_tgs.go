@@ -209,8 +209,11 @@ func (c *KerberosClient) buildFASTTGSReq(
 	}
 
 	// The outer TGS-REQ carries the PA-TGS-REQ (so the KDC can locate the armor
-	// ticket) and PA-FX-FAST. Its body is present but ignored in favor of the
-	// armored inner body, so it uses its own throwaway nonce.
+	// ticket) and PA-FX-FAST. A FAST KDC honors the armored inner body in
+	// preference, but the PA-TGS-REQ AP-REQ authenticator checksum (key usage 6)
+	// is still validated against this outer KDC-REQ-BODY, so it MUST be the same
+	// body the AP-REQ was built over (innerBody). Using a different throwaway body
+	// here makes that checksum validation fail with KRB_AP_ERR_MODIFIED.
 	tgsReq := &messages.TGSReq{
 		PVNO:    messages.KerberosV5,
 		MsgType: messages.MsgTypeTGSReq,
@@ -218,7 +221,7 @@ func (c *KerberosClient) buildFASTTGSReq(
 			{PADataType: messages.PATGSReq, PADataValue: apReqBytes},
 			{PADataType: messages.PAFXFast, PADataValue: fastValue},
 		},
-		ReqBody: c.tgsReqBody(bodyRealm, sname, randomNonce(), tgtFlags),
+		ReqBody: innerBody,
 	}
 	reqBytes, err := tgsReq.Marshal()
 	if err != nil {
