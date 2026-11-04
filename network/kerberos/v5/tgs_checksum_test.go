@@ -104,3 +104,27 @@ func TestFASTTGSAuthenticatorChecksumsInnerBody(t *testing.T) {
 		ReqBody: body,
 	})
 }
+
+// TestFASTTGSReqOuterBodyMatchesAuthenticatorChecksum drives the whole
+// buildFASTTGSReq assembly and checks the invariant the KDC enforces: the
+// PA-TGS-REQ AP-REQ authenticator checksum (key usage 6) is validated against the
+// OUTER KDC-REQ-BODY of the TGS-REQ, so that outer body must be the one the AP-REQ
+// was built over. buildFASTTGSReq once set the outer body to a separate throwaway
+// (different nonce), so the checksum covered a body the KDC never saw and the KDC
+// answered KRB_AP_ERR_MODIFIED (error 41). Parsing the built request and running
+// the same check the KDC does catches that regression without a live KDC.
+func TestFASTTGSReqOuterBodyMatchesAuthenticatorChecksum(t *testing.T) {
+	c := fakeTGTClient(t)
+	sname := messages.PrincipalName{NameType: messages.NameTypeSRVInst, NameString: []string{"ldap", "dc.corp.local"}}
+
+	reqBytes, _, err := c.buildFASTTGSReq(c.realm, sname, true, c.tgtTicket, c.tgtTicketRaw, c.sessionKey, c.sessionEType, c.tgtEnc.Flags, nil)
+	if err != nil {
+		t.Fatalf("buildFASTTGSReq: %v", err)
+	}
+	var req messages.TGSReq
+	if _, err := req.Unmarshal(reqBytes); err != nil {
+		t.Fatalf("parse FAST TGS-REQ: %v", err)
+	}
+	// Reuses the KDC-side check: the authenticator checksum must cover req.ReqBody.
+	assertTGSBodyChecksum(t, c, &req)
+}
