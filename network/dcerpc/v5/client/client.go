@@ -112,6 +112,14 @@ type Client struct {
 	proposedFeatureBits uint8
 	bindFeatures        uint16
 	bindFeaturesAcked   bool
+
+	// proposeConcMpx makes Bind set PFC_CONC_MPX in the bind's pfc_flags, offering
+	// concurrent multiplexing on the association; concMpxAcked records whether the
+	// server echoed PFC_CONC_MPX in the bind_ack's pfc_flags. Set via
+	// EnableConcurrentMultiplexing. This only negotiates the capability — issuing
+	// several calls at once is a separate step.
+	proposeConcMpx bool
+	concMpxAcked   bool
 }
 
 // SessionKey returns the session key established during an authenticated Bind — the
@@ -157,6 +165,18 @@ func (c *Client) BindTimeFeatures() (bits uint16, acknowledged bool) {
 // meaningful only after a successful Bind.
 func (c *Client) NegotiatedSyntax() ndr.Syntax { return c.negotiatedSyntax }
 
+// EnableConcurrentMultiplexing makes Bind offer concurrent multiplexing by setting
+// PFC_CONC_MPX in the bind's pfc_flags ([C706] 12.6.3.1). The server indicates
+// support by echoing PFC_CONC_MPX in its bind_ack, which ConcurrentMultiplexingSupported
+// then reports. It must be called before Bind. This only negotiates the capability;
+// the client still issues one call at a time until the concurrent-call path lands.
+func (c *Client) EnableConcurrentMultiplexing() { c.proposeConcMpx = true }
+
+// ConcurrentMultiplexingSupported reports whether the server acknowledged
+// PFC_CONC_MPX in its bind_ack. It is meaningful only after a successful Bind that
+// proposed it via EnableConcurrentMultiplexing.
+func (c *Client) ConcurrentMultiplexingSupported() bool { return c.concMpxAcked }
+
 // Bind connects the transport and binds to the interface identified by
 // abstractSyntax. It proposes the NDR 2.0 transfer syntax in presentation context 0,
 // and — when PreferNDR64 is enabled — NDR64 in a second context (the established
@@ -171,6 +191,7 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 
 	c.callID = 1
 	c.bindFeatures, c.bindFeaturesAcked = 0, false
+	c.concMpxAcked = false
 
 	// Context 0 is always NDR 2.0; an optional context 1 offers NDR64. Each context
 	// carries a single transfer syntax so the bind_ack's per-context result identifies
@@ -207,7 +228,11 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		AssocGroupID: 0,
 		ContextList:  contexts,
 	}
-	bind.Header = pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, c.callID)
+	bindFlags := pdu.PFCFirstFrag | pdu.PFCLastFrag
+	if c.proposeConcMpx {
+		bindFlags |= pdu.PFCConcMpx
+	}
+	bind.Header = pdu.NewHeader(pdu.PacketTypeBind, bindFlags, c.callID)
 
 	// For an authenticated bind, carry an NTLM NEGOTIATE token in the bind's auth
 	// verifier; the server's CHALLENGE comes back in the bind_ack and is completed with
@@ -246,6 +271,13 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		}
 		if featureContext >= 0 && featureContext < len(ack.Results) && ack.Results[featureContext].Result == pdu.ResultNegotiateAck {
 			c.bindFeatures, c.bindFeaturesAcked = ack.Results[featureContext].Reason, true
+		}
+		// The server advertises concurrent-multiplexing support by echoing
+		// PFC_CONC_MPX in the bind_ack's pfc_flags ([C706] 12.6.3.1). Record it only
+		// when we proposed it, so a server that sets the bit unsolicited does not
+		// read as a negotiated capability.
+		if c.proposeConcMpx && hdr.PacketFlags.Has(pdu.PFCConcMpx) {
+			c.concMpxAcked = true
 		}
 		ctxID, negotiated, ok := selectContext(bind.ContextList, ack.Results)
 		if !ok {
