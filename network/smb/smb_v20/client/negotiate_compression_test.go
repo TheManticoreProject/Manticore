@@ -15,7 +15,7 @@ import (
 // response, so offering algorithms would let a server compress replies the
 // client then rejects.
 func TestNegotiateOffersNoCompressionByDefault(t *testing.T) {
-	ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponse(t)}}
+	ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponseWithDialect(t, dialects.SMB2_DIALECT_3_1_1)}}
 	c := newTestClient(ft)
 	c.Profile = fingerprint.Default()
 	c.Profile.Dialects = []dialects.Dialect{dialects.SMB2_DIALECT_3_1_1}
