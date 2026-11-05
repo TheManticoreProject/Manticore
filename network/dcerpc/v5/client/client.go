@@ -82,6 +82,10 @@ type Client struct {
 
 	bound bool
 
+	// relayPending records that BindRelayNegotiate has sent a relayed bind and is
+	// awaiting the victim's AUTHENTICATE via BindRelayAuthenticate. See relay.go.
+	relayPending bool
+
 	// Authentication state, configured by SetAuth and established during Bind. When
 	// authType is pdu.AuthTypeNone the bind and calls are anonymous, exactly as before.
 	authType      uint8
