@@ -76,7 +76,10 @@ func (c *Client) Request(caName string, csr []byte, attributes string) (*Result,
 func request(rpc ndr.Invoker, caName string, csr []byte, attributes string) (*Result, error) {
 	var attribBlob mswcce.CERTTRANSBLOB
 	if attributes != "" {
-		attr := encodeUTF16(attributes)
+		// pwszAttributes is a null-terminated wide string ([MS-WCCE] 3.2.1.4.2.1.4):
+		// the CA parses the blob as a C-string, so it must end in a UTF-16 NUL, and
+		// Cb counts that terminator. Without it the CA reads past the Cb-sized buffer.
+		attr := append(encodeUTF16(attributes), 0x00, 0x00)
 		attribBlob = mswcce.CERTTRANSBLOB{Cb: ndr.DWORD(len(attr)), Pb: attr}
 	}
 	requestBlob := mswcce.CERTTRANSBLOB{Cb: ndr.DWORD(len(csr)), Pb: csr}
