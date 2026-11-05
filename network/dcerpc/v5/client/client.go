@@ -27,6 +27,7 @@ package client
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/ndr"
 	"github.com/TheManticoreProject/Manticore/network/dcerpc/syntax"
@@ -50,7 +51,8 @@ const maxResponseStubSize = 64 << 20
 type Client struct {
 	transport transport.Transport
 
-	// callID is the call_id of the most recent call; it is incremented per call.
+	// callID is the call_id of the bind PDU (always 1). Per-call ids are allocated
+	// from nextCallID by the demultiplexer.
 	callID uint32
 
 	// contextID is the presentation context id negotiated at Bind (0 for v1).
@@ -74,11 +76,18 @@ type Client struct {
 	// marshals and unmarshals stubs under it. Default NDR20.
 	negotiatedSyntax ndr.Syntax
 
-	// respByteOrder is the integer byte order of the most recent response, taken
-	// from its PDU data representation. Invoke decodes the stub in it, as the NDR
-	// receiver-makes-right rule requires for a big-endian sender. nil means the
-	// little-endian default, which is what Windows and Samba always send.
-	respByteOrder binary.ByteOrder
+	// Response demultiplexer (demux.go): a single reader goroutine, started on the
+	// first call after a successful bind, routes responses/faults to the call that
+	// owns each call_id, so Call and Invoke are safe to use concurrently.
+	readerOnce  sync.Once               // starts the reader exactly once
+	readerCond  *sync.Cond              // (on callsMu) wakes the parked reader when a request is on the wire or on close
+	sendMu      sync.Mutex              // serializes one call's request-fragment burst on the wire
+	callsMu     sync.Mutex              // guards calls, nextCallID, readerErr, outstanding and closed
+	calls       map[uint32]*pendingCall // in-flight calls, keyed by call_id (for routing)
+	nextCallID  uint32                  // last allocated per-call id (bind used callID=1)
+	outstanding int                     // requests sent but not yet answered; gates the reader
+	readerErr   error                   // terminal transport/protocol error, once set
+	closed      bool                    // set by Close; stops the reader
 
 	bound bool
 
@@ -133,7 +142,13 @@ func (c *Client) SessionKey() []byte { return c.sessionKey }
 // be ready to Connect (for ncacn_np, its SMB session and IPC$ tree connect are
 // already established).
 func NewClient(t transport.Transport) *Client {
-	return &Client{transport: t}
+	// The demultiplexer's shared state is initialized here, before any goroutine
+	// exists, so the reader goroutine, Call and Close all observe it without a data
+	// race (lazy init inside the reader's sync.Once would race a concurrent Close
+	// that reads readerCond under callsMu).
+	c := &Client{transport: t, calls: make(map[uint32]*pendingCall)}
+	c.readerCond = sync.NewCond(&c.callsMu)
+	return c
 }
 
 // PreferNDR64 controls whether Bind proposes the NDR64 transfer syntax in addition to
@@ -190,6 +205,7 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	}
 
 	c.callID = 1
+	c.nextCallID = 1 // per-call ids start at 2; the bind used 1
 	c.bindFeatures, c.bindFeaturesAcked = 0, false
 	c.concMpxAcked = false
 
@@ -321,23 +337,72 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 
 // Call invokes the method identified by opnum, sending stub as its marshalled
 // arguments and returning the marshalled results. A fault PDU is returned as a
-// *pdu.Fault error.
+// *pdu.Fault error. Call is safe to use from several goroutines at once: each call
+// gets its own call_id and its response is routed back by the demultiplexer
+// (demux.go).
 func (c *Client) Call(opnum uint16, stub []byte) ([]byte, error) {
-	if !c.bound {
-		return nil, fmt.Errorf("dcerpc call: not bound; call Bind first")
+	result, _, err := c.call(opnum, stub)
+	return result, err
+}
+
+// call is the shared implementation of Call and Invoke. It also returns the
+// response's byte order so Invoke can decode the stub under it without a shared
+// field. It allocates a call_id, registers the pending call, sends the request
+// fragments under the send lock, and waits for the demultiplexer to deliver the
+// response, fault, or a terminal connection error.
+func (c *Client) call(opnum uint16, stub []byte) ([]byte, binary.ByteOrder, error) {
+	c.callsMu.Lock()
+	bound := c.bound
+	c.callsMu.Unlock()
+	if !bound {
+		return nil, nil, fmt.Errorf("dcerpc call: not bound; call Bind first")
 	}
+	c.ensureReader()
 
-	c.callID++
+	pc := &pendingCall{done: make(chan callResult, 1)}
 
-	if err := c.sendRequest(opnum, stub); err != nil {
-		return nil, fmt.Errorf("dcerpc call (opnum %d): %w", opnum, err)
+	c.callsMu.Lock()
+	if c.readerErr != nil {
+		err := c.readerErr
+		c.callsMu.Unlock()
+		return nil, nil, fmt.Errorf("dcerpc call (opnum %d): connection failed: %w", opnum, err)
 	}
+	c.nextCallID++
+	pc.callID = c.nextCallID
+	pc.contextID = c.contextID
+	c.calls[pc.callID] = pc
+	c.callsMu.Unlock()
 
-	result, err := c.readResponse()
+	// One call's request fragments must reach the wire as an uninterrupted burst,
+	// so another concurrent call cannot interleave its fragments mid-sequence.
+	c.sendMu.Lock()
+	err := c.sendRequest(pc.callID, opnum, stub)
+	c.sendMu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("dcerpc call (opnum %d): %w", opnum, err)
+		// The request never went out whole; drop the registration so a stray later
+		// fragment is ignored and the reader is not left holding it.
+		c.callsMu.Lock()
+		delete(c.calls, pc.callID)
+		c.callsMu.Unlock()
+		return nil, nil, fmt.Errorf("dcerpc call (opnum %d): %w", opnum, err)
 	}
-	return result, nil
+
+	// Only now is the request — and so the response the reader will read — on the
+	// wire, so mark it outstanding and wake the reader. Gating the reader on
+	// "request sent" rather than "call registered" keeps it from racing into an
+	// empty read against a synchronous transport that produces the reply during
+	// Send. outstanding counts sent-but-unanswered calls; it balances one reply per
+	// increment, so the reader never reads more PDUs than were produced.
+	c.callsMu.Lock()
+	c.outstanding++
+	c.readerCond.Signal()
+	c.callsMu.Unlock()
+
+	res := <-pc.done
+	if res.err != nil {
+		return nil, nil, fmt.Errorf("dcerpc call (opnum %d): %w", opnum, res.err)
+	}
+	return res.stub, res.order, nil
 }
 
 // Invoke is the declarative counterpart to Call: it marshals the NDR request
@@ -350,14 +415,13 @@ func (c *Client) Invoke(in ndr.Call, out any) error {
 	if err != nil {
 		return fmt.Errorf("dcerpc invoke (opnum %d): marshal request: %w", in.Opnum(), err)
 	}
-	resp, err := c.Call(in.Opnum(), stub)
+	resp, order, err := c.call(in.Opnum(), stub)
 	if err != nil {
 		return err
 	}
 	if out == nil {
 		return nil
 	}
-	order := c.respByteOrder
 	if order == nil {
 		order = binary.LittleEndian
 	}
@@ -395,8 +459,9 @@ func selectContext(contexts []pdu.ContextElement, results []pdu.PresentationResu
 }
 
 // sendRequest fragments stub into request PDUs no larger than the negotiated send
-// size and writes each one.
-func (c *Client) sendRequest(opnum uint16, stub []byte) error {
+// size, stamps each with callID, and writes them. The caller holds sendMu so the
+// burst is not interleaved with another call's fragments.
+func (c *Client) sendRequest(callID uint32, opnum uint16, stub []byte) error {
 	// Largest stub chunk per fragment, reserving room for the auth verifier when each
 	// request is signed or sealed.
 	overhead := requestHeaderOverhead
@@ -430,7 +495,7 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 			AllocHint: uint32(len(stub) - offset), // bytes remaining from this fragment on
 			Stub:      chunk,
 		}
-		req.Header = pdu.NewHeader(pdu.PacketTypeRequest, flags, c.callID)
+		req.Header = pdu.NewHeader(pdu.PacketTypeRequest, flags, callID)
 
 		var raw []byte
 		var err error
@@ -451,103 +516,23 @@ func (c *Client) sendRequest(opnum uint16, stub []byte) error {
 	return nil
 }
 
-// readResponse reassembles response fragments until PFC_LAST_FRAG, returning the
-// concatenated stub data. A fault PDU is returned as a *pdu.Fault error. A fragment
-// larger than both the max_recv_frag proposed at Bind and the max_xmit_frag the
-// server announced in its bind_ack, or a reassembled stub exceeding
-// maxResponseStubSize, is rejected.
-func (c *Client) readResponse() ([]byte, error) {
-	fr := &fragmentReader{t: c.transport}
-	var stub []byte
-
-	for {
-		frag, err := c.readFragment(fr)
-		if err != nil {
-			return nil, err
-		}
-
-		hdr, err := pdu.PeekHeader(frag)
-		if err != nil {
-			return nil, err
-		}
-		// [C706] 12.6.3.1 bounds response fragments by the client's max_recv_frag,
-		// but Windows raises a proposal below 2048 to 2048 in its bind_ack and sends
-		// fragments of that size, so the announced max_xmit_frag is accepted too.
-		maxRecv := c.recvFragMax
-		if maxRecv == 0 {
-			maxRecv = c.transport.MaxRecvFrag()
-		}
-		if maxRecv != 0 && hdr.FragLength > maxRecv {
-			return nil, fmt.Errorf("response frag_length %d exceeds the max_recv_frag %d negotiated at bind", hdr.FragLength, maxRecv)
-		}
-
-		switch hdr.PacketType {
-		case pdu.PacketTypeResponse:
-			var resp pdu.Response
-			if _, err := resp.Unmarshal(frag); err != nil {
-				return nil, fmt.Errorf("parse response: %w", err)
-			}
-			if resp.Header.CallID != c.callID {
-				return nil, fmt.Errorf("response call_id %d does not match request call_id %d", resp.Header.CallID, c.callID)
-			}
-			// The stub is encoded in the transfer syntax of the context the
-			// response names, so one answering on another context than the
-			// request's cannot be decoded as this call's result. Every request
-			// is sent on c.contextID; if calls ever choose their own context,
-			// compare with that call's context instead.
-			if resp.ContextID != c.contextID {
-				return nil, fmt.Errorf("response p_cont_id %d does not match request context %d", resp.ContextID, c.contextID)
-			}
-			// Record the sender's byte order so Invoke decodes the reassembled
-			// stub in it (receiver-makes-right). All fragments of one response
-			// carry the same data representation.
-			c.respByteOrder = resp.Header.ByteOrder()
-			chunk := resp.Stub
-			if c.protectsRequests() {
-				// At PKT and above every response fragment must carry an auth
-				// verifier; one without it cannot be verified and is rejected
-				// rather than accepted as plaintext.
-				if resp.Header.AuthLength == 0 {
-					return nil, fmt.Errorf("response fragment has no auth verifier at auth level %d", c.authLevel)
-				}
-				chunk, err = c.unprotectResponseStub(frag)
-				if err != nil {
-					return nil, fmt.Errorf("unprotect response: %w", err)
-				}
-			}
-			if len(stub)+len(chunk) > maxResponseStubSize {
-				return nil, fmt.Errorf("reassembled response exceeds %d bytes", maxResponseStubSize)
-			}
-			stub = append(stub, chunk...)
-			if hdr.PacketFlags.Has(pdu.PFCLastFrag) {
-				return stub, nil
-			}
-		case pdu.PacketTypeFault:
-			var fault pdu.Fault
-			if _, err := fault.Unmarshal(frag); err != nil {
-				return nil, fmt.Errorf("parse fault: %w", err)
-			}
-			// A fault answers the call named by its call_id. call_id 0 is a
-			// connection-level fault a server sends when it cannot attribute the
-			// error to a call (e.g. before tearing the association down).
-			if fault.Header.CallID != c.callID && fault.Header.CallID != 0 {
-				return nil, fmt.Errorf("fault call_id %d does not match request call_id %d", fault.Header.CallID, c.callID)
-			}
-			return nil, &fault
-		default:
-			return nil, fmt.Errorf("unexpected response PDU type %s", hdr.PacketType)
-		}
-	}
-}
-
 // readFragment reads one complete PDU from fr.
 func (c *Client) readFragment(fr *fragmentReader) ([]byte, error) {
 	return fr.next()
 }
 
-// Close closes the underlying transport.
+// Close closes the underlying transport and stops the demultiplexer reader. A
+// reader parked while idle is woken by the closed flag; one blocked in a read is
+// released by the transport close. Any in-flight call is failed by the reader on
+// its way out.
 func (c *Client) Close() error {
+	c.callsMu.Lock()
 	c.bound = false
+	c.closed = true
+	if c.readerCond != nil {
+		c.readerCond.Signal()
+	}
+	c.callsMu.Unlock()
 	return c.transport.Close()
 }
 

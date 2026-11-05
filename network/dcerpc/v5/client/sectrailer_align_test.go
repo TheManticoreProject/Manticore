@@ -66,7 +66,7 @@ func TestSendRequestSecTrailerAlignment(t *testing.T) {
 			for i := range stub {
 				stub[i] = byte(i)
 			}
-			if err := c.sendRequest(1, stub); err != nil {
+			if err := c.sendRequest(2, 1, stub); err != nil { // callID 2, opnum 1
 				t.Fatalf("sendRequest: %v", err)
 			}
 			if len(ft.sent) < 2 {

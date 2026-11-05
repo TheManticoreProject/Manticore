@@ -34,6 +34,7 @@ func (c *Client) BindRelayNegotiate(abstractSyntax syntax.SyntaxID, negotiate []
 	}
 
 	c.callID = 1
+	c.nextCallID = 1 // per-call ids start at 2; the bind used 1
 	c.authType = pdu.AuthTypeNTLMSSP
 	c.authLevel = pdu.AuthLevelConnect
 
