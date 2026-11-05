@@ -145,7 +145,10 @@ func TestNegotiateOffersProfileDialectsOnly(t *testing.T) {
 		{[]dialects.Dialect{dialects.SMB2_DIALECT_3_0_2, dialects.SMB2_DIALECT_3_1_1}, true},
 	}
 	for _, tc := range cases {
-		ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponse(t)}}
+		// Reply with a dialect from the offered set: [MS-SMB2] 3.2.5.2 (enforced in
+		// Negotiate) rejects a selected dialect the client did not offer, and this
+		// test is about the request's offered list, not the response dialect.
+		ft := &fakeTransport{responses: [][]byte{cannedNegotiateResponseWithDialect(t, tc.offered[0])}}
 		c := newTestClient(ft)
 		c.Profile = fingerprint.Default()
 		c.Profile.Dialects = tc.offered

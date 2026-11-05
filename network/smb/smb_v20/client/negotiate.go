@@ -95,9 +95,34 @@ func (c *Client) Negotiate() error {
 		return fmt.Errorf("unexpected negotiate response command: %T", response.Command)
 	}
 
+	// [MS-SMB2] 3.2.5.2: "If the DialectRevision field in the SMB2 NEGOTIATE
+	// Response is equal to one of the values in the Dialects field of the SMB2
+	// NEGOTIATE request, the client MUST set Connection.Dialect to
+	// DialectRevision. Otherwise, the client MUST close the connection and SHOULD
+	// fail the application request." Returning an error here fails the request and
+	// leaves the transport for the caller to close. This also rejects the wildcard
+	// revision (0x02FF), which the engine's native NEGOTIATE never offers: it is
+	// valid only in reply to a multi-protocol negotiate, handled a layer up.
+	if !dialectOffered(c.Connection.OfferedDialects, negotiateResponse.DialectRevision) {
+		return fmt.Errorf("negotiate: server selected dialect %s (0x%04x), which the client did not offer",
+			negotiateResponse.DialectRevision, uint16(negotiateResponse.DialectRevision))
+	}
+
 	c.ApplyNegotiateResponse(negotiateResponse)
 
 	return nil
+}
+
+// dialectOffered reports whether the server-selected dialect is one of the
+// dialects the client offered, the precondition [MS-SMB2] 3.2.5.2 places on
+// setting Connection.Dialect.
+func dialectOffered(offered []dialects.Dialect, selected dialects.Dialect) bool {
+	for _, d := range offered {
+		if d == selected {
+			return true
+		}
+	}
+	return false
 }
 
 // ApplyNegotiateResponse records the negotiated connection state — selected
