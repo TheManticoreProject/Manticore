@@ -57,8 +57,12 @@ type SMBNamedPipe struct {
 	maxRecv  uint16
 }
 
-// Compile-time assertion that SMBNamedPipe implements the DCE/RPC transport contract.
-var _ dcerpctransport.Transport = (*SMBNamedPipe)(nil)
+// Compile-time assertion that SMBNamedPipe implements the DCE/RPC transport contract,
+// and that it reports itself as a serial-call transport.
+var (
+	_ dcerpctransport.Transport    = (*SMBNamedPipe)(nil)
+	_ dcerpctransport.SerialCaller = (*SMBNamedPipe)(nil)
+)
 
 // New creates a named-pipe transport over the supplied SMB client. The client MUST
 // already be connected, have an authenticated session (SessionSetup), and have a tree
@@ -185,6 +189,15 @@ func (p *SMBNamedPipe) Close() error {
 	}
 	return nil
 }
+
+// SerializesCalls reports that this transport carries one call at a time: an SMB
+// named pipe is a single ordered byte stream whose writes (request fragments) and
+// reads (response fragments) cannot be multiplexed across concurrent calls, and over
+// SMB1 with signing active the per-connection signing sequence number pairs each
+// request with its response. The DCE/RPC client therefore serializes whole call
+// exchanges over this transport (transport.SerialCaller), degrading concurrent calls
+// to serial while keeping them correct and race-free.
+func (p *SMBNamedPipe) SerializesCalls() bool { return true }
 
 // MaxXmitFrag returns the proposed maximum transmit fragment size.
 func (p *SMBNamedPipe) MaxXmitFrag() uint16 { return p.maxXmit }
