@@ -43,6 +43,23 @@ type Transport interface {
 	MaxRecvFrag() uint16
 }
 
+// SerialCaller is an optional interface a Transport implements when it cannot carry
+// more than one call in flight at a time. Its send and receive share a single ordered
+// channel — for ncacn_np, one SMB named-pipe handle — so interleaving one call's
+// request writes with another call's response reads overruns the pipe; and over SMB1
+// with signing active, the per-connection signing sequence number pairs each request
+// with its response and cannot be multiplexed at all. When a transport reports true,
+// the DCE/RPC client serializes whole call exchanges over it, degrading concurrent
+// Call/Invoke to serial while keeping them correct and race-free. A transport whose
+// send and receive are independent (ncacn_ip_tcp, or an SMB2 pipe with per-message
+// MessageId signing) does not implement this interface, or returns false, and its
+// calls run concurrently.
+type SerialCaller interface {
+	// SerializesCalls reports whether the client must run one call at a time over
+	// this transport.
+	SerializesCalls() bool
+}
+
 // MinFragSize is the smallest fragment size a connection-oriented DCE/RPC peer may
 // propose for max_xmit_frag or max_recv_frag: MustRecvFragSize in C706 12.6.4.1.
 // Every implementation must accept fragments of this size.

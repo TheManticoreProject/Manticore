@@ -79,15 +79,24 @@ type Client struct {
 	// Response demultiplexer (demux.go): a single reader goroutine, started on the
 	// first call after a successful bind, routes responses/faults to the call that
 	// owns each call_id, so Call and Invoke are safe to use concurrently.
-	readerOnce  sync.Once               // starts the reader exactly once
-	readerCond  *sync.Cond              // (on callsMu) wakes the parked reader when a request is on the wire or on close
-	sendMu      sync.Mutex              // serializes one call's request-fragment burst on the wire
-	callsMu     sync.Mutex              // guards calls, nextCallID, readerErr, outstanding and closed
-	calls       map[uint32]*pendingCall // in-flight calls, keyed by call_id (for routing)
-	nextCallID  uint32                  // last allocated per-call id (bind used callID=1)
-	outstanding int                     // requests sent but not yet answered; gates the reader
-	readerErr   error                   // terminal transport/protocol error, once set
-	closed      bool                    // set by Close; stops the reader
+	readerOnce sync.Once  // starts the reader exactly once
+	readerCond *sync.Cond // (on callsMu) wakes the parked reader when a request is on the wire or on close
+	sendMu     sync.Mutex // serializes one call's request-fragment burst on the wire
+
+	// serialCalls is set when the transport cannot carry more than one call in
+	// flight at a time (transport.SerialCaller, e.g. an SMB named pipe). callSerialMu
+	// then serializes a whole call exchange — request burst plus the wait for the
+	// response — so concurrent Call/Invoke degrade to serial over such a transport
+	// rather than interleaving request writes and response reads on one pipe (which
+	// overruns it) or racing the per-connection SMB1 signing sequence number.
+	serialCalls  bool
+	callSerialMu sync.Mutex
+	callsMu      sync.Mutex              // guards calls, nextCallID, readerErr, outstanding and closed
+	calls        map[uint32]*pendingCall // in-flight calls, keyed by call_id (for routing)
+	nextCallID   uint32                  // last allocated per-call id (bind used callID=1)
+	outstanding  int                     // requests sent but not yet answered; gates the reader
+	readerErr    error                   // terminal transport/protocol error, once set
+	closed       bool                    // set by Close; stops the reader
 
 	bound bool
 
@@ -148,6 +157,11 @@ func NewClient(t transport.Transport) *Client {
 	// that reads readerCond under callsMu).
 	c := &Client{transport: t, calls: make(map[uint32]*pendingCall)}
 	c.readerCond = sync.NewCond(&c.callsMu)
+	// A transport that cannot multiplex calls (an SMB named pipe) makes the client
+	// serialize whole call exchanges; see call and callSerialMu.
+	if sc, ok := t.(transport.SerialCaller); ok {
+		c.serialCalls = sc.SerializesCalls()
+	}
 	return c
 }
 
@@ -358,6 +372,18 @@ func (c *Client) call(opnum uint16, stub []byte) ([]byte, binary.ByteOrder, erro
 		return nil, nil, fmt.Errorf("dcerpc call: not bound; call Bind first")
 	}
 	c.ensureReader()
+
+	// Over a transport that cannot multiplex calls (an SMB named pipe), run one call
+	// at a time: hold callSerialMu across the whole exchange so another call's request
+	// writes never interleave with this call's response reads on the single pipe, and
+	// the SMB1 signing sequence number is advanced by one goroutine at a time. On a
+	// multiplexing transport (TCP, SMB2) serialCalls is false and calls run
+	// concurrently. callSerialMu is the outermost lock (callsMu and sendMu nest under
+	// it, and the reader goroutine never takes it), so it cannot deadlock.
+	if c.serialCalls {
+		c.callSerialMu.Lock()
+		defer c.callSerialMu.Unlock()
+	}
 
 	pc := &pendingCall{done: make(chan callResult, 1)}
 
