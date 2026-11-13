@@ -140,6 +140,63 @@ func TestForgeAndSignPAC(t *testing.T) {
 	}
 }
 
+// TestForgeAndSignPACAESSHA2 forges, signs and verifies a PAC with the AES-SHA2
+// enctypes (19 and 20), exercising the per-etype signature-type selection and the
+// RFC 8009 keyed checksum through the PAC Sign/Verify path end to end. The
+// underlying checksum is validated against RFC 8009 Appendix A vectors in the
+// crypto package (TestAES2ChecksumVectors); this test confirms the PAC layer
+// routes the right signature type and verifies what it signed. Covers #1933.
+func TestForgeAndSignPACAESSHA2(t *testing.T) {
+	info := sampleInfo(t)
+	for _, c := range []struct {
+		name    string
+		etype   int
+		keyLen  int
+		sigType uint32
+		sigSize int
+	}{
+		{"AES128-SHA256", 19, 16, 0x00000013, 16},
+		{"AES256-SHA384", 20, 32, 0x00000014, 24},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			key := bytes.Repeat([]byte{0x42}, c.keyLen)
+
+			p, err := Forge(info, "Administrator", time.Unix(1700000000, 0), c.etype)
+			if err != nil {
+				t.Fatalf("Forge: %v", err)
+			}
+			srv, ok := p.Buffer(BufferServerChecksum)
+			if !ok || binary.LittleEndian.Uint32(srv.Data) != c.sigType {
+				t.Fatalf("server checksum SignatureType = %#x, want %#x", binary.LittleEndian.Uint32(srv.Data), c.sigType)
+			}
+			if len(srv.Data) != 4+c.sigSize {
+				t.Fatalf("server checksum buffer = %d bytes, want %d", len(srv.Data), 4+c.sigSize)
+			}
+
+			signed, err := p.Sign(key, key)
+			if err != nil {
+				t.Fatalf("Sign: %v", err)
+			}
+			parsed, err := Parse(signed)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if err := parsed.VerifyServerSignature(key); err != nil {
+				t.Errorf("server signature: %v", err)
+			}
+			if err := parsed.VerifyKDCSignature(key); err != nil {
+				t.Errorf("KDC signature: %v", err)
+			}
+			// A different key must not verify: proves the AES-SHA2 checksum is
+			// actually keyed, not a fixed or empty value.
+			wrong := bytes.Repeat([]byte{0x24}, c.keyLen)
+			if err := parsed.VerifyServerSignature(wrong); err == nil {
+				t.Error("server signature verified under the wrong key")
+			}
+		})
+	}
+}
+
 func TestClientInfoLayout(t *testing.T) {
 	ci := MarshalClientInfo(time.Unix(1700000000, 0), "Administrator")
 	nameLen := binary.LittleEndian.Uint16(ci[8:])
@@ -163,6 +220,8 @@ func TestSignatureTypeForEType(t *testing.T) {
 		{23, 0xFFFFFF76, 16},
 		{17, 0x0000000F, 12},
 		{18, 0x00000010, 12},
+		{19, 0x00000013, 16}, // aes128-cts-hmac-sha256-128 (RFC 8009)
+		{20, 0x00000014, 24}, // aes256-cts-hmac-sha384-192 (RFC 8009)
 	}
 	for _, c := range cases {
 		st, sz, ok := SignatureTypeForEType(c.etype)
