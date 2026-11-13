@@ -14,9 +14,14 @@ const MaxObjectNameLength = 10
 // rejected rather than truncated or repaired.
 //
 // $, # and @ are EBCDIC variant characters: they sit at 0x5B, 0x7B and 0x7C
-// in CCSIDs 37, 500 and 1140, but elsewhere in the other national CCSIDs, and
-// names are encoded with the job CCSID. Whether system names must travel as
-// the CCSID 37 bytes instead is tracked in #1911.
+// in CCSIDs 37, 500 and 1140, but elsewhere in the other national CCSIDs. Names
+// are encoded with the job CCSID, which is correct: the reference client (IBM
+// Toolbox for Java / JTOpen) encodes object, library, program and command names
+// through the command-server job CCSID (RemoteCommandImplRemote: converter_ =
+// ConverterImplRemote.getConverter(reply.getCCSID(), system_)), not through a
+// fixed CCSID 37. A variant character therefore travels as its job-CCSID code
+// point, which is what the host expects. (Settled in #1911; CCSID 37 is fixed in
+// JTOpen only for a bound ILE procedure symbol name, never for an object name.)
 type ObjectName struct {
 	name string
 }
