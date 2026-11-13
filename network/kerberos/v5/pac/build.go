@@ -215,8 +215,9 @@ func MarshalClientInfo(clientID time.Time, name string) []byte {
 
 // SignatureTypeForEType returns the PAC signature type ([MS-PAC] 2.8) and its
 // byte length for a signing key of the given Kerberos encryption type: HMAC-MD5
-// for RC4, HMAC-SHA1-96 for the AES enctypes. It reports false for unsupported
-// enctypes.
+// for RC4, HMAC-SHA1-96 for the AES-SHA1 enctypes, and the RFC 8009 keyed
+// checksums for the AES-SHA2 enctypes (etype 19 -> 0x13, 16 bytes; etype 20 ->
+// 0x14, 24 bytes). It reports false for unsupported enctypes.
 func SignatureTypeForEType(etype int) (sigType uint32, size int, ok bool) {
 	switch etype {
 	case iana.ETypeRC4HMAC:
@@ -225,6 +226,10 @@ func SignatureTypeForEType(etype int) (sigType uint32, size int, ok bool) {
 		return sigHMACSHA1128, 12, true
 	case iana.ETypeAES256CTSHMACSHA196:
 		return sigHMACSHA1256, 12, true
+	case iana.ETypeAES128CTSHMACSHA256:
+		return sigHMACSHA2128, 16, true
+	case iana.ETypeAES256CTSHMACSHA384:
+		return sigHMACSHA2256, 24, true
 	default:
 		return 0, 0, false
 	}
