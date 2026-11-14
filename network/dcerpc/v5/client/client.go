@@ -138,6 +138,12 @@ type Client struct {
 	// several calls at once is a separate step.
 	proposeConcMpx bool
 	concMpxAcked   bool
+
+	// proposeHeaderSign makes Bind set PFC_SUPPORT_HEADER_SIGN in the bind's
+	// pfc_flags, offering header signing on the association; headerSignAcked records
+	// whether the server echoed it in the bind_ack. Set via EnableHeaderSigning.
+	proposeHeaderSign bool
+	headerSignAcked   bool
 }
 
 // SessionKey returns the session key established during an authenticated Bind — the
@@ -206,6 +212,22 @@ func (c *Client) EnableConcurrentMultiplexing() { c.proposeConcMpx = true }
 // proposed it via EnableConcurrentMultiplexing.
 func (c *Client) ConcurrentMultiplexingSupported() bool { return c.concMpxAcked }
 
+// EnableHeaderSigning makes Bind offer header signing by setting
+// PFC_SUPPORT_HEADER_SIGN in the bind's pfc_flags ([MS-RPCE] 2.2.2.3). The server
+// indicates support by echoing the flag in its bind_ack, which
+// HeaderSigningSupported then reports. It must be called before Bind. A server
+// configured to require header signing refuses protected calls from a client that
+// does not offer it. The authenticated request/response path already includes the
+// PDU header in the signed region (the NTLM signature covers the whole PDU minus
+// the auth_value), so negotiating this flag does not change which bytes are signed;
+// it advertises the capability the server may require.
+func (c *Client) EnableHeaderSigning() { c.proposeHeaderSign = true }
+
+// HeaderSigningSupported reports whether the server acknowledged
+// PFC_SUPPORT_HEADER_SIGN in its bind_ack. It is meaningful only after a successful
+// Bind that proposed it via EnableHeaderSigning.
+func (c *Client) HeaderSigningSupported() bool { return c.headerSignAcked }
+
 // Bind connects the transport and binds to the interface identified by
 // abstractSyntax. It proposes the NDR 2.0 transfer syntax in presentation context 0,
 // and — when PreferNDR64 is enabled — NDR64 in a second context (the established
@@ -222,6 +244,7 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	c.nextCallID = 1 // per-call ids start at 2; the bind used 1
 	c.bindFeatures, c.bindFeaturesAcked = 0, false
 	c.concMpxAcked = false
+	c.headerSignAcked = false
 
 	// Context 0 is always NDR 2.0; an optional context 1 offers NDR64. Each context
 	// carries a single transfer syntax so the bind_ack's per-context result identifies
@@ -261,6 +284,9 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 	bindFlags := pdu.PFCFirstFrag | pdu.PFCLastFrag
 	if c.proposeConcMpx {
 		bindFlags |= pdu.PFCConcMpx
+	}
+	if c.proposeHeaderSign {
+		bindFlags |= pdu.PFCSupportHeaderSign
 	}
 	bind.Header = pdu.NewHeader(pdu.PacketTypeBind, bindFlags, c.callID)
 
@@ -308,6 +334,13 @@ func (c *Client) Bind(abstractSyntax syntax.SyntaxID) error {
 		// read as a negotiated capability.
 		if c.proposeConcMpx && hdr.PacketFlags.Has(pdu.PFCConcMpx) {
 			c.concMpxAcked = true
+		}
+		// Header signing is in effect only when the server echoes
+		// PFC_SUPPORT_HEADER_SIGN in the bind_ack ([MS-RPCE] 2.2.2.3). Record it only
+		// when we proposed it, so a server that sets the bit unsolicited does not read
+		// as a negotiated capability.
+		if c.proposeHeaderSign && hdr.PacketFlags.Has(pdu.PFCSupportHeaderSign) {
+			c.headerSignAcked = true
 		}
 		ctxID, negotiated, ok := selectContext(bind.ContextList, ack.Results)
 		if !ok {
