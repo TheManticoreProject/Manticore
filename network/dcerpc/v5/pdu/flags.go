@@ -20,6 +20,14 @@ const (
 	// PFCPendingCancel signals a pending cancel (request) or a cancel was pending
 	// (response).
 	PFCPendingCancel PFCFlags = 0x04
+	// PFCSupportHeaderSign requests or acknowledges header signing. It occupies the
+	// same bit as PFCPendingCancel (0x04) but carries this meaning only on bind,
+	// bind_ack, alter_context and alter_context_resp PDUs ([MS-RPCE] 2.2.2.3): the
+	// client sets it on the bind to offer header signing and the server echoes it on
+	// the bind_ack to accept. On request/response PDUs the same bit is
+	// PFCPendingCancel, so this name must only be used on the context-negotiation
+	// PDUs.
+	PFCSupportHeaderSign PFCFlags = 0x04
 	// PFCReserved is reserved.
 	PFCReserved PFCFlags = 0x08
 	// PFCConcMpx indicates support for concurrent multiplexing on the connection.
