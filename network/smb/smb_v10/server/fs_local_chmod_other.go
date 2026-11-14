@@ -4,17 +4,15 @@ package server
 
 import "os"
 
-// setReadOnly sets or clears the read-only attribute by path. On Windows a
-// handle's Chmod needs FILE_WRITE_ATTRIBUTES, which a read-only open lacks and
-// an open for writing of a read-only file is refused, so the path is resolved
-// and checked against the root by hostPath, as before os.Root, until Go 1.25's
-// Root.Chmod (#1896).
+// setReadOnly sets or clears the read-only attribute. On Windows a handle's Chmod
+// needs FILE_WRITE_ATTRIBUTES, which a read-only open through openRegular lacks,
+// so the attribute goes through Root.Chmod: it opens the file beneath the root
+// with the access the change needs, so the file changed is the one the share
+// names and a directory swapped for a link out of the share cannot redirect it
+// (#1896).
 func (fs *LocalFileSystem) setReadOnly(path string, readOnly bool) error {
-	host, err := fs.hostPath(path)
-	if err != nil {
-		return translate(err)
-	}
-	info, err := os.Stat(host)
+	name := rel(path)
+	info, err := fs.rootDir.Stat(name)
 	if err != nil {
 		return translate(err)
 	}
@@ -24,5 +22,5 @@ func (fs *LocalFileSystem) setReadOnly(path string, readOnly bool) error {
 	} else {
 		perm |= 0o200
 	}
-	return translate(os.Chmod(host, perm))
+	return translate(fs.rootDir.Chmod(name, perm))
 }
