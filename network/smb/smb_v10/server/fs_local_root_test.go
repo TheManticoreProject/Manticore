@@ -255,3 +255,162 @@ func TestLocalFileSystemReadOnlyToggleOnUnreadableFile(t *testing.T) {
 		t.Errorf("mode after setting read-only = %v", info.Mode().Perm())
 	}
 }
+
+// swapDirAgainst runs fn repeatedly while a directory inside the share is swapped
+// for a symbolic link out of the share and back, so fn is exercised against both
+// the real directory and the dangling link. It returns once fn has run for the
+// given duration. This drives the directory-swap race that os.Root closes for the
+// name and attribute operations (#1896).
+func swapDirAgainst(t *testing.T, share, outside string, d time.Duration, fn func(i int)) {
+	t.Helper()
+	dir := filepath.Join(share, "d")
+	parked := filepath.Join(share, "parked")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	var stop atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !stop.Load() {
+			_ = os.Rename(dir, parked)
+			_ = os.Symlink(outside, dir)
+			time.Sleep(time.Microsecond)
+			_ = os.Remove(dir)
+			_ = os.Rename(parked, dir)
+		}
+	}()
+
+	deadline := time.Now().Add(d)
+	for i := 0; time.Now().Before(deadline); i++ {
+		fn(i)
+	}
+	stop.Store(true)
+	<-done
+	// Leave the directory, not the link, behind for any post-checks.
+	_ = os.Remove(dir)
+	if _, err := os.Lstat(parked); err == nil {
+		_ = os.Rename(parked, dir)
+	} else if _, err := os.Lstat(dir); err != nil {
+		_ = os.Mkdir(dir, 0o750)
+	}
+}
+
+// TestLocalFileSystemRenameCannotEscapeSwappedDirectory races a rename of a file
+// at the share root into a directory that is being swapped for a link out of the
+// share. Through os.Root the destination parent is opened relative to the root, so
+// a file can never land outside the share even when the swap falls between the
+// containment check and the rename.
+func TestLocalFileSystemRenameCannotEscapeSwappedDirectory(t *testing.T) {
+	base := t.TempDir()
+	share := filepath.Join(base, "share")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{share, outside} {
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fs, err := newLocalFS(t, share, "SHARE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.Close()
+
+	swapDirAgainst(t, share, outside, 2*time.Second, func(i int) {
+		src := fmt.Sprintf("src%d", i)
+		if f, err := fs.Open(src, OpenFlags{Write: true, Create: true}); err == nil {
+			f.Close()
+		} else {
+			return
+		}
+		// Either refused (link in the path) or it moves within the share.
+		_ = fs.Rename(src, fmt.Sprintf("d/moved%d", i), true)
+		_ = fs.Remove(src)
+	})
+
+	escaped, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escaped) != 0 {
+		t.Fatalf("%d entries moved outside the share through a swapped directory", len(escaped))
+	}
+}
+
+// TestLocalFileSystemLinkCannotEscapeSwappedDirectory races a hard link being
+// created in a directory that is being swapped for a link out of the share. The
+// link target must never appear outside the share.
+func TestLocalFileSystemLinkCannotEscapeSwappedDirectory(t *testing.T) {
+	base := t.TempDir()
+	share := filepath.Join(base, "share")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{share, outside} {
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(share, "orig"), []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := newLocalFS(t, share, "SHARE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.Close()
+
+	swapDirAgainst(t, share, outside, 2*time.Second, func(i int) {
+		_ = fs.Link("orig", fmt.Sprintf("d/l%d", i))
+	})
+
+	escaped, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escaped) != 0 {
+		t.Fatalf("%d hard links created outside the share through a swapped directory", len(escaped))
+	}
+}
+
+// TestLocalFileSystemChtimesCannotEscapeSwappedDirectory races a timestamp change
+// through a directory that is being swapped for a link to a directory outside the
+// share holding a file with a known modification time. Through Root.Chtimes the
+// file is opened beneath the root, so the outside file's time is never changed.
+func TestLocalFileSystemChtimesCannotEscapeSwappedDirectory(t *testing.T) {
+	base := t.TempDir()
+	share := filepath.Join(base, "share")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{share, outside} {
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	secret := filepath.Join(outside, "secret")
+	if err := os.WriteFile(secret, []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	baseline := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(secret, baseline, baseline); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := newLocalFS(t, share, "SHARE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.Close()
+
+	newTime := time.Date(2020, 6, 6, 12, 0, 0, 0, time.UTC)
+	swapDirAgainst(t, share, outside, 2*time.Second, func(i int) {
+		_ = fs.SetAttr("d/secret",
+			FileAttr{Accessed: newTime, Modified: newTime},
+			AttrMask{Accessed: true, Modified: true})
+	})
+
+	info, err := os.Stat(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().UTC().Equal(baseline) {
+		t.Fatalf("outside file's mtime changed to %v through a swapped directory", info.ModTime().UTC())
+	}
+}

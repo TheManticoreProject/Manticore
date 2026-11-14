@@ -158,39 +158,6 @@ func (fs *LocalFileSystem) hostPath(path string) (string, error) {
 	return resolved, nil
 }
 
-// hostPathNoFollow maps a resolved share-relative path to a host path without
-// resolving a symbolic link in its final element.
-//
-// The operations that act on a name rather than on contents -- deleting and
-// renaming -- must act on the name the client gave. Resolving its final element
-// makes them act on whatever it points at instead: a delete unlinks the target
-// and leaves the link, and a rename moves the target out from under it.
-//
-// Containment is unaffected. Every component but the last is still resolved and
-// the result checked against the root, which is what hostPath relies on for a
-// target that does not exist yet, and a link can only be traversed through a
-// component that exists. The final element is not traversed here at all -- it is
-// the thing being operated on -- so it cannot lead anywhere.
-func (fs *LocalFileSystem) hostPathNoFollow(path string) (string, error) {
-	if path == "" {
-		return fs.root, nil
-	}
-
-	candidate := filepath.Join(fs.root, filepath.FromSlash(path))
-
-	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(candidate))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", ErrNotFound
-		}
-		return "", err
-	}
-	if !fs.contains(resolvedParent) {
-		return "", ErrAccessDenied
-	}
-	return filepath.Join(resolvedParent, filepath.Base(candidate)), nil
-}
-
 // contains reports whether a resolved host path is the root or lies beneath it.
 //
 // The separator on the prefix matters: without it, a sibling directory whose name
@@ -378,11 +345,13 @@ func (fs *LocalFileSystem) openRegular(name string, mode int, perm os.FileMode, 
 
 // Link gives an existing file a second name.
 //
-// Both paths go through hostPathNoFollow, so neither the source nor the target
+// Both paths go through the share's os.Root, so neither the source nor the target
 // can be placed outside the share by way of a symbolic link — the same rule the
 // name operations follow, and for the same reason: a link is created by name, and
 // a name that resolves through a link out of the share would put a file where the
-// share does not reach.
+// share does not reach. Root.Link opens each component relative to the one before
+// it, so a directory swapped for a link out of the share between the Lstat and the
+// link cannot redirect it.
 //
 // Parameters:
 //   - existing: the file to link to, share-relative
@@ -395,16 +364,8 @@ func (fs *LocalFileSystem) Link(existing, target string) error {
 		return ErrReadOnly
 	}
 
-	source, err := fs.hostPathNoFollow(existing)
-	if err != nil {
-		return err
-	}
-	destination, err := fs.hostPathNoFollow(target)
-	if err != nil {
-		return err
-	}
-
-	info, err := os.Lstat(source)
+	source := rel(existing)
+	info, err := fs.rootDir.Lstat(source)
 	if err != nil {
 		return translate(err)
 	}
@@ -412,7 +373,7 @@ func (fs *LocalFileSystem) Link(existing, target string) error {
 		return ErrIsDirectory
 	}
 
-	if err := os.Link(source, destination); err != nil {
+	if err := fs.rootDir.Link(source, rel(target)); err != nil {
 		return translate(err)
 	}
 	return nil
@@ -467,13 +428,10 @@ func (fs *LocalFileSystem) SetAttr(path string, attr FileAttr, mask AttrMask) er
 		if !mask.Modified || modified.IsZero() {
 			modified = time.Now()
 		}
-		// os.Root has no Chtimes before Go 1.25, so this one step is still
-		// path-based (#1896).
-		host, err := fs.hostPath(path)
-		if err != nil {
-			return err
-		}
-		if err := os.Chtimes(host, accessed, modified); err != nil {
+		// Root.Chtimes opens the file beneath the root rather than resolving the
+		// path up front, so a directory swapped for a link out of the share cannot
+		// redirect the timestamp change (#1896).
+		if err := fs.rootDir.Chtimes(name, accessed, modified); err != nil {
 			return translate(err)
 		}
 	}
@@ -513,28 +471,25 @@ func (fs *LocalFileSystem) Rename(oldPath, newPath string, replace bool) error {
 	if fs.readOnly {
 		return ErrReadOnly
 	}
-	oldHost, err := fs.hostPathNoFollow(oldPath)
-	if err != nil {
-		return err
-	}
-	newHost, err := fs.hostPathNoFollow(newPath)
-	if err != nil {
-		return err
-	}
+	oldName := rel(oldPath)
+	newName := rel(newPath)
 	// The host refuses a directory moved beneath itself with an error of its
 	// own, which says nothing a client can act on. Refused here, it reads the
 	// same as from any other backend.
 	if isBeneath(newPath, oldPath) {
-		if info, err := os.Lstat(oldHost); err == nil && info.IsDir() {
+		if info, err := fs.rootDir.Lstat(oldName); err == nil && info.IsDir() {
 			return ErrAccessDenied
 		}
 	}
 	if !replace {
-		if _, err := os.Lstat(newHost); err == nil {
+		if _, err := fs.rootDir.Lstat(newName); err == nil {
 			return ErrExists
 		}
 	}
-	return translate(os.Rename(oldHost, newHost))
+	// Root.Rename opens each path's parent relative to the root, so a directory
+	// swapped for a link out of the share between the checks above and the rename
+	// cannot move a file out of it (#1896).
+	return translate(fs.rootDir.Rename(oldName, newName))
 }
 
 // Mkdir creates a directory.
