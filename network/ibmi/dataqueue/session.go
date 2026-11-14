@@ -26,6 +26,16 @@ const (
 type StartOptions struct {
 	// SystemCCSID encodes names, search operators and descriptions; it is
 	// the Sign-on system CCSID and must be supported by ibmi/ccsid.
+	//
+	// The data-queue host server interprets names in the sign-on system CCSID, not
+	// the command-server job CCSID that rmtcmd uses, so the two paths deliberately
+	// draw their codec from different sources. This matches the reference client,
+	// IBM Toolbox for Java (JTOpen): BaseDataQueueImplRemote encodes the queue name,
+	// library and description through getConverter(system_.getCcsid(), ...) — the
+	// AS400 object's CCSID — whereas RemoteCommandImplRemote uses the command
+	// server's negotiated job CCSID. The data-queue exchange-attributes reply (0x8001)
+	// carries no job-CCSID field for the client to prefer, unlike the command
+	// server's. Settled in #1965; no CCSID override is applied to data-queue names.
 	SystemCCSID uint32
 	// Rand is the client-seed source; nil uses crypto/rand.
 	Rand io.Reader

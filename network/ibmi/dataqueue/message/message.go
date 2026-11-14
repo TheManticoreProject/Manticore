@@ -269,9 +269,11 @@ const (
 type CommonReply struct {
 	ReturnCode uint16
 	// Message is the raw value of the optional LL/CP message field (an IBM
-	// message, encoded in the job CCSID); MessageCodePoint is its code
-	// point, which the protocol does not define. HasMessage is false when
-	// the reply has no field.
+	// message); MessageCodePoint is its code point, which the protocol does
+	// not define. The data-queue server exposes no job CCSID, so the client
+	// decodes this text with the session's sign-on system CCSID codec, as the
+	// reference client does (see dataqueue.StartOptions.SystemCCSID, #1965).
+	// HasMessage is false when the reply has no field.
 	Message          []byte
 	MessageCodePoint uint16
 	HasMessage       bool
