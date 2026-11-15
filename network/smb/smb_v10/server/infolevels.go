@@ -364,6 +364,7 @@ func encodeVolumeInformation(level uint16, volume VolumeInfo, unicode bool) ([]b
 		// VolumeLabel(variable).
 		label := encodeWireString(volume.Label, unicode)
 		info := make([]byte, 18)
+		binary.LittleEndian.PutUint64(info[0:8], filetimeOf(volume.CreationTime))
 		binary.LittleEndian.PutUint32(info[8:12], volume.SerialNumber)
 		binary.LittleEndian.PutUint32(info[12:16], uint32(len(label)))
 		return append(info, label...), true

@@ -35,6 +35,11 @@ type LocalFileSystem struct {
 	// label is the volume label reported to a client.
 	label string
 
+	// created is a stable creation time reported for the volume, captured from the
+	// root directory's timestamp at construction so it does not drift as files
+	// change.
+	created time.Time
+
 	// readOnly refuses every modifying operation at the backend, independently of
 	// the share's own flag, so a caller can hand out a genuinely read-only
 	// backend.
@@ -77,7 +82,7 @@ func NewLocalFileSystem(root, label string) (*LocalFileSystem, error) {
 		return nil, fmt.Errorf("failed to open %q: %v", resolved, err)
 	}
 
-	return &LocalFileSystem{root: resolved, rootDir: rootDir, label: label}, nil
+	return &LocalFileSystem{root: resolved, rootDir: rootDir, label: label, created: info.ModTime()}, nil
 }
 
 // rel turns a resolved share-relative path into the name the os.Root takes:
@@ -575,6 +580,7 @@ func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
 		// Derived from the root so it is stable across restarts, which is what a
 		// client caches it for.
 		SerialNumber:             serialNumberOf(fs.root),
+		CreationTime:             fs.created,
 		SectorsPerAllocationUnit: 8,
 		BytesPerSector:           512,
 	}

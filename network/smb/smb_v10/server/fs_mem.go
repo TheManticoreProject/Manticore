@@ -89,6 +89,7 @@ func NewMemoryFileSystem(label string) *MemoryFileSystem {
 			Label:                    label,
 			FileSystemName:           "NTFS",
 			SerialNumber:             serial,
+			CreationTime:             now,
 			TotalBytes:               1 << 30,
 			FreeBytes:                1 << 30,
 			SectorsPerAllocationUnit: 8,
