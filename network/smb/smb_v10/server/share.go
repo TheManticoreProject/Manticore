@@ -150,6 +150,10 @@ type VolumeInfo struct {
 	// SerialNumber identifies the volume.
 	SerialNumber uint32
 
+	// CreationTime is when the volume was created. A backend that does not know
+	// leaves it the zero value, which the encoders render as a zero FILETIME.
+	CreationTime time.Time
+
 	// TotalBytes and FreeBytes describe capacity. A backend that does not know
 	// reports zero for both.
 	TotalBytes int64

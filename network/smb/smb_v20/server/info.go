@@ -154,7 +154,7 @@ func encodeVolumeInfo(class uint8, volume smb1.VolumeInfo) ([]byte, nt_status.NT
 	var err error
 	switch infoclass.FsInformationClass(class) {
 	case infoclass.FileFsVolumeInformation:
-		info := filesystem.FileFsVolumeInformation{VolumeSerialNumber: volume.SerialNumber, VolumeLabel: volume.Label}
+		info := filesystem.FileFsVolumeInformation{VolumeCreationTime: filetime(volume.CreationTime), VolumeSerialNumber: volume.SerialNumber, VolumeLabel: volume.Label}
 		encoded, err = info.Marshal()
 	case infoclass.FileFsSizeInformation:
 		info := filesystem.FileFsSizeInformation{
