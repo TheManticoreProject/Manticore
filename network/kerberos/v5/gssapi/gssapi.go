@@ -261,6 +261,10 @@ func InitSecContext(opts InitOptions) ([]byte, *SecContext, error) {
 		CUSec:     cusec,
 		CTime:     now,
 		SeqNumber: seqNum,
+		// The GSS per-message context always carries a defined initial sequence
+		// number; emit it even when it is 0 (the DCE/RPC per-message case), as
+		// RFC 4120 / RFC 4121 initiators and Impacket do.
+		SeqNumberPresent: true,
 	}
 	if len(opts.SubKey) > 0 {
 		auth.SubKey = &messages.EncryptionKey{KeyType: opts.SubKeyEType, KeyValue: opts.SubKey}

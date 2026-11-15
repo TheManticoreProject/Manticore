@@ -53,9 +53,12 @@ type authenticatorMarshal struct {
 	Cksum             Checksum             `asn1:"explicit,tag:3,optional"`
 	CUSec             int                  `asn1:"explicit,tag:4"`
 	CTime             time.Time            `asn1:"explicit,tag:5,generalized"`
-	SubKey            EncryptionKey        `asn1:"explicit,tag:6,optional"`
-	SeqNumber         int                  `asn1:"explicit,tag:7,optional"`
-	AuthorizationData []AuthorizationData  `asn1:"explicit,tag:8,optional"`
+	SubKey EncryptionKey `asn1:"explicit,tag:6,optional"`
+	// SeqNumber is pre-encoded as the [7] EXPLICIT INTEGER element (or left empty
+	// to omit it) so a deliberate seq-number of 0 is not dropped as an optional
+	// zero value. See Authenticator.SeqNumberPresent.
+	SeqNumber         asn1.RawValue       `asn1:"optional"`
+	AuthorizationData []AuthorizationData `asn1:"explicit,tag:8,optional"`
 }
 
 // Authenticator is a Kerberos Authenticator (APPLICATION[2]),
@@ -79,6 +82,11 @@ type Authenticator struct {
 	SubKey *EncryptionKey
 	// SeqNumber is the optional sequence number.
 	SeqNumber int
+	// SeqNumberPresent forces the [7] seq-number element to be encoded even when
+	// SeqNumber is 0. RFC 4120 marks seq-number optional, and encoding/asn1 omits
+	// a zero-valued optional integer, so an initiator that deliberately requests
+	// seq-number 0 (e.g. the DCE/RPC per-message path) must set this to emit it.
+	SeqNumberPresent bool
 	// AuthorizationData is optional application authorization data carried in
 	// the authenticator rather than the ticket.
 	AuthorizationData []AuthorizationData
@@ -92,8 +100,17 @@ func (a *Authenticator) Marshal() ([]byte, error) {
 		CName:             MarshalPrincipalName(a.CName),
 		CUSec:             a.CUSec,
 		CTime:             normalizeTime(a.CTime),
-		SeqNumber:         a.SeqNumber,
 		AuthorizationData: a.AuthorizationData,
+	}
+	// Encode the [7] seq-number when it is non-zero, or when the caller requires
+	// a deliberate zero to appear on the wire (SeqNumberPresent). A zero-valued
+	// optional integer would otherwise be dropped by encoding/asn1.
+	if a.SeqNumber != 0 || a.SeqNumberPresent {
+		seqBytes, err := asn1.Marshal(a.SeqNumber)
+		if err != nil {
+			return nil, err
+		}
+		inner.SeqNumber = asn1.RawValue{FullBytes: append([]byte{0xa7, byte(len(seqBytes))}, seqBytes...)}
 	}
 	if a.Cksum != nil {
 		inner.Cksum = *a.Cksum
