@@ -249,7 +249,11 @@ func newAuthenticateMessage(challenge *challenge.ChallengeMessage, username, dom
 	timestamp := targetinfo.GetTimestamp(challenge.TargetInfo)
 	serverSuppliedTimestamp := len(timestamp) == 8
 	if !serverSuppliedTimestamp {
-		windowsFiletime := (uint64(time.Now().Unix()) + 116444736000) * 10000000
+		// Windows FILETIME is 100 ns ticks since 1601-01-01; convert the current
+		// Unix time (seconds) to ticks and add the full 1601->1970 epoch delta
+		// (116444736000000000 ticks == 11644473600 s), the same constant used
+		// elsewhere in the tree (e.g. network/kerberos/v5/pac/build.go).
+		windowsFiletime := uint64(time.Now().Unix())*10000000 + 116444736000000000
 		timestamp = make([]byte, 8)
 		binary.LittleEndian.PutUint64(timestamp, windowsFiletime)
 	}
