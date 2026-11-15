@@ -21,6 +21,11 @@ import (
 // the dialects the client offered ([MS-CIFS] 2.2.4.52.2).
 const noDialectSelected = 0xFFFF
 
+// defaultMaxRawSize is the MaxRawSize reported in NEGOTIATE. Windows (2008
+// through 2012 R2) reports 65536; the value is informational here because
+// CAP_RAW_MODE is not advertised, so no raw transfer is ever negotiated.
+const defaultMaxRawSize = 65536
+
 // serverCapabilities are the capabilities advertised in the NEGOTIATE response.
 //
 // Each one is a promise, so the set is deliberately limited to what the server
@@ -117,8 +122,13 @@ func handleNegotiate(conn *Connection, w ResponseWriter, req *message.Message) n
 	// One virtual circuit per connection: multiplexed circuits are not served.
 	response.MaxNumberVcs = types.USHORT(1)
 	response.MaxBufferSize = types.ULONG(conn.Server.config.MaxBufferSize)
-	// CAP_RAW_MODE is not advertised, so this value is not used by the client.
-	response.MaxRawSize = types.ULONG(0)
+	// Windows Server 2008 through 2012 R2 report MaxRawSize 65536 even though they
+	// do not advertise CAP_RAW_MODE; the field is only meaningful once CAP_RAW_MODE
+	// is negotiated ([MS-CIFS] 2.2.4.52.2), which this server does not do, so the
+	// value is informational and reporting 0 (unlike every Windows version) was a
+	// server fingerprint. Matching the Windows value makes no behavioural promise:
+	// no raw-mode capability is advertised, so no client issues a raw transfer.
+	response.MaxRawSize = types.ULONG(defaultMaxRawSize)
 	response.Capabilities = serverCapabilities
 
 	sessionKey, err := randomUint32()
