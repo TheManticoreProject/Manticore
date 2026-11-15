@@ -36,5 +36,8 @@ func hostVolumeSerial(path string) (serial uint32, ok bool) {
 	if err := windows.GetVolumeInformation(p, nil, 0, &serial, nil, nil, nil, 0); err != nil {
 		return 0, false
 	}
+	if serial == 0 {
+		return 0, false
+	}
 	return serial, true
 }

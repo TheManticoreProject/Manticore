@@ -590,8 +590,8 @@ func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
 	vi := VolumeInfo{
 		Label:          fs.label,
 		FileSystemName: "NTFS",
-		// Derived from the root so it is stable across restarts, which is what a
-		// client caches it for.
+		// The real host-volume serial where the OS exposes it, else a stable
+		// path-derived fallback (see NewLocalFileSystem).
 		SerialNumber:             fs.serial,
 		CreationTime:             fs.created,
 		SectorsPerAllocationUnit: 8,
