@@ -16,6 +16,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
+	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
 // Config configures a Server. Zero values select the defaults.
@@ -192,9 +193,12 @@ func NewServer(config Config) (*Server, error) {
 		config.MaxWriteSize = DefaultMaxIOSize
 	}
 	if config.ServerGUID == ([16]byte{}) {
-		if _, err := rand.Read(config.ServerGUID[:]); err != nil {
-			return nil, fmt.Errorf("failed to generate a server GUID: %v", err)
-		}
+		// Generate a well-formed RFC 4122 version 4 GUID (as the SMB1 server does
+		// via guid.NewGUID), not raw random bytes. A peer that parses the
+		// ServerGuid otherwise sees an invalid version/variant, which fingerprints
+		// the server. ToBytes lays out the fields in the same little-endian order
+		// the wire expects for ServerGuid.
+		copy(config.ServerGUID[:], guid.NewGUID().ToBytes())
 	}
 
 	s := &Server{
