@@ -57,16 +57,21 @@ const (
 
 // serverFileSystemAttributes is the set this server claims.
 //
-// It is deliberately far short of what a real NTFS volume reports — a Windows
-// Server 2012 R2 volume reports 0x00C700FF — because the remaining bits stand for
-// features this server does not implement: compression, quotas, sparse files,
-// reparse points, encryption, object IDs and named streams. Claiming a capability
-// the server lacks is worse than claiming none, since a client then uses it and
-// the follow-up request is refused. Each bit becomes claimable when the feature
-// behind it exists.
-//
-// FILE_CASE_SENSITIVE_SEARCH is likewise withheld: path resolution here is
+// It is only FILE_CASE_PRESERVED_NAMES | FILE_UNICODE_ON_DISK, because those are
+// the only capabilities this server actually provides. The remaining NTFS bits
+// stand for features it does not implement: compression, quotas, sparse files,
+// reparse points, encryption, object IDs, named streams and persistent ACLs (the
+// last only on shares with a security provider). Claiming a capability the server
+// lacks is worse than claiming none, since a client then uses it and the follow-up
+// request is refused. Each bit becomes claimable when the feature behind it
+// exists. FILE_CASE_SENSITIVE_SEARCH is likewise withheld: path resolution here is
 // case-insensitive.
+//
+// This exact attribute set — case-preserving, Unicode, no ACLs or streams, with
+// large files and 255-character names — is what an exFAT volume reports, so the
+// volume is named exFAT rather than NTFS (see the FileSystemName fields and
+// nativeFileSystemName): an NTFS name beside a 0x6 attribute mask that no real
+// NTFS volume reports was itself the fingerprint.
 const serverFileSystemAttributes = fileCasePreservedNames | fileUnicodeOnDisk
 
 // bothDirectoryInfoFixedSize is the fixed part of an

@@ -87,7 +87,7 @@ func NewMemoryFileSystem(label string) *MemoryFileSystem {
 		},
 		volume: VolumeInfo{
 			Label:                    label,
-			FileSystemName:           "NTFS",
+			FileSystemName:           "exFAT",
 			SerialNumber:             serial,
 			CreationTime:             now,
 			TotalBytes:               1 << 30,

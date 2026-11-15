@@ -14,8 +14,11 @@ import (
 
 // nativeFileSystemName is reported for a disk share. A client uses it to decide
 // what the storage supports, so it names something with the semantics this server
-// actually offers rather than something more capable.
-const nativeFileSystemName = "NTFS"
+// actually offers rather than something more capable. exFAT matches the server's
+// capabilities (case-preserving, Unicode, large files, 255-character names, no
+// ACLs or streams); naming it NTFS beside a FileSystemAttributes mask no real NTFS
+// volume reports (0x6) was a fingerprint.
+const nativeFileSystemName = "exFAT"
 
 // handleTreeConnectAndx answers SMB_COM_TREE_CONNECT_ANDX: it connects a tree to
 // a named share and returns the identifier the client uses to act on it.

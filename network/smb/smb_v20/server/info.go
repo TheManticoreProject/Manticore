@@ -184,7 +184,10 @@ func encodeVolumeInfo(class uint8, volume smb1.VolumeInfo) ([]byte, nt_status.NT
 	case infoclass.FileFsAttributeInformation:
 		name := volume.FileSystemName
 		if name == "" {
-			name = "NTFS"
+			// exFAT, not NTFS: the claimed attribute set (case-preserving, Unicode,
+			// no ACLs or streams) is what exFAT reports, and an NTFS name beside it
+			// was a fingerprint. See serverFileSystemAttributes in the SMB1 server.
+			name = "exFAT"
 		}
 		info := filesystem.FileFsAttributeInformation{
 			FileSystemAttributes: volumeAttributes, MaximumComponentNameLength: smb1.MaxPathComponentLength, FileSystemName: name,
