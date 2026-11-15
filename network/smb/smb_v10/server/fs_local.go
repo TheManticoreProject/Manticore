@@ -589,7 +589,7 @@ func (fs *LocalFileSystem) ReadDir(path, pattern string) ([]DirEntry, error) {
 func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
 	vi := VolumeInfo{
 		Label:          fs.label,
-		FileSystemName: "NTFS",
+		FileSystemName: "exFAT",
 		// The real host-volume serial where the OS exposes it, else a stable
 		// path-derived fallback (see NewLocalFileSystem).
 		SerialNumber:             fs.serial,
