@@ -2,7 +2,11 @@
 
 package server
 
-import "golang.org/x/sys/windows"
+import (
+	"path/filepath"
+
+	"golang.org/x/sys/windows"
+)
 
 // diskUsage returns the total and available capacity, in bytes, of the volume
 // backing path. freeBytesAvailableToCaller is the space usable by the calling
@@ -18,4 +22,22 @@ func diskUsage(path string) (total, free int64, err error) {
 		return 0, 0, err
 	}
 	return int64(totalBytes), int64(freeToCaller), nil
+}
+
+// hostVolumeSerial returns the real volume serial of the volume backing path,
+// via GetVolumeInformation on the volume root. ok is false on failure so the
+// caller can fall back.
+func hostVolumeSerial(path string) (serial uint32, ok bool) {
+	root := filepath.VolumeName(path) + `\`
+	p, err := windows.UTF16PtrFromString(root)
+	if err != nil {
+		return 0, false
+	}
+	if err := windows.GetVolumeInformation(p, nil, 0, &serial, nil, nil, nil, 0); err != nil {
+		return 0, false
+	}
+	if serial == 0 {
+		return 0, false
+	}
+	return serial, true
 }

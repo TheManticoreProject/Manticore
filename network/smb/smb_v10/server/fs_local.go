@@ -40,6 +40,11 @@ type LocalFileSystem struct {
 	// change.
 	created time.Time
 
+	// serial is the volume serial reported to a client, captured at construction:
+	// the real host-volume serial where the OS exposes it, else a stable value
+	// derived from the share path.
+	serial uint32
+
 	// readOnly refuses every modifying operation at the backend, independently of
 	// the share's own flag, so a caller can hand out a genuinely read-only
 	// backend.
@@ -82,7 +87,15 @@ func NewLocalFileSystem(root, label string) (*LocalFileSystem, error) {
 		return nil, fmt.Errorf("failed to open %q: %v", resolved, err)
 	}
 
-	return &LocalFileSystem{root: resolved, rootDir: rootDir, label: label, created: info.ModTime()}, nil
+	// Prefer the real host-volume serial; fall back to a stable path-derived value
+	// when the OS does not expose one, so the serial is never a Manticore-only
+	// hash of the share path.
+	serial, ok := hostVolumeSerial(resolved)
+	if !ok {
+		serial = serialNumberOf(resolved)
+	}
+
+	return &LocalFileSystem{root: resolved, rootDir: rootDir, label: label, created: info.ModTime(), serial: serial}, nil
 }
 
 // rel turns a resolved share-relative path into the name the os.Root takes:
@@ -577,9 +590,9 @@ func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
 	vi := VolumeInfo{
 		Label:          fs.label,
 		FileSystemName: "NTFS",
-		// Derived from the root so it is stable across restarts, which is what a
-		// client caches it for.
-		SerialNumber:             serialNumberOf(fs.root),
+		// The real host-volume serial where the OS exposes it, else a stable
+		// path-derived fallback (see NewLocalFileSystem).
+		SerialNumber:             fs.serial,
 		CreationTime:             fs.created,
 		SectorsPerAllocationUnit: 8,
 		BytesPerSector:           512,
