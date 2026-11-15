@@ -47,13 +47,13 @@ type authenticatorInner struct {
 // authenticatorMarshal is the wire representation for marshaling.
 // CRealm uses realmExplicit; CName uses PrincipalNameMarshal for GeneralString encoding.
 type authenticatorMarshal struct {
-	AVno              int                  `asn1:"explicit,tag:0"`
-	CRealm            asn1.RawValue        // pre-encoded [1] EXPLICIT { GeneralString }
-	CName             PrincipalNameMarshal `asn1:"explicit,tag:2"`
-	Cksum             Checksum             `asn1:"explicit,tag:3,optional"`
-	CUSec             int                  `asn1:"explicit,tag:4"`
-	CTime             time.Time            `asn1:"explicit,tag:5,generalized"`
-	SubKey EncryptionKey `asn1:"explicit,tag:6,optional"`
+	AVno   int                  `asn1:"explicit,tag:0"`
+	CRealm asn1.RawValue        // pre-encoded [1] EXPLICIT { GeneralString }
+	CName  PrincipalNameMarshal `asn1:"explicit,tag:2"`
+	Cksum  Checksum             `asn1:"explicit,tag:3,optional"`
+	CUSec  int                  `asn1:"explicit,tag:4"`
+	CTime  time.Time            `asn1:"explicit,tag:5,generalized"`
+	SubKey EncryptionKey        `asn1:"explicit,tag:6,optional"`
 	// SeqNumber is pre-encoded as the [7] EXPLICIT INTEGER element (or left empty
 	// to omit it) so a deliberate seq-number of 0 is not dropped as an optional
 	// zero value. See Authenticator.SeqNumberPresent.
