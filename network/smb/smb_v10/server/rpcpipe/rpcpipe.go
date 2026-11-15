@@ -38,9 +38,10 @@ type Options struct {
 	DomainName string
 
 	// VersionMajor and VersionMinor are the operating system version wkssvc
-	// reports. Both zero reports 6.1, the version of Windows 7 and Server
-	// 2008 R2, because a client displays the number and one of zero reads as
-	// missing rather than as a version.
+	// reports. Both zero reports the default 6.3 (Windows Server 2012 R2), which
+	// matches the SMB1 server's default NativeOS identity, because a client
+	// displays the number and one of zero reads as missing rather than as a
+	// version.
 	VersionMajor uint32
 	VersionMinor uint32
 
@@ -68,10 +69,13 @@ type Options struct {
 }
 
 // defaultVersionMajor and defaultVersionMinor are the version reported when the
-// caller names none. See Options.VersionMajor.
+// caller names none. See Options.VersionMajor. This is 6.3 (Windows Server 2012
+// R2) to agree with the SMB1 server's default NativeOS / NativeLanMan strings,
+// which name Server 2012 R2: a wkssvc version that disagreed with the NativeOS
+// identity on the same host was a server fingerprint.
 const (
 	defaultVersionMajor = 6
-	defaultVersionMinor = 1
+	defaultVersionMinor = 3
 )
 
 // Handler and Session must satisfy the server's pipe contract, which is the whole
