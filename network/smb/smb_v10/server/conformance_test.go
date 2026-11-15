@@ -130,6 +130,8 @@ var servedCommands = map[codes.CommandCode]string{
 	codes.SMB_COM_CREATE_TEMPORARY: "creates a file under a name the server chooses",
 	codes.SMB_COM_READ:             "reads from a handle, core set",
 	codes.SMB_COM_WRITE:            "writes through a handle, core set; a zero count truncates",
+	codes.SMB_COM_LOCK_AND_READ:    "locks a byte range and reads it (CAP_LOCK_AND_READ)",
+	codes.SMB_COM_WRITE_AND_UNLOCK: "writes a byte range and unlocks it (CAP_LOCK_AND_READ)",
 	codes.SMB_COM_WRITE_AND_CLOSE:  "writes through a handle and closes it",
 	codes.SMB_COM_SEEK:             "moves a handle's file pointer",
 	codes.SMB_COM_TREE_CONNECT:     "connects a tree to a share, deprecated form",

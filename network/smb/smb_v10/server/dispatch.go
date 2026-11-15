@@ -48,6 +48,8 @@ var dispatchTable = map[codes.CommandCode]commandHandler{
 	codes.SMB_COM_CREATE_TEMPORARY: handleCreateTemporary,
 	codes.SMB_COM_READ:             handleRead,
 	codes.SMB_COM_WRITE:            handleWrite,
+	codes.SMB_COM_LOCK_AND_READ:    handleLockAndRead,
+	codes.SMB_COM_WRITE_AND_UNLOCK: handleWriteAndUnlock,
 	codes.SMB_COM_WRITE_AND_CLOSE:  handleWriteAndClose,
 	codes.SMB_COM_SEEK:             handleSeek,
 	codes.SMB_COM_TREE_CONNECT:     handleTreeConnect,
