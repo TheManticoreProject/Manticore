@@ -15,7 +15,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/common/transport"
 	smb1 "github.com/TheManticoreProject/Manticore/network/smb/smb_v10/server"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/dialects"
-	"github.com/TheManticoreProject/Manticore/windows/guid"
 )
 
 // Config configures a Server. Zero values select the defaults.
@@ -191,12 +190,13 @@ func NewServer(config Config) (*Server, error) {
 		config.MaxWriteSize = DefaultMaxIOSize
 	}
 	if config.ServerGUID == ([16]byte{}) {
-		// Generate a well-formed RFC 4122 version 4 GUID (as the SMB1 server does
-		// via guid.NewGUID), not raw random bytes. A peer that parses the
-		// ServerGuid otherwise sees an invalid version/variant, which fingerprints
-		// the server. ToBytes lays out the fields in the same little-endian order
-		// the wire expects for ServerGuid.
-		copy(config.ServerGUID[:], guid.NewGUID().ToBytes())
+		// Use the shared host-stable ServerGUID (the SMB1 server uses the same
+		// helper), a well-formed RFC 4122 version 4 GUID that stays the same across
+		// restarts for this host. Raw random bytes gave an invalid version/variant,
+		// and a fresh GUID every start was itself a fingerprint. ToBytes lays out
+		// the fields in the same little-endian order the wire expects for ServerGuid.
+		g := smb1.StableServerGUID()
+		copy(config.ServerGUID[:], g.ToBytes())
 	}
 
 	s := &Server{

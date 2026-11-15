@@ -2,6 +2,7 @@ package guid
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"regexp"
@@ -60,6 +61,37 @@ func NewGUID() *GUID {
 
 	// RFC 4122 4.4: version 4 in the high nibble of time_hi_and_version, and the
 	// variant 10 in the two high bits of clock_seq_hi_and_reserved.
+	c = (c & 0x0FFF) | 0x4000
+	d = (d & 0x3FFF) | 0x8000
+
+	return &GUID{A: a, B: b, C: c, D: d, E: e}
+}
+
+// NewGUIDFromSeed returns a deterministic GUID derived from seed: the same seed
+// always yields the same GUID, across process restarts. The version and variant
+// bits are forced exactly as NewGUID sets them, so the result is still a
+// well-formed RFC 4122 version 4 GUID — a consumer parsing those fields cannot
+// tell it apart from a random one. Use it when a GUID must stay stable for a
+// given input (for example a server GUID bound to the host identity) rather than
+// being regenerated each time.
+//
+// The 128 bits come from SHA-256 of the seed rather than crypto/rand; SHA-256 is
+// used only as a fixed-length mixing function here, not for any secret.
+//
+// Parameters:
+// - seed: the bytes the GUID is derived from.
+//
+// Returns:
+// - A pointer to the derived GUID.
+func NewGUIDFromSeed(seed []byte) *GUID {
+	sum := sha256.Sum256(seed)
+
+	a := binary.BigEndian.Uint32(sum[0:4])
+	b := binary.BigEndian.Uint16(sum[4:6])
+	c := binary.BigEndian.Uint16(sum[6:8])
+	d := binary.BigEndian.Uint16(sum[8:10])
+	e := uint64(binary.BigEndian.Uint16(sum[10:12]))<<32 | uint64(binary.BigEndian.Uint32(sum[12:16]))
+
 	c = (c & 0x0FFF) | 0x4000
 	d = (d & 0x3FFF) | 0x8000
 
