@@ -48,6 +48,7 @@ func TestBackendsReportCreationTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLocalFileSystem: %v", err)
 	}
+	defer fs.Close()
 	local, _ := fs.VolumeInfo()
 	if local.CreationTime.IsZero() {
 		t.Error("LocalFileSystem reports a zero volume creation time")
