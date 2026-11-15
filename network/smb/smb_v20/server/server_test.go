@@ -173,7 +173,9 @@ func exerciseShare(t *testing.T, c *client.Client, fs *smb1.MemoryFileSystem) {
 	for _, entry := range filesystem.ParseFileIdBothDirectoryInformationList(listing) {
 		names = append(names, entry.FileName)
 	}
-	if got := strings.Join(names, ","); got != "dir,hello.txt,renamed.bin" {
+	// Windows lists "." and ".." at the head of every directory, including the
+	// share root; the server now synthesises them, matching the SMB1 server.
+	if got := strings.Join(names, ","); got != ".,..,dir,hello.txt,renamed.bin" {
 		t.Errorf("listing = %s", got)
 	}
 	if more, err := c.QueryDirectory(root, uint8(infoclass.FileIdBothDirectoryInformation), "*", 0); err != nil || len(more) != 0 {

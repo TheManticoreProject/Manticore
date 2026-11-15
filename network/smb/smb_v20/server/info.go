@@ -333,6 +333,19 @@ func (c *Connection) queryDirectory(r *request, resp *response) nt_status.NT_STA
 		if err != nil {
 			return smb1.StatusForFSError(err)
 		}
+		// Prepend the "." and ".." entries Windows lists for every directory,
+		// including the share root, matching what the SMB1 server already does.
+		// They are kept only when they match the search pattern, as the backend
+		// filters real entries, so a specific-name query still gets just its match
+		// (or none). A wildcard query of an otherwise empty directory therefore
+		// lists "." and "..", as Windows does, rather than STATUS_NO_SUCH_FILE.
+		var dots []smb1.DirEntry
+		for _, dot := range smb1.SynthesizeDotEntries(open.fs(), open.currentPath()) {
+			if smb1.MatchPattern(req.FileName, dot.Attr.Name) {
+				dots = append(dots, dot)
+			}
+		}
+		entries = append(dots, entries...)
 		if len(entries) == 0 {
 			return nt_status.NT_STATUS_NO_SUCH_FILE
 		}

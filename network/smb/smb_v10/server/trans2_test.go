@@ -58,10 +58,8 @@ func TestDirectoryListing(t *testing.T) {
 				break
 			}
 		}
-		// ".." is absent at the share root, which has no parent within the share.
-		if want == ".." {
-			continue
-		}
+		// ".." is listed at the share root too (as Windows does), described with
+		// the root's own attributes since there is no parent within the share.
 		if !found {
 			t.Errorf("the listing is missing %q; it holds %v", want, names)
 		}

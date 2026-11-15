@@ -278,31 +278,59 @@ func handleFindClose2(conn *Connection, w ResponseWriter, req *message.Message) 
 	return conn.answer(w, commands.NewFindClose2Response())
 }
 
-// dotEntries synthesises the "." and ".." entries at the head of a listing. ".."
-// is omitted at the share root, where there is no parent within the share to
-// name.
+// dotEntries synthesises the "." and ".." entries at the head of an SMB1 listing.
 func dotEntries(tree *Tree, directory string) []DirEntry {
-	self, err := tree.Share.FS.Stat(directory)
+	return SynthesizeDotEntries(tree.Share.FS, directory)
+}
+
+// SynthesizeDotEntries returns the "." and ".." entries for a directory listing.
+// Windows lists both for any directory that is not a volume root, which includes
+// the root of an ordinary share (a folder, not a volume): omitting ".." at the
+// share root, or omitting both in SMB2, is a server fingerprint and makes the
+// SMB1 and SMB2 listings of one host disagree. "." carries the directory's own
+// attributes; ".." carries the parent's, or, at the share root where there is no
+// parent within the share, the directory's own attributes.
+//
+// The entries are synthesised rather than expected from a backend, since a backend
+// has no reason to invent them.
+//
+// Parameters:
+//   - fs: the file system the directory lives on
+//   - directory: the share-relative directory path ("" is the share root)
+//
+// Returns:
+//   - the "." and ".." entries, in that order
+func SynthesizeDotEntries(fs FileSystem, directory string) []DirEntry {
+	self, err := fs.Stat(directory)
 	if err != nil {
 		// A directory that cannot be described still lists; the timestamps are
 		// the only thing lost.
 		self = FileAttr{IsDir: true}
 	}
 
-	self.Name = "."
-	entries := []DirEntry{{Attr: self}}
+	dot := self
+	dot.Name = "."
+	entries := []DirEntry{{Attr: dot}}
 
-	if directory == "" {
-		return entries
-	}
-
-	parent, _ := splitPath(directory)
-	up, err := tree.Share.FS.Stat(parent)
-	if err != nil {
-		up = FileAttr{IsDir: true}
+	up := self
+	if directory != "" {
+		parent, _ := splitPath(directory)
+		if attr, statErr := fs.Stat(parent); statErr == nil {
+			up = attr
+		} else {
+			up = FileAttr{IsDir: true}
+		}
 	}
 	up.Name = ".."
 	return append(entries, DirEntry{Attr: up})
+}
+
+// MatchPattern reports whether a name matches an SMB wildcard pattern ("*" for any
+// run, "?" for one), case-insensitively. It is exported so the SMB2 server can
+// filter the synthesised dot entries by the search pattern the way the backend
+// filters real entries.
+func MatchPattern(pattern, name string) bool {
+	return matchPattern(pattern, name)
 }
 
 // boolToUint16 renders a flag as the 16-bit value the wire carries.
