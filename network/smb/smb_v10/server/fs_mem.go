@@ -73,6 +73,14 @@ type memoryEntry struct {
 //   - The file system, containing only its root
 func NewMemoryFileSystem(label string) *MemoryFileSystem {
 	now := time.Now().UTC()
+	// A random serial per instance, like a volume serial assigned at format time.
+	// A fixed constant here was a standalone Manticore fingerprint. The random
+	// source rarely fails; a time-derived value keeps the serial non-constant if
+	// it does.
+	serial, err := randomUint32()
+	if err != nil {
+		serial = uint32(now.UnixNano())
+	}
 	return &MemoryFileSystem{
 		entries: map[string]*memoryEntry{
 			"": {name: "", isDir: true, links: 1, created: now, accessed: now, modified: now, changed: now},
@@ -80,7 +88,7 @@ func NewMemoryFileSystem(label string) *MemoryFileSystem {
 		volume: VolumeInfo{
 			Label:                    label,
 			FileSystemName:           "NTFS",
-			SerialNumber:             0x4D454D30,
+			SerialNumber:             serial,
 			TotalBytes:               1 << 30,
 			FreeBytes:                1 << 30,
 			SectorsPerAllocationUnit: 8,
