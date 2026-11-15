@@ -197,6 +197,28 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 		c.SetData(data.NewData())
 	}
 
+	// [MS-CIFS] 2.2.4.52.2: when the server supports none of the offered dialects
+	// it returns WordCount 1 carrying only DialectIndex 0xFFFF, with ByteCount 0 —
+	// not the full NT LM 0.12 structure. Emitting the whole 17-word body (with
+	// every other field zeroed) is what Windows and Samba do not do, so match the
+	// minimal refusal here.
+	if c.DialectIndex == NoDialectSupported {
+		c.SetParameters(parameters.NewParameters())
+		c.SetData(data.NewData())
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, uint16(c.DialectIndex))
+		c.GetParameters().AddWordsFromBytesStream(buf)
+		marshalledParameters, err := c.GetParameters().Marshal()
+		if err != nil {
+			return nil, err
+		}
+		marshalledData, err := c.GetData().Marshal()
+		if err != nil {
+			return nil, err
+		}
+		return append(marshalledParameters, marshalledData...), nil
+	}
+
 	// In case of AndX, we need to add the parameters to the Parameters structure first
 	if c.IsAndX() {
 		if c.GetAndX() == nil {
