@@ -569,7 +569,7 @@ func (fs *LocalFileSystem) ReadDir(path, pattern string) ([]DirEntry, error) {
 
 // VolumeInfo describes the storage.
 func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
-	return VolumeInfo{
+	vi := VolumeInfo{
 		Label:          fs.label,
 		FileSystemName: "NTFS",
 		// Derived from the root so it is stable across restarts, which is what a
@@ -577,7 +577,16 @@ func (fs *LocalFileSystem) VolumeInfo() (VolumeInfo, error) {
 		SerialNumber:             serialNumberOf(fs.root),
 		SectorsPerAllocationUnit: 8,
 		BytesPerSector:           512,
-	}, nil
+	}
+	// Report the real capacity and free space of the host volume backing the
+	// share. A share that advertised zero capacity (the former default) is both a
+	// fingerprint and a malfunction: clients see "0 bytes free" and refuse to
+	// write. On a query failure the fields stay zero.
+	if total, free, err := diskUsage(fs.root); err == nil {
+		vi.TotalBytes = total
+		vi.FreeBytes = free
+	}
+	return vi, nil
 }
 
 // serialNumberOf derives a stable volume serial from a path.
