@@ -377,7 +377,7 @@ func NewServer(config Config) (*Server, error) {
 		return nil, fmt.Errorf("SigningRequired needs an Authenticator: a session that cannot be verified derives no key to sign with")
 	}
 	if config.ServerGUID == (guid.GUID{}) {
-		config.ServerGUID = *guid.NewGUID()
+		config.ServerGUID = StableServerGUID()
 	}
 
 	s := &Server{
