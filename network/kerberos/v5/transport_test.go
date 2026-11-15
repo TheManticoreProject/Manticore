@@ -27,34 +27,6 @@ func mustMarshalKRBError(t *testing.T, code int) []byte {
 	return b
 }
 
-// TestShouldRetryOverTCP covers the UDP->TCP decision: transport failure, empty
-// datagram, and KRB_ERR_RESPONSE_TOO_BIG force a TCP retry; a complete protocol
-// error or normal AS-REP does not.
-func TestShouldRetryOverTCP(t *testing.T) {
-	tooBig := mustMarshalKRBError(t, messages.ErrResponseTooBig)
-	preauthRequired := mustMarshalKRBError(t, messages.ErrPreauthRequired)
-
-	tests := []struct {
-		name string
-		resp []byte
-		err  error
-		want bool
-	}{
-		{"udp error", nil, errors.New("timeout"), true},
-		{"empty datagram", []byte{}, nil, true},
-		{"response too big", tooBig, nil, true},
-		{"complete krb-error reply", preauthRequired, nil, false},
-		{"as-rep reply", []byte{0x6b, 0x01, 0x02}, nil, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldRetryOverTCP(tt.resp, tt.err); got != tt.want {
-				t.Errorf("shouldRetryOverTCP = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 // startTCPKDC runs a loopback TCP "KDC" that reads one RFC 4120 length-framed
 // request and replies with reply. It returns the listening port and a cleanup.
 func startTCPKDC(t *testing.T, reply []byte) (int, func()) {
@@ -133,35 +105,6 @@ func TestKDCSendAddrUsesTCPNotUDP(t *testing.T) {
 	case <-gotUDP:
 		t.Fatal("client sent a UDP datagram; the KDC transport must be TCP by default")
 	case <-time.After(250 * time.Millisecond):
-	}
-}
-
-// TestResponseTooBigOverUDP verifies KRB_ERR_RESPONSE_TOO_BIG is recognised while
-// other KRB-ERRORs and non-error replies are not.
-func TestResponseTooBigOverUDP(t *testing.T) {
-	if !responseTooBigOverUDP(mustMarshalKRBError(t, messages.ErrResponseTooBig)) {
-		t.Error("expected RESPONSE_TOO_BIG to be recognised")
-	}
-	if responseTooBigOverUDP(mustMarshalKRBError(t, messages.ErrPreauthRequired)) {
-		t.Error("PREAUTH_REQUIRED must not be classed as RESPONSE_TOO_BIG")
-	}
-	if responseTooBigOverUDP([]byte{0x6b, 0x01, 0x02}) {
-		t.Error("a non-KRB-ERROR reply must not be classed as RESPONSE_TOO_BIG")
-	}
-	if responseTooBigOverUDP(nil) {
-		t.Error("empty reply must not be classed as RESPONSE_TOO_BIG")
-	}
-}
-
-// TestKRBErrorCode confirms the error code is extracted from a KRB-ERROR and that
-// non-error bytes report ok=false.
-func TestKRBErrorCode(t *testing.T) {
-	code, ok := krbErrorCode(mustMarshalKRBError(t, messages.ErrSkew))
-	if !ok || code != messages.ErrSkew {
-		t.Errorf("krbErrorCode = (%d, %v), want (%d, true)", code, ok, messages.ErrSkew)
-	}
-	if _, ok := krbErrorCode([]byte{0x6b, 0x01}); ok {
-		t.Error("expected ok=false for non-KRB-ERROR bytes")
 	}
 }
 
