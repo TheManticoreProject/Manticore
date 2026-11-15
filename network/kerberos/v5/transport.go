@@ -11,8 +11,6 @@ import (
 	"net"
 	"strconv"
 	"time"
-
-	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
 // defaultKDCPort is the standard Kerberos port.
@@ -20,13 +18,6 @@ const defaultKDCPort = 88
 
 // defaultTimeout is the dial and I/O timeout for KDC connections.
 const defaultTimeout = 10 * time.Second
-
-// udpMaxSize is the maximum message size for UDP Kerberos. Messages larger
-// than this are sent via TCP only (RFC 4120 Section 7.2.1).
-const udpMaxSize = 1400
-
-// krbErrorTag is the APPLICATION[30] tag byte that identifies a KRB-ERROR message.
-const krbErrorTag = 0x7e
 
 // kdcEndpoint is a single candidate KDC: a host (name or IP literal) and the
 // port to reach it on. Discovery (DNS SRV) and explicit configuration both
@@ -73,14 +64,9 @@ func kdcSendEndpointsContext(ctx context.Context, resolver *net.Resolver, endpoi
 
 // kdcSend sends a Kerberos message to a single KDC host, resolving it to one or
 // more IP addresses (A and AAAA — IPv4 and IPv6) and trying each until one
-// answers. For each address it tries UDP first for small messages, then falls
-// back to TCP.
-//
-// TCP is attempted when the UDP datagram fails, comes back empty, or carries
-// KRB_ERR_RESPONSE_TOO_BIG, the KDC's explicit signal that its answer did not
-// fit a datagram and must be retried over TCP (RFC 4120 Section 7.2.1). Other
-// KRB-ERROR replies are complete protocol responses and are returned directly.
-// UDP has no length prefix; TCP uses the RFC 4120 4-byte big-endian prefix.
+// answers. Each address is contacted over TCP, the default KDC transport on
+// Windows (Vista / Server 2008 onward) and Impacket. TCP uses the RFC 4120
+// Section 7.2.2 4-byte big-endian length prefix.
 func kdcSend(resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
 	return kdcSendContext(context.Background(), resolver, kdc_host, kdc_port, msg, defaultTimeout)
 }
@@ -106,8 +92,8 @@ func kdcSendContext(ctx context.Context, resolver *net.Resolver, kdc_host string
 	return nil, lastErr
 }
 
-// kdcSendAddr sends msg to a single already-resolved IP address, applying the
-// UDP-first / TCP-fallback policy described on kdcSend.
+// kdcSendAddr sends msg to a single already-resolved IP address over TCP, the
+// default KDC transport (see kdcSend).
 func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
 	return kdcSendAddrContext(context.Background(), ip, kdc_port, msg, defaultTimeout)
 }
@@ -115,49 +101,26 @@ func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
 func kdcSendAddrContext(ctx context.Context, ip string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
 	ctx, cancel := kdcOperationContext(ctx, timeout)
 	defer cancel()
-	if len(msg) <= udpMaxSize {
-		resp, err := kdcSendUDPContext(ctx, ip, kdc_port, msg, 0)
-		if !shouldRetryOverTCP(resp, err) {
-			return resp, nil
-		}
+	// Windows (Vista / Server 2008 onward) and Impacket send Kerberos to the KDC
+	// over TCP/88 by default. TCP carries a message of any size (RFC 4120 Section
+	// 7.2.1 permits TCP for every request), so there is no UDP-first attempt and
+	// no RESPONSE_TOO_BIG retry dance — and a silently dropped UDP datagram can
+	// no longer consume the whole operation deadline before TCP is tried, which
+	// would make Kerberos fail outright on a network that filters UDP/88.
+	resp, err := kdcSendTCPContext(ctx, ip, kdc_port, msg, 0)
+	// A transport error raised at or after the operation deadline is reported as
+	// the context error, so callers see a single, uniform timeout. The socket
+	// deadline is the operation deadline, so a socket i/o timeout at that instant
+	// means the deadline was exceeded even if ctx.Err() has not flipped yet.
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if d, ok := ctx.Deadline(); ok && !time.Now().Before(d) {
+			return nil, context.DeadlineExceeded
+		}
 	}
-	return kdcSendTCPContext(ctx, ip, kdc_port, msg, 0)
-}
-
-// shouldRetryOverTCP decides, from a UDP attempt's result, whether the request
-// must be re-sent over TCP. It is true when UDP failed outright, returned an
-// empty datagram, or the KDC answered with KRB_ERR_RESPONSE_TOO_BIG (RFC 4120
-// Section 7.2.1). It is factored out so the UDP→TCP decision can be unit-tested
-// without a live KDC.
-func shouldRetryOverTCP(udpResp []byte, udpErr error) bool {
-	if udpErr != nil || len(udpResp) == 0 {
-		return true
-	}
-	return responseTooBigOverUDP(udpResp)
-}
-
-// responseTooBigOverUDP reports whether a reply is a KRB-ERROR carrying
-// KRB_ERR_RESPONSE_TOO_BIG (RFC 4120 Section 7.2.1) — the KDC's explicit signal
-// that the datagram answer did not fit and the request must be retried over TCP.
-func responseTooBigOverUDP(resp []byte) bool {
-	code, ok := krbErrorCode(resp)
-	return ok && code == messages.ErrResponseTooBig
-}
-
-// krbErrorCode returns the error code of a KRB-ERROR reply, or ok=false when the
-// bytes are not a KRB-ERROR (e.g. an AS-REP/TGS-REP).
-func krbErrorCode(resp []byte) (int, bool) {
-	if len(resp) == 0 || resp[0] != krbErrorTag {
-		return 0, false
-	}
-	var krbErr messages.KRBError
-	if _, err := krbErr.Unmarshal(resp); err != nil {
-		return 0, false
-	}
-	return krbErr.ErrorCode, true
+	return resp, err
 }
 
 // resolveKDCAddrs resolves a KDC host to a list of IP-literal dial targets. An
@@ -190,36 +153,6 @@ func resolveKDCAddrsContext(ctx context.Context, resolver *net.Resolver, host st
 		addrs = append(addrs, ia.IP.String())
 	}
 	return addrs, nil
-}
-
-// kdcSendUDP sends msg over UDP and returns the raw response (no length prefix).
-func kdcSendUDP(kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
-	return kdcSendUDPContext(context.Background(), kdc_host, kdc_port, msg, defaultTimeout)
-}
-
-func kdcSendUDPContext(ctx context.Context, kdc_host string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := kdcOperationContext(ctx, timeout)
-	defer cancel()
-	addr := net.JoinHostPort(kdc_host, strconv.Itoa(kdc_port))
-	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", addr)
-	if err != nil {
-		return nil, contextTransportError(ctx, err)
-	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stop()
-	setContextDeadline(ctx, conn)
-
-	if _, err := conn.Write(msg); err != nil {
-		return nil, fmt.Errorf("kerberos: UDP send: %w", contextTransportError(ctx, err))
-	}
-
-	buf := make([]byte, 65535)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("kerberos: UDP recv: %w", contextTransportError(ctx, err))
-	}
-	return buf[:n], nil
 }
 
 // kdcSendTCP sends msg over TCP using the RFC 4120 4-byte big-endian length prefix.

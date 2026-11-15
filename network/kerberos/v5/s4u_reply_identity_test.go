@@ -10,28 +10,34 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/kerberos/v5/messages"
 )
 
-// fakeS4UKDC serves TGS-REQs on a loopback UDP socket, answering each with a
-// TGS-REP for the requested sname whose cname is chosen by replyClient and whose
-// enc-part is sealed under the requesting client's TGT session key. If ticketFor
-// is non-nil it supplies the issued ticket (to carry a decryptable enc-part).
+// fakeS4UKDC serves TGS-REQs on a loopback TCP socket (the default KDC
+// transport), answering each with a TGS-REP for the requested sname whose cname
+// is chosen by replyClient and whose enc-part is sealed under the requesting
+// client's TGT session key. If ticketFor is non-nil it supplies the issued
+// ticket (to carry a decryptable enc-part).
 func fakeS4UKDC(t *testing.T, c *KerberosClient, replyClient func(n int) string, ticketFor func(sname messages.PrincipalName) messages.Ticket) {
 	t.Helper()
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
-	c.kdcHost = conn.LocalAddr().String()
+	t.Cleanup(func() { ln.Close() })
+	c.kdcHost = ln.Addr().String()
 
 	go func() {
-		buf := make([]byte, 65535)
 		for n := 0; ; n++ {
-			size, peer, err := conn.ReadFromUDP(buf)
+			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
+			reqBytes, err := readTCPFramed(conn)
+			if err != nil {
+				conn.Close()
+				return
+			}
 			var req messages.TGSReq
-			if _, err := req.Unmarshal(buf[:size]); err != nil {
+			if _, err := req.Unmarshal(reqBytes); err != nil {
+				conn.Close()
 				return
 			}
 			ticket := messages.Ticket{
@@ -66,11 +72,11 @@ func fakeS4UKDC(t *testing.T, c *KerberosClient, replyClient func(n int) string,
 			}
 			repBytes, err := rep.Marshal()
 			if err != nil {
+				conn.Close()
 				return
 			}
-			if _, err := conn.WriteToUDP(repBytes, peer); err != nil {
-				return
-			}
+			_ = writeTCPFramed(conn, repBytes)
+			conn.Close()
 		}
 	}()
 }

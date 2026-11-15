@@ -38,25 +38,33 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	// The KDC transport is TCP by default, so the fake KDC listens on TCP and
+	// reads/writes RFC 4120 length-framed messages. The client opens a fresh
+	// connection per request.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
-	c.kdcHost = conn.LocalAddr().String()
+	t.Cleanup(func() { ln.Close() })
+	c.kdcHost = ln.Addr().String()
 
 	var mu sync.Mutex
 	var requests, wrongKey, rightKey int
 	go func() {
-		buf := make([]byte, 65535)
 		for {
-			size, peer, err := conn.ReadFromUDP(buf)
+			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
+			reqBytes, err := readTCPFramed(conn)
+			if err != nil {
+				conn.Close()
+				return
+			}
 			var req messages.ASReq
-			if _, err := req.Unmarshal(buf[:size]); err != nil {
+			if _, err := req.Unmarshal(reqBytes); err != nil {
 				t.Errorf("fake KDC: parse AS-REQ: %v", err)
+				conn.Close()
 				return
 			}
 			mu.Lock()
@@ -69,6 +77,7 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 				}
 				var enc messages.EncryptedData
 				if _, err := asn1.Unmarshal(pa.PADataValue, &enc); err != nil {
+					conn.Close()
 					return
 				}
 				if enc.EType != messages.ETypeAES256CTSHMACSHA196 {
@@ -89,11 +98,11 @@ func TestGetTGTUsesETypeInfo2FromETypeNoSupp(t *testing.T) {
 			krbErr := messages.KRBError{ErrorCode: code, Realm: c.realm, EData: eData}
 			out, err := krbErr.Marshal()
 			if err != nil {
+				conn.Close()
 				return
 			}
-			if _, err := conn.WriteToUDP(out, peer); err != nil {
-				return
-			}
+			_ = writeTCPFramed(conn, out)
+			conn.Close()
 		}
 	}()
 

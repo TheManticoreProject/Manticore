@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/binary"
+	"io"
 	"net"
 	"path/filepath"
 	"strings"
@@ -205,21 +206,32 @@ func TestNewNativeGSSAPIClientPrefersAESKeyOverHashAndPassword(t *testing.T) {
 // realms case-sensitively, so a lower-case realm makes it reject the AS-REP,
 // whose crealm the KDC spells in upper case.
 func TestNewNativeGSSAPIClientUpperCasesRealm(t *testing.T) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	// The native Kerberos client contacts the KDC over TCP by default, so the
+	// fake KDC listens on TCP and reads/writes RFC 4120 §7.2.2 length-framed
+	// messages (a 4-byte big-endian length prefix).
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer ln.Close()
 
 	realms := make(chan string, 1)
 	go func() {
-		buf := make([]byte, 65535)
-		size, peer, err := conn.ReadFromUDP(buf)
+		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
+		defer conn.Close()
+		var lenBuf [4]byte
+		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+			return
+		}
+		reqBuf := make([]byte, binary.BigEndian.Uint32(lenBuf[:]))
+		if _, err := io.ReadFull(conn, reqBuf); err != nil {
+			return
+		}
 		var req messages.ASReq
-		if _, err := req.Unmarshal(buf[:size]); err != nil {
+		if _, err := req.Unmarshal(reqBuf); err != nil {
 			realms <- "unparseable AS-REQ: " + err.Error()
 			return
 		}
@@ -227,7 +239,10 @@ func TestNewNativeGSSAPIClientUpperCasesRealm(t *testing.T) {
 		// End the exchange: KDC_ERR_C_PRINCIPAL_UNKNOWN.
 		krbErr := messages.KRBError{ErrorCode: 6, Realm: req.ReqBody.Realm}
 		if out, err := krbErr.Marshal(); err == nil {
-			_, _ = conn.WriteToUDP(out, peer)
+			frame := make([]byte, 4+len(out))
+			binary.BigEndian.PutUint32(frame[:4], uint32(len(out)))
+			copy(frame[4:], out)
+			_, _ = conn.Write(frame)
 		}
 	}()
 
@@ -235,7 +250,7 @@ func TestNewNativeGSSAPIClientUpperCasesRealm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCredentials() error = %v", err)
 	}
-	if _, err := newNativeGSSAPIClient(conn.LocalAddr().String(), "manticore.local", creds); err == nil {
+	if _, err := newNativeGSSAPIClient(ln.Addr().String(), "manticore.local", creds); err == nil {
 		t.Error("newNativeGSSAPIClient() error = nil, want the fake KDC's KRB-ERROR")
 	}
 
