@@ -73,14 +73,9 @@ func kdcSendEndpointsContext(ctx context.Context, resolver *net.Resolver, endpoi
 
 // kdcSend sends a Kerberos message to a single KDC host, resolving it to one or
 // more IP addresses (A and AAAA — IPv4 and IPv6) and trying each until one
-// answers. For each address it tries UDP first for small messages, then falls
-// back to TCP.
-//
-// TCP is attempted when the UDP datagram fails, comes back empty, or carries
-// KRB_ERR_RESPONSE_TOO_BIG, the KDC's explicit signal that its answer did not
-// fit a datagram and must be retried over TCP (RFC 4120 Section 7.2.1). Other
-// KRB-ERROR replies are complete protocol responses and are returned directly.
-// UDP has no length prefix; TCP uses the RFC 4120 4-byte big-endian prefix.
+// answers. Each address is contacted over TCP, the default KDC transport on
+// Windows (Vista / Server 2008 onward) and Impacket. TCP uses the RFC 4120
+// Section 7.2.2 4-byte big-endian length prefix.
 func kdcSend(resolver *net.Resolver, kdc_host string, kdc_port int, msg []byte) ([]byte, error) {
 	return kdcSendContext(context.Background(), resolver, kdc_host, kdc_port, msg, defaultTimeout)
 }
@@ -106,8 +101,8 @@ func kdcSendContext(ctx context.Context, resolver *net.Resolver, kdc_host string
 	return nil, lastErr
 }
 
-// kdcSendAddr sends msg to a single already-resolved IP address, applying the
-// UDP-first / TCP-fallback policy described on kdcSend.
+// kdcSendAddr sends msg to a single already-resolved IP address over TCP, the
+// default KDC transport (see kdcSend).
 func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
 	return kdcSendAddrContext(context.Background(), ip, kdc_port, msg, defaultTimeout)
 }
@@ -115,16 +110,27 @@ func kdcSendAddr(ip string, kdc_port int, msg []byte) ([]byte, error) {
 func kdcSendAddrContext(ctx context.Context, ip string, kdc_port int, msg []byte, timeout time.Duration) ([]byte, error) {
 	ctx, cancel := kdcOperationContext(ctx, timeout)
 	defer cancel()
-	if len(msg) <= udpMaxSize {
-		resp, err := kdcSendUDPContext(ctx, ip, kdc_port, msg, 0)
-		if !shouldRetryOverTCP(resp, err) {
-			return resp, nil
-		}
+	// Windows (Vista / Server 2008 onward) and Impacket send Kerberos to the KDC
+	// over TCP/88 by default. TCP carries a message of any size (RFC 4120 Section
+	// 7.2.1 permits TCP for every request), so there is no UDP-first attempt and
+	// no RESPONSE_TOO_BIG retry dance — and a silently dropped UDP datagram can
+	// no longer consume the whole operation deadline before TCP is tried, which
+	// would make Kerberos fail outright on a network that filters UDP/88. The UDP
+	// helpers below are retained for explicit datagram use and transport tests.
+	resp, err := kdcSendTCPContext(ctx, ip, kdc_port, msg, 0)
+	// A transport error raised at or after the operation deadline is reported as
+	// the context error, so callers see a single, uniform timeout. The socket
+	// deadline is the operation deadline, so a socket i/o timeout at that instant
+	// means the deadline was exceeded even if ctx.Err() has not flipped yet.
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if d, ok := ctx.Deadline(); ok && !time.Now().Before(d) {
+			return nil, context.DeadlineExceeded
+		}
 	}
-	return kdcSendTCPContext(ctx, ip, kdc_port, msg, 0)
+	return resp, err
 }
 
 // shouldRetryOverTCP decides, from a UDP attempt's result, whether the request
