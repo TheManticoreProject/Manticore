@@ -7,7 +7,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/crypto/spnego"
@@ -135,8 +134,7 @@ type Server struct {
 	// slots holds one token per connection served when MaxConnections is positive.
 	slots chan struct{}
 
-	nextSessionID atomic.Uint64
-	wg            sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 // NewServer validates config and returns a server ready to serve.
@@ -212,19 +210,23 @@ func NewServer(config Config) (*Server, error) {
 	if config.MaxConnections > 0 {
 		s.slots = make(chan struct{}, config.MaxConnections)
 	}
-	// SessionIds are unpredictable so a client cannot guess another's.
-	var seed [8]byte
-	if _, err := rand.Read(seed[:]); err != nil {
-		return nil, fmt.Errorf("failed to seed session identifiers: %v", err)
-	}
-	s.nextSessionID.Store(binary.LittleEndian.Uint64(seed[:]))
 	return s, nil
 }
 
-// newSessionID returns a fresh, non-zero SessionId.
+// newSessionID returns a fresh, non-zero SessionId. Each identifier is an
+// independent random 64-bit value rather than a counter seeded once per process:
+// a client cannot guess another's, and the server does not expose a session
+// count or let two sessions be correlated by consecutive ids (which Windows does
+// not do either). SessionIds are tracked per connection, so reuse across
+// connections is harmless; a collision within one connection's handful of
+// sessions is negligible at 64 bits.
 func (s *Server) newSessionID() uint64 {
 	for {
-		if id := s.nextSessionID.Add(1); id != 0 {
+		var b [8]byte
+		// crypto/rand.Read does not return an error as of Go 1.24 (it panics if the
+		// OS entropy source fails), so there is no failure to propagate here.
+		_, _ = rand.Read(b[:])
+		if id := binary.LittleEndian.Uint64(b[:]); id != 0 {
 			return id
 		}
 	}
