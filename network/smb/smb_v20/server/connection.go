@@ -404,6 +404,12 @@ func (c *Connection) responseHeader(r *request, resp *response, status nt_status
 	h.Flags = flags.SMB2_FLAGS_SERVER_TO_REDIR | r.header.Flags&(flags.SMB2_FLAGS_RELATED_OPERATIONS|flags.SMB2_FLAGS_PRIORITY_MASK)
 	h.MessageId = r.header.MessageId
 	h.TreeId = r.header.TreeId
+	// Echo the request's Reserved field (the legacy ProcessId, which Windows
+	// clients set to 0x0000FEFF) in sync responses, as Windows does. Leaving it 0
+	// while the request carried 0xFEFF is a server fingerprint. In an async
+	// response this span is AsyncId and the Reserved value is ignored at marshal
+	// time, so setting it here is harmless.
+	h.Reserved = r.header.Reserved
 	h.SessionId = r.header.SessionId
 	if resp.session != nil {
 		h.SessionId = resp.session.id
