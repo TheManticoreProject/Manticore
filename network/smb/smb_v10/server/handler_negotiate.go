@@ -29,9 +29,10 @@ const defaultMaxRawSize = 65536
 // serverCapabilities are the capabilities advertised in the NEGOTIATE response.
 //
 // Each one is a promise, so the set is deliberately limited to what the server
-// actually honours. CAP_RAW_MODE and CAP_LOCK_AND_READ are absent because raw
-// transfers and the combined lock-and-read command are not implemented;
-// advertising them would have clients issue commands that are then refused.
+// actually honours. CAP_RAW_MODE is absent because raw transfers are not
+// implemented; advertising it would have clients issue commands that are then
+// refused. CAP_LOCK_AND_READ is advertised because SMB_COM_LOCK_AND_READ and
+// SMB_COM_WRITE_AND_UNLOCK are implemented (handler_lock_and_read.go).
 //
 // CAP_LEVEL_II_OPLOCKS says a client may be granted a level II oplock and told
 // when it is broken. Level II is the only level granted: it permits a client to
@@ -55,6 +56,7 @@ const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_NT_SMBS |
 	capabilities.CAP_NT_STATUS |
 	capabilities.CAP_NT_FIND |
+	capabilities.CAP_LOCK_AND_READ |
 	capabilities.CAP_LARGE_READX |
 	capabilities.CAP_LARGE_WRITEX |
 	capabilities.CAP_LEVEL_II_OPLOCKS |
