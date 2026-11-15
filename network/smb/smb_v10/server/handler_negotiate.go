@@ -56,6 +56,15 @@ const serverCapabilities = capabilities.CAP_UNICODE |
 	capabilities.CAP_INFOLEVEL_PASSTHROUGH |
 	capabilities.CAP_EXTENDED_SECURITY
 
+// serverTimeZoneBias returns the SMB_COM_NEGOTIATE ServerTimeZone for the given
+// time: the number of minutes to add to local time to reach UTC ([MS-CIFS]
+// 2.2.4.52.2). Go's Zone reports the offset as seconds east of UTC, so the bias
+// is its negation in minutes (UTC+1 -> -60, UTC-5 -> +300, UTC -> 0).
+func serverTimeZoneBias(t time.Time) types.SHORT {
+	_, offsetSeconds := t.Zone()
+	return types.SHORT(-offsetSeconds / 60)
+}
+
 // handleNegotiate answers SMB_COM_NEGOTIATE: it selects a dialect from the list
 // the client offered and describes the connection the two will share.
 //
@@ -119,11 +128,13 @@ func handleNegotiate(conn *Connection, w ResponseWriter, req *message.Message) n
 	}
 	response.SessionKey = types.ULONG(sessionKey)
 
-	now := time.Now().UTC()
-	response.SystemTime = *msdtyp.NewFILETIMEFromTime(now)
-	// The zone is expressed as minutes to add to local time to reach UTC, so a
-	// server reporting UTC reports zero.
-	response.ServerTimeZone = types.SHORT(0)
+	now := time.Now()
+	response.SystemTime = *msdtyp.NewFILETIMEFromTime(now.UTC())
+	// [MS-CIFS] 2.2.4.52.2: ServerTimeZone is the number of minutes to add to
+	// local time to reach UTC. Windows reports the host's real bias, so report the
+	// host zone offset here (seconds east of UTC, negated into minutes) rather than
+	// a constant 0, which looked like a UTC host regardless of the real zone.
+	response.ServerTimeZone = serverTimeZoneBias(now)
 
 	// Extended security is the modern path: the challenge travels inside a GSS
 	// token during session setup rather than in the negotiate response. The data
