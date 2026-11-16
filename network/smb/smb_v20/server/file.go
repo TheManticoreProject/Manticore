@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"io"
 	"sync/atomic"
@@ -27,7 +29,12 @@ const (
 
 // Open is a handle on a file or directory.
 type Open struct {
+	// id is the Volatile half of the FileId on the wire, and the key in
+	// c.opens. persistent is the Persistent half, an independent random value:
+	// Windows returns two unrelated numbers here, so equal halves counting from
+	// one per connection (which is what a plain counter gives) is a fingerprint.
 	id            uint64
+	persistent    uint64
 	session       *Session
 	tree          *Tree
 	path          string
@@ -63,7 +70,7 @@ func (c *Connection) openFor(r *request, id types.SMB2_FILEID) (*Open, nt_status
 		id = r.fileID
 	}
 	open := c.opens[id.Volatile]
-	if open == nil || open.tree != r.tree || open.session != r.session || id.Persistent != id.Volatile {
+	if open == nil || open.tree != r.tree || open.session != r.session || id.Persistent != open.persistent {
 		return nil, nt_status.NT_STATUS_FILE_CLOSED
 	}
 	r.fileID = id
@@ -137,8 +144,8 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 		return smb1.StatusForFSError(smb1.ErrCannotDelete)
 	}
 
-	c.nextFileID++
-	open.id, open.file, open.isDir = c.nextFileID, file, attr.IsDir
+	open.id, open.persistent = c.newFileID()
+	open.file, open.isDir = file, attr.IsDir
 	c.opens[open.id] = open
 	c.server.openFiles.add(open)
 	r.fileID = open.fileID()
@@ -167,7 +174,44 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 
 // fileID is the SMB2_FILEID naming the open on the wire.
 func (o *Open) fileID() types.SMB2_FILEID {
-	return types.SMB2_FILEID{Persistent: o.id, Volatile: o.id}
+	return types.SMB2_FILEID{Persistent: o.persistent, Volatile: o.id}
+}
+
+// newFileID mints the two halves of a FileId for a new open: a Volatile value
+// unique among this connection's live handles (it keys c.opens) and a Persistent
+// value unrelated to it. Both are random and non-zero, so a capture shows two
+// independent numbers the way Windows does, not a counter whose halves are equal
+// and start at one. The relatedFileID sentinel (all ones) is avoided so a real
+// handle can never be mistaken for the "same as the previous request" marker.
+func (c *Connection) newFileID() (volatile, persistent uint64) {
+	for {
+		volatile = randomFileIDHalf()
+		if volatile == relatedFileID.Volatile {
+			continue
+		}
+		if _, taken := c.opens[volatile]; !taken {
+			break
+		}
+	}
+	for {
+		persistent = randomFileIDHalf()
+		if persistent != relatedFileID.Persistent {
+			return volatile, persistent
+		}
+	}
+}
+
+// randomFileIDHalf returns a non-zero random 64-bit value. crypto/rand.Read does
+// not fail as of Go 1.24 (it panics if the OS entropy source does), so there is
+// no error to propagate.
+func randomFileIDHalf() uint64 {
+	for {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		if v := binary.LittleEndian.Uint64(b[:]); v != 0 {
+			return v
+		}
+	}
 }
 
 // close answers CLOSE.

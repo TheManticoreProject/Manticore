@@ -54,7 +54,6 @@ type Connection struct {
 	sessions   map[uint64]*Session
 	opens      map[uint64]*Open
 	nextTreeID uint32
-	nextFileID uint64
 	// notifies are the CHANGE_NOTIFY requests still pending, by AsyncId.
 	notifies    map[uint64]*pendingNotify
 	nextAsyncID uint64
