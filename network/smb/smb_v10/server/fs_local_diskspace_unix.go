@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux || darwin || freebsd || dragonfly || aix
 
 package server
 
