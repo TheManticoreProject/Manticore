@@ -43,6 +43,13 @@ func handleQueryPathInformation(conn *Connection, req *message.Message, reassemb
 		return nil, nil, statusForFSError(err)
 	}
 
+	// The 8.3 short-name alias does not exist on this volume, so it is refused the
+	// way Windows refuses it when short-name generation is off, rather than being
+	// answered with the long name.
+	if isAlternateNameLevel(level) {
+		return nil, nil, nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
+	}
+
 	data, served := encodeFileInformation(level, attr, path, req.Header.Flags2.IsUnicode())
 	if !served {
 		logger.Debugf("SMB1 server: %s asked for file information level 0x%04X, which is not served",
@@ -95,6 +102,13 @@ func handleQueryFileInformation(conn *Connection, req *message.Message, reassemb
 	}
 	if err != nil {
 		return nil, nil, statusForFSError(err)
+	}
+
+	// The 8.3 short-name alias does not exist on this volume, so it is refused the
+	// way Windows refuses it when short-name generation is off, rather than being
+	// answered with the long name.
+	if isAlternateNameLevel(level) {
+		return nil, nil, nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
 	}
 
 	data, served := encodeFileInformation(level, attr, open.currentPath(), req.Header.Flags2.IsUnicode())

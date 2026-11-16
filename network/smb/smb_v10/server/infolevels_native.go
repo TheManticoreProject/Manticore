@@ -34,6 +34,19 @@ func nativeName(value string) []byte {
 //
 // Returns:
 //   - The encoded structure, and whether the class is served
+//
+// isAlternateNameLevel reports whether a query level asks for a file's 8.3
+// short-name alias, in either the legacy SMB_QUERY_FILE_ALT_NAME_INFO encoding
+// or the pass-through FileAlternateNameInformation class. The served volume
+// generates no 8.3 short names (it reports its file system as exFAT, which has
+// none), so these levels are refused with STATUS_OBJECT_NAME_NOT_FOUND — the
+// answer Windows gives when short-name generation is off — rather than being
+// handed the long name, which is never a valid 8.3 name and was a fingerprint.
+func isAlternateNameLevel(level uint16) bool {
+	return level == smbQueryFileAltNameInfo ||
+		level == smbInfoPassthrough+uint16(infoclass.FileAlternateNameInformation)
+}
+
 func encodeNativeFileInformation(class uint16, attr FileAttr, path string) ([]byte, bool) {
 	switch infoclass.FileInformationClass(class) {
 	case infoclass.FileBasicInformation:
@@ -68,10 +81,10 @@ func encodeNativeFileInformation(class uint16, attr FileAttr, path string) ([]by
 		// write carries its own offset — so the position is the start.
 		return make([]byte, 8), true
 
-	case infoclass.FileNameInformation, infoclass.FileAlternateNameInformation:
-		// FileNameLength(4) FileName(variable). The alternate name is the 8.3
-		// alias, and there is none here, so the long name answers both: a client
-		// falls back to the long name when no alias is offered.
+	case infoclass.FileNameInformation:
+		// FileNameLength(4) FileName(variable). The alternate name (the 8.3 alias)
+		// is handled separately — there is none, so it is refused rather than
+		// answered with the long name; see isAlternateNameLevel.
 		name := nativeName(nativePath(path))
 		information := make([]byte, 4, 4+len(name))
 		binary.LittleEndian.PutUint32(information, uint32(len(name)))

@@ -310,8 +310,9 @@ func encodeFileInformation(level uint16, attr FileAttr, path string, unicode boo
 		// EaSize(4). Nothing here carries extended attributes, so it is zero.
 		return make([]byte, 4), true
 
-	case smbQueryFileNameInfo, smbQueryFileAltNameInfo:
-		// FileNameLength(4) FileName(variable).
+	case smbQueryFileNameInfo:
+		// FileNameLength(4) FileName(variable). The alternate-name level
+		// (smbQueryFileAltNameInfo) is refused separately, see isAlternateNameLevel.
 		name := encodeWireString(pathForClient(path), unicode)
 		info := make([]byte, 4)
 		binary.LittleEndian.PutUint32(info[0:4], uint32(len(name)))
