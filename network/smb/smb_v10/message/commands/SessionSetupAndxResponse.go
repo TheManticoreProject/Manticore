@@ -64,6 +64,17 @@ type SessionSetupAndxResponse struct {
 	// of Unicode characters, then this field MUST be aligned to start on a 2-byte boundary from
 	// the start of the SMB header.
 	NativeLanMan []types.UCHAR
+
+	// NonExtendedSecurity selects the [MS-CIFS] 2.2.4.53.2 response, which
+	// answers a session setup made without extended security: WordCount 3 (no
+	// SecurityBlobLength, no SecurityBlob) and a PrimaryDomain string after
+	// NativeLanMan. When false the [MS-SMB] 2.2.4.6.2 extended-security response
+	// is marshalled.
+	NonExtendedSecurity bool
+
+	// PrimaryDomain (variable): the name of the domain the server belongs to,
+	// encoded like NativeOS and carried only in the non-extended response.
+	PrimaryDomain []types.UCHAR
 }
 
 // NewSessionSetupAndxResponse creates a new SessionSetupAndxResponse structure
@@ -136,9 +147,11 @@ func (c *SessionSetupAndxResponse) Marshal() ([]byte, error) {
 	// the data will be stored in the parameters
 	rawDataContent := []byte{}
 
-	// Marshalling data SecurityBlob
-	rawDataContent = append(rawDataContent, c.SecurityBlob...)
-	c.SecurityBlobLength = types.USHORT(len(c.SecurityBlob))
+	// Marshalling data SecurityBlob, which the non-extended response has none of
+	if !c.NonExtendedSecurity {
+		rawDataContent = append(rawDataContent, c.SecurityBlob...)
+		c.SecurityBlobLength = types.USHORT(len(c.SecurityBlob))
+	}
 
 	// Marshalling data Pad
 	rawDataContent = append(rawDataContent, c.Pad...)
@@ -149,6 +162,11 @@ func (c *SessionSetupAndxResponse) Marshal() ([]byte, error) {
 	// Marshalling data NativeLanMan
 	rawDataContent = append(rawDataContent, c.NativeLanMan...)
 
+	// Marshalling data PrimaryDomain, present only in the non-extended response
+	if c.NonExtendedSecurity {
+		rawDataContent = append(rawDataContent, c.PrimaryDomain...)
+	}
+
 	// Then marshal the parameters
 	rawParametersContent := []byte{}
 
@@ -157,10 +175,13 @@ func (c *SessionSetupAndxResponse) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf2, uint16(c.Action))
 	rawParametersContent = append(rawParametersContent, buf2...)
 
-	// Marshalling parameter SecurityBlobLength
-	buf2 = make([]byte, 2)
-	binary.LittleEndian.PutUint16(buf2, uint16(c.SecurityBlobLength))
-	rawParametersContent = append(rawParametersContent, buf2...)
+	// Marshalling parameter SecurityBlobLength, absent from the non-extended
+	// response (WordCount 3)
+	if !c.NonExtendedSecurity {
+		buf2 = make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf2, uint16(c.SecurityBlobLength))
+		rawParametersContent = append(rawParametersContent, buf2...)
+	}
 
 	// Marshalling parameters
 	c.GetParameters().AddWordsFromBytesStream(rawParametersContent)

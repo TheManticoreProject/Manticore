@@ -72,6 +72,12 @@ type Connection struct {
 	// so expects a GSS security blob rather than a challenge in the clear.
 	ExtendedSecurity bool
 
+	// NegotiateChallenge is the 8-byte challenge sent in a non-extended NEGOTIATE
+	// response ([MS-CIFS] 2.2.4.52.2). A session setup on such a connection
+	// carries LM/NTLM responses computed over it, so it is what they are verified
+	// against. It is unused when ExtendedSecurity is set.
+	NegotiateChallenge [8]byte
+
 	// SigningActive reports that every request must carry a valid signature and
 	// every response must be signed. SigningKey is the MAC key, and
 	// ExpectedRequestSequenceNumber the number the next request must be signed

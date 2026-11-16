@@ -250,6 +250,9 @@ func (c *NegotiateResponse) Marshal() ([]byte, error) {
 		rawDataContent = append(rawDataContent, c.Challenge...)
 		// Marshalling data DomainName
 		rawDataContent = append(rawDataContent, c.DomainName...)
+		// Marshalling data ServerName, which [MS-SMB] 2.2.4.5.2.2 adds after
+		// DomainName and which Unmarshal already reads there.
+		rawDataContent = append(rawDataContent, c.ServerName...)
 	}
 
 	// Then marshal the parameters

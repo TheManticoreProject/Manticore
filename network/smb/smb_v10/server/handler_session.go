@@ -44,11 +44,12 @@ func handleSessionSetupAndx(conn *Connection, w ResponseWriter, req *message.Mes
 		return nt_status.NT_STATUS_INVALID_SMB
 	}
 
-	// Only the extended-security path is served. A client that did not negotiate
-	// it expects to send a password or a bare NTLM response against a challenge
-	// from the negotiate response, which this server does not issue.
-	if !conn.ExtendedSecurity || len(request.SecurityBlob) == 0 {
-		logger.Debugf("SMB1 server: %s attempted a session setup without extended security", conn.Remote)
+	// A client that did not negotiate extended security answers the challenge
+	// from the negotiate response with the [MS-CIFS] 2.2.4.53.1 request
+	// (WordCount 13). A connection that negotiated it must send a security blob.
+	nonExtended := !conn.ExtendedSecurity && request.GetParameters().WordCount == sessionSetupNonExtendedWordCount
+	if !nonExtended && (!conn.ExtendedSecurity || len(request.SecurityBlob) == 0) {
+		logger.Debugf("SMB1 server: %s sent a session setup that does not match the negotiated security mode", conn.Remote)
 		return nt_status.NT_STATUS_NOT_IMPLEMENTED
 	}
 
@@ -57,6 +58,10 @@ func handleSessionSetupAndx(conn *Connection, w ResponseWriter, req *message.Mes
 	conn.ClientMaxBufferSize = uint32(request.MaxBufferSize)
 	conn.ClientCapabilities = request.Capabilities
 	conn.ClientMaxMpxCount = uint16(request.MaxMpxCount)
+
+	if nonExtended {
+		return conn.nonExtendedAuthentication(w, req, request)
+	}
 
 	uid := uint16(req.Header.UID)
 	switch {

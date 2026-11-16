@@ -11,7 +11,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/data"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/parameters"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
-	"github.com/TheManticoreProject/Manticore/utils"
 
 	"github.com/TheManticoreProject/Manticore/encoding/utf16"
 )
@@ -540,38 +539,36 @@ func (c *SessionSetupAndxRequest) Unmarshal(rawData []byte) (int, error) {
 		c.UnicodePassword = rawDataContent[offset : offset+int(c.UnicodePasswordLen)]
 		offset += int(c.UnicodePasswordLen)
 
-		// Unmarshalling data Pad
-		padLen := int(c.UnicodePasswordLen)
-		if padLen%2 == 1 {
-			padLen++
+		// Unmarshalling data Pad. [MS-CIFS] 2.2.4.53.1: when the strings are
+		// Unicode, zero or one byte aligns AccountName on a 2-byte boundary from
+		// the start of the SMB header. The data block begins at an odd offset, so
+		// whether the byte is present depends on the password lengths.
+		c.Pad = []types.UCHAR{}
+		if c.IsUnicode() && (sessionSetupAndxNonExtendedDataOffset+offset)%2 != 0 && offset < len(rawDataContent) {
+			c.Pad = []types.UCHAR{rawDataContent[offset]}
+			offset++
 		}
-		if len(rawDataContent) < offset+padLen {
-			return offset, fmt.Errorf("rawParametersContent too short for Pad")
-		}
-		c.Pad = rawDataContent[offset : offset+padLen]
-		offset += padLen
 
-		// Unmarshalling data AccountName (raw null-terminated string, no buffer-format prefix)
-		accountNameData, accountNameBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		// Unmarshalling data AccountName and PrimaryDomain, kept as the wire bytes
+		// in the encoding the message declared, without their terminators.
+		accountNameData, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
 		c.AccountName.Buffer = accountNameData
 		c.AccountName.Length = types.USHORT(len(accountNameData))
-		offset += accountNameBytesRead
+		offset += bytesRead
 
-		// Unmarshalling data PrimaryDomain (raw null-terminated string, no buffer-format prefix)
-		primaryDomainData, primaryDomainBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
+		primaryDomainData, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
 		c.PrimaryDomain.Buffer = primaryDomainData
 		c.PrimaryDomain.Length = types.USHORT(len(primaryDomainData))
-		offset += primaryDomainBytesRead
+		offset += bytesRead
 
-		// Unmarshalling NativeOS (raw null-terminated string, no buffer-format prefix)
-		nativeOSdata, nativeOSBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
-		offset += nativeOSBytesRead
-		c.NativeOS = string(nativeOSdata)
+		// Unmarshalling data NativeOS and NativeLanMan
+		nativeOSdata, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
+		offset += bytesRead
+		c.NativeOS = decodeNativeString(nativeOSdata, c.IsUnicode())
 
-		// Unmarshalling NativeLanMan (raw null-terminated string, no buffer-format prefix)
-		nativeLanMandata, nativeLanManBytesRead := utils.ReadUntilNullTerminator(rawDataContent[offset:])
-		offset += nativeLanManBytesRead
-		c.NativeLanMan = string(nativeLanMandata)
+		nativeLanMandata, bytesRead := readTerminatedName(rawDataContent[offset:], c.IsUnicode())
+		offset += bytesRead
+		c.NativeLanMan = decodeNativeString(nativeLanMandata, c.IsUnicode())
 	}
 
 	return offset, nil
