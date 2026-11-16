@@ -144,11 +144,19 @@ func TestPassthroughQueryClassesAreServed(t *testing.T) {
 			infoclass.FileEaInformation,
 			infoclass.FileAccessInformation,
 			infoclass.FilePositionInformation,
-			infoclass.FileAlternateNameInformation,
 		} {
 			if _, err := client.QueryFileInformation(fid, passthroughLevel(class)); err != nil {
 				t.Errorf("querying class %d failed: %v", class, err)
 			}
+		}
+	})
+
+	t.Run("the alternate name is refused when there is no 8.3 short name", func(t *testing.T) {
+		// The volume generates no 8.3 aliases, so FileAlternateNameInformation is
+		// refused with STATUS_OBJECT_NAME_NOT_FOUND rather than answered with the
+		// long name, matching Windows with short-name generation disabled.
+		if _, err := client.QueryFileInformation(fid, passthroughLevel(infoclass.FileAlternateNameInformation)); err == nil {
+			t.Error("FileAlternateNameInformation was answered; want STATUS_OBJECT_NAME_NOT_FOUND")
 		}
 	})
 }
