@@ -2,8 +2,10 @@
 //
 // A Server serves disk shares backed by the FileSystem implementations of the
 // SMB1 server package (network/smb/smb_v10/server), so both protocols share one
-// storage model and one path containment check. IPC$ is always present so
-// clients can connect to it, but no named pipe can be opened on it.
+// storage model and one path containment check. IPC$ is always present, and a
+// CREATE on it opens a named pipe served by Config.Pipes, which defaults to the
+// SMB1 server's rpcpipe handler (srvsvc and wkssvc), so share enumeration works.
+// A pipe carries messages through WRITE, READ and FSCTL_PIPE_TRANSCEIVE.
 //
 // Served: the SMB1 to SMB2 negotiate upgrade, every dialect from 2.0.2 to 3.1.1
 // with the 3.1.1 negotiate contexts and pre-authentication integrity, NTLM and
@@ -28,9 +30,8 @@
 // proxy that owns the socket.
 //
 // Not implemented: LOCK and the security-descriptor info classes are answered
-// STATUS_NOT_SUPPORTED; named pipes are not served, so IPC$ accepts a tree
-// connect but a CREATE on it is answered STATUS_OBJECT_NAME_NOT_FOUND;
-// multichannel session binding is refused with STATUS_REQUEST_NOT_ACCEPTED; and
+// STATUS_NOT_SUPPORTED; a pipe handle answers no command but READ, WRITE,
+// IOCTL and CLOSE; multichannel session binding is refused with STATUS_REQUEST_NOT_ACCEPTED; and
 // the durable-handle create contexts are ignored, so the open is granted as an
 // ordinary handle.
 //

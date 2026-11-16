@@ -46,6 +46,9 @@ type Open struct {
 	search        *search
 	notifies      []*pendingNotify
 
+	// pipe is set on a named-pipe open on IPC$, which has no file.
+	pipe *pipeOpen
+
 	// renamed is where a rename moved the file after path was resolved. It is
 	// written by whichever connection renamed the file, so it is atomic.
 	renamed atomic.Pointer[string]
@@ -73,6 +76,11 @@ func (c *Connection) openFor(r *request, id types.SMB2_FILEID) (*Open, nt_status
 	if open == nil || open.tree != r.tree || open.session != r.session || id.Persistent != open.persistent {
 		return nil, nt_status.NT_STATUS_FILE_CLOSED
 	}
+	// A pipe has no file behind it, so only the commands that move messages
+	// through it, and CLOSE, act on a pipe handle.
+	if open.pipe != nil && !pipeCommands[r.header.Command] {
+		return nil, nt_status.NT_STATUS_INVALID_DEVICE_REQUEST
+	}
 	r.fileID = id
 	return open, nt_status.NT_STATUS_SUCCESS
 }
@@ -82,7 +90,8 @@ func (c *Connection) create(r *request, resp *response) nt_status.NT_STATUS {
 	req := r.command.(*commands.CreateRequest)
 	share := r.tree.Share
 	if share == nil {
-		return nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
+		// IPC$: the name is a named pipe.
+		return c.createPipe(r, resp, req)
 	}
 	if len(c.opens) >= c.server.config.MaxOpensPerConnection {
 		return nt_status.NT_STATUS_INSUFFICIENT_RESOURCES
@@ -223,7 +232,7 @@ func (c *Connection) close(r *request, resp *response) nt_status.NT_STATUS {
 	}
 
 	answer := commands.NewCloseResponse()
-	if req.Flags&commands.SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB != 0 {
+	if open.pipe == nil && req.Flags&commands.SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB != 0 {
 		if attr, err := open.fs().Stat(open.currentPath()); err == nil {
 			answer.Flags = commands.SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB
 			answer.CreationTime, answer.LastAccessTime = filetime(attr.Created), filetime(attr.Accessed)
@@ -242,6 +251,9 @@ func (c *Connection) close(r *request, resp *response) nt_status.NT_STATUS {
 // closeOpen releases a handle, applying a pending delete.
 func (c *Connection) closeOpen(open *Open) error {
 	delete(c.opens, open.id)
+	if open.pipe != nil {
+		return open.pipe.session.Close()
+	}
 	c.server.openFiles.remove(open)
 	c.cleanupNotifies(open)
 	c.server.oplocks.release(open)
@@ -262,6 +274,9 @@ func (c *Connection) read(r *request, resp *response) nt_status.NT_STATUS {
 	open, status := c.openFor(r, req.FileId)
 	if !status.IsSuccess() {
 		return status
+	}
+	if open.pipe != nil {
+		return c.readPipe(open, req, resp)
 	}
 	if open.isDir {
 		return nt_status.NT_STATUS_INVALID_DEVICE_REQUEST
@@ -305,6 +320,9 @@ func (c *Connection) write(r *request, resp *response) nt_status.NT_STATUS {
 	if !status.IsSuccess() {
 		return status
 	}
+	if open.pipe != nil {
+		return c.writePipe(open, req, resp)
+	}
 	if status := open.require(writeDataRights); !status.IsSuccess() {
 		return status
 	}
@@ -340,11 +358,14 @@ func (c *Connection) flush(r *request, resp *response) nt_status.NT_STATUS {
 	return nt_status.NT_STATUS_SUCCESS
 }
 
-// ioctl answers IOCTL. Only the secure negotiate validation is served.
+// ioctl answers IOCTL. The secure negotiate validation and the named-pipe
+// transceive are served.
 func (c *Connection) ioctl(r *request, resp *response) nt_status.NT_STATUS {
 	req := r.command.(*commands.IoctlRequest)
 	switch req.CtlCode {
 	case filesystem.FSCTL_VALIDATE_NEGOTIATE_INFO:
+	case filesystem.FSCTL_PIPE_TRANSCEIVE:
+		return c.transceivePipe(r, req, resp)
 	case filesystem.FSCTL_DFS_GET_REFERRALS, filesystem.FSCTL_DFS_GET_REFERRALS_EX:
 		// MS-SMB2 3.3.5.15.2: what a server without DFS answers.
 		return nt_status.NT_STATUS_FS_DRIVER_REQUIRED
