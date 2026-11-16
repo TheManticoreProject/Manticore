@@ -12,6 +12,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/commands/command_interface"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/message/header/flags"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
+	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/types"
 )
 
 // Only level II oplocks and read leases are granted: they let a client cache
@@ -30,7 +31,7 @@ type oplockTable struct {
 type oplockGrant struct {
 	conn     *Connection
 	session  *Session
-	fileID   uint64
+	fileID   types.SMB2_FILEID
 	lease    bool
 	leaseKey [16]byte
 	epoch    uint16
@@ -48,7 +49,7 @@ func (t *oplockTable) grant(c *Connection, open *Open, req *commands.CreateReque
 		return commands.SMB2_OPLOCK_LEVEL_NONE, nil
 	}
 
-	g := &oplockGrant{conn: c, session: open.session, fileID: open.id}
+	g := &oplockGrant{conn: c, session: open.session, fileID: open.fileID()}
 	level := uint8(commands.SMB2_OPLOCK_LEVEL_II)
 	var contexts []byte
 	if req.RequestedOplockLevel == commands.SMB2_OPLOCK_LEVEL_LEASE {
@@ -170,7 +171,7 @@ func (g *oplockGrant) notify() {
 	} else {
 		notification := commands.NewOplockBreakRequest()
 		notification.OplockLevel = commands.SMB2_OPLOCK_LEVEL_NONE
-		notification.FileId.Persistent, notification.FileId.Volatile = g.fileID, g.fileID
+		notification.FileId = g.fileID
 		body = notification
 	}
 
