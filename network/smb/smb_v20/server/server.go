@@ -89,6 +89,12 @@ type Config struct {
 	// Timeout bounds every read on a connection, whatever its state; it caps
 	// HandshakeTimeout and IdleTimeout. Zero means no bound.
 	Timeout time.Duration
+
+	// Pipes serves the named pipes opened on IPC$, with the same contract as the
+	// SMB1 server's IPC$ share. Nil serves srvsvc, reporting the registered
+	// shares and IPC$, and wkssvc, reporting ServerName and DomainName, which is
+	// what a client listing shares opens.
+	Pipes smb1.PipeHandler
 }
 
 // Configuration defaults applied by NewServer when a field is left zero.
@@ -126,6 +132,7 @@ type Server struct {
 	mutex     sync.RWMutex
 	handlers  []Handler
 	shares    map[string]*Share
+	pipes     smb1.PipeHandler
 	listeners []transport.Listener
 	conns     map[*Connection]struct{}
 	closed    bool
@@ -209,6 +216,10 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.MaxConnections > 0 {
 		s.slots = make(chan struct{}, config.MaxConnections)
+	}
+	s.pipes = config.Pipes
+	if s.pipes == nil {
+		s.pipes = defaultPipes(s)
 	}
 	return s, nil
 }

@@ -8,7 +8,7 @@ import (
 )
 
 // ipcShareName is the inter-process share clients connect to before anything
-// else. It is always present; opening a pipe on it is refused.
+// else. It is always present, and a CREATE on it opens a named pipe.
 const ipcShareName = "IPC$"
 
 // Maximal access reported for a tree: everything, or only reading.
