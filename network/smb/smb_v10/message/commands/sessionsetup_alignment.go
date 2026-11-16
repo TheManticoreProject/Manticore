@@ -12,6 +12,12 @@ import (
 // security blob need an alignment byte ([MS-SMB] 2.2.4.6.1).
 const sessionSetupAndxDataOffset = 59
 
+// sessionSetupAndxNonExtendedDataOffset is where the SMB_Data bytes of a
+// non-extended-security SMB_COM_SESSION_SETUP_ANDX request ([MS-CIFS] 2.2.4.53.1)
+// begin, measured from the start of the SMB header: SMB_HEADER_SIZE(32) +
+// WordCount(1) + 13 words(26) + ByteCount(2).
+const sessionSetupAndxNonExtendedDataOffset = 61
+
 // decodeNativeString renders the bytes of a NativeOS or NativeLanMan field as a
 // string, in the encoding the enclosing message declared.
 func decodeNativeString(raw []byte, unicode bool) string {

@@ -148,32 +148,56 @@ func handleNegotiate(conn *Connection, w ResponseWriter, req *message.Message) n
 	// a constant 0, which looked like a UTC host regardless of the real zone.
 	response.ServerTimeZone = serverTimeZoneBias(now)
 
-	// Extended security is the modern path: the challenge travels inside a GSS
-	// token during session setup rather than in the negotiate response. The data
-	// block's layout follows from the CAP_EXTENDED_SECURITY bit above, which is
-	// why there is no separate switch for it here.
-	response.ServerGUID = conn.Server.config.ServerGUID
-	response.ChallengeLength = types.UCHAR(0)
-	response.Challenge = []types.UCHAR{}
+	extendedSecurity := req.Header.Flags2.IsExtendedSecurity()
+	if extendedSecurity {
+		// Extended security is the modern path: the challenge travels inside a GSS
+		// token during session setup rather than in the negotiate response. The
+		// data block's layout follows from the CAP_EXTENDED_SECURITY bit above,
+		// which is why there is no separate switch for it here.
+		response.ServerGUID = conn.Server.config.ServerGUID
+		response.ChallengeLength = types.UCHAR(0)
+		response.Challenge = []types.UCHAR{}
 
-	securityBlob, err := spnego.CreateNegTokenInit(nil)
-	if err != nil {
-		logger.Errorf("SMB1 server: failed to build the negotiate security blob for %s: %v", conn.Remote, err)
-		return nt_status.NT_STATUS_UNSUCCESSFUL
+		securityBlob, err := spnego.CreateNegTokenInit(nil)
+		if err != nil {
+			logger.Errorf("SMB1 server: failed to build the negotiate security blob for %s: %v", conn.Remote, err)
+			return nt_status.NT_STATUS_UNSUCCESSFUL
+		}
+		response.SecurityBlob = []types.UCHAR(securityBlob)
+
+		// DomainName and ServerName are carried only in the non-extended form;
+		// under extended security the security blob and the session-setup
+		// TargetInfo carry the server's identity instead.
+		response.DomainName = []types.UCHAR{}
+		response.ServerName = []types.UCHAR{}
+	} else {
+		// A client that did not set SMB_FLAGS2_EXTENDED_SECURITY reads the
+		// non-extended body ([MS-CIFS] 2.2.4.52.2, extended with ServerName by
+		// [MS-SMB] 2.2.4.5.2.2): an 8-byte challenge, then DomainName and
+		// ServerName. The reply's Flags2 does not echo EXTENDED_SECURITY, so the
+		// capability bit is cleared as well, which is also what selects this
+		// layout when the response is marshalled. The session setup that follows
+		// answers this challenge.
+		response.Capabilities &^= capabilities.CAP_EXTENDED_SECURITY
+		if _, err := rand.Read(conn.NegotiateChallenge[:]); err != nil {
+			logger.Errorf("SMB1 server: failed to generate a challenge for %s: %v", conn.Remote, err)
+			return nt_status.NT_STATUS_UNSUCCESSFUL
+		}
+		response.Challenge = append([]types.UCHAR{}, conn.NegotiateChallenge[:]...)
+		response.ChallengeLength = types.UCHAR(len(response.Challenge))
+
+		// Both names are null-terminated strings in the character set the reply
+		// declares. Windows sends them without an alignment byte.
+		useUnicode := req.Header.Flags2.IsUnicode()
+		response.DomainName = encodeNativeString(conn.Server.config.DomainName, useUnicode)
+		response.ServerName = encodeNativeString(conn.Server.config.ServerName, useUnicode)
 	}
-	response.SecurityBlob = []types.UCHAR(securityBlob)
-
-	// DomainName and ServerName are carried only in the non-extended form; under
-	// extended security the security blob and the session-setup TargetInfo carry
-	// the server's identity instead.
-	response.DomainName = []types.UCHAR{}
-	response.ServerName = []types.UCHAR{}
 
 	conn.Dialect = selected
 	conn.Negotiated = true
 	conn.UseUnicode = req.Header.Flags2.IsUnicode()
 	conn.UseNTStatus = req.Header.Flags2.IsNTStatusErrorCodes()
-	conn.ExtendedSecurity = req.Header.Flags2.IsExtendedSecurity()
+	conn.ExtendedSecurity = extendedSecurity
 
 	logger.Debugf("SMB1 server: negotiated %q with %s (unicode=%t nt_status=%t extended_security=%t)",
 		selected, conn.Remote, conn.UseUnicode, conn.UseNTStatus, conn.ExtendedSecurity)

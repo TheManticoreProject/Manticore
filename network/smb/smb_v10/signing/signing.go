@@ -7,11 +7,13 @@
 //
 // # The MAC key
 //
-// The key is the ExportedSessionKey derived from the authentication exchange,
-// used as-is. [MS-CIFS] 3.1.5.1 also defines a MACKey of SessionKey ||
-// NTLMResponse for the paths that do not derive a session key, but neither side
-// of this implementation takes such a path: extended session security is required
-// precisely so a key exists to sign with.
+// Under extended security the key is the ExportedSessionKey derived from the
+// authentication exchange, used as-is. Without extended security [MS-CIFS]
+// 3.1.4.1 hashes Connection.SigningSessionKey and then
+// Connection.SigningChallengeResponse ahead of the message, so the MAC key is
+// their concatenation; the server builds that key for a non-extended session
+// setup and passes it here, so the primitives below take whichever key the
+// caller derived.
 //
 // # Sequence numbers
 //
