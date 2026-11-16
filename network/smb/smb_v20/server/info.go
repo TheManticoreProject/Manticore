@@ -118,14 +118,17 @@ func encodeFileInfo(class uint8, open *Open, attr smb1.FileAttr) ([]byte, bool, 
 		}
 		encoded, err = all.Marshal()
 		variable = true
-	case infoclass.FileNameInformation, infoclass.FileAlternateNameInformation:
-		// There are no 8.3 names, so the alternate name is the long one.
+	case infoclass.FileAlternateNameInformation:
+		// The alternate name is the 8.3 short-name alias. This volume generates
+		// no short names (its reported file system, exFAT, has none), so there is
+		// no alias to return. Windows answers this class with the 8.3 name or,
+		// when short-name generation is off, STATUS_OBJECT_NAME_NOT_FOUND; it
+		// never returns the long name here. Returning the long name was a
+		// fingerprint, so the no-short-name case is reported honestly.
+		return nil, false, nt_status.NT_STATUS_OBJECT_NAME_NOT_FOUND
+	case infoclass.FileNameInformation:
 		// Read once: a rename on another connection can move the open between reads.
-		path := open.currentPath()
-		name := `\` + toWindowsPath(path)
-		if infoclass.FileInformationClass(class) == infoclass.FileAlternateNameInformation {
-			name = path[strings.LastIndexByte(path, '/')+1:]
-		}
+		name := `\` + toWindowsPath(open.currentPath())
 		encodedName := utf16.EncodeUTF16LE(name)
 		encoded = append(binary.LittleEndian.AppendUint32(nil, uint32(len(encodedName))), encodedName...)
 		variable = true
