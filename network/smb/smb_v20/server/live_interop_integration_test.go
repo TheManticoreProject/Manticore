@@ -71,8 +71,14 @@ func TestLiveSmbclient(t *testing.T) {
 			out := smbclient(t, port, append(args, "-c", script)...)
 
 			for _, line := range strings.Split(out, "\n") {
-				// Snapshots are not served, and STATUS_NOT_SUPPORTED says so.
-				if strings.Contains(line, "NT_STATUS_") && !strings.Contains(line, "shadow copy") {
+				// Two NT_STATUS lines are expected, not failures: snapshots are not
+				// served (STATUS_NOT_SUPPORTED, "shadow copy"), and the volume
+				// generates no 8.3 short names, so allinfo's alternate-name query is
+				// answered OBJECT_NAME_NOT_FOUND ("getting alt name") the way Windows
+				// does with short-name generation disabled.
+				if strings.Contains(line, "NT_STATUS_") &&
+					!strings.Contains(line, "shadow copy") &&
+					!strings.Contains(line, "getting alt name") {
 					t.Errorf("smbclient reported an error: %s", line)
 				}
 			}
