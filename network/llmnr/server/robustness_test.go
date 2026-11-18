@@ -6,7 +6,50 @@ import (
 	"testing"
 
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
+	"github.com/TheManticoreProject/Manticore/network/llmnr/message/header"
 )
+
+func TestIsValidQuery(t *testing.T) {
+	newQuery := func() *message.Message {
+		msg := message.NewMessage()
+		msg.Header.QDCount = 1
+		return msg
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*message.Message)
+		want   bool
+	}{
+		{name: "standard query", want: true},
+		{name: "response", mutate: func(msg *message.Message) { msg.Header.Flags = header.FlagQR }},
+		{name: "unsupported opcode", mutate: func(msg *message.Message) { msg.Header.Flags.SetOpcode(1) }},
+		{name: "conflict", mutate: func(msg *message.Message) { msg.Header.Flags = header.FlagC }},
+		{name: "zero questions", mutate: func(msg *message.Message) { msg.Header.QDCount = 0 }},
+		{name: "multiple questions", mutate: func(msg *message.Message) { msg.Header.QDCount = 2 }},
+		{name: "answer records", mutate: func(msg *message.Message) { msg.Header.ANCount = 1 }},
+		{name: "authority records", mutate: func(msg *message.Message) { msg.Header.NSCount = 1 }},
+		{
+			name: "ignored query fields",
+			mutate: func(msg *message.Message) {
+				msg.Header.Flags = header.FlagTC | header.FlagT | header.MaskZ | header.MaskRCODE
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := newQuery()
+			if tc.mutate != nil {
+				tc.mutate(msg)
+			}
+			if got := isValidQuery(msg); got != tc.want {
+				t.Errorf("isValidQuery() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
 
 // TestRegisterHandlerConcurrentWithDispatchNoRace exercises RegisterHandler
 // (which appends to Handlers under the write lock) concurrently with the

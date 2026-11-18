@@ -13,7 +13,7 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/llmnr/errors"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/llmnr_type"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/message"
-	"github.com/TheManticoreProject/Manticore/network/llmnr/message/header"
+	llmnrheader "github.com/TheManticoreProject/Manticore/network/llmnr/message/header"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/question"
 	"github.com/TheManticoreProject/Manticore/network/llmnr/resourcerecord"
 )
@@ -41,7 +41,7 @@ func TestNewMessage(t *testing.T) {
 }
 
 func TestMessageCreation(t *testing.T) {
-	header := header.Header{
+	header := llmnrheader.Header{
 		Identifier: uint16(rand.Intn(65536)),
 		Flags:      0x0100,
 		QDCount:    1,
@@ -83,7 +83,7 @@ func TestMessageCreation(t *testing.T) {
 
 func TestMessageResponse(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
-	header := header.Header{
+	header := llmnrheader.Header{
 		Identifier: uint16(rand.Intn(65536)),
 		Flags:      0x0100,
 		QDCount:    1,
@@ -108,8 +108,8 @@ func TestMessageResponse(t *testing.T) {
 		t.Errorf("Response header Identifier mismatch. Got %d, want %d", response.Header.Identifier, m.Header.Identifier)
 	}
 
-	if response.Header.Flags&0x8000 == 0 {
-		t.Errorf("Response header QR flag not set")
+	if response.Header.Flags != llmnrheader.FlagQR {
+		t.Errorf("Response header flags = %#04x, want %#04x", uint16(response.Header.Flags), uint16(llmnrheader.FlagQR))
 	}
 
 	if len(response.Questions) != 0 {

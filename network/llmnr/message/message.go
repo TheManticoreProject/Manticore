@@ -80,7 +80,11 @@ func CreateResponseFromMessage(msg *Message) *Message {
 	response := NewMessage()
 
 	response.Header.Identifier = msg.Header.Identifier
-	response.Header.Flags = msg.Header.Flags | header.FlagQR
+	// RFC 4795 section 2.1.1 gives the query flags independent response
+	// semantics: TC, T, Z, and RCODE are ignored, while C and unsupported
+	// opcodes are filtered by the responder. Do not reflect attacker-controlled
+	// query bits into the response.
+	response.Header.Flags = header.FlagQR
 
 	response.Questions = []question.Question{}
 

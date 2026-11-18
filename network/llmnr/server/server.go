@@ -518,9 +518,9 @@ func (s *Server) Serve() error {
 				logger.Debugf("Decoded message: %+v\n", msg)
 			}
 
-			if !msg.IsQuery() {
+			if !isValidQuery(&msg) {
 				if s.Debug {
-					logger.Debugf("Received non-query message from %s\n", remoteAddr.String())
+					logger.Debugf("Discarding invalid query message from %s\n", remoteAddr.String())
 				}
 				continue
 			}
@@ -535,6 +535,18 @@ func (s *Server) Serve() error {
 			go s.processHandlers(s, remoteAddr, writer, &msg)
 		}
 	}
+}
+
+// isValidQuery applies the responder-side header checks from RFC 4795
+// section 2.1.1. TC, T, Z, and RCODE are deliberately not checked because a
+// responder is required to ignore those fields in a query.
+func isValidQuery(msg *message.Message) bool {
+	return msg.IsQuery() &&
+		msg.Header.Flags.Opcode() == 0 &&
+		!msg.Header.Flags.IsConflict() &&
+		msg.Header.QDCount == 1 &&
+		msg.Header.ANCount == 0 &&
+		msg.Header.NSCount == 0
 }
 
 // processHandlers processes the incoming LLMNR message by invoking all registered
