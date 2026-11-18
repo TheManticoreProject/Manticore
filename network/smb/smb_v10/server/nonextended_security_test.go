@@ -352,7 +352,7 @@ func TestNonExtendedSessionSetupWrongPasswordIsRefused(t *testing.T) {
 
 // TestNonExtendedNullSessionFollowsAllowAnonymous asserts a session setup with
 // no account and no response is a null session, admitted only under
-// AllowAnonymous and then reported as a guest.
+// AllowAnonymous and not reported as a guest.
 func TestNonExtendedNullSessionFollowsAllowAnonymous(t *testing.T) {
 	for _, allow := range []bool{false, true} {
 		_, addr := serverWithAccount(t, SigningDisabled, func(c *Config) { c.AllowAnonymous = allow })
@@ -371,8 +371,8 @@ func TestNonExtendedNullSessionFollowsAllowAnonymous(t *testing.T) {
 			t.Fatalf("AllowAnonymous=true: null session answered 0x%08X, want success", status)
 		}
 		action := binary.LittleEndian.Uint16(raw[rawWordCountAt+1+4:])
-		if action&SMB_SETUP_GUEST == 0 {
-			t.Fatalf("Action = 0x%04X, a null session is not reported as guest", action)
+		if action&SMB_SETUP_GUEST != 0 {
+			t.Fatalf("Action = 0x%04X, a null session was reported as guest", action)
 		}
 	}
 }

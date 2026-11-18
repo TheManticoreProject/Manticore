@@ -309,6 +309,21 @@ func TestAnonymousIsGovernedByAllowAnonymousAlone(t *testing.T) {
 	}
 }
 
+// TestAnonymousSessionIsNotReportedAsGuest checks the wire distinction between
+// a null session and a named identity mapped to Guest. Windows clears the
+// SMB_SETUP_GUEST Action bit for the former.
+func TestAnonymousSessionIsNotReportedAsGuest(t *testing.T) {
+	_, addr := serverWithAccount(t, SigningDisabled, func(c *Config) { c.AllowAnonymous = true })
+
+	session, status := rawLogon(t, addr, "", "", "", false)
+	if status != 0 {
+		t.Fatalf("anonymous logon answered 0x%08X, want success", status)
+	}
+	if session.action&SMB_SETUP_GUEST != 0 {
+		t.Fatalf("Action = 0x%04X, a null session was reported as guest", uint16(session.action))
+	}
+}
+
 // TestNamedGuestIsGovernedByAllowGuestAlone asserts an unverifiable named
 // identity is still admitted only under AllowGuest: AllowAnonymous does not
 // admit it.

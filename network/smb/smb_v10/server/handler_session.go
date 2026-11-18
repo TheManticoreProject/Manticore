@@ -163,10 +163,10 @@ func (c *Connection) finishAuthentication(
 
 	case errors.Is(verifyErr, spnego.ErrUnknownIdentity), errors.Is(verifyErr, spnego.ErrCaptureOnly):
 		// Either there is no credential store at all, or it does not know this
-		// identity. Both are admissible only as a guest, and only where a caller
-		// has asked for that: a null session under AllowAnonymous, any other
-		// identity under AllowGuest. The two are independent, so neither flag
-		// admits what the other governs.
+		// identity. Both are admissible only where a caller explicitly asked for
+		// the matching fallback: a null session under AllowAnonymous, any other
+		// identity as a guest under AllowGuest. The two are independent, so
+		// neither flag admits what the other governs.
 		anonymous := isAnonymousAttempt(accept)
 		admitted := c.Server.config.AllowGuest
 		if anonymous {
@@ -177,8 +177,8 @@ func (c *Connection) finishAuthentication(
 			c.uids.Release(uid)
 			return nt_status.NT_STATUS_LOGON_FAILURE
 		}
-		session.IsGuest = true
 		session.IsAnonymous = anonymous
+		session.IsGuest = !anonymous
 
 	default:
 		// A response that did not verify, or a MIC that did not, is refused
