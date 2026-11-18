@@ -396,10 +396,22 @@ func (s *Session) Connect() (bool, error) {
 //
 //	This function assumes that the Session struct has a valid connection object and that the Connect method is implemented correctly.
 func (s *Session) ReConnect() (bool, error) {
-	if s.connection != nil {
-		s.connection.Close()
-	}
+	s.closeConnection()
 	return s.Connect()
+}
+
+// closeConnection gracefully terminates an established LDAP session. RFC 4511
+// defines UnbindRequest as the protocol-level quit operation; if it cannot be
+// sent, Close still guarantees that the underlying connection is released.
+func (s *Session) closeConnection() {
+	if s.connection == nil {
+		return
+	}
+
+	connection := s.connection
+	if err := connection.Unbind(); err != nil {
+		_ = connection.Close()
+	}
 }
 
 // Close terminates the LDAP session by closing the current connection.
@@ -413,9 +425,7 @@ func (s *Session) ReConnect() (bool, error) {
 //
 //	This function assumes that the Session struct has a valid connection object.
 func (s *Session) Close() {
-	if s.connection != nil {
-		s.connection.Close()
-	}
+	s.closeConnection()
 	if s.gssClient != nil {
 		s.gssClient.DeleteSecContext()
 		s.gssClient = nil
