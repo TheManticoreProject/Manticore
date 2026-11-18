@@ -179,9 +179,9 @@ func (s *Server) handleTCPConn(conn net.Conn) {
 		return
 	}
 
-	if !msg.IsQuery() {
+	if !isValidQuery(&msg) {
 		if s.Debug {
-			logger.Debugf("Received non-query TCP message from %s\n", conn.RemoteAddr().String())
+			logger.Debugf("Discarding invalid TCP query message from %s\n", conn.RemoteAddr().String())
 		}
 		return
 	}
