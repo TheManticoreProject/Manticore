@@ -57,7 +57,10 @@ type ReadRequest struct {
 
 // NewReadRequest creates a new SMB2 READ Request.
 func NewReadRequest() *ReadRequest {
-	c := &ReadRequest{ReadChannelInfo: []byte{}}
+	c := &ReadRequest{
+		Padding:         types.UCHAR(header.SMB2_HEADER_SIZE + readResponseFixedSize),
+		ReadChannelInfo: []byte{},
+	}
 	c.SetCommandCode(codes.SMB2_READ)
 	c.StructureSize = ReadRequestStructureSize
 	return c

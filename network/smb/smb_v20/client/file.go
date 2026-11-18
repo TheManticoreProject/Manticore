@@ -155,7 +155,6 @@ func (c *Client) readChunk(fileId types.SMB2_FILEID, offset uint64, length uint3
 	req.FileId = fileId
 	req.Offset = offset
 	req.Length = length
-	req.MinimumCount = 1
 
 	response, err := c.sendReceive(c.newRequest(req), "Read")
 	if err != nil {
