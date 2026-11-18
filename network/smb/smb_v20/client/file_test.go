@@ -79,6 +79,33 @@ func TestReadEndOfFileReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestReadFileUsesWindowsReadDefaults(t *testing.T) {
+	readResp := commands.NewReadResponse()
+	readResp.Data = []byte("x")
+	ft := &fakeTransport{responses: [][]byte{
+		cannedResponse(t, readResp, 0, 0x5, 0x99),
+	}}
+	c := withConnectedTree(ft)
+
+	if _, err := c.ReadFile(types.SMB2_FILEID{}, 0, 1); err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if len(ft.sent) != 1 {
+		t.Fatalf("ReadFile sent %d requests, want 1", len(ft.sent))
+	}
+
+	req := commands.NewReadRequest()
+	if _, err := req.Unmarshal(ft.sent[0][64:]); err != nil {
+		t.Fatalf("decode READ request: %v", err)
+	}
+	if req.Padding != 0x50 {
+		t.Errorf("Padding = 0x%02x, want 0x50", req.Padding)
+	}
+	if req.MinimumCount != 0 {
+		t.Errorf("MinimumCount = %d, want 0", req.MinimumCount)
+	}
+}
+
 func TestCreateFileRequiresTree(t *testing.T) {
 	c := newTestClient(&fakeTransport{})
 	c.Session = &Session{Client: c, SessionId: 0x99} // session but no tree (TreeId 0)
