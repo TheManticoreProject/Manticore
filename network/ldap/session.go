@@ -358,16 +358,13 @@ func (s *Session) Connect() (bool, error) {
 				return false, fmt.Errorf("error binding with credentials: %w", err)
 			}
 		} else {
-			// Unauthenticated Bind
-			bindDN := ""
-			if s.credentials.GetUsername() != "" {
-				bindDN = fmt.Sprintf("%s@%s", s.credentials.GetUsername(), s.credentials.GetDomain())
-			}
-
-			err = ldapConnection.UnauthenticatedBind(bindDN)
+			// Bind anonymously when no authentication secret is available. A
+			// non-empty name with an empty password is a distinct unauthenticated
+			// bind shape and leaks the caller-supplied username on the wire.
+			err = ldapConnection.UnauthenticatedBind("")
 			if err != nil {
 				ldapConnection.Close()
-				return false, fmt.Errorf("error binding with unauthenticated bind: %w", err)
+				return false, fmt.Errorf("error binding anonymously: %w", err)
 			}
 		}
 	}
