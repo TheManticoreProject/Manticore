@@ -417,17 +417,19 @@ func TestBindOnEachPipeNamesItsOwnInterface(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Transact failed: %v", err)
 			}
-			header, err := pdu.PeekHeader(reply)
-			if err != nil {
-				t.Fatalf("the reply is not a PDU: %v", err)
+			ack := &pdu.BindAck{}
+			if _, err := ack.Unmarshal(reply); err != nil {
+				t.Fatalf("the bind was not answered with bind_ack: %v", err)
 			}
-
-			want := pdu.PacketTypeBindNak
+			if len(ack.Results) != 1 {
+				t.Fatalf("the bind_ack carries %d results, want 1", len(ack.Results))
+			}
 			if test.accepted {
-				want = pdu.PacketTypeBindAck
-			}
-			if header.PacketType != want {
-				t.Errorf("the bind was answered with %s, want %s", header.PacketType, want)
+				if ack.Results[0].Result != pdu.ResultAcceptance {
+					t.Errorf("the pipe rejected its own interface with result %d", ack.Results[0].Result)
+				}
+			} else if ack.Results[0].Result != pdu.ResultProviderRejection || ack.Results[0].Reason != pdu.ReasonAbstractSyntaxNotSupported {
+				t.Errorf("result=%d reason=%d, want provider rejection / abstract syntax not supported", ack.Results[0].Result, ack.Results[0].Reason)
 			}
 		})
 	}
