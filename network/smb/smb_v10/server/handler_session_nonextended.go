@@ -92,8 +92,8 @@ func (c *Connection) nonExtendedAuthentication(
 			c.uids.Release(uid)
 			return nt_status.NT_STATUS_LOGON_FAILURE
 		}
-		session.IsGuest = true
 		session.IsAnonymous = anonymous
+		session.IsGuest = !anonymous
 
 	default:
 		logger.Debugf("SMB1 server: refusing %s from %s: %v", session.Account(), c.Remote, verifyErr)
