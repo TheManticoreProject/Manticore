@@ -34,6 +34,12 @@ type ntlmSetupServer struct {
 	accept        *spnego.AcceptContext
 	authenticated string
 	pending       []byte
+	setups        []sessionSetupObservation
+}
+
+type sessionSetupObservation struct {
+	capabilities capabilities.Capabilities
+	maxMpxCount  types.USHORT
 }
 
 func (s *ntlmSetupServer) Connect(net.IP, int) error { return nil }
@@ -50,6 +56,10 @@ func (s *ntlmSetupServer) Send(data []byte) (int, error) {
 	if !ok {
 		return 0, fmt.Errorf("unexpected request command %T", request.Command)
 	}
+	s.setups = append(s.setups, sessionSetupObservation{
+		capabilities: setup.Capabilities,
+		maxMpxCount:  setup.MaxMpxCount,
+	})
 
 	response := commands.NewSessionSetupAndxResponse()
 	status := s.finalStatus

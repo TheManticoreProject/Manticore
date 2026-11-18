@@ -95,8 +95,7 @@ func (s *Session) SessionSetup() error {
 		maxBufferSize = DefaultMaxBufferSize
 	}
 	sessionSetupCmd.MaxBufferSize = types.USHORT(maxBufferSize)
-	sessionSetupCmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
-	sessionSetupCmd.Capabilities = s.Client.Connection.Server.Capabilities
+	setSessionSetupClientProperties(sessionSetupCmd, s.Client.Connection)
 
 	// NativeOS / NativeLanMan are informational strings, but they MUST NOT be empty:
 	// strict servers (e.g. Windows Server 2016) reject a SESSION_SETUP_ANDX whose
