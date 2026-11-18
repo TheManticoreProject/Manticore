@@ -5,19 +5,19 @@ import (
 	"testing"
 )
 
-// TestProcessIdentifierNeverNamesLockOwnerZero checks the conversion from an
-// operating-system process identifier. Only the low 16 bits reach a lock range
-// ([MS-CIFS] 2.2.4.32.1), so an identifier that is an exact multiple of 65536
-// must not be carried through as-is.
-func TestProcessIdentifierNeverNamesLockOwnerZero(t *testing.T) {
+// TestProcessIdentifierFitsTheSMB1FieldAndNeverNamesLockOwnerZero checks that
+// the host PID is reduced to the 16-bit value Windows carries, while reserving
+// zero because that low half also names byte-range-lock ownership.
+func TestProcessIdentifierFitsTheSMB1FieldAndNeverNamesLockOwnerZero(t *testing.T) {
 	tests := []struct {
 		pid  int
 		want uint32
 	}{
 		{1, 1},
 		{4127, 4127},
-		{0x1_0000, 0x1_0001},
-		{0x2_0000, 0x2_0001},
+		{0x1_0000, 1},
+		{0x2_0000, 1},
+		{0x12_3456, 0x3456},
 		{0, 1},
 		{0xFFFF, 0xFFFF},
 	}
@@ -42,31 +42,28 @@ func TestClientProcessIDIsThisProcess(t *testing.T) {
 	}
 }
 
-// TestNextMIDIncrementsAndSkipsZero is the regression guard for requests that
-// were all stamped with the same MID: consecutive requests on a connection must
-// receive distinct identifiers, and zero is never handed out.
-func TestNextMIDIncrementsAndSkipsZero(t *testing.T) {
+// TestNextMIDStartsAtZeroAndIncrements is the regression guard for requests
+// that were all stamped with the same MID. Zero is a valid MID and is what a
+// Windows client uses for its first request.
+func TestNextMIDStartsAtZeroAndIncrements(t *testing.T) {
 	c := &Connection{}
 
-	seen := make(map[uint16]bool)
 	for i := 0; i < 4; i++ {
 		mid := uint16(c.nextMID())
-		if mid == 0 {
-			t.Fatalf("request %d was given MID 0", i)
+		if mid != uint16(i) {
+			t.Fatalf("request %d was given MID %d", i, mid)
 		}
-		if seen[mid] {
-			t.Fatalf("request %d reused MID %d", i, mid)
-		}
-		seen[mid] = true
 	}
-	if uint16(c.nextMID()) != 5 {
+	if uint16(c.nextMID()) != 4 {
 		t.Error("MIDs are not handed out in sequence")
 	}
 
-	// At the point the 16-bit field wraps, zero is stepped over rather than
-	// emitted.
+	// The entire 16-bit field is valid: 0xFFFF is followed by zero.
 	c.messageIDCounter.Store(0xFFFF)
-	if mid := uint16(c.nextMID()); mid != 1 {
-		t.Errorf("MID after wrap = %d, want 1", mid)
+	if mid := uint16(c.nextMID()); mid != 0xFFFF {
+		t.Errorf("MID before wrap = %d, want 65535", mid)
+	}
+	if mid := uint16(c.nextMID()); mid != 0 {
+		t.Errorf("MID after wrap = %d, want 0", mid)
 	}
 }
