@@ -54,7 +54,10 @@ type SessionSetupRequest struct {
 
 // NewSessionSetupRequest creates a new SMB2 SESSION_SETUP Request.
 func NewSessionSetupRequest() *SessionSetupRequest {
-	c := &SessionSetupRequest{SecurityBuffer: []byte{}}
+	c := &SessionSetupRequest{
+		Capabilities:   capabilities.SMB2_GLOBAL_CAP_DFS,
+		SecurityBuffer: []byte{},
+	}
 	c.SetCommandCode(codes.SMB2_SESSION_SETUP)
 	c.StructureSize = SessionSetupRequestStructureSize
 	return c

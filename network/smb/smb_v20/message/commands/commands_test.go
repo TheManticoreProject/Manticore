@@ -118,6 +118,9 @@ func TestNegotiateResponse_RoundTrip(t *testing.T) {
 
 func TestSessionSetupRequest_RoundTrip(t *testing.T) {
 	req := commands.NewSessionSetupRequest()
+	if req.Capabilities != capabilities.SMB2_GLOBAL_CAP_DFS {
+		t.Fatalf("default Capabilities = %#08x, want DFS (%#08x)", uint32(req.Capabilities), uint32(capabilities.SMB2_GLOBAL_CAP_DFS))
+	}
 	req.SecurityMode = securitymode.SMB2_NEGOTIATE_SIGNING_ENABLED
 	req.PreviousSessionId = 0
 	req.SecurityBuffer = []byte{0x4E, 0x54, 0x4C, 0x4D} // "NTLM"
@@ -129,6 +132,9 @@ func TestSessionSetupRequest_RoundTrip(t *testing.T) {
 	if got := binary.LittleEndian.Uint16(wire[0:2]); got != commands.SessionSetupRequestStructureSize {
 		t.Errorf("StructureSize = %d, want 25", got)
 	}
+	if got := binary.LittleEndian.Uint32(wire[4:8]); got != uint32(capabilities.SMB2_GLOBAL_CAP_DFS) {
+		t.Errorf("Capabilities = %#08x, want DFS (%#08x)", got, uint32(capabilities.SMB2_GLOBAL_CAP_DFS))
+	}
 	// SecurityBufferOffset is header-relative: 64 + 24 = 88.
 	if got := binary.LittleEndian.Uint16(wire[12:14]); got != 88 {
 		t.Errorf("SecurityBufferOffset = %d, want 88", got)
@@ -138,7 +144,7 @@ func TestSessionSetupRequest_RoundTrip(t *testing.T) {
 	if _, err := decoded.Unmarshal(wire); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if decoded.SecurityMode != req.SecurityMode || !bytes.Equal(decoded.SecurityBuffer, req.SecurityBuffer) {
+	if decoded.SecurityMode != req.SecurityMode || decoded.Capabilities != req.Capabilities || !bytes.Equal(decoded.SecurityBuffer, req.SecurityBuffer) {
 		t.Errorf("round-trip mismatch: %+v", decoded)
 	}
 }
