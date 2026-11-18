@@ -35,11 +35,15 @@ func TestFileIORequestsCarryRealIdentifiers(t *testing.T) {
 	if firstPID == 0 {
 		t.Error("request carries PID 0")
 	}
-	if want := uint32(os.Getpid()); firstPID != want && firstPID != want|1 {
-		t.Errorf("request PID = %d, want this process (%d)", firstPID, want)
+	wantPID := uint32(uint16(os.Getpid()))
+	if wantPID == 0 {
+		wantPID = 1
 	}
-	if firstMID == c.Connection.MaxMpxCount {
-		t.Errorf("request MID = %d, which is the server's MaxMpxCount", firstMID)
+	if firstPID != wantPID {
+		t.Errorf("request PID = %d, want the 16-bit process identifier %d", firstPID, wantPID)
+	}
+	if firstMID != 0 {
+		t.Errorf("first request MID = %d, want 0", firstMID)
 	}
 
 	if err := c.Flush(1); err != nil {
@@ -47,8 +51,8 @@ func TestFileIORequestsCarryRealIdentifiers(t *testing.T) {
 	}
 	secondPID, secondMID := sentHeaderIdentifiers(t, tr.sent)
 
-	if secondMID == firstMID {
-		t.Errorf("two requests share MID %d", firstMID)
+	if secondMID != 1 {
+		t.Errorf("second request MID = %d, want 1", secondMID)
 	}
 	if secondPID != firstPID {
 		t.Errorf("PID changed between requests: %d then %d", firstPID, secondPID)
