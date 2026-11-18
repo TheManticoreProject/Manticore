@@ -1084,6 +1084,37 @@ func TestAbandonedPartialDoesNotBreakTheNextCall(t *testing.T) {
 	}
 }
 
+func TestCoCancelIsSilentAndPreservesPartialRequest(t *testing.T) {
+	service := &stubService{answer: []byte("answer")}
+	association := boundAssociation(t, service)
+
+	if reply, err := association.Handle(fragment(t, pdu.PFCFirstFrag, 7, 0, 0, "first ")); err != nil || len(reply) != 0 {
+		t.Fatalf("first fragment reply=%x err=%v, want silence", reply, err)
+	}
+
+	cancel := pdu.NewHeader(pdu.PacketTypeCoCancel, pdu.PFCFirstFrag|pdu.PFCLastFrag, 7)
+	cancel.FragLength = pdu.HeaderSize
+	encoded, err := cancel.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply, err := association.Handle(encoded); err != nil || len(reply) != 0 {
+		t.Fatalf("co_cancel reply=%x err=%v, want silence", reply, err)
+	}
+
+	reply, err := association.Handle(fragment(t, pdu.PFCLastFrag, 7, 0, 0, "last"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &pdu.Response{}
+	if _, err := response.Unmarshal(reply); err != nil {
+		t.Fatalf("the continued fragmented call was not served: %x, %v", reply, err)
+	}
+	if got := string(service.lastStub); got != "first last" {
+		t.Errorf("the interface received %q, want %q", got, "first last")
+	}
+}
+
 // TestFragmentOnAnUnboundContextIsRefusedAtOnce checks a first fragment naming a
 // context the association never bound is faulted before anything is buffered.
 func TestFragmentOnAnUnboundContextIsRefusedAtOnce(t *testing.T) {

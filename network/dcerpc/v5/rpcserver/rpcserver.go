@@ -199,6 +199,11 @@ func (a *Association) Handle(request []byte) ([]byte, error) {
 	case pdu.PacketTypeRequest:
 		return a.handleRequest(request, header)
 
+	case pdu.PacketTypeCoCancel:
+		// A connection-oriented cancel is advisory and has no wire response.
+		// Unlike orphaned, it does not discard an incompletely received request.
+		return nil, nil
+
 	case pdu.PacketTypeOrphaned:
 		// [C706] chapter 12: "The orphaned PDU is used by a client to notify a
 		// server that it is aborting a request in progress". The request being
