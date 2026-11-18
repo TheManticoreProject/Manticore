@@ -88,6 +88,9 @@ func TestNewRequestSequencing(t *testing.T) {
 	if m0.Header.Credit != 1 {
 		t.Errorf("CreditRequest = %d, want 1", m0.Header.Credit)
 	}
+	if m0.Header.Reserved != windowsClientProcessID {
+		t.Errorf("ProcessId = %#x, want %#x", m0.Header.Reserved, windowsClientProcessID)
+	}
 
 	m1 := c.newRequest(commands.NewNegotiateRequest())
 	if m1.Header.MessageId != 1 {

@@ -70,6 +70,9 @@ func TestNegotiateRequestMatchesTheRecording(t *testing.T) {
 		t.Fatalf("reading corpus: %v", err)
 	}
 	want := append([]byte(nil), recorded[0]...)
+	// The corpus predates the Windows-compatible ProcessId default. Normalize
+	// that intentional client evolution while retaining the historical capture.
+	binary.LittleEndian.PutUint32(want[32:36], windowsClientProcessID)
 
 	// The corpus was recorded while the client still offered an
 	// SMB2_COMPRESSION_CAPABILITIES context. It is no longer sent, because the
