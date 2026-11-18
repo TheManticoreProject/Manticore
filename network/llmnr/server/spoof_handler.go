@@ -63,9 +63,9 @@ type SpoofConfig struct {
 	// queries are not answered regardless of AnswerAAAA.
 	SpoofIPv6 net.IP
 
-	// AnswerA and AnswerAAAA gate which query types are answered. Answering the
-	// type that was asked (A for an A query, AAAA for an AAAA query) matches how
-	// a real responder behaves.
+	// AnswerA and AnswerAAAA gate which address families are answered. A and
+	// AAAA queries receive their matching family; an ANY query receives every
+	// enabled family.
 	AnswerA    bool
 	AnswerAAAA bool
 
@@ -192,11 +192,10 @@ func (h *SpoofHandler) Matches(name string) bool {
 // BuildResponse assembles the spoofed response for msg without transmitting it.
 //
 // The returned message copies the query's transaction ID and sets the QR
-// (response) flag (via CreateResponseFromMessage), then for every question whose
-// name matches and whose type is one the handler answers, it appends an answer
-// record carrying the configured spoof address. Each answer builder re-adds the
-// corresponding question, so the response echoes the question section a real
-// responder (and this project's own validating resolver) expects.
+// (response) flag (via CreateResponseFromMessage), then for every matching A,
+// AAAA, or ANY question it appends the enabled configured address records. The
+// response echoes the original question; ANY may produce both A and AAAA
+// answers, matching Windows responder behavior.
 //
 // It returns (nil, false) when no question matched, so the caller can leave the
 // query for another handler or another responder on the link.
@@ -210,6 +209,8 @@ func (h *SpoofHandler) BuildResponse(msg *message.Message) (*message.Message, bo
 			continue
 		}
 
+		questionStart := len(response.Questions)
+		answerStart := len(response.Answers)
 		switch q.Type {
 		case llmnr_type.TypeA:
 			if !h.answerA {
@@ -225,13 +226,34 @@ func (h *SpoofHandler) BuildResponse(msg *message.Message) (*message.Message, bo
 			if err := response.AddAnswerClassINTypeAAAA(name, h.spoofIPv6.String()); err != nil {
 				continue
 			}
+		case llmnr_type.TypeALL:
+			// Add the original ANY question first. The answer helpers then see the
+			// name already present and do not replace it with an A/AAAA question.
+			if err := response.AddQuestion(name, q.Type, q.Class); err != nil {
+				continue
+			}
+			if h.answerA {
+				_ = response.AddAnswerClassINTypeA(name, h.spoofIPv4.String())
+			}
+			if h.answerAAAA {
+				_ = response.AddAnswerClassINTypeAAAA(name, h.spoofIPv6.String())
+			}
 		default:
 			// Only address queries are poisoned; other types are left alone.
 			continue
 		}
 
-		// Override the TTL the answer builders hardcode with the configured one.
-		response.Answers[len(response.Answers)-1].TTL = h.ttl
+		if len(response.Answers) == answerStart {
+			response.Questions = response.Questions[:questionStart]
+			response.Header.QDCount = uint16(len(response.Questions))
+			continue
+		}
+
+		// Override the TTL the answer builders hardcode on every record emitted
+		// for this question (ANY can emit both A and AAAA).
+		for i := answerStart; i < len(response.Answers); i++ {
+			response.Answers[i].TTL = h.ttl
+		}
 		answered = true
 	}
 
@@ -275,6 +297,15 @@ func (h *SpoofHandler) Run(server *Server, remoteAddr net.Addr, writer ResponseW
 				if h.answerAAAA {
 					logger.Infof("Poisoned [%s] query for \"%s\" (AAAA) -> %s", remoteAddr.String(), q.Name, h.spoofIPv6.String())
 				}
+			case llmnr_type.TypeALL:
+				answers := make([]string, 0, 2)
+				if h.answerA {
+					answers = append(answers, "A "+h.spoofIPv4.String())
+				}
+				if h.answerAAAA {
+					answers = append(answers, "AAAA "+h.spoofIPv6.String())
+				}
+				logger.Infof("Poisoned [%s] query for \"%s\" (ANY) -> %s", remoteAddr.String(), q.Name, strings.Join(answers, ", "))
 			}
 		}
 	}
