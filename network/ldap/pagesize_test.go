@@ -17,6 +17,7 @@ type pagingRecorder struct {
 	listener  net.Listener
 	pageSizes []uint32
 	unpaged   []bool
+	filters   []string
 	done      chan struct{}
 }
 
@@ -59,6 +60,16 @@ func (r *pagingRecorder) serve() {
 
 		switch packet.Children[1].Tag {
 		case ldap.ApplicationSearchRequest:
+			searchRequest := packet.Children[1]
+			if len(searchRequest.Children) < 7 {
+				return
+			}
+			filter, err := ldap.DecompileFilter(searchRequest.Children[6])
+			if err != nil {
+				return
+			}
+			r.filters = append(r.filters, filter)
+
 			pageSize, paged := uint32(0), false
 			if len(packet.Children) > 2 {
 				for _, controlPacket := range packet.Children[2].Children {
@@ -100,6 +111,13 @@ func ldapResultDone(messageID int64, applicationTag ber.Tag) []byte {
 // recordPageSizes runs search against a session connected to a recording server and
 // returns the page sizes the searches asked for, in order.
 func recordPageSizes(t *testing.T, search func(session *Session)) ([]uint32, []bool) {
+	recorder := recordSearches(t, search)
+	return recorder.pageSizes, recorder.unpaged
+}
+
+// recordSearches runs search against a recording server and returns all fields
+// captured from the SearchRequests after the connection has closed.
+func recordSearches(t *testing.T, search func(session *Session)) *pagingRecorder {
 	t.Helper()
 
 	recorder := newPagingRecorder(t)
@@ -119,7 +137,7 @@ func recordPageSizes(t *testing.T, search func(session *Session)) ([]uint32, []b
 	connection.Close()
 	<-recorder.done
 
-	return recorder.pageSizes, recorder.unpaged
+	return recorder
 }
 
 // TestQueryPageSizeDefault checks that a session which was never told otherwise
