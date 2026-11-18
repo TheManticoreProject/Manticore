@@ -18,6 +18,7 @@ import (
 type bindRejecter struct {
 	listener net.Listener
 	done     chan struct{}
+	bindName chan string
 }
 
 func newBindRejecter(t *testing.T) *bindRejecter {
@@ -28,7 +29,11 @@ func newBindRejecter(t *testing.T) *bindRejecter {
 		t.Fatalf("failed to listen: %s", err)
 	}
 
-	rejecter := &bindRejecter{listener: listener, done: make(chan struct{})}
+	rejecter := &bindRejecter{
+		listener: listener,
+		done:     make(chan struct{}),
+		bindName: make(chan string, 1),
+	}
 	go rejecter.serve()
 
 	return rejecter
@@ -59,6 +64,18 @@ func (r *bindRejecter) serve() {
 
 		if packet.Children[1].Tag != ldap.ApplicationBindRequest {
 			return
+		}
+		request := packet.Children[1]
+		if len(request.Children) < 2 {
+			return
+		}
+		name, ok := request.Children[1].Value.(string)
+		if !ok {
+			return
+		}
+		select {
+		case r.bindName <- name:
+		default:
 		}
 
 		message := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Response")
@@ -106,6 +123,16 @@ func TestConnectClosesConnectionOnBindFailure(t *testing.T) {
 			ok, err := session.Connect()
 			if ok || err == nil {
 				t.Fatalf("expected the bind to be rejected, got ok=%v err=%v", ok, err)
+			}
+			if testCase.name == "unauthenticated bind" {
+				select {
+				case name := <-rejecter.bindName:
+					if name != "" {
+						t.Errorf("anonymous bind name = %q, want empty", name)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("server did not capture the anonymous bind name")
+				}
 			}
 
 			select {
