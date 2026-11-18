@@ -149,7 +149,9 @@ func (c *Connection) negotiateResponse(revision dialects.Dialect, contexts []*co
 	if config.RequireSigning {
 		c.securityMode |= securitymode.SMB2_NEGOTIATE_SIGNING_REQUIRED
 	}
-	c.capabilities = 0
+	// Windows SMB2 servers advertise DFS even when they host no namespace; a
+	// referral for an unknown path then returns STATUS_NOT_FOUND.
+	c.capabilities = capabilities.SMB2_GLOBAL_CAP_DFS
 	if dialectRank[revision] >= dialectRank[dialects.SMB2_DIALECT_2_1_0] || revision == dialects.SMB2_DIALECT_WILDCARD {
 		c.capabilities |= capabilities.SMB2_GLOBAL_CAP_LEASING | capabilities.SMB2_GLOBAL_CAP_LARGE_MTU
 	}

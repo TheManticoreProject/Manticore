@@ -362,13 +362,29 @@ func (c *Connection) flush(r *request, resp *response) nt_status.NT_STATUS {
 // transceive are served.
 func (c *Connection) ioctl(r *request, resp *response) nt_status.NT_STATUS {
 	req := r.command.(*commands.IoctlRequest)
+	if req.Flags != commands.SMB2_0_IOCTL_IS_FSCTL {
+		return nt_status.NT_STATUS_NOT_SUPPORTED
+	}
+	// MS-SMB2 3.3.5.15: these connection-scoped controls use the all-ones
+	// FileId sentinel rather than an open handle.
+	switch req.CtlCode {
+	case filesystem.FSCTL_DFS_GET_REFERRALS,
+		filesystem.FSCTL_DFS_GET_REFERRALS_EX,
+		filesystem.FSCTL_QUERY_NETWORK_INTERFACE_INFO,
+		filesystem.FSCTL_VALIDATE_NEGOTIATE_INFO,
+		filesystem.FSCTL_PIPE_WAIT:
+		if req.FileId != relatedFileID {
+			return nt_status.NT_STATUS_INVALID_PARAMETER
+		}
+	}
 	switch req.CtlCode {
 	case filesystem.FSCTL_VALIDATE_NEGOTIATE_INFO:
 	case filesystem.FSCTL_PIPE_TRANSCEIVE:
 		return c.transceivePipe(r, req, resp)
-	case filesystem.FSCTL_DFS_GET_REFERRALS, filesystem.FSCTL_DFS_GET_REFERRALS_EX:
-		// MS-SMB2 3.3.5.15.2: what a server without DFS answers.
-		return nt_status.NT_STATUS_FS_DRIVER_REQUIRED
+	case filesystem.FSCTL_DFS_GET_REFERRALS:
+		return c.dfsReferralStatus(req.Input, false)
+	case filesystem.FSCTL_DFS_GET_REFERRALS_EX:
+		return c.dfsReferralStatus(req.Input, true)
 	default:
 		return nt_status.NT_STATUS_NOT_SUPPORTED
 	}
