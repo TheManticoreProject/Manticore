@@ -46,21 +46,27 @@ func (c *Client) useUnicode() bool {
 	return c.Connection.Server.Capabilities&capabilities.CAP_UNICODE == capabilities.CAP_UNICODE
 }
 
+// postAuthenticationFlags2 returns the dialect features negotiated with the
+// server that every tree and file request must continue to advertise.
+func (c *Client) postAuthenticationFlags2() flags2.Flags2 {
+	result := flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED)
+	if c.useUnicode() {
+		result |= flags2.FLAGS2_UNICODE
+	}
+	if c.Connection != nil && c.Connection.Server != nil &&
+		c.Connection.Server.Capabilities&capabilities.CAP_EXTENDED_SECURITY != 0 {
+		result |= flags2.FLAGS2_EXTENDED_SECURITY
+	}
+	return result
+}
+
 // newFileIOMessage builds a message pre-populated with the header fields common to
 // every file-I/O command issued on the currently selected tree/session.
 func (c *Client) newFileIOMessage(command codes.CommandCode) *message.Message {
 	msg := message.NewMessage()
 	msg.Header.Command = command
 	msg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
-	msg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED)
-	// Carry names as Unicode whenever the server negotiated it. Dropping the flag
-	// after authentication puts every path on the wire as OEM, which cannot
-	// represent a non-ASCII name: the bytes round-trip through SMB1 because both
-	// directions treat them as opaque, while the name the server actually stores
-	// is not the one that was asked for.
-	if c.useUnicode() {
-		msg.Header.Flags2 |= flags2.FLAGS2_UNICODE
-	}
+	msg.Header.Flags2 = c.postAuthenticationFlags2()
 	msg.Header.SetPID(clientProcessID)
 	msg.Header.MID = c.Connection.nextMID()
 	msg.Header.TID = c.Session.TreeID

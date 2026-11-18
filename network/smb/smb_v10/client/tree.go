@@ -8,7 +8,6 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/commands/codes"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags"
-	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/message/header/flags2"
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v10/types"
 )
 
@@ -29,10 +28,7 @@ func (c *Client) TreeConnect(shareName string) error {
 	requestMsg := message.NewMessage()
 	requestMsg.Header.Command = codes.SMB_COM_TREE_CONNECT_ANDX
 	requestMsg.Header.Flags = flags.Flags(flags.FLAGS_CANONICALIZED_PATHS | flags.FLAGS_CASE_INSENSITIVE)
-	requestMsg.Header.Flags2 = flags2.Flags2(flags2.FLAGS2_NT_STATUS_ERROR_CODES | flags2.FLAGS2_LONG_NAMES_ALLOWED)
-	if c.useUnicode() {
-		requestMsg.Header.Flags2 |= flags2.FLAGS2_UNICODE
-	}
+	requestMsg.Header.Flags2 = c.postAuthenticationFlags2()
 	requestMsg.Header.SetPID(clientProcessID)
 	requestMsg.Header.MID = c.Connection.nextMID()
 	requestMsg.Header.TID = 65535
