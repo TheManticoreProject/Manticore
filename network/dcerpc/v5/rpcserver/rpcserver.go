@@ -337,7 +337,10 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 		negotiated = a.fragment()
 	default:
 		logger.Debugf("rpcserver: no presentation context in the bind could be accepted")
-		return a.bindNak(header.CallID, bindNakReasonNotSpecified)
+		// The bind itself is well-formed, so report each context's provider
+		// rejection in a bind_ack. bind_nak is reserved for failures of the bind
+		// protocol as a whole (version, authentication, or malformed input).
+		negotiated = a.negotiate(bound, bind.MaxRecvFrag, false, auth != nil || protected)
 	}
 
 	ack := &pdu.BindAck{

@@ -205,7 +205,7 @@ func TestBindRejectsTheContextNamingAnotherInterfaceAndKeepsTheServedOne(t *test
 	}
 }
 
-func TestBindNamingOnlyAnotherInterfaceIsRefused(t *testing.T) {
+func TestBindNamingOnlyAnotherInterfaceReturnsPerContextRejection(t *testing.T) {
 	endpoint := New(&stubService{})
 	association := endpoint.Open()
 
@@ -214,15 +214,30 @@ func TestBindNamingOnlyAnotherInterfaceIsRefused(t *testing.T) {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
 
-	nak := &pdu.BindNak{}
-	if _, err := nak.Unmarshal(reply); err != nil {
-		t.Fatalf("a bind naming no served interface was not answered with a bind_nak: %v", err)
+	ack := &pdu.BindAck{}
+	if _, err := ack.Unmarshal(reply); err != nil {
+		t.Fatalf("a bind naming no served interface was not answered with a bind_ack: %v", err)
 	}
-	if nak.Header.CallID != 2 {
-		t.Errorf("the bind_nak carries call id %d, want the request's 2", nak.Header.CallID)
+	if ack.Header.CallID != 2 {
+		t.Errorf("the bind_ack carries call id %d, want the request's 2", ack.Header.CallID)
 	}
-	if len(nak.Versions) == 0 {
-		t.Error("the bind_nak names no protocol version, so a client cannot tell what to retry with")
+	if ack.MaxXmitFrag != 4280 || ack.MaxRecvFrag != 4280 {
+		t.Errorf("the bind_ack negotiated fragments %d/%d, want 4280/4280", ack.MaxXmitFrag, ack.MaxRecvFrag)
+	}
+	if len(ack.Results) != 1 {
+		t.Fatalf("the bind_ack carries %d results, want 1", len(ack.Results))
+	}
+	if ack.Results[0].Result != pdu.ResultProviderRejection || ack.Results[0].Reason != pdu.ReasonAbstractSyntaxNotSupported {
+		t.Errorf("result=%d reason=%d, want provider rejection / abstract syntax not supported", ack.Results[0].Result, ack.Results[0].Reason)
+	}
+	if ack.Results[0].TransferSyntax != (syntax.SyntaxID{}) {
+		t.Errorf("a rejected context names transfer syntax %v, want zero syntax", ack.Results[0].TransferSyntax)
+	}
+	if ack.Accepted() {
+		t.Error("BindAck.Accepted reports an all-rejected bind was accepted")
+	}
+	if association.Bound() != 0 {
+		t.Errorf("association bound %d contexts, want 0", association.Bound())
 	}
 }
 
@@ -257,9 +272,15 @@ func TestBindOfferingOnlyNDR64IsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle returned an error: %v", err)
 	}
-	nak := &pdu.BindNak{}
-	if _, err := nak.Unmarshal(reply); err != nil {
-		t.Fatalf("a bind offering only NDR64 was not answered with a bind_nak: %v", err)
+	ack := &pdu.BindAck{}
+	if _, err := ack.Unmarshal(reply); err != nil {
+		t.Fatalf("a bind offering only NDR64 was not answered with a bind_ack: %v", err)
+	}
+	if len(ack.Results) != 1 {
+		t.Fatalf("the bind_ack carries %d results, want 1", len(ack.Results))
+	}
+	if ack.Results[0].Result != pdu.ResultProviderRejection || ack.Results[0].Reason != pdu.ReasonProposedTransferSyntaxesNotSupported {
+		t.Errorf("result=%d reason=%d, want provider rejection / transfer syntaxes not supported", ack.Results[0].Result, ack.Results[0].Reason)
 	}
 }
 
