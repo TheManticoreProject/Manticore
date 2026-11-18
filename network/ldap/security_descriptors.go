@@ -92,7 +92,7 @@ func (s *Session) GetNtSecurityDescriptorOf(distinguishedName string) (string, e
 		[]ldap.Control{control},
 	)
 
-	searchResult, err := s.connection.SearchWithPaging(searchRequest, s.GetPageSize())
+	searchResult, err := s.connection.Search(searchRequest)
 	if err != nil {
 		return "", fmt.Errorf("error searching for nTSecurityDescriptor: %w", err)
 	}
