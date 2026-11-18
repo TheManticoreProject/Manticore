@@ -37,7 +37,7 @@ func receivedQuery(t *testing.T, name string, suffix byte, broadcast bool) *NBNS
 
 // TestSpoofHandlerAnswerWireCorrectness verifies that a spoofed positive NAME
 // QUERY RESPONSE is wire-correct: it echoes the transaction ID, sets R + AA with
-// B clear, copies RD from the request, echoes the question, and carries a single
+// B clear, copies RD from the request, omits the question, and carries a single
 // NB answer RR whose ADDR_ENTRY holds the configured IP + TTL with the Group bit
 // clear (unique).
 func TestSpoofHandlerAnswerWireCorrectness(t *testing.T) {
@@ -76,12 +76,9 @@ func TestSpoofHandlerAnswerWireCorrectness(t *testing.T) {
 		t.Errorf("RCODE = 0x%x, want SUCCESS", rcode)
 	}
 
-	// Question echo.
-	if resp.Header.Questions != 1 || len(resp.Questions) != 1 {
-		t.Fatalf("question echo: Header.Questions=%d len(Questions)=%d, want 1/1", resp.Header.Questions, len(resp.Questions))
-	}
-	if resp.Questions[0].Name.Name != req.Questions[0].Name.Name {
-		t.Errorf("echoed question name = %q, want %q", resp.Questions[0].Name.Name, req.Questions[0].Name.Name)
+	// RFC 1002 4.2.13 and Windows omit the question from a positive response.
+	if resp.Header.Questions != 0 || len(resp.Questions) != 0 {
+		t.Fatalf("questions: Header.Questions=%d len(Questions)=%d, want 0/0", resp.Header.Questions, len(resp.Questions))
 	}
 
 	// Single NB answer RR with the configured TTL.
@@ -106,6 +103,14 @@ func TestSpoofHandlerAnswerWireCorrectness(t *testing.T) {
 	}
 	if !entry.IP().Equal(spoof.To4()) {
 		t.Errorf("answer IP = %s, want %s", entry.IP(), spoof)
+	}
+
+	wire, err := resp.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal response: %v", err)
+	}
+	if len(wire) != 62 {
+		t.Fatalf("response length = %d, want Windows-compatible 62 bytes", len(wire))
 	}
 }
 

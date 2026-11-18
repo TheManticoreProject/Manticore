@@ -228,9 +228,8 @@ func (h *SpoofHandler) Matches(name string) bool {
 // recursion-desired bit), and appends a single NB answer resource record whose
 // ADDR_ENTRY carries the configured spoof address with the Group bit clear (a
 // poisoned name is claimed as a unique owner, RFC 1002 4.2.1.3) and the
-// configured TTL. The queried question is echoed into the response; RFC 1002
-// 4.2.13 shows QDCOUNT=0, but echoing the question is widely accepted (including
-// by this package's own resolver) and keeps the exchange easy to correlate.
+// configured TTL. RFC 1002 4.2.13 and Windows positive responses omit the
+// question section (QDCOUNT=0).
 func (h *SpoofHandler) BuildResponse(request *NBNSPacket) (*NBNSPacket, bool) {
 	if request.Header.Flags&OpcodeMask != OpNameQuery {
 		return nil, false
@@ -269,10 +268,8 @@ func (h *SpoofHandler) BuildResponse(request *NBNSPacket) (*NBNSPacket, bool) {
 				TransactionID: request.Header.TransactionID,
 				Flags:         flags,
 			},
-			Questions: []NBNSQuestion{q},
-			Answers:   []NBNSResourceRecord{rr},
+			Answers: []NBNSResourceRecord{rr},
 		}
-		response.Header.Questions = uint16(len(response.Questions))
 		response.Header.Answers = uint16(len(response.Answers))
 
 		return response, true
