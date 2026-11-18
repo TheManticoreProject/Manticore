@@ -5,8 +5,44 @@ import (
 
 	"github.com/TheManticoreProject/Manticore/logger"
 	"github.com/TheManticoreProject/Manticore/network/ldap/ldap_attributes"
+	msdtyp "github.com/TheManticoreProject/Manticore/windows/ms-dtyp"
 	"github.com/TheManticoreProject/winacl/sid"
 )
+
+// encodeLDAPBinaryFilterValue encodes arbitrary bytes for an LDAP filter the
+// same way as Windows' ADsEncodeBinaryData: ASCII alphanumeric bytes are kept
+// and every other byte is represented as \hh.
+//
+// Reference: https://learn.microsoft.com/en-us/windows/win32/api/adshlp/nf-adshlp-adsencodebinarydata
+func encodeLDAPBinaryFilterValue(value []byte) string {
+	const hexadecimal = "0123456789abcdef"
+
+	encoded := make([]byte, 0, len(value)*3)
+	for _, b := range value {
+		if (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') {
+			encoded = append(encoded, b)
+			continue
+		}
+		encoded = append(encoded, '\\', hexadecimal[b>>4], hexadecimal[b&0x0f])
+	}
+
+	return string(encoded)
+}
+
+// objectSIDFilter builds an equality filter over objectSid's packed binary
+// representation rather than its human-readable S-R-I-S1-... form.
+func objectSIDFilter(sidString string) (string, error) {
+	parsedSID, err := msdtyp.ParseSID(sidString)
+	if err != nil {
+		return "", fmt.Errorf("parse SID %q: %w", sidString, err)
+	}
+	packedSID, err := parsedSID.Marshal()
+	if err != nil {
+		return "", fmt.Errorf("marshal SID %q: %w", sidString, err)
+	}
+
+	return fmt.Sprintf("(objectSid=%s)", encodeLDAPBinaryFilterValue(packedSID)), nil
+}
 
 // FindObjectSIDByRID searches for an LDAP object based on the provided domain and RID (Relative Identifier).
 //
@@ -41,16 +77,21 @@ func (ldapSession *Session) FindObjectSIDByRID(domain string, RID int) (string, 
 
 	if domainObject != nil {
 		// Create query for local RID
-		query := ""
+		targetSID := ""
 		for _, localRID := range ldap_attributes.LocalRIDs {
 			if localRID == RID {
-				query = fmt.Sprintf("(objectSid=S-1-5-32-%d)", localRID)
+				targetSID = fmt.Sprintf("S-1-5-32-%d", localRID)
 				break
 			}
 		}
 		// Create query for other (domain) RID
-		if len(query) == 0 {
-			query = fmt.Sprintf("(objectSid=%s-%d)", domainObject.SID, RID)
+		if len(targetSID) == 0 {
+			targetSID = fmt.Sprintf("%s-%d", domainObject.SID, RID)
+		}
+
+		query, err := objectSIDFilter(targetSID)
+		if err != nil {
+			return "", fmt.Errorf("build objectSid filter: %w", err)
 		}
 
 		// Perform LDAP query to find the object
