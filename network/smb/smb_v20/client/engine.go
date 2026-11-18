@@ -10,6 +10,10 @@ import (
 	"github.com/TheManticoreProject/Manticore/network/smb/smb_v20/security"
 )
 
+// windowsClientProcessID is the legacy ProcessId value Windows and Samba put
+// in the Reserved field of every synchronous SMB2 request header.
+const windowsClientProcessID = 0x0000FEFF
+
 // newRequest builds an SMB2 request message with the header fields common to
 // every command: the credit charge the payload incurs, a credit request sized to
 // sustain the window, the next 64-bit MessageId on the connection, and — when a
@@ -17,6 +21,7 @@ import (
 // taken from the command when it is attached via SetCommand.
 func (c *Client) newRequest(command command_interface.CommandInterface) *message.Message {
 	msg := message.NewMessage()
+	msg.Header.Reserved = windowsClientProcessID
 
 	// The SMB 2.0.2 dialect requires CreditCharge to be 0. From SMB 2.1 onward the
 	// large-MTU credit model applies and the charge is a function of the payload,

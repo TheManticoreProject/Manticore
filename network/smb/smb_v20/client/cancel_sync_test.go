@@ -29,6 +29,9 @@ func TestCancelTargetsASynchronousRequest(t *testing.T) {
 	if got := binary.LittleEndian.Uint64(sent[24:32]); got != 17 {
 		t.Errorf("MessageId = %d, want 17", got)
 	}
+	if got := binary.LittleEndian.Uint32(sent[32:36]); got != windowsClientProcessID {
+		t.Errorf("ProcessId = %#x, want %#x", got, windowsClientProcessID)
+	}
 	if got := binary.LittleEndian.Uint32(sent[36:40]); got != 0x5 {
 		t.Errorf("TreeId = %#x, want 0x5", got)
 	}

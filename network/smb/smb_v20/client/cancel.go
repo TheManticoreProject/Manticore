@@ -54,6 +54,7 @@ func (c *Client) Cancel() error {
 	} else {
 		// The synchronous form names the request by MessageId within the
 		// same session and tree.
+		msg.Header.Reserved = windowsClientProcessID
 		msg.Header.TreeId = types.ULONG(treeId)
 		msg.Header.SessionId = types.UINT64(sessionId)
 	}
