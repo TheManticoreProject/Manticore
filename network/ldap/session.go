@@ -186,9 +186,10 @@ func (s *Session) SetTLSSkipVerify(skip bool) {
 // honoured. A smaller one costs more round-trips and returns the first entries
 // sooner.
 //
-// It applies to every subsequent paged search made through the session: Query and
-// its scope wrappers, QueryWithControls, and GetNtSecurityDescriptorOf. It may be
-// called at any time, before or after Connect.
+// It applies to subsequent single-level and subtree enumeration searches made
+// through Query, QueryWithControls, and their scope wrappers. Base-object reads,
+// including GetNtSecurityDescriptorOf, are unpaged. It may be called at any time,
+// before or after Connect.
 //
 // Parameters:
 //

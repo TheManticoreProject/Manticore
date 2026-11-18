@@ -108,8 +108,16 @@ func (ldapSession *Session) QueryWithControls(searchBase string, query string, a
 		controls,
 	)
 
-	// Perform LDAP search
-	searchResult, err := ldapSession.connection.SearchWithPaging(searchRequest, ldapSession.GetPageSize())
+	// A base-object search can return at most one entry, so paging adds no value
+	// and produces an unusual control on simple property reads. Enumeration
+	// scopes retain paging so they can cross the server's size limit.
+	var searchResult *ldap.SearchResult
+	var err error
+	if scope == ldap.ScopeBaseObject {
+		searchResult, err = ldapSession.connection.Search(searchRequest)
+	} else {
+		searchResult, err = ldapSession.connection.SearchWithPaging(searchRequest, ldapSession.GetPageSize())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error searching LDAP: %w", err)
 	}

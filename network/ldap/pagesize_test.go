@@ -160,6 +160,26 @@ func TestQueryPageSizeDefault(t *testing.T) {
 	}
 }
 
+// TestQueryBaseObjectIsUnpaged checks that a search which can return at most one
+// object does not carry a paged-results control.
+func TestQueryBaseObjectIsUnpaged(t *testing.T) {
+	pageSizes, unpaged := recordPageSizes(t, func(session *Session) {
+		if _, err := session.Query("DC=example,DC=com", "(objectClass=*)", []string{"cn"}, ldap.ScopeBaseObject); err != nil {
+			t.Errorf("Query returned an error: %s", err)
+		}
+	})
+
+	if len(pageSizes) != 1 {
+		t.Fatalf("expected 1 search, got %d", len(pageSizes))
+	}
+	if !unpaged[0] {
+		t.Fatal("base-object search unexpectedly carried a paged-results control")
+	}
+	if pageSizes[0] != 0 {
+		t.Fatalf("base-object page size = %d, want 0", pageSizes[0])
+	}
+}
+
 // TestQueryPageSizeSet checks that SetPageSize is what reaches the wire, for Query
 // and for the scope wrappers built on it.
 func TestQueryPageSizeSet(t *testing.T) {
@@ -172,10 +192,13 @@ func TestQueryPageSizeSet(t *testing.T) {
 		if _, err := session.QueryWholeSubtree("DC=example,DC=com", "(objectClass=*)", []string{"cn"}); err != nil {
 			t.Errorf("QueryWholeSubtree returned an error: %s", err)
 		}
+		if _, err := session.QuerySingleLevel("DC=example,DC=com", "(objectClass=*)", []string{"cn"}); err != nil {
+			t.Errorf("QuerySingleLevel returned an error: %s", err)
+		}
 	})
 
-	if len(pageSizes) != 2 {
-		t.Fatalf("expected 2 searches, got %d", len(pageSizes))
+	if len(pageSizes) != 3 {
+		t.Fatalf("expected 3 searches, got %d", len(pageSizes))
 	}
 	for i, pageSize := range pageSizes {
 		if unpaged[i] {
@@ -204,20 +227,22 @@ func TestQueryPageSizeZeroIsDefault(t *testing.T) {
 	}
 }
 
-// TestSecurityDescriptorPageSizeSet checks that GetNtSecurityDescriptorOf, the
-// second call site that used to hardcode the page size, honours the session setting
-// too.
-func TestSecurityDescriptorPageSizeSet(t *testing.T) {
-	pageSizes, _ := recordPageSizes(t, func(session *Session) {
+// TestSecurityDescriptorBaseReadIsUnpaged checks that the dedicated base-scope
+// security-descriptor read does not carry a paged-results control.
+func TestSecurityDescriptorBaseReadIsUnpaged(t *testing.T) {
+	pageSizes, unpaged := recordPageSizes(t, func(session *Session) {
 		session.SetPageSize(7)
 
 		// The recording server returns no entries, so this reports "no entry
-		// returned"; the page size it asked for is what is under test.
+		// returned"; the absence of a page control is what is under test.
 		session.GetNtSecurityDescriptorOf("DC=example,DC=com")
 	})
 
-	if len(pageSizes) != 1 || pageSizes[0] != 7 {
-		t.Fatalf("expected a page size of 7, got %v", pageSizes)
+	if len(pageSizes) != 1 {
+		t.Fatalf("expected 1 search, got %d", len(pageSizes))
+	}
+	if !unpaged[0] || pageSizes[0] != 0 {
+		t.Fatalf("security-descriptor base read carried paging: sizes=%v unpaged=%v", pageSizes, unpaged)
 	}
 }
 
