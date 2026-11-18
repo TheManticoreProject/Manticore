@@ -54,7 +54,8 @@
 // A first fragment on a context the association never bound is refused at once
 // with nca_s_fault_context_mismatch. A whole request, a bind or alter_context,
 // and an orphaned PDU each abandon the request in progress; the orphaned PDU is
-// not answered. Replies are fragmented to the size the bind negotiated.
+// not answered. A co_cancel is also consumed without a reply but does not alter
+// partial reassembly. Replies are fragmented to the size the bind negotiated.
 //
 // Only the NDR (little-endian, version 2) transfer syntax is accepted. NDR64 is
 // declined at bind time rather than accepted and then misencoded, which is the
