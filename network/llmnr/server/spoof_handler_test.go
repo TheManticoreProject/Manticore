@@ -146,6 +146,47 @@ func TestSpoofHandlerAnswerWireCorrectnessAAAA(t *testing.T) {
 	}
 }
 
+func TestSpoofHandlerAnswerWireCorrectnessALL(t *testing.T) {
+	spoofIPv4 := net.ParseIP("10.7.0.8")
+	spoofIPv6 := net.ParseIP("fe80::dead:beef")
+	h, err := server.NewSpoofHandler(server.SpoofConfig{
+		Mode:       server.MatchAll,
+		AnswerA:    true,
+		AnswerAAAA: true,
+		SpoofIPv4:  spoofIPv4,
+		SpoofIPv6:  spoofIPv6,
+		TTL:        42,
+	})
+	if err != nil {
+		t.Fatalf("NewSpoofHandler: %v", err)
+	}
+
+	resp, ok := h.BuildResponse(newQuery(t, "fileserver", llmnr_type.TypeALL))
+	if !ok {
+		t.Fatal("expected the ALL query to be answered")
+	}
+	if len(resp.Questions) != 1 || resp.Questions[0].Type != llmnr_type.TypeALL {
+		t.Fatalf("response questions = %v, want the original ALL question", resp.Questions)
+	}
+	if len(resp.Answers) != 2 {
+		t.Fatalf("response has %d answers, want A and AAAA", len(resp.Answers))
+	}
+	if resp.Answers[0].Type != llmnr_type.TypeA || resp.Answers[1].Type != llmnr_type.TypeAAAA {
+		t.Fatalf("answer types = [%s, %s], want [A, AAAA]", resp.Answers[0].Type, resp.Answers[1].Type)
+	}
+	if resp.Answers[0].TTL != 42 || resp.Answers[1].TTL != 42 {
+		t.Errorf("answer TTLs = [%d, %d], want [42, 42]", resp.Answers[0].TTL, resp.Answers[1].TTL)
+	}
+	gotIPv4, err := resp.Answers[0].AsA()
+	if err != nil || !gotIPv4.Equal(spoofIPv4) {
+		t.Errorf("A answer = %v (err %v), want %s", gotIPv4, err, spoofIPv4)
+	}
+	gotIPv6, err := resp.Answers[1].AsAAAA()
+	if err != nil || !gotIPv6.Equal(spoofIPv6) {
+		t.Errorf("AAAA answer = %v (err %v), want %s", gotIPv6, err, spoofIPv6)
+	}
+}
+
 // TestSpoofHandlerMatchModes covers the three name-matching modes and
 // own-hostname suppression.
 func TestSpoofHandlerMatchModes(t *testing.T) {
@@ -243,6 +284,30 @@ func TestSpoofHandlerTypeGating(t *testing.T) {
 	}
 	if _, ok := h.BuildResponse(newQuery(t, "wpad", llmnr_type.TypeA)); !ok {
 		t.Error("IPv4-only handler should answer an A query")
+	}
+	resp, ok := h.BuildResponse(newQuery(t, "wpad", llmnr_type.TypeALL))
+	if !ok {
+		t.Fatal("IPv4-only handler should answer an ALL query")
+	}
+	if len(resp.Answers) != 1 || resp.Answers[0].Type != llmnr_type.TypeA {
+		t.Errorf("IPv4-only ALL response answers = %v, want one A answer", resp.Answers)
+	}
+
+	// IPv6-only handlers likewise answer ALL with only an AAAA record.
+	h6, err := server.NewSpoofHandler(server.SpoofConfig{
+		Mode:       server.MatchAll,
+		AnswerAAAA: true,
+		SpoofIPv6:  net.ParseIP("fe80::1"),
+	})
+	if err != nil {
+		t.Fatalf("NewSpoofHandler IPv6-only: %v", err)
+	}
+	resp, ok = h6.BuildResponse(newQuery(t, "wpad", llmnr_type.TypeALL))
+	if !ok {
+		t.Fatal("IPv6-only handler should answer an ALL query")
+	}
+	if len(resp.Answers) != 1 || resp.Answers[0].Type != llmnr_type.TypeAAAA {
+		t.Errorf("IPv6-only ALL response answers = %v, want one AAAA answer", resp.Answers)
 	}
 }
 
