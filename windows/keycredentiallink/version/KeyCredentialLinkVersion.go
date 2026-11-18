@@ -23,7 +23,15 @@ const (
 //
 // Parameters:
 // - value: A byte array representing the KeyCredentialLinkVersion.
+//
+// Returns:
+// - The number of bytes read (4 on success).
+// - An error if value is shorter than 4 bytes.
 func (kcv *KeyCredentialLinkVersion) Unmarshal(value []byte) (int, error) {
+	if len(value) < 4 {
+		return 0, fmt.Errorf("data too short to unmarshal KeyCredentialLinkVersion: have %d bytes, need 4", len(value))
+	}
+
 	kcv.RawBytes = value[:4]
 	kcv.RawBytesSize = 4
 
