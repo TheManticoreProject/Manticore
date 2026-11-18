@@ -1,75 +1,84 @@
 package ldap
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"sort"
 	"time"
 
 	"github.com/TheManticoreProject/Manticore/network/ldap/ldap_attributes"
 )
 
-// dnsProbeTimeout bounds each TCP connection attempt to a domain controller's
-// DNS port so a single unresponsive host cannot stall the whole enumeration.
-const dnsProbeTimeout = 2 * time.Second
+// dnsLookupTimeout bounds each domain-controller hostname lookup so a broken
+// resolver cannot stall the whole enumeration.
+const dnsLookupTimeout = 2 * time.Second
+
+type hostnameResolver interface {
+	LookupHost(context.Context, string) ([]string, error)
+}
+
+func resolveDomainControllerHostnames(resolver hostnameResolver, controllerSets ...map[string][]string) []string {
+	hostnameSet := make(map[string]struct{})
+	for _, controllers := range controllerSets {
+		for _, hostnames := range controllers {
+			for _, hostname := range hostnames {
+				hostnameSet[hostname] = struct{}{}
+			}
+		}
+	}
+	hostnames := make([]string, 0, len(hostnameSet))
+	for hostname := range hostnameSet {
+		hostnames = append(hostnames, hostname)
+	}
+	sort.Strings(hostnames)
+
+	addressSet := make(map[string]struct{})
+	for _, hostname := range hostnames {
+		ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+		addresses, err := resolver.LookupHost(ctx, hostname)
+		cancel()
+		if err != nil {
+			continue
+		}
+		for _, address := range addresses {
+			if net.ParseIP(address) != nil {
+				addressSet[address] = struct{}{}
+			}
+		}
+	}
+
+	addresses := make([]string, 0, len(addressSet))
+	for address := range addressSet {
+		addresses = append(addresses, address)
+	}
+	sort.Strings(addresses)
+	return addresses
+}
 
 // GetDomainDNSServers retrieves the IP addresses of DNS servers from both read-only domain controllers
-// and domain controllers in the LDAP session. It attempts to establish a TCP connection to port 53
-// (DNS service) on each hostname found in the domain controllers. If the connection is successful,
-// it extracts the IP address of the DNS server and adds it to the list of DNS servers.
+// and domain controllers in the LDAP session. It resolves each LDAP-discovered hostname using the
+// configured system resolver without opening a connection to the DNS service itself.
 //
-// A domain controller that is unreachable or not serving DNS is skipped rather
-// than treated as a fatal error: the function returns the DNS servers it could
-// reach. An error is only returned when the domain controllers themselves cannot
-// be listed.
+// A domain controller whose hostname cannot be resolved is skipped rather than
+// treated as a fatal error. An error is only returned when the domain controllers
+// themselves cannot be listed.
 //
 // Returns:
-// - A slice of strings containing the IP addresses of the reachable DNS servers.
+// - A slice of strings containing the resolved IP addresses of the DNS servers.
 // - An error if the domain controllers could not be listed.
 func (ldapSession *Session) GetDomainDNSServers() ([]string, error) {
-	dnsServers := []string{}
-
-	probe := func(hostname string) {
-		conn, err := net.DialTimeout("tcp", hostname+":53", dnsProbeTimeout)
-		if err != nil {
-			// Host is unreachable or not serving DNS; skip it.
-			return
-		}
-		defer conn.Close()
-
-		// Get remote address which contains the IP of the connected DNS server.
-		// Use net.SplitHostPort so IPv6 addresses ("[::1]:53") are handled correctly.
-		host, _, splitErr := net.SplitHostPort(conn.RemoteAddr().String())
-		if splitErr != nil {
-			return
-		}
-		dnsServers = append(dnsServers, host)
-	}
-
-	// Check in domain controllers
 	domainControllersMap, err := ldapSession.GetAllDomainControllers()
 	if err != nil {
-		return dnsServers, fmt.Errorf("failed to list domain controllers: %w", err)
+		return []string{}, fmt.Errorf("failed to list domain controllers: %w", err)
 	}
 
-	for distinguishedName := range domainControllersMap {
-		for _, hostname := range domainControllersMap[distinguishedName] {
-			probe(hostname)
-		}
-	}
-
-	// Check in read only domain controllers
 	readOnlyDomainControllersMap, err := ldapSession.GetAllReadOnlyDomainControllers()
 	if err != nil {
-		return dnsServers, fmt.Errorf("failed to list read-only domain controllers: %w", err)
+		return resolveDomainControllerHostnames(net.DefaultResolver, domainControllersMap), fmt.Errorf("failed to list read-only domain controllers: %w", err)
 	}
 
-	for distinguishedName := range readOnlyDomainControllersMap {
-		for _, hostname := range readOnlyDomainControllersMap[distinguishedName] {
-			probe(hostname)
-		}
-	}
-
-	return dnsServers, nil
+	return resolveDomainControllerHostnames(net.DefaultResolver, domainControllersMap, readOnlyDomainControllersMap), nil
 }
 
 // GetPrincipalDomainController retrieves the DNS hostname of the principal domain controller (PDC) for a given domain.
