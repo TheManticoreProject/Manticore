@@ -174,6 +174,161 @@ func TestBindAcceptsTheServedInterface(t *testing.T) {
 	}
 }
 
+func TestBindAcknowledgesSupportedBindTimeFeatures(t *testing.T) {
+	endpoint := New(&stubService{})
+	association := endpoint.Open()
+
+	bind := &pdu.Bind{
+		Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 8),
+		MaxXmitFrag: 4280,
+		MaxRecvFrag: 4280,
+		ContextList: []pdu.ContextElement{
+			{
+				ContextID:        0,
+				AbstractSyntax:   testSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+			},
+			{
+				ContextID:      1,
+				AbstractSyntax: testSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{syntax.BindTimeFeatureNegotiation(
+					syntax.SecurityContextMultiplexingSupported | syntax.KeepConnectionOnOrphanSupported,
+				)},
+			},
+		},
+	}
+	request, err := bind.Marshal()
+	if err != nil {
+		t.Fatalf("failed to marshal the bind: %v", err)
+	}
+	reply, err := association.Handle(request)
+	if err != nil {
+		t.Fatalf("Handle returned an error: %v", err)
+	}
+
+	ack := &pdu.BindAck{}
+	if _, err := ack.Unmarshal(reply); err != nil {
+		t.Fatalf("the reply is not a bind_ack: %v", err)
+	}
+	if len(ack.Results) != 2 {
+		t.Fatalf("the bind_ack carries %d results, want 2", len(ack.Results))
+	}
+	feature := ack.Results[1]
+	if feature.Result != pdu.ResultNegotiateAck {
+		t.Errorf("the feature context result is %d, want negotiate_ack (%d)", feature.Result, pdu.ResultNegotiateAck)
+	}
+	if feature.Reason != uint16(syntax.KeepConnectionOnOrphanSupported) {
+		t.Errorf("the acknowledged feature mask is %#04x, want keep-connection-on-orphan (%#04x)",
+			feature.Reason, syntax.KeepConnectionOnOrphanSupported)
+	}
+	if feature.TransferSyntax != (syntax.SyntaxID{}) {
+		t.Errorf("the feature result names transfer syntax %v, want zero syntax", feature.TransferSyntax)
+	}
+	if association.Bound() != 1 {
+		t.Errorf("association bound %d contexts, want only the NDR context", association.Bound())
+	}
+}
+
+func TestBindRejectsMalformedBindTimeFeatureNegotiation(t *testing.T) {
+	featureSyntax := syntax.BindTimeFeatureNegotiation(
+		syntax.SecurityContextMultiplexingSupported | syntax.KeepConnectionOnOrphanSupported,
+	)
+	normal := pdu.ContextElement{
+		ContextID:        0,
+		AbstractSyntax:   testSyntax(),
+		TransferSyntaxes: []syntax.SyntaxID{syntax.NDRTransferSyntax()},
+	}
+	feature := pdu.ContextElement{
+		ContextID:        1,
+		AbstractSyntax:   testSyntax(),
+		TransferSyntaxes: []syntax.SyntaxID{featureSyntax},
+	}
+
+	cases := []struct {
+		name     string
+		contexts []pdu.ContextElement
+		bound    int
+	}{
+		{
+			name: "feature context without a preceding presentation context",
+			contexts: []pdu.ContextElement{{
+				ContextID:        0,
+				AbstractSyntax:   testSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{featureSyntax},
+			}},
+		},
+		{
+			name: "feature context with multiple transfer syntaxes",
+			contexts: []pdu.ContextElement{normal, {
+				ContextID:        1,
+				AbstractSyntax:   testSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{featureSyntax, syntax.NDR64TransferSyntax()},
+			}},
+			bound: 1,
+		},
+		{
+			name: "duplicate feature contexts",
+			contexts: []pdu.ContextElement{normal, feature, {
+				ContextID:        2,
+				AbstractSyntax:   testSyntax(),
+				TransferSyntaxes: []syntax.SyntaxID{featureSyntax},
+			}},
+			bound: 1,
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			endpoint := New(&stubService{})
+			association := endpoint.Open()
+			bind := &pdu.Bind{
+				Header:      pdu.NewHeader(pdu.PacketTypeBind, pdu.PFCFirstFrag|pdu.PFCLastFrag, 9),
+				MaxXmitFrag: 4280,
+				MaxRecvFrag: 4280,
+				ContextList: test.contexts,
+			}
+			request, err := bind.Marshal()
+			if err != nil {
+				t.Fatalf("failed to marshal the bind: %v", err)
+			}
+			reply, err := association.Handle(request)
+			if err != nil {
+				t.Fatalf("Handle returned an error: %v", err)
+			}
+
+			ack := &pdu.BindAck{}
+			if _, err := ack.Unmarshal(reply); err != nil {
+				t.Fatalf("the reply is not a bind_ack: %v", err)
+			}
+			if len(ack.Results) != len(test.contexts) {
+				t.Fatalf("the bind_ack carries %d results, want %d", len(ack.Results), len(test.contexts))
+			}
+			for i, context := range test.contexts {
+				if !containsBindTimeFeatureSyntax(context.TransferSyntaxes) {
+					continue
+				}
+				if ack.Results[i].Result != pdu.ResultProviderRejection ||
+					ack.Results[i].Reason != pdu.ReasonProposedTransferSyntaxesNotSupported {
+					t.Errorf("feature result %d is %d/%d, want provider rejection / transfer syntaxes not supported",
+						i, ack.Results[i].Result, ack.Results[i].Reason)
+				}
+			}
+			if association.Bound() != test.bound {
+				t.Errorf("association bound %d contexts, want %d", association.Bound(), test.bound)
+			}
+		})
+	}
+}
+
+func containsBindTimeFeatureSyntax(syntaxes []syntax.SyntaxID) bool {
+	for _, candidate := range syntaxes {
+		if candidate.IsBindTimeFeatureNegotiation() {
+			return true
+		}
+	}
+	return false
+}
+
 func TestBindRejectsTheContextNamingAnotherInterfaceAndKeepsTheServedOne(t *testing.T) {
 	endpoint := New(&stubService{})
 	association := endpoint.Open()

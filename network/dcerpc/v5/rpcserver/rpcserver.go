@@ -295,13 +295,31 @@ func (a *Association) handleBind(request []byte, header *pdu.Header) ([]byte, er
 	ndrSyntax := syntax.NDRTransferSyntax()
 	results := make([]pdu.PresentationResult, 0, len(bind.ContextList))
 	bound := map[uint16]Service{}
+	featureContext, features := -1, uint16(0)
+	if !altering {
+		featureContext, features = bindTimeFeatureContext(bind.ContextList)
+	}
 
-	for _, context := range bind.ContextList {
+	for i, context := range bind.ContextList {
 		service := a.dispatcher.serviceFor(context.AbstractSyntax)
 		if service == nil {
 			results = append(results, pdu.PresentationResult{
 				Result: contextResultProviderRejection,
 				Reason: contextReasonAbstractSyntaxNotSupported,
+			})
+			continue
+		}
+
+		if i == featureContext {
+			// A bind-time feature proposal is a transfer syntax on the served
+			// interface, but it does not establish a presentation context. Report
+			// the supported subset in the reason field of negotiate_ack. This
+			// association keeps an orphaned connection alive, but owns only one
+			// security context and therefore cannot advertise security-context
+			// multiplexing.
+			results = append(results, pdu.PresentationResult{
+				Result: pdu.ResultNegotiateAck,
+				Reason: features & uint16(syntax.KeepConnectionOnOrphanSupported),
 			})
 			continue
 		}
@@ -701,6 +719,44 @@ func offersSyntax(offered []syntax.SyntaxID, wanted syntax.SyntaxID) bool {
 		}
 	}
 	return false
+}
+
+// bindTimeFeatureContext validates the shape [MS-RPCE] 3.3.1.5.3 assigns to a
+// feature proposal and returns its context index and first-octet feature mask.
+// The proposal must be unique, follow a presentation context with the same
+// abstract syntax, and contain only the version 1.0 feature transfer syntax.
+func bindTimeFeatureContext(contexts []pdu.ContextElement) (int, uint16) {
+	featureContext := -1
+	var features uint16
+	featureContexts := 0
+	for i, context := range contexts {
+		containsFeatureSyntax := false
+		for _, offered := range context.TransferSyntaxes {
+			if offered.IsBindTimeFeatureNegotiation() {
+				containsFeatureSyntax = true
+				break
+			}
+		}
+		if !containsFeatureSyntax {
+			continue
+		}
+		featureContexts++
+		if featureContexts > 1 || i == 0 || len(context.TransferSyntaxes) != 1 ||
+			!context.AbstractSyntax.Equal(contexts[i-1].AbstractSyntax) {
+			featureContext = -1
+			continue
+		}
+		candidate := context.TransferSyntaxes[0]
+		if candidate.MajorVersion != 1 || candidate.MinorVersion != 0 {
+			continue
+		}
+		featureContext = i
+		features = uint16(candidate.UUID.D >> 8)
+	}
+	if featureContexts == 1 {
+		return featureContext, features
+	}
+	return -1, 0
 }
 
 // negotiatedFragment bounds the client's requested fragment size.
