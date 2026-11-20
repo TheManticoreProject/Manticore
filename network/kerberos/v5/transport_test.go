@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -35,6 +36,11 @@ func startTCPKDC(t *testing.T, reply []byte) (int, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return serveTCPKDC(ln, reply)
+}
+
+// serveTCPKDC answers every connection accepted on ln like startTCPKDC does.
+func serveTCPKDC(ln net.Listener, reply []byte) (int, func()) {
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -74,16 +80,11 @@ func TestKDCSendAddrReturnsTCPProtocolError(t *testing.T) {
 // A UDP socket bound to the same port records any datagram; it must stay silent.
 func TestKDCSendAddrUsesTCPNotUDP(t *testing.T) {
 	want := mustMarshalKRBError(t, messages.ErrPreauthRequired)
-	port, cleanup := startTCPKDC(t, want)
+	udp, ln := listenUDPAndTCPOnSamePort(t)
+	defer udp.Close()
+	port, cleanup := serveTCPKDC(ln, want)
 	defer cleanup()
 
-	// Bind UDP on the same port number (independent namespace) to detect any
-	// stray datagram the client might send.
-	udp, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer udp.Close()
 	gotUDP := make(chan struct{}, 1)
 	go func() {
 		buf := make([]byte, 64)
@@ -106,6 +107,33 @@ func TestKDCSendAddrUsesTCPNotUDP(t *testing.T) {
 		t.Fatal("client sent a UDP datagram; the KDC transport must be TCP by default")
 	case <-time.After(250 * time.Millisecond):
 	}
+}
+
+// listenUDPAndTCPOnSamePort binds a loopback UDP socket and a TCP listener that
+// share one port number, so a UDP watcher can catch stray datagrams sent to the
+// TCP KDC's port. The UDP port is allocated first: the OS only hands out
+// ephemeral UDP ports that are usable for UDP, whereas a port chosen for TCP can
+// be taken by another UDP socket or fall in a UDP-only excluded port range on
+// Windows (WSAEACCES). The TCP bind on that number can still fail, so a new
+// pair is tried until both binds succeed.
+func listenUDPAndTCPOnSamePort(t *testing.T) (*net.UDPConn, net.Listener) {
+	t.Helper()
+	var lastErr error
+	for attempt := 0; attempt < 50; attempt++ {
+		udp, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := udp.LocalAddr().(*net.UDPAddr).Port
+		ln, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err == nil {
+			return udp, ln
+		}
+		udp.Close()
+		lastErr = err
+	}
+	t.Fatalf("no loopback port free for both UDP and TCP: %v", lastErr)
+	return nil, nil
 }
 
 // TestResolveKDCAddrsIPLiteral verifies IP literals (IPv4 and IPv6) pass through
