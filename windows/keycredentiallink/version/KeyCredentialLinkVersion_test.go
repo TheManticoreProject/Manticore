@@ -75,3 +75,26 @@ func TestKeyCredentialLinkVersion_Marshal(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyCredentialLinkVersion_Unmarshal_TooShort(t *testing.T) {
+	inputs := [][]byte{
+		nil,
+		{},
+		{0x00},
+		{0x00, 0x02},
+		{0x00, 0x02, 0x00},
+	}
+
+	for _, input := range inputs {
+		t.Run(fmt.Sprintf("len=%d", len(input)), func(t *testing.T) {
+			var kcv version.KeyCredentialLinkVersion
+			bytesRead, err := kcv.Unmarshal(input)
+			if err == nil {
+				t.Errorf("Expected an error for a %d-byte input, but got nil", len(input))
+			}
+			if bytesRead != 0 {
+				t.Errorf("Expected 0 bytes read, but got %d", bytesRead)
+			}
+		})
+	}
+}
