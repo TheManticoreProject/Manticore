@@ -148,8 +148,7 @@ func (s *Session) sessionSetupKerberos(mech *kerberos.SPNEGOMechanism) error {
 		maxBufferSize = DefaultMaxBufferSize
 	}
 	cmd.MaxBufferSize = types.USHORT(maxBufferSize)
-	cmd.MaxMpxCount = s.Client.Connection.MaxMpxCount
-	cmd.Capabilities = s.Client.Connection.Server.Capabilities
+	setSessionSetupClientProperties(cmd, s.Client.Connection)
 	cmd.VcNumber = types.USHORT(0x0000)
 	cmd.SessionKey = s.Client.Connection.Server.SessionKey
 	cmd.NativeOS = s.Client.NativeOS
